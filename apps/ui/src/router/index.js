@@ -1,0 +1,22 @@
+import { createRouter, createWebHistory } from 'vue-router'
+
+import Home from '../views/Home.vue'
+import About from '../views/About.vue'
+import Chat from '@/views/Chat.vue'
+import Dashboard from '@/views/Dashboard.vue'
+import Profile from '../views/profile.vue'
+import Settings from '../views/settings.vue'
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    { path: '/', component: Home },
+    { path: '/about', component: About },
+    { path: '/chat', component: Chat },
+    { path: '/dashboard', component: Dashboard },
+    { path: '/profile', component: Profile },
+    { path: '/settings', component: Settings },
+  ],
+})
+
+export default router

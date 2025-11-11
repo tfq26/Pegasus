@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* 🪶 Define Pegasus custom theme */
+@theme {
+  --color-stone-50:  #f8f8f9;
+  --color-stone-100: #f2f2f3;
+  --color-stone-200: #d9d9dc;
+  --color-stone-300: #b9b9bd;
+  --color-stone-400: #8f8f94;
+  --color-stone-500: #6f6f75;
+  --color-stone-600: #55555a;
+  --color-stone-700: #3b3b3f;
+  --color-stone-800: #252527;
+  --color-stone-900: #151517;
+
+  --color-violet-50:  #f4e6ff;
+  --color-violet-100: #e0b8ff;
+  --color-violet-200: #cc8aff;
+  --color-violet-300: #b85cff;
+  --color-violet-400: #a42eff;
+  --color-violet-500: #4d00b3; /* Pegasus accent */
+  --color-violet-600: #3f0091;
+  --color-violet-700: #310070;
+  --color-violet-800: #23004e;
+  --color-violet-900: #15002d;
+
+  /* Optional semantic tokens */
+  --color-bg-base: var(--color-stone-950);
+  --color-bg-surface: var(--color-stone-900);
+  --color-text-base: var(--color-stone-100);
+  --color-accent: var(--color-violet-500);
+}
+
+@layer base {
+  html {
+    @apply bg-[--color-bg-base] text-[--color-text-base];
+  }
+
+  a {
+    @apply text-[--color-accent] hover:text-[--color-violet-400];
+  }
+}

@@ -1,16 +1,12 @@
 {
-  "name": "pegasus-root",
-  "version": "0.0.0",
+  "name": "pegasus",
+  "module": "index.ts",
+  "type": "module",
   "private": true,
-  "scripts": {
-    "ui:install": "cd pegasus-ui && npm install",
-    "desktop:install": "cd pegasus-desktop && npm install",
-    "ui": "cd pegasus-ui && npm run dev",
-    "desktop": "cd pegasus-desktop && npm run dev",
-    "start:both": "concurrently \"npm:ui\" \"npm:desktop\"",
-    "help": "echo \"Run 'npm run ui' to start the web UI, or 'npm run desktop' to start the desktop app. Run both in separate terminals.\""
-  },
   "devDependencies": {
-    "concurrently": "^7.6.0"
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }
