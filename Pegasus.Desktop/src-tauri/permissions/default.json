@@ -1,0 +1,21 @@
+{
+  "default": null,
+  "permission": [
+    {
+      "identifier": "default",
+      "description": "Default permissions for Pegasus Desktop",
+      "commands": {
+        "allow": [
+          "app:*",
+          "window:*",
+          "shell:*",
+          "dialog:*",
+          "fs:*",
+          "path:*",
+          "os:*"
+        ],
+        "deny": []
+      }
+    }
+  ]
+}

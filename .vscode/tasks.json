@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Pegasus UI",
+      "type": "shell",
+      "command": "cd ${workspaceFolder}/pegasus-ui && npm install && npm run dev",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Pegasus Desktop",
+      "type": "shell",
+      "command": "cd ${workspaceFolder}/pegasus-desktop && npm install && npm run dev",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "runOptions": {
+    "runOn": "default"
+  }
+}
