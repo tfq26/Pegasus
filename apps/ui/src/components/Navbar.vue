@@ -48,16 +48,36 @@
 
         <!-- Profile -->
         <div ref="dropdownRef" class="relative">
+          <!-- Loading State -->
+          <div v-if="isLoading" class="flex items-center gap-2 rounded-full border border-stone-700 bg-stone-900 px-3 py-1">
+            <div class="h-7 w-7 rounded-full bg-stone-800 animate-pulse"></div>
+            <div class="hidden sm:block h-4 w-16 bg-stone-800 rounded animate-pulse"></div>
+          </div>
+
+          <!-- Not Logged In -->
+          <RouterLink
+            v-else-if="!user"
+            to="/login"
+            class="flex items-center gap-2 rounded-full border border-stone-700 bg-stone-900 px-3 py-1 text-sm text-stone-300 hover:border-violet-500 hover:text-violet-400 transition-all"
+          >
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+            </svg>
+            <span class="hidden sm:inline font-medium">Login</span>
+          </RouterLink>
+
+          <!-- Logged In -->
           <button
+            v-else
             @click="toggleDropdown"
             class="flex items-center gap-2 rounded-full border border-stone-700 bg-stone-900 px-3 py-1 text-sm text-stone-300 hover:border-violet-500 hover:text-violet-400 transition-all"
           >
             <img
-              src="https://api.dicebear.com/8.x/avataaars/svg?seed=PegasusUser"
+              :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
               alt="Profile"
-              class="h-7 w-7 rounded-full border border-stone-700"
+              class="h-7 w-7 rounded-full border border-stone-700 object-cover"
             />
-            <span class="hidden sm:inline font-medium">User</span>
+            <span class="hidden sm:inline font-medium">{{ user.firstName || 'User' }}</span>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
               stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
@@ -67,22 +87,25 @@
           <!-- Dropdown -->
           <transition name="fade">
             <div
-              v-if="showDropdown"
+              v-if="showDropdown && user"
               class="absolute right-0 top-12 w-48 rounded-xl border border-stone-700 bg-stone-900 shadow-lg shadow-black/30 py-2 z-50"
             >
               <RouterLink
                 to="/profile"
                 class="block w-full text-left px-4 py-2 text-sm text-stone-300 hover:bg-stone-800 hover:text-violet-400 transition"
+                @click="showDropdown = false"
               >
                 View Profile
               </RouterLink>
               <RouterLink
                 to="/settings"
                 class="block w-full text-left px-4 py-2 text-sm text-stone-300 hover:bg-stone-800 hover:text-violet-400 transition"
+                @click="showDropdown = false"
               >
                 Settings
               </RouterLink>
               <button
+                @click="handleLogout"
                 class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-stone-800 transition"
               >
                 Logout
@@ -136,6 +159,7 @@
             Settings
           </RouterLink>
           <button
+            @click="handleLogout"
             class="w-full text-left text-sm text-red-400 hover:text-red-300 transition"
           >
             Logout
@@ -148,8 +172,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useAuth } from '@/composables/useAuth'
 
 defineOptions({ name: 'AppNavbar' })
+
+const { user, isLoading, fetchUser, logout } = useAuth()
 
 const links = [
   { to: '/', label: 'Home' },
@@ -164,6 +191,12 @@ const dropdownRef = ref<HTMLElement | null>(null)
 
 const toggleDropdown = () => (showDropdown.value = !showDropdown.value)
 
+const handleLogout = () => {
+  showDropdown.value = false
+  mobileOpen.value = false
+  logout()
+}
+
 // Close dropdown when clicking outside
 const handleClickOutside = (e: MouseEvent) => {
   if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
@@ -171,7 +204,10 @@ const handleClickOutside = (e: MouseEvent) => {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
+onMounted(() => {
+  fetchUser()
+  document.addEventListener('click', handleClickOutside)
+})
 onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 </script>
 

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import Navbar from './components/Navbar.vue'
+import { Toaster } from '@/components/ui/sonner'
+import 'vue-sonner/style.css' // vue-sonner v2 requires this import
 </script>
 
 <template>
@@ -7,11 +9,14 @@ import Navbar from './components/Navbar.vue'
     <!-- Fixed Navbar -->
     <Navbar />
 
+    <!-- Sonner Toasts -->
+    <Toaster position="top-right" richColors />
+
     <!-- Main layout -->
     <div class="flex flex-1 overflow-hidden">
       <!-- Main content area with offset to avoid navbar clipping -->
       <main
-        class="flex-1 bg-stone-950 overflow-y-auto pt-[64px] px-4"
+        class="flex-1 bg-stone-950 overflow-y-auto pt-16 px-4"
       >
         <router-view class="w-full h-full" />
       </main>

@@ -1,0 +1,23 @@
+{
+  "name": "backend",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run index.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@workos-inc/node": "^7.74.2",
+    "azure-kusto-data": "^2.0.0",
+    "hono": "^4.10.6",
+    "mongodb": "^5.9.0",
+    "mysql2": "^3.4.4",
+    "pg": "^8.16.3"
+  }
+}

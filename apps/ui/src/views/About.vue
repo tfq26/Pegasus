@@ -1,7 +1,5 @@
 <template>
-  <section
-    class="w-full h-full overflow-y-auto px-6 py-16 text-center  text-stone-100"
-  >
+  <BlackHoleBackground class="w-full h-full overflow-y-auto px-6 py-16 text-center text-stone-100">
     <transition name="fade-slide" appear>
       <div class="max-w-3xl mx-auto">
         <!-- Logo & Title -->
@@ -92,10 +90,11 @@
         </p>
       </div>
     </transition>
-  </section>
+  </BlackHoleBackground>
 </template>
 
 <script setup lang="ts">
+import BlackHoleBackground from '@/components/ui/bg-black-hole/BlackHoleBackground.vue'
 defineOptions({ name: 'AboutView' })
 
 const features = [
