@@ -1,11 +1,18 @@
 <template>
-  <div class="flex-1 overflow-auto">
+  <div class="flex-1 overflow-hidden relative bg-[#1e1e1e]">
     <CodeEditor
-      v-model="input"
-      :placeholder="mode === 'chat' ? 'Ask Pegasus…' : 'Write queries…'"
-      :language="mode === 'write' ? 'sql' : 'text'"
+      v-if="mode === 'write'"
+      v-model="localInput"
+      language="sql"
       class="w-full h-full"
     />
+    <textarea
+      v-else
+      v-model="localInput"
+      placeholder="Ask Pegasus..."
+      class="w-full h-full bg-transparent text-stone-200 p-4 resize-none focus:outline-none font-sans text-base placeholder:text-stone-600"
+      @keydown.enter.exact.prevent="$emit('submit')"
+    ></textarea>
   </div>
 </template>
 
@@ -14,13 +21,16 @@ import { ref, watch } from 'vue'
 // @ts-ignore: ignore missing .vue module declaration
 import CodeEditor from './CodeEditor.vue'
 
-defineProps<{ mode: 'chat' | 'write', input: string }>()
-const emit = defineEmits(['update:input'])
+const props = defineProps<{ mode: 'chat' | 'write', input: string }>()
+const emit = defineEmits(['update:input', 'submit'])
 
-const input = ref('')
+const localInput = ref(props.input)
 
-watch(input, (val) => {
-  // Sync with parent
+watch(() => props.input, (val) => {
+  localInput.value = val
+})
+
+watch(localInput, (val) => {
   emit('update:input', val)
 })
 </script>

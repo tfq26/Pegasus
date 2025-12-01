@@ -13,8 +13,9 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@workos-inc/node": "^7.74.2",
-    "azure-kusto-data": "^2.0.0",
+    "azure-kusto-data": "^2.2.3",
     "hono": "^4.10.6",
     "mongodb": "^5.9.0",
     "mysql2": "^3.4.4",

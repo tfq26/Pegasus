@@ -35,4 +35,5 @@ export type SettingsModel = {
   githubConnected: boolean
   slackConnected: boolean
   azureConnected: boolean
+  enabledModels?: string[]
 }

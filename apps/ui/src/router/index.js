@@ -13,7 +13,7 @@ const router = createRouter({
   routes: [
     { path: '/', component: Home },
     { path: '/about', component: About },
-    { path: '/chat', component: Chat },
+    { path: '/query', component: Chat },
     { path: '/dashboard', component: Dashboard },
     { path: '/profile', component: Profile },
     { path: '/settings', component: Settings },

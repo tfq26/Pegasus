@@ -8,6 +8,18 @@ import DialogTitle from '@/components/ui/dialog/DialogTitle.vue'
 import DialogDescription from '@/components/ui/dialog/DialogDescription.vue'
 import DialogFooter from '@/components/ui/dialog/DialogFooter.vue'
 import DialogTrigger from '@/components/ui/dialog/DialogTrigger.vue'
+import { 
+  Activity,
+  AlertCircle, 
+  Database,
+  Edit,
+  Loader2,
+  Play, 
+  Plus, 
+  Search, 
+  Server, 
+  Trash2
+} from 'lucide-vue-next'
 
 import { 
   Select,
@@ -25,7 +37,10 @@ const props = defineProps<{
   connectionForm: ConnectionFormState
   savedConnections: ConnectionEntry[]
   canAddConnection: boolean
+  isEditMode: boolean
   addConnection: () => void
+  editConnection: (conn: ConnectionEntry) => void
+  updateConnection: () => void
   deleteConnection: (id: string) => void
   connectionStatusFor: (id: string) => ConnectionStatusState | undefined
   statusDotClasses: (status?: ConnectionStatusState['status']) => string
@@ -61,7 +76,8 @@ let probeTimer: ReturnType<typeof setTimeout> | null = null
 const probeTempSchema = async () => {
   if (props.connectionForm.provider !== 'mongodb') return
   const url = props.connectionForm.mongodb.url
-  if (!url || !url.includes('mongodb')) return
+  // Don't scan if empty, invalid, or is the default placeholder
+  if (!url || !url.includes('mongodb') || url === 'mongodb://127.0.0.1:27017') return
 
   tempLoading.value = true
   tempError.value = null
@@ -77,8 +93,8 @@ const probeTempSchema = async () => {
 
     const result = await fetchConnectionSchema(fakeEntry)
     tempSchema.value = { tables: result.tables, previews: result.previews }
-  const _any = result as any
-  tempDatabases.value = _any.databases || (props.connectionForm.mongodb.database ? [props.connectionForm.mongodb.database] : [])
+    const _any = result as any
+    tempDatabases.value = _any.databases || (props.connectionForm.mongodb.database ? [props.connectionForm.mongodb.database] : [])
     // If the probe found exactly one database and the user hasn't provided one, auto-fill it
     if (!props.connectionForm.mongodb.database?.trim() && tempDatabases.value.length === 1) {
       props.connectionForm.mongodb.database = tempDatabases.value[0]
@@ -160,8 +176,7 @@ watch(
   (provider) => {
     if (provider === 'mongodb') {
       syncMongoDatabase()
-      // immediately probe when switching to MongoDB
-      probeTempSchema()
+      // Don't immediately probe when switching to MongoDB to avoid scanning the placeholder
     }
   },
 )
@@ -184,58 +199,63 @@ const formatRow = (row: Record<string, unknown>) => {
 </script>
 
 <template>
-  <div class="flex flex-col space-y-6 max-w-5xl mx-auto">
-    <h2 class="text-2xl font-semibold text-violet-400 mb-2">
-      Database Connections
-    </h2>
+  <div class="flex flex-col space-y-8 max-w-6xl mx-auto p-2">
+    <!-- Header Section -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
+            <Database class="w-6 h-6 text-violet-400" />
+          </div>
+          Database Connections
+        </h2>
+        <p class="text-stone-400 mt-2 text-sm max-w-lg">
+          Manage your database connections. Pegasus uses these connections to query data and generate insights.
+        </p>
+      </div>
 
-    <!-- ╔══════════════════════════════════════╗ -->
-    <!--            ADD CONNECTION MODAL         -->
-    <!-- ╚══════════════════════════════════════╝ -->
-    <div class="flex justify-end">
       <Dialog v-model:open="open">
         <DialogTrigger>
           <button 
-            class="px-4 py-2 rounded-md bg-violet-600 text-white text-sm font-semibold hover:bg-violet-500"
+            class="group flex items-center gap-2 px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-500 transition-all shadow-lg shadow-violet-900/20 hover:shadow-violet-900/40"
           >
-            + Add Connection
+            <Plus class="w-4 h-4 group-hover:scale-110 transition-transform" />
+            Add Connection
           </button>
         </DialogTrigger>
 
-        <DialogContent class="max-w-2xl bg-stone-950 border border-stone-800 text-stone-100">
+        <DialogContent class="max-w-2xl bg-stone-950 border border-stone-800 text-stone-100 sm:rounded-xl shadow-2xl shadow-black/50">
           <DialogHeader>
-            <DialogTitle class="text-xl font-semibold text-violet-400">
-              Add Database Connection
+            <DialogTitle class="text-xl font-semibold text-violet-400 flex items-center gap-2">
+              <Database class="w-5 h-5" />
+              {{ props.isEditMode ? 'Edit Database Connection' : 'Add Database Connection' }}
             </DialogTitle>
             <DialogDescription class="text-stone-500">
-              Configure a new database source for Pegasus.
+              {{ props.isEditMode ? 'Update your database connection settings.' : 'Configure a new database source for Pegasus to access.' }}
             </DialogDescription>
           </DialogHeader>
 
-          <!-- ╔══════════════════════════╗ -->
-          <!--         FORM BODY          -->
-          <!-- ╚══════════════════════════╝ -->
           <form 
-            class="space-y-4 mt-4"
-            @submit.prevent="() => { props.addConnection(); closeModal() }"
+            class="space-y-6 mt-4"
+            @submit.prevent="() => { props.isEditMode ? props.updateConnection() : props.addConnection(); closeModal() }"
           >
-            <div class="grid gap-4 md:grid-cols-2">
-              <div>
-                <label class="text-xs uppercase tracking-[0.3em] text-stone-500">Nickname</label>
+            <div class="grid gap-6 md:grid-cols-2">
+              <div class="space-y-2">
+                <label class="text-xs font-semibold uppercase tracking-wider text-stone-500">Nickname</label>
                 <input
                   v-model="props.connectionForm.nickname"
                   type="text"
-                  placeholder="Pegasus Reporting"
-                  class="mt-2 w-full rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm text-stone-100 focus:border-violet-500"
+                  placeholder="e.g. Production DB"
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2.5 text-sm text-stone-100 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-colors placeholder:text-stone-600"
                 />
               </div>
-              <div>
-                <label class="text-xs uppercase tracking-[0.3em] text-stone-500">Provider</label>
-                <Select v-model="props.connectionForm.provider" class="mt-2 w-full">
-                  <SelectTrigger class="w-full">
+              <div class="space-y-2">
+                <label class="text-xs font-semibold uppercase tracking-wider text-stone-500">Provider</label>
+                <Select v-model="props.connectionForm.provider">
+                  <SelectTrigger class="w-full rounded-lg border-stone-800 bg-stone-900/50 h-[42px]">
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent class="bg-stone-900 border-stone-800">
                     <SelectItem value="mysql">MySQL</SelectItem>
                     <SelectItem value="mongodb">MongoDB</SelectItem>
                     <SelectItem value="kusto">Kusto</SelectItem>
@@ -244,114 +264,224 @@ const formatRow = (row: Record<string, unknown>) => {
               </div>
             </div>
 
-            <div>
-              <label class="text-xs uppercase tracking-[0.3em] text-stone-500">Description</label>
+            <div class="space-y-2">
+              <label class="text-xs font-semibold uppercase tracking-wider text-stone-500">Description</label>
               <textarea
                 v-model="props.connectionForm.description"
                 rows="2"
-                placeholder="Describe this connection (optional)"
-                class="mt-2 w-full rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm text-stone-100 focus:border-violet-500"
+                placeholder="Optional description for this connection..."
+                class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2.5 text-sm text-stone-100 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-colors placeholder:text-stone-600 resize-none"
               />
             </div>
 
+            <div class="h-px bg-stone-800/50 my-4"></div>
+
             <!-- MySQL -->
-            <div v-if="props.connectionForm.provider === 'mysql'" class="grid gap-3 md:grid-cols-3">
-              <div class="flex flex-col gap-1">
+            <div v-if="props.connectionForm.provider === 'mysql'" class="grid gap-4 md:grid-cols-3">
+              <div class="space-y-1.5">
                 <label class="text-[10px] uppercase tracking-wide text-stone-500">Host</label>
-                <input v-model="props.connectionForm.mysql.host" placeholder="127.0.0.1" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+                <input v-model="props.connectionForm.mysql.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
               </div>
-              <div class="flex flex-col gap-1">
+              <div class="space-y-1.5">
                 <label class="text-[10px] uppercase tracking-wide text-stone-500">Port</label>
-                <input v-model.number="props.connectionForm.mysql.port" type="number" placeholder="3306" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+                <input v-model.number="props.connectionForm.mysql.port" type="number" placeholder="3306" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
               </div>
-              <div class="flex flex-col gap-1">
+              <div class="space-y-1.5">
                 <label class="text-[10px] uppercase tracking-wide text-stone-500">Database</label>
-                <input v-model="props.connectionForm.mysql.database" placeholder="pegasus" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+                <input v-model="props.connectionForm.mysql.database" placeholder="pegasus" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
               </div>
-              <div class="flex flex-col gap-1">
+              <div class="space-y-1.5">
                 <label class="text-[10px] uppercase tracking-wide text-stone-500">User</label>
-                <input v-model="props.connectionForm.mysql.user" placeholder="root" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+                <input v-model="props.connectionForm.mysql.user" placeholder="root" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
               </div>
-              <div class="flex flex-col gap-1 md:col-span-2">
+              <div class="space-y-1.5 md:col-span-2">
                 <label class="text-[10px] uppercase tracking-wide text-stone-500">Password</label>
-                <input v-model="props.connectionForm.mysql.password" type="password" placeholder="(optional)" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+                <input v-model="props.connectionForm.mysql.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
               </div>
             </div>
 
             <!-- MongoDB -->
-            <div v-else-if="props.connectionForm.provider === 'mongodb'" class="grid gap-3 md:grid-cols-3">
-              <div class="flex flex-col gap-1 md:col-span-2">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">URI</label>
-                <input v-model="props.connectionForm.mongodb.url" placeholder="mongodb://localhost:27017" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
-              </div>
-              <!-- Remove DB dropdown: DB selection will be handled in Explorer/ChatSidebar -->
-              <!-- Remove collection input: user will select collection in Explorer/ChatSidebar -->
-              <!-- If databases are discovered, do not show collection input; user will select DB and collection in Explorer -->
-            </div>
-
-            <!-- Live discovery: show collections discovered from the provided URI -->
-            <div v-if="props.connectionForm.provider === 'mongodb'" class="mt-3">
-              <p class="text-xs text-stone-400 mb-2">{{ tempDatabases.length ? 'Discovered databases' : 'Discovered collections' }}</p>
-
-              <div v-if="tempLoading" class="text-xs text-stone-500">Scanning the server for databases and collections…</div>
-              <div v-else-if="tempError" class="text-xs text-rose-400">
-                <div>{{ tempError }}</div>
-                <div v-if="tempErrorCode" class="text-[10px] text-stone-400 mt-1">Error code: {{ tempErrorCode }}</div>
-
-                <div v-if="tempErrorCode === 'MongoNetworkError'" class="text-[10px] text-stone-400">Network error: check your host, DNS and that the cluster is reachable (SRV/port).</div>
-                <div v-else-if="tempErrorCode === 'MongoParseError'" class="text-[10px] text-stone-400">URI parse error: validate your connection string.</div>
-                <div v-else-if="tempErrorCode === 'MongoAuthenticationError' || tempErrorCode === 'AuthenticationFailed'" class="text-[10px] text-stone-400">Authentication failed: check username/password or authSource.</div>
-                <div v-else-if="tempErrorCode === 'LIST_DATABASES_DENIED'" class="text-[10px] text-stone-400">Insufficient privileges to list databases. Either provide the target database in the connection string (e.g. add /your_db to the URI) or grant the user the <code>listDatabases</code> privilege.</div>
+            <div v-else-if="props.connectionForm.provider === 'mongodb'" class="space-y-4">
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Connection String (URI)</label>
+                <div class="relative">
+                  <input 
+                    v-model="props.connectionForm.mongodb.url" 
+                    placeholder="mongodb://localhost:27017" 
+                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 pl-3 pr-10 py-2 text-sm focus:border-violet-500 transition-colors font-mono" 
+                  />
+                  <div class="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 v-if="tempLoading" class="w-4 h-4 text-violet-500 animate-spin" />
+                    <Search v-else class="w-4 h-4 text-stone-600" />
+                  </div>
+                </div>
               </div>
 
-              <ul v-else-if="!tempDatabases.length && displayedTables.length" class="space-y-2">
-                <li v-for="table in displayedTables" :key="table" class="rounded-md border border-stone-800 bg-stone-900/40 px-3 py-2 text-sm">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <p class="text-stone-100 font-medium">{{ table }}</p>
-                      <p class="text-[10px] uppercase tracking-[0.3em] text-stone-500">Collection</p>
-                    </div>
-                    <div>
-                      <button @click="() => { const parts = table.split('.',2); if (parts.length === 2) { props.connectionForm.mongodb.database = parts[0]; props.connectionForm.mongodb.collection = parts[1]; } else { props.connectionForm.mongodb.collection = table } }" class="rounded-md border border-stone-700 px-2 py-1 text-[11px] text-stone-200 hover:border-violet-500">Use</button>
+              <!-- Live discovery -->
+              <div class="rounded-lg border border-stone-800 bg-stone-900/30 p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <p class="text-xs font-medium text-stone-400">
+                    {{ tempDatabases.length ? 'Discovered Databases' : 'Discovered Collections' }}
+                  </p>
+                  <span v-if="tempLoading" class="text-[10px] text-violet-400 animate-pulse">Scanning...</span>
+                </div>
+
+                <div v-if="tempError" class="rounded bg-rose-950/20 border border-rose-900/50 p-3">
+                  <div class="flex items-start gap-2">
+                    <AlertCircle class="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <div class="space-y-1">
+                      <p class="text-xs text-rose-400">{{ tempError }}</p>
+                      <p v-if="tempErrorCode" class="text-[10px] text-rose-500/70 font-mono">Code: {{ tempErrorCode }}</p>
                     </div>
                   </div>
+                </div>
 
-                  <div v-if="(tempSchema.previews || []).find(p => p.table === table)?.rows.length" class="mt-2 text-[10px] text-stone-200 font-mono">
-                    <div v-for="(row, idx) in (tempSchema.previews.find(p => p.table === table)?.rows || []).slice(0,2)" :key="`${table}-${idx}`">{{ formatRow(row) }}</div>
-                    <p v-if="(tempSchema.previews.find(p => p.table === table)?.rows || []).length > 2" class="text-[9px] text-stone-500">and more…</p>
+                <!-- Discovered Databases -->
+                <div v-else-if="tempDatabases.length" class="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                  <div v-for="db in tempDatabases" :key="db" class="group rounded-md border border-stone-800 bg-stone-900/50 px-3 py-2.5 hover:border-violet-500/50 transition-colors">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <Database class="w-3.5 h-3.5 text-stone-500 group-hover:text-violet-400 transition-colors" />
+                        <span class="text-sm text-stone-200 font-medium">{{ db }}</span>
+                      </div>
+                      <button 
+                        @click="() => { props.connectionForm.mongodb.database = db; }" 
+                        class="opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-violet-600/20 text-violet-300 text-[10px] font-medium hover:bg-violet-600/30 transition-all"
+                      >
+                        Select
+                      </button>
+                    </div>
                   </div>
-                </li>
-              </ul>
+                </div>
 
-              <p v-else class="text-xs text-stone-500">No collections discovered yet. Paste a MongoDB URI to scan the server.</p>
+                <!-- Discovered Collections (when no databases) -->
+                <div v-else-if="!tempDatabases.length && displayedTables.length" class="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                  <div v-for="table in displayedTables" :key="table" class="group rounded-md border border-stone-800 bg-stone-900/50 px-3 py-2.5 hover:border-violet-500/50 transition-colors">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <Database class="w-3.5 h-3.5 text-stone-500 group-hover:text-violet-400 transition-colors" />
+                        <span class="text-sm text-stone-200 font-medium">{{ table }}</span>
+                      </div>
+                      <button 
+                        @click="() => { const parts = table.split('.',2); if (parts.length === 2) { props.connectionForm.mongodb.database = parts[0]; props.connectionForm.mongodb.collection = parts[1]; } else { props.connectionForm.mongodb.collection = table } }" 
+                        class="opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-violet-600/20 text-violet-300 text-[10px] font-medium hover:bg-violet-600/30 transition-all"
+                      >
+                        Select
+                      </button>
+                    </div>
+                    
+                    <!-- Preview Data -->
+                    <div v-if="(tempSchema.previews || []).find(p => p.table === table)?.rows.length" class="mt-2 pl-5">
+                       <div class="text-[10px] text-stone-500 mb-1">Preview:</div>
+                       <div class="space-y-1">
+                          <div v-for="(row, idx) in (tempSchema.previews.find(p => p.table === table)?.rows || []).slice(0,2)" :key="`${table}-${idx}`" class="font-mono text-[9px] text-stone-400 bg-black/20 p-1 rounded truncate">
+                            {{ formatRow(row) }}
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else-if="!tempLoading" class="text-center py-6 text-stone-600">
+                  <Server class="w-8 h-8 mx-auto mb-2 opacity-20" />
+                  <p class="text-xs">Enter a valid connection string to discover databases.</p>
+                </div>
+              </div>
+
+              <!-- Manual Database/Collection Input -->
+              <div class="grid gap-4 md:grid-cols-2 mt-4">
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Database (Optional)</label>
+                  <input 
+                    v-model="props.connectionForm.mongodb.database" 
+                    placeholder="e.g. myDatabase" 
+                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  />
+                  <p class="text-[10px] text-stone-600">Leave empty to list all databases</p>
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Collection (Optional)</label>
+                  <input 
+                    v-model="props.connectionForm.mongodb.collection" 
+                    placeholder="e.g. users" 
+                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  />
+                  <p class="text-[10px] text-stone-600">Leave empty to list all collections</p>
+                </div>
+              </div>
             </div>
 
             <!-- Kusto -->
-            <div v-else class="grid gap-3 md:grid-cols-2">
-              <div class="flex flex-col gap-1">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Cluster</label>
-                <input v-model="props.connectionForm.kusto.cluster" placeholder="https://yourcluster.kusto.windows.net" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+            <!-- Kusto -->
+            <div v-else-if="props.connectionForm.provider === 'kusto'" class="space-y-4">
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Cluster URL</label>
+                <input 
+                  v-model="props.connectionForm.kusto.cluster" 
+                  placeholder="https://<cluster>.<region>.kusto.windows.net" 
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                />
               </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database</label>
-                <input v-model="props.connectionForm.kusto.database" placeholder="Samples" class="rounded-md border border-stone-800 bg-stone-900 px-3 py-2 text-sm" />
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database Name</label>
+                <input 
+                  v-model="props.connectionForm.kusto.database" 
+                  placeholder="e.g. MyDatabase" 
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Tenant ID</label>
+                <input 
+                  v-model="props.connectionForm.kusto.tenantId" 
+                  placeholder="Azure Tenant ID" 
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Client ID</label>
+                <input 
+                  v-model="props.connectionForm.kusto.clientId" 
+                  placeholder="Azure Client ID (App ID)" 
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Client Secret</label>
+                <input 
+                  v-model="props.connectionForm.kusto.clientSecret" 
+                  type="password"
+                  placeholder="Azure Client Secret" 
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                />
+              </div>
+
+              <!-- Helper Text -->
+              <div class="rounded-md bg-stone-900/50 p-3 text-[11px] text-stone-400 border border-stone-800 mt-2">
+                <p class="font-medium text-stone-300 mb-1">How to get these credentials:</p>
+                <ol class="list-decimal list-inside space-y-0.5">
+                  <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps" target="_blank" class="text-violet-400 hover:underline">Azure Portal > App registrations</a>.</li>
+                  <li>Create a new registration. Copy <strong>Client ID</strong> & <strong>Tenant ID</strong> from Overview.</li>
+                  <li>Go to <strong>Certificates & secrets</strong> to create a new <strong>Client Secret</strong>.</li>
+                  <li>In Kusto, add this App as a user in the <strong>Permissions</strong> tab.</li>
+                </ol>
               </div>
             </div>
 
-            <DialogFooter class="flex justify-end mt-6">
+            <DialogFooter class="flex justify-end gap-3 pt-4 border-t border-stone-800/50">
               <button
                 type="button"
                 @click="closeModal"
-                class="px-4 py-2 rounded-md border border-stone-700 text-stone-300 hover:bg-stone-800"
+                class="px-4 py-2 rounded-lg border border-stone-700 text-stone-300 text-sm font-medium hover:bg-stone-800 transition-colors"
               >
                 Cancel
               </button>
 
               <button
                 :disabled="!props.canAddConnection"
-                class="ml-2 rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                class="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-violet-900/20"
               >
-                Save connection
+                {{ props.isEditMode ? 'Update Connection' : 'Save Connection' }}
               </button>
             </DialogFooter>
 
@@ -360,112 +490,134 @@ const formatRow = (row: Record<string, unknown>) => {
       </Dialog>
     </div>
 
-    <!-- ╔══════════════════════════════════════╗ -->
-    <!--            SAVED CONNECTIONS           -->
-    <!-- ╚══════════════════════════════════════╝ -->
-    <div class="space-y-3 mt-4">
-      <h3 class="text-sm font-semibold text-stone-300">Saved connections</h3>
+    <!-- Saved Connections Grid -->
+    <div v-if="props.savedConnections.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <article
+        v-for="conn in props.savedConnections"
+        :key="conn.id"
+        class="group relative flex flex-col rounded-xl border border-stone-800 bg-stone-950/50 hover:bg-stone-900/40 hover:border-stone-700 transition-all duration-200 overflow-hidden"
+      >
+        <!-- Status Bar -->
+        <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-stone-800 to-transparent group-hover:from-violet-500 transition-colors duration-300"></div>
 
-      <div v-if="props.savedConnections.length" class="space-y-2">
-        <article
-          v-for="conn in props.savedConnections"
-          :key="conn.id"
-          class="rounded-md border border-stone-800 bg-stone-950 p-3 text-sm"
-        >
-            <div class="flex items-center justify-between">
+        <div class="p-5 flex flex-col h-full">
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-stone-900 border border-stone-800 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors">
+                <Database v-if="conn.provider === 'mysql'" class="w-5 h-5 text-blue-400" />
+                <Server v-else-if="conn.provider === 'mongodb'" class="w-5 h-5 text-green-400" />
+                <Activity v-else class="w-5 h-5 text-orange-400" />
+              </div>
               <div>
-                <p class="font-semibold text-stone-100">{{ conn.nickname }}</p>
-                <p class="text-xs text-stone-500">{{ conn.provider.toUpperCase() }}</p>
-              </div>
-
-              <div class="flex items-center gap-2">
-                <button
-                  @click="props.testConnection(conn)"
-                  :disabled="props.connectionStatusFor(conn.id)?.status === 'loading'"
-                  class="px-3 py-1 rounded-md border border-violet-600 text-xs font-semibold uppercase tracking-[0.3em] text-violet-300 hover:border-violet-400 disabled:opacity-40"
-                >
-                  Test
-                </button>
-                <button
-                  @click="props.deleteConnection(conn.id)"
-                  class="text-xs font-semibold uppercase tracking-[0.3em] text-rose-400 hover:text-rose-300"
-                >
-                  Remove
-                </button>
+                <h3 class="font-semibold text-stone-100 text-base leading-tight">{{ conn.nickname }}</h3>
+                <p class="text-xs text-stone-500 mt-1 font-mono uppercase tracking-wider">{{ conn.provider }}</p>
               </div>
             </div>
 
-          <div class="mt-2 flex items-center justify-between text-xs text-stone-400">
-            <div class="flex items-center gap-2">
-              <span
-                :class="[
-                  'h-2 w-2 rounded-full',
-                  props.statusDotClasses(props.connectionStatusFor(conn.id)?.status),
-                ]"
-              />
-              <span class="font-semibold text-stone-200">
-                {{ props.statusLabel(props.connectionStatusFor(conn.id)) }}
-              </span>
+            <div class="flex items-center gap-1">
+              <button
+                @click="props.testConnection(conn)"
+                :disabled="props.connectionStatusFor(conn.id)?.status === 'loading'"
+                class="p-2 rounded-md text-stone-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors disabled:opacity-50"
+                title="Test Connection"
+              >
+                <Play class="w-4 h-4" :class="{ 'animate-pulse': props.connectionStatusFor(conn.id)?.status === 'loading' }" />
+              </button>
+              <button
+                @click="() => { props.editConnection(conn); open = true; }"
+                class="p-2 rounded-md text-stone-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                title="Edit Connection"
+              >
+                <Edit class="w-4 h-4" />
+              </button>
+              <button
+                @click="props.deleteConnection(conn.id)"
+                class="p-2 rounded-md text-stone-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                title="Remove Connection"
+              >
+                <Trash2 class="w-4 h-4" />
+              </button>
             </div>
-
-            <span>{{ props.connectionStatusFor(conn.id)?.tables.length ?? 0 }} tables</span>
           </div>
 
-          <p
-            v-if="props.connectionStatusFor(conn.id)?.status === 'error'"
-            class="mt-1 text-xs text-rose-400"
-          >
-            <span class="font-semibold text-rose-300 mr-1">Reason:</span>
-            {{ props.connectionStatusFor(conn.id)?.error ?? 'Connection failed unexpectedly.' }}
-            <div v-if="props.connectionStatusFor(conn.id)?.errorCode === 'LIST_DATABASES_DENIED'" class="mt-1 text-[10px] text-stone-400">
-              Insufficient privileges to list databases. Add the target database to the connection (e.g. append <code>/your_db</code> to the URI) or grant the user the <code>listDatabases</code> privilege.
-            </div>
-          </p>
-
-          <p v-if="conn.description" class="mt-2 text-xs text-stone-500">
+          <p v-if="conn.description" class="text-sm text-stone-400 mb-4 line-clamp-2">
             {{ conn.description }}
           </p>
 
-          <pre class="mt-2 rounded-md border border-stone-800 bg-stone-900/50 px-3 py-2 text-[10px] text-stone-300">
-{{ props.summaryFor(conn) }}
-          </pre>
-
-          <div
-            v-if="props.connectionStatusFor(conn.id)?.previews?.length"
-            class="mt-3 space-y-2 text-[10px] text-stone-100"
-          >
-            <div
-              v-for="preview in props.connectionStatusFor(conn.id)?.previews"
-              :key="`${conn.id}-${preview.table}`"
-              class="rounded-md border border-stone-800 bg-stone-900/50 p-3 space-y-1"
-            >
-              <p class="text-[9px] uppercase tracking-[0.4em] text-stone-500">
-                {{ preview.table }}
-              </p>
-
-              <div v-if="preview.rows.length" class="space-y-1">
-                <div
-                  v-for="(row, rowIndex) in preview.rows.slice(0, 2)"
-                  :key="`${conn.id}-${preview.table}-${rowIndex}`"
-                  class="font-mono text-[10px] text-stone-200 leading-tight">
-                  {{ formatRow(row) }}
+          <div class="mt-auto pt-4 border-t border-stone-800/50">
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2">
+                <div class="relative flex h-2.5 w-2.5">
+                  <span 
+                    v-if="props.connectionStatusFor(conn.id)?.status === 'connected'"
+                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+                  ></span>
+                  <span 
+                    :class="[
+                      'relative inline-flex rounded-full h-2.5 w-2.5',
+                      props.statusDotClasses(props.connectionStatusFor(conn.id)?.status)
+                    ]"
+                  ></span>
                 </div>
-                <p
-                  v-if="preview.rows.length > 2"
-                  class="text-[9px] text-stone-500"
-                >
-                  and {{ preview.rows.length - 2 }} more rows…
-                </p>
+                <span class="font-medium text-stone-300">
+                  {{ props.statusLabel(props.connectionStatusFor(conn.id)) }}
+                </span>
               </div>
-              <p v-else class="text-[9px] text-stone-500 italic">No rows yet.</p>
+              <span class="text-stone-500 font-mono">
+                {{ props.connectionStatusFor(conn.id)?.tables.length ?? 0 }} tables
+              </span>
+            </div>
+
+            <!-- Error Message -->
+            <div v-if="props.connectionStatusFor(conn.id)?.status === 'error'" class="mt-3 rounded bg-rose-950/20 border border-rose-900/30 p-2">
+              <p class="text-[10px] text-rose-400 leading-relaxed">
+                <span class="font-bold text-rose-300">Error:</span>
+                {{ props.connectionStatusFor(conn.id)?.error ?? 'Connection failed.' }}
+              </p>
+            </div>
+
+            <!-- Connection Details Code Block -->
+            <div class="mt-3 group/code relative">
+              <pre class="rounded-lg border border-stone-800 bg-black/40 px-3 py-2 text-[10px] text-stone-400 font-mono overflow-x-auto custom-scrollbar">{{ props.summaryFor(conn) }}</pre>
             </div>
           </div>
-        </article>
-      </div>
+        </div>
+      </article>
+    </div>
 
-      <p v-else class="text-xs text-stone-500">
-        No connections saved yet. Add one to begin querying in the Pegasus Chat editor.
+    <!-- Empty State -->
+    <div v-else class="flex flex-col items-center justify-center py-24 px-4 text-center rounded-2xl border border-dashed border-stone-800 bg-stone-900/20">
+      <div class="p-4 rounded-full bg-stone-900/50 mb-4">
+        <Database class="w-8 h-8 text-stone-600" />
+      </div>
+      <h3 class="text-lg font-semibold text-stone-200 mb-2">No connections yet</h3>
+      <p class="text-sm text-stone-500 max-w-sm mb-6">
+        Add a database connection to start querying your data. We support MySQL, MongoDB, and Kusto.
       </p>
+      <button 
+        @click="open = true"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm font-medium hover:bg-stone-700 hover:text-white transition-colors"
+      >
+        <Plus class="w-4 h-4" />
+        Add your first connection
+      </button>
     </div>
   </div>
 </template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #44403c;
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #57534e;
+}
+</style>

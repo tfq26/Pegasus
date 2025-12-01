@@ -43,8 +43,8 @@ export async function fetchConnectionSchema(entry: ConnectionEntry) {
 
   if (!response.ok || body.error) {
     const err = new Error(body.error ?? 'Unable to load schema')
-    // Attach the backend error code (if present) for richer UI messages
-    ;(err as any).code = body.code ?? body.code === 0 ? body.code : undefined
+      // Attach the backend error code (if present) for richer UI messages
+      ; (err as any).code = body.code ?? body.code === 0 ? body.code : undefined
     throw err
   }
 
@@ -104,4 +104,96 @@ export async function fetchTableEntries({
     hasNext: rows.length === limit,
     page: actualPage,
   }
+}
+
+export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = []) {
+  const response = await fetch(`${QUERY_API_URL}/ai/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      prompt,
+      connectionId,
+      context
+    }),
+  })
+
+  const body = await response.json()
+
+  if (!response.ok || body.error) {
+    throw new Error(body.error ?? 'AI generation failed')
+  }
+
+  return body.query
+}
+
+export async function analyzeResults(question: string, results: any[], query: string) {
+  const response = await fetch(`${QUERY_API_URL}/ai/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      question,
+      results,
+      query
+    }),
+  })
+
+  const body = await response.json()
+
+  if (!response.ok || body.error) {
+    throw new Error(body.error ?? 'AI analysis failed')
+  }
+
+  return body.analysis
+}
+
+export async function searchData(term: string, connectionId: string) {
+  const response = await fetch(`${QUERY_API_URL}/ai/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      term,
+      connectionId
+    }),
+  })
+
+  const body = await response.json()
+
+  if (!response.ok || body.error) {
+    throw new Error(body.error ?? 'Search failed')
+  }
+
+  return body
+}
+
+export async function getAIModels() {
+  const response = await fetch(`${QUERY_API_URL}/ai/models`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  })
+
+  const body = await response.json()
+
+  if (!response.ok || body.error) {
+    throw new Error(body.error ?? 'Failed to list models')
+  }
+
+  return body.models
+}
+
+export async function fetchSettings() {
+  const response = await fetch(`${QUERY_API_URL}/settings`, {
+    credentials: 'include',
+  })
+
+  const body = await response.json()
+
+  if (!response.ok) {
+    throw new Error('Failed to load settings')
+  }
+
+  return body.settings || {}
 }

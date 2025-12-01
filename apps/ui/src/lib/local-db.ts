@@ -5,7 +5,7 @@ import Dexie from 'dexie';
 
 export interface Conversation {
   id: string;
-  messages: Array<{ role: string; content: string; timestamp: number }>;
+  messages: any; // Can be Array<Message> or EncryptedData
   updatedAt: number;
 }
 

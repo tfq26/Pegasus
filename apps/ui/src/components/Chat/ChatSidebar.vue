@@ -15,7 +15,7 @@
 }
 <template>
   <transition name="sidebar-slide">
-    <aside v-if="visible" class="w-64 shrink-0 border-r border-stone-800 overflow-y-auto relative bg-stone-950">
+    <aside v-if="visible" class="w-auto shrink-0 border-r border-stone-800 overflow-y-auto relative bg-stone-950">
       <button
         class="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-l-lg bg-stone-900/80 text-stone-400 hover:text-violet-400 hover:bg-stone-800 transition-all"
         @click="$emit('toggle')"
@@ -24,7 +24,12 @@
         <svg v-if="side === 'left'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
         <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
       </button>
-      <Explorer />
+      <Explorer 
+        :connections="connections"
+        :selected-connection-id="selectedConnectionId"
+        @update:selected-connection-id="$emit('update:selectedConnectionId', $event)"
+        @edit-table="(conn, table) => $emit('edit-table', conn, table)"
+      />
     </aside>
   </transition>
 </template>
@@ -32,8 +37,21 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import Explorer from '../Explorer.vue'
+import type { ConnectionEntry } from '@/lib/db-connections'
 
-const props = withDefaults(defineProps<{ visible?: boolean }>(), { visible: true })
+const props = withDefaults(defineProps<{ 
+  visible?: boolean
+  side?: 'left' | 'right'
+  connections: ConnectionEntry[]
+  selectedConnectionId: string
+}>(), { 
+  visible: true,
+  side: 'left'
+})
 
-const side = ref<'left' | 'right'>('left') // 'left' or 'right'
+defineEmits<{
+  'toggle': []
+  'update:selectedConnectionId': [value: string]
+  'edit-table': [connection: ConnectionEntry, table: string]
+}>()
 </script>

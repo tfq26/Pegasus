@@ -182,7 +182,7 @@ const links = [
   { to: '/', label: 'Home' },
   { to: '/about', label: 'About' },
   { to: '/dashboard', label: 'Dashboard' },
-  { to: '/chat', label: 'Chat' },
+  { to: '/query', label: 'Query' },
 ]
 
 const showDropdown = ref(false)

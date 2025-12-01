@@ -1,0 +1,19 @@
+{
+  "name": "pegasus",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/bun": "latest",
+    "@types/jsonwebtoken": "^9.0.10",
+    "jsonwebtoken": "^9.0.2",
+    "playwright": "^1.57.0"
+  },
+  "scripts": {
+    "start": "bun run-apps.js"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

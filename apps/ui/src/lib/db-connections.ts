@@ -17,6 +17,9 @@ export type MongoConfig = {
 export type KustoConfig = {
   cluster: string
   database: string
+  tenantId?: string
+  clientId?: string
+  clientSecret?: string
 }
 
 export type ConnectionEntry = {

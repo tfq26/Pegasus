@@ -27,7 +27,8 @@ export class MongoAdapter extends DatabaseAdapter {
       try {
         payload = JSON.parse(query)
       } catch (error) {
-        throw new Error('MongoDB query must be a JSON payload')
+        console.error("Failed to parse MongoDB query:", query)
+        throw new Error(`MongoDB query must be a valid JSON payload. Received: ${query.substring(0, 100)}...`)
       }
     }
 
@@ -36,12 +37,28 @@ export class MongoAdapter extends DatabaseAdapter {
       skip = 0,
       limit = 1000,
       collection: overrideCollection,
+      pipeline,
     } = payload ?? {}
 
-    const targetCollection = overrideCollection
-      ? this.db.collection(overrideCollection)
-      : this.collection
+    // Determine target collection
+    let targetCollection
+    if (overrideCollection) {
+      if (!this.db) {
+        throw new Error('No database selected. Please specify a database in your connection settings.')
+      }
+      targetCollection = this.db.collection(overrideCollection)
+    } else if (this.collection) {
+      targetCollection = this.collection
+    } else {
+      throw new Error('No collection specified. MongoDB queries must include a "collection" field.')
+    }
 
+    // Handle aggregation pipeline
+    if (pipeline && Array.isArray(pipeline)) {
+      return targetCollection.aggregate(pipeline).toArray()
+    }
+
+    // Handle regular find query
     return targetCollection
       .find(filter)
       .skip(Math.max(0, Number(skip)))

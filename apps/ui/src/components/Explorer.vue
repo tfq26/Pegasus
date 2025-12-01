@@ -1,10 +1,29 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import { ChevronDown, Database } from 'lucide-vue-next'
 import Pagination from '@/components/ui/pagination/Pagination.vue'
+import JsonViewer from '@/components/JsonViewer.vue'
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { fetchConnectionSchema, fetchTableEntries } from '@/lib/api'
+
+const props = defineProps<{
+  connections: ConnectionEntry[]
+  selectedConnectionId: string
+}>()
+
+const emit = defineEmits<{
+  'update:selectedConnectionId': [value: string]
+  'edit-table': [connection: ConnectionEntry, table: string]
+}>()
 
 type ChatItem = {
   id: string
@@ -40,7 +59,7 @@ type ViewerState = {
 
 const sidebarTabs = ['data', 'chats', 'queries'] as const
 const activeTab = ref<typeof sidebarTabs[number]>('data')
-const connections = ref<ConnectionEntry[]>([])
+// connections ref removed in favor of props
 const connectionSchemas = ref<Record<string, ConnectionSchemaState>>({})
 const viewer = ref<ViewerState>({
   open: false,
@@ -53,6 +72,8 @@ const viewer = ref<ViewerState>({
   hasMore: false,
   error: '',
 })
+
+const expandedRows = ref<Set<number>>(new Set())
 
 const chats = ref<ChatItem[]>([
   {
@@ -94,7 +115,7 @@ const refreshSchemas = async () => {
   if (typeof window === 'undefined') return
   const next: Record<string, ConnectionSchemaState> = {}
 
-  connections.value.forEach((conn) => {
+  props.connections.forEach((conn) => {
     next[conn.id] = {
       status: 'loading',
       tables: [],
@@ -104,7 +125,7 @@ const refreshSchemas = async () => {
   connectionSchemas.value = next
 
   await Promise.all(
-    connections.value.map(async (conn) => {
+    props.connections.map(async (conn) => {
       try {
         const schema = await fetchConnectionSchema(conn)
         connectionSchemas.value[conn.id] = {
@@ -126,45 +147,13 @@ const refreshSchemas = async () => {
   )
 }
 
-const loadSavedConnections = () => {
-  if (typeof window === 'undefined') {
-    connections.value = [...defaultConnections]
-    refreshSchemas()
-    return
-  }
+watch(() => props.connections, refreshSchemas, { deep: true })
 
-  const stored = window.localStorage.getItem(CONNECTION_STORAGE_KEY)
-  if (!stored) {
-    connections.value = [...defaultConnections]
-    window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connections.value))
-    refreshSchemas()
-    return
-  }
-
-  try {
-    const parsed = JSON.parse(stored)
-    if (Array.isArray(parsed)) {
-      // Accept an empty array as a valid saved state (user may intentionally remove all connections)
-      connections.value = parsed
-      refreshSchemas()
-      return
-    }
-  } catch {
-    // fall back to defaults
-  }
-
-  connections.value = [...defaultConnections]
-  window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connections.value))
+onMounted(() => {
   refreshSchemas()
-}
+})
 
-const handleStorageEvent = (event: StorageEvent) => {
-  if (event.key === CONNECTION_STORAGE_KEY) {
-    loadSavedConnections()
-  }
-}
 
-const handleConnectionsUpdated = () => loadSavedConnections()
 
 const openViewer = (connection: ConnectionEntry, table: string) => {
   viewer.value = {
@@ -178,7 +167,18 @@ const openViewer = (connection: ConnectionEntry, table: string) => {
     hasMore: false,
     error: '',
   }
+  expandedRows.value = new Set()
   loadViewerPage(1)
+}
+
+const toggleRowExpansion = (index: number) => {
+  if (expandedRows.value.has(index)) {
+    expandedRows.value.delete(index)
+  } else {
+    expandedRows.value.add(index)
+  }
+  // Trigger reactivity
+  expandedRows.value = new Set(expandedRows.value)
 }
 
 const expandedDbByConn = ref<Record<string, string | null>>({})
@@ -246,6 +246,7 @@ const loadViewerPage = async (page: number) => {
   if (!viewer.value.connection || !viewer.value.table) return
   viewer.value.loading = true
   viewer.value.error = ''
+  expandedRows.value = new Set() // Reset expanded rows when changing pages
 
   try {
     const result = await fetchTableEntries({
@@ -269,11 +270,8 @@ const closeViewer = () => {
   viewer.value.open = false
 }
 
-const handleEditTable = (table: string) => {
-  toast('Edit values', {
-    description: `Use the query editor to adjust rows inside ${table}.`,
-    position: 'top-right',
-  })
+const handleEditTable = (conn: ConnectionEntry, table: string) => {
+  emit('edit-table', conn, table)
 }
 
 const handleDeleteTable = (table: string) => {
@@ -292,6 +290,10 @@ const viewerColumns = computed(() => {
   return Array.from(columns)
 })
 
+const isJsonValue = (value: unknown): boolean => {
+  return value !== null && value !== undefined && typeof value === 'object'
+}
+
 const formatCellValue = (value: unknown) => {
   if (value === undefined || value === null) return '—'
   if (typeof value === 'object') {
@@ -305,14 +307,12 @@ const formatCellValue = (value: unknown) => {
 }
 
 onMounted(() => {
-  loadSavedConnections()
-  window.addEventListener('storage', handleStorageEvent)
-  window.addEventListener('pegasus:connections-updated', handleConnectionsUpdated)
+  refreshSchemas()
 })
 
+// Event listeners removed as connection updates are handled via props
 onBeforeUnmount(() => {
-  window.removeEventListener('storage', handleStorageEvent)
-  window.removeEventListener('pegasus:connections-updated', handleConnectionsUpdated)
+  // cleanup if needed
 })
 </script>
 
@@ -336,99 +336,130 @@ onBeforeUnmount(() => {
 
     <div class="flex-1 overflow-y-auto p-2 space-y-3">
       <template v-if="activeTab === 'data'">
-        <div v-if="connections.length" class="space-y-3">
-          <article
-            v-for="conn in connections"
-            :key="conn.id"
-            class="rounded-md border border-stone-800 bg-stone-950 p-3 space-y-2"
-          >
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="font-semibold text-stone-100">{{ conn.nickname }}</p>
-                <p class="text-xs text-stone-500">{{ conn.provider.toUpperCase() }}</p>
-              </div>
-              <div class="flex items-center gap-2 text-xs text-stone-400">
-                <span :class="['h-2 w-2 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
-                <span>{{ statusLabel(schemaFor(conn.id)) }}</span>
-                <span class="text-[11px] text-stone-500">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
-              </div>
-            </div>
-            <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-rose-400">
-              {{ schemaFor(conn.id)?.error }}
-            </p>
-
-            <!-- If the schema includes discovered databases and the saved connection has no specific database, show databases to expand -->
-            <div v-if="schemaFor(conn.id)?.databases && conn.provider === 'mongodb' && !(conn.mongodb && conn.mongodb.database)">
-              <ul class="space-y-1">
-                <li
-                  v-for="db in schemaFor(conn.id)?.databases"
-                  :key="`${conn.id}-db-${db}`"
-                  class="group rounded-md border border-stone-800 bg-stone-900/30 px-3 py-2 transition hover:border-violet-500 flex items-center justify-between"
+        <div class="space-y-3">
+          <!-- Connection Selector -->
+          <div class="px-1">
+            <Select 
+              :model-value="selectedConnectionId" 
+              @update:model-value="emit('update:selectedConnectionId', $event)"
+            >
+              <SelectTrigger class="w-full h-9 text-xs bg-stone-950 border-stone-800">
+                <SelectValue placeholder="Select a connection" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="conn in connections"
+                  :key="conn.id"
+                  :value="conn.id"
                 >
                   <div class="flex items-center gap-2">
-                    <button @click="loadTablesForDatabase(conn, db)" class="flex items-center gap-2 text-left">
-                      <span
-                        class="text-stone-400 transition-transform"
-                        :style="{ transform: expandedDbByConn[conn.id] === db ? 'rotate(90deg)' : 'rotate(0deg)' }"
-                      >
-                        ▸
-                      </span>
-                      <div class="flex flex-col">
-                        <span class="font-medium text-stone-100 truncate">{{ db }}</span>
-                        <span class="text-[10px] uppercase tracking-[0.3em] text-stone-500">Database</span>
-                      </div>
-                    </button>
+                    <Database class="w-3 h-3 text-stone-500" />
+                    <span class="font-medium">{{ conn.nickname }}</span>
+                    <span class="text-[10px] text-stone-500 uppercase ml-auto">{{ conn.provider }}</span>
                   </div>
-                  <div class="text-xs text-stone-400">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <!-- Selected Connection Schema -->
+          <div v-if="selectedConnectionId && connections.find(c => c.id === selectedConnectionId)" class="space-y-3">
+            <article
+              v-for="conn in [connections.find(c => c.id === selectedConnectionId)!]"
+              :key="conn.id"
+              class="rounded-md border border-stone-800 bg-stone-950 p-3 space-y-2"
+            >
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="font-semibold text-stone-100">{{ conn.nickname }}</p>
+                  <p class="text-xs text-stone-500">{{ conn.provider.toUpperCase() }}</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-stone-400">
+                  <span :class="['h-2 w-2 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
+                  <span>{{ statusLabel(schemaFor(conn.id)) }}</span>
+                  <span class="text-[11px] text-stone-500">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
+                </div>
+              </div>
+              <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-rose-400">
+                {{ schemaFor(conn.id)?.error }}
+              </p>
+
+              <!-- If the schema includes discovered databases and the saved connection has no specific database, show databases to expand -->
+              <div v-if="schemaFor(conn.id)?.databases && conn.provider === 'mongodb' && !(conn.mongodb && conn.mongodb.database)">
+                <ul class="space-y-1">
+                  <li
+                    v-for="db in schemaFor(conn.id)?.databases"
+                    :key="`${conn.id}-db-${db}`"
+                    class="group rounded-md border border-stone-800 bg-stone-900/30 px-3 py-2 transition hover:border-violet-500 flex items-center justify-between"
+                  >
+                    <div class="flex items-center gap-2">
+                      <button @click="loadTablesForDatabase(conn, db)" class="flex items-center gap-2 text-left">
+                        <span
+                          class="text-stone-400 transition-transform"
+                          :style="{ transform: expandedDbByConn[conn.id] === db ? 'rotate(90deg)' : 'rotate(0deg)' }"
+                        >
+                          ▸
+                        </span>
+                        <div class="flex flex-col">
+                          <span class="font-medium text-stone-100 truncate">{{ db }}</span>
+                          <span class="text-[10px] uppercase tracking-[0.3em] text-stone-500">Database</span>
+                        </div>
+                      </button>
+                    </div>
+                    <div class="text-xs text-stone-400">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
+                  </li>
+                </ul>
+                <p class="text-xs text-stone-500 mt-2">Select a database to list its collections.</p>
+              </div>
+
+              <!-- Otherwise show tables/collections (either from a DB-scoped probe or legacy schema) -->
+              <ul v-else-if="schemaFor(conn.id)?.tables.length" class="space-y-1">
+                <li
+                  v-for="table in schemaFor(conn.id)?.tables"
+                  :key="`${conn.id}-${table}`"
+                  class="group rounded-md border border-stone-800 bg-stone-900/40 px-3 py-2 transition hover:border-violet-500"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex flex-col">
+                      <span class="font-medium text-stone-100 truncate">{{ table }}</span>
+                      <span class="text-[10px] uppercase tracking-[0.3em] text-stone-500">
+                        {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                      <button
+                        @click="openViewer(conn, table)"
+                        class="rounded-md border border-stone-700 p-2 text-stone-200 hover:border-violet-500 hover:bg-stone-800 transition-colors"
+                        title="View entries"
+                      >
+                        <img src="/icons/eye/eye-white.svg" alt="View" class="w-4 h-4" />
+                      </button>
+                      <button
+                        @click="handleEditTable(conn, table)"
+                        class="rounded-md border border-stone-700 p-2 text-stone-200 hover:border-violet-500 hover:bg-stone-800 transition-colors"
+                        title="Edit values"
+                      >
+                        <img src="/icons/edit/edit-white.svg" alt="Edit" class="w-4 h-4" />
+                      </button>
+                      <button
+                        @click="handleDeleteTable(table)"
+                        class="rounded-md border border-stone-700 p-2 text-stone-200 hover:border-rose-500 hover:bg-stone-800 transition-colors"
+                        title="Delete table"
+                      >
+                        <img src="/icons/delete/delete-white.svg" alt="Delete" class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </li>
               </ul>
-              <p class="text-xs text-stone-500 mt-2">Select a database to list its collections.</p>
-            </div>
 
-            <!-- Otherwise show tables/collections (either from a DB-scoped probe or legacy schema) -->
-            <ul v-else-if="schemaFor(conn.id)?.tables.length" class="space-y-1">
-              <li
-                v-for="table in schemaFor(conn.id)?.tables"
-                :key="`${conn.id}-${table}`"
-                class="group rounded-md border border-stone-800 bg-stone-900/40 px-3 py-2 transition hover:border-violet-500"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex flex-col">
-                    <span class="font-medium text-stone-100 truncate">{{ table }}</span>
-                    <span class="text-[10px] uppercase tracking-[0.3em] text-stone-500">
-                      {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
-                    </span>
-                  </div>
-                  <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
-                    <button
-                      @click="openViewer(conn, table)"
-                      class="rounded-md border border-stone-700 px-2 py-1 text-[11px] text-stone-200 hover:border-violet-500"
-                    >
-                      View entries
-                    </button>
-                    <button
-                      @click="handleEditTable(table)"
-                      class="rounded-md border border-stone-700 px-2 py-1 text-[11px] text-stone-200 hover:border-violet-500"
-                    >
-                      Edit values
-                    </button>
-                    <button
-                      @click="handleDeleteTable(table)"
-                      class="rounded-md border border-stone-700 px-2 py-1 text-[11px] text-stone-200 hover:border-rose-500"
-                    >
-                      Delete table
-                    </button>
-                  </div>
-                </div>
-              </li>
-            </ul>
-
-            <p v-else class="text-xs text-stone-500">No tables or collections available yet.</p>
-          </article>
+              <p v-else class="text-xs text-stone-500">No tables or collections available yet.</p>
+            </article>
+          </div>
+          <p v-else class="text-xs text-stone-500 px-2">
+            Select a connection to browse its schema.
+          </p>
         </div>
-        <p v-else class="text-xs text-stone-500">
-          Define connections in Settings → Database Connections to browse schema here.
-        </p>
       </template>
 
       <template v-else-if="activeTab === 'chats'">
@@ -499,10 +530,11 @@ onBeforeUnmount(() => {
           <div v-else-if="viewer.error" class="rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
             {{ viewer.error }}
           </div>
-          <div v-else-if="viewer.entries.length" class="max-h-72 overflow-auto rounded-md border border-stone-800 bg-stone-900/60">
+          <div v-else-if="viewer.entries.length" class="max-h-96 overflow-auto rounded-md border border-stone-800 bg-stone-900/60">
             <table class="w-full table-auto text-xs text-stone-200">
               <thead class="text-left text-[11px] uppercase tracking-[0.2em] text-stone-400">
                 <tr>
+                  <th class="px-2 py-1 sticky top-0 bg-stone-900 w-8"></th>
                   <th
                     v-for="col in viewerColumns"
                     :key="col"
@@ -513,19 +545,41 @@ onBeforeUnmount(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr
-                  v-for="(entry, index) in viewer.entries"
-                  :key="`row-${index}`"
-                  class="border-t border-stone-800"
-                >
-                  <td
-                    v-for="col in viewerColumns"
-                    :key="`cell-${index}-${col}`"
-                    class="px-2 py-1 align-top"
+                <template v-for="(entry, index) in viewer.entries" :key="`row-${index}`">
+                  <!-- Main row -->
+                  <tr
+                    class="border-t border-stone-800 hover:bg-stone-800/30 cursor-pointer transition-colors"
+                    @click="toggleRowExpansion(index)"
                   >
-                    {{ formatCellValue(entry[col]) }}
-                  </td>
-                </tr>
+                    <td class="px-2 py-1 align-top">
+                      <ChevronDown
+                        class="w-4 h-4 text-stone-500 transition-transform"
+                        :class="{ 'rotate-0': expandedRows.has(index), '-rotate-90': !expandedRows.has(index) }"
+                      />
+                    </td>
+                    <td
+                      v-for="col in viewerColumns"
+                      :key="`cell-${index}-${col}`"
+                      class="px-2 py-1 align-top"
+                    >
+                      <JsonViewer v-if="isJsonValue(entry[col])" :data="entry[col]" :max-depth="1" />
+                      <span v-else class="text-stone-200">{{ formatCellValue(entry[col]) }}</span>
+                    </td>
+                  </tr>
+                  
+                  <!-- Expanded row -->
+                  <tr v-if="expandedRows.has(index)" class="border-t border-stone-800 bg-stone-900/80">
+                    <td :colspan="viewerColumns.length + 1" class="px-4 py-3">
+                      <div class="rounded-lg border border-stone-700 bg-stone-950/50 p-4">
+                        <div class="flex items-center justify-between mb-3">
+                          <h4 class="text-sm font-semibold text-violet-400">Full Document</h4>
+                          <span class="text-[10px] text-stone-500">Row {{ index + 1 }}</span>
+                        </div>
+                        <JsonViewer :data="entry" :max-depth="10" />
+                      </div>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
