@@ -3,6 +3,12 @@ import { ref, computed } from 'vue'
 import { X, Maximize2, Minimize2, PanelBottom, PanelRight } from 'lucide-vue-next'
 import JsonViewer from '@/components/JsonViewer.vue'
 import ResultsTable from './ResultsTable.vue'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 
 const props = defineProps<{
   visible: boolean
@@ -11,10 +17,10 @@ const props = defineProps<{
   error: string
   lastQuery: string
   loading: boolean
-  analysis?: string
+  analysis?: any
   isAnalyzing?: boolean
   history?: any[]
-  ambiguity?: { message: string; choices: string[] }
+  ambiguity?: { message: string; choices: string[]; reasoning?: string }
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +28,7 @@ const emit = defineEmits<{
   'close': []
   'analyze': []
   'resolve-ambiguity': [choice: string]
+  'create-dashboard-element': []
 }>()
 
 const size = ref(300) // Default size in pixels
@@ -29,6 +36,7 @@ const isResizing = ref(false)
 const isMaximized = ref(false)
 const activeTab = ref<'results' | 'messages' | 'history'>('results')
 const viewMode = ref<'table' | 'json'>('table')
+const showReasoningDialog = ref(false)
 
 const startResize = (e: MouseEvent) => {
   isResizing.value = true
@@ -181,11 +189,26 @@ if (typeof window !== 'undefined') {
           </div>
         </div>
 
-        <div v-else-if="error" class="rounded-lg border border-rose-500/50 bg-rose-500/10 p-4">
+        <div v-else-if="error" class="rounded-lg border border-rose-500/50 bg-rose-500/10 p-4 space-y-3">
           <div class="flex items-start gap-2">
             <div class="text-rose-400 text-sm font-mono">{{ error }}</div>
           </div>
+          
+          <!-- Show reasoning if available in the error context (passed via props or parsed from error) -->
+          <div 
+            v-if="ambiguity?.reasoning" 
+            class="text-xs text-stone-400 border-t border-rose-500/20 pt-2 cursor-pointer hover:text-stone-300 transition-colors"
+            @click="showReasoningDialog = true"
+          >
+            <span class="font-semibold text-stone-300">AI Reasoning:</span> 
+            <span class="line-clamp-2">{{ ambiguity.reasoning }}</span>
+            <span class="text-[10px] text-violet-400 mt-1 block">Click to view full log</span>
+          </div>
         </div>
+
+        <!-- ... (rest of the template) ... -->
+
+
 
         <div v-else-if="ambiguity" class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4">
           <div class="flex items-start gap-3">
@@ -218,11 +241,6 @@ if (typeof window !== 'undefined') {
         </div>
 
         <div v-else-if="result" class="space-y-3">
-          <div v-if="lastQuery" class="rounded-lg border border-stone-800 bg-stone-900/50 p-3">
-            <div class="text-[10px] uppercase tracking-wider text-stone-500 mb-2">Last Query</div>
-            <pre class="text-xs font-mono text-stone-300 whitespace-pre-wrap">{{ lastQuery }}</pre>
-          </div>
-
           <!-- Analysis Section -->
           <div v-if="analysis" class="rounded-lg border border-violet-500/30 bg-violet-500/10 p-4">
             <div class="flex items-center justify-between mb-2">
@@ -235,59 +253,84 @@ if (typeof window !== 'undefined') {
                 {{ isAnalyzing ? 'Regenerating...' : 'Regenerate' }}
               </button>
             </div>
-            <div class="text-sm text-stone-200 leading-relaxed whitespace-pre-wrap">{{ analysis }}</div>
+            
+            <div v-if="analysis.extractedList && analysis.extractedList.length" class="mb-3">
+              <div class="text-xs font-semibold text-violet-300 mb-1">Extracted Answer:</div>
+              <div class="flex flex-wrap gap-2">
+                <span 
+                  v-for="(item, idx) in analysis.extractedList" 
+                  :key="idx"
+                  class="px-2 py-1 rounded bg-violet-500/20 text-violet-200 text-xs border border-violet-500/30"
+                >
+                  {{ item }}
+                </span>
+              </div>
+            </div>
+            
+            <div class="text-sm text-stone-200 leading-relaxed whitespace-pre-wrap">{{ analysis.summary || analysis }}</div>
           </div>
 
-          <div v-else class="flex justify-end">
-            <button
-              @click="emit('analyze')"
-              :disabled="isAnalyzing"
-              class="flex items-center gap-2 px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <div v-if="isAnalyzing" class="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>
-              <span>{{ isAnalyzing ? 'Analyzing...' : 'Analyze with AI' }}</span>
-            </button>
-          </div>
-
-          <div class="rounded-lg border border-stone-800 bg-stone-900/50 p-4 flex flex-col min-h-0">
-            <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center justify-between mb-3">
               <div class="text-[10px] uppercase tracking-wider text-stone-500">Query Results</div>
               
-              <!-- View Toggle -->
-              <div class="flex items-center gap-1 bg-stone-950 rounded p-0.5 border border-stone-800" v-if="Array.isArray(result)">
+              <div class="flex items-center gap-2">
+                <!-- Analyze Button -->
                 <button
-                  @click="viewMode = 'table'"
-                  class="px-2 py-0.5 text-[10px] font-medium rounded transition-colors"
-                  :class="viewMode === 'table' ? 'bg-violet-600 text-white' : 'text-stone-400 hover:text-stone-200'"
+                  v-if="!analysis"
+                  @click="emit('analyze')"
+                  :disabled="isAnalyzing"
+                  class="flex items-center gap-2 px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Table
+                  <div v-if="isAnalyzing" class="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>
+                  <span>{{ isAnalyzing ? 'Analyzing...' : 'Analyze with AI' }}</span>
                 </button>
-                <button
-                  @click="viewMode = 'json'"
-                  class="px-2 py-0.5 text-[10px] font-medium rounded transition-colors"
-                  :class="viewMode === 'json' ? 'bg-violet-600 text-white' : 'text-stone-400 hover:text-stone-200'"
-                >
-                  JSON
-                </button>
+
+                <!-- View Toggle -->
+                <div class="flex items-center gap-1 bg-stone-950 rounded p-0.5 border border-stone-800" v-if="Array.isArray(result)">
+                  <button
+                    @click="viewMode = 'table'"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-colors"
+                    :class="viewMode === 'table' ? 'bg-violet-600 text-white' : 'text-stone-400 hover:text-stone-200'"
+                  >
+                    Table
+                  </button>
+                  <button
+                    @click="viewMode = 'json'"
+                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-colors"
+                    :class="viewMode === 'json' ? 'bg-violet-600 text-white' : 'text-stone-400 hover:text-stone-200'"
+                  >
+                    JSON
+                  </button>
+                </div>
               </div>
             </div>
             
             <div class="flex-1 overflow-hidden min-h-0">
-              <ResultsTable 
-                v-if="viewMode === 'table' && Array.isArray(result)" 
-                :data="result" 
-                class="h-full"
-              />
-              <JsonViewer 
-                v-else 
-                :data="result" 
-                :max-depth="10" 
-                class="h-full overflow-auto"
-              />
+              <ContextMenu>
+                <ContextMenuTrigger class="h-full w-full">
+                  <ResultsTable 
+                    v-if="viewMode === 'table' && Array.isArray(result)" 
+                    :data="result" 
+                    class="h-full"
+                  />
+                  <JsonViewer 
+                    v-else 
+                    :data="result" 
+                    :max-depth="10" 
+                    class="h-full overflow-auto"
+                  />
+                </ContextMenuTrigger>
+                <ContextMenuContent class="w-64">
+                  <ContextMenuItem @select="emit('create-dashboard-element')">
+                    Create Dashboard Element
+                  </ContextMenuItem>
+                  <ContextMenuItem @select="emit('analyze')">
+                    Analyze Results
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
             </div>
           </div>
-        </div>
-
         <div v-else class="flex items-center justify-center py-12 text-stone-600">
           <div class="text-center">
             <div class="text-sm">No results yet</div>
@@ -339,6 +382,20 @@ if (typeof window !== 'undefined') {
             </div>
             <pre class="text-xs font-mono text-stone-300 whitespace-pre-wrap overflow-hidden text-ellipsis max-h-20">{{ item.query }}</pre>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- Reasoning Dialog -->
+    <div v-if="showReasoningDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="showReasoningDialog = false">
+      <div class="bg-stone-900 border border-stone-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-stone-800">
+          <h3 class="text-sm font-medium text-stone-200">AI Reasoning Log</h3>
+          <button @click="showReasoningDialog = false" class="text-stone-400 hover:text-white">
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+        <div class="p-4 overflow-auto">
+          <pre class="text-xs font-mono text-stone-300 whitespace-pre-wrap leading-relaxed">{{ ambiguity?.reasoning }}</pre>
         </div>
       </div>
     </div>

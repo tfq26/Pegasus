@@ -1,4 +1,4 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres'
 
 export type MySQLConfig = {
   host: string
@@ -6,6 +6,16 @@ export type MySQLConfig = {
   user: string
   password: string
   database: string
+}
+
+export type PostgresConfig = {
+  host: string
+  port: number
+  user: string
+  password: string
+  database: string
+  ssl?: boolean
+  connectionString?: string
 }
 
 export type MongoConfig = {
@@ -22,14 +32,21 @@ export type KustoConfig = {
   clientSecret?: string
 }
 
+export type SQLiteConfig = {
+  path: string
+  database?: string
+}
+
 export type ConnectionEntry = {
   id: string
   nickname: string
   description?: string
   provider: Provider
   mysql?: MySQLConfig
+  postgres?: PostgresConfig
   mongodb?: MongoConfig
   kusto?: KustoConfig
+  sqlite?: SQLiteConfig
 }
 
 export const CONNECTION_STORAGE_KEY = 'pegasus-db-connections'
@@ -72,6 +89,8 @@ export const buildConnectionPayload = (
   switch (entry.provider) {
     case 'mysql':
       return { ...entry.mysql }
+    case 'postgres':
+      return { ...entry.postgres }
     case 'mongodb':
       // Only include database/collection if explicitly set by user
       const payload: any = { url: entry.mongodb?.url }
@@ -81,6 +100,8 @@ export const buildConnectionPayload = (
       return payload
     case 'kusto':
       return { ...entry.kusto }
+    case 'sqlite':
+      return { ...entry.sqlite }
     default:
       return {}
   }

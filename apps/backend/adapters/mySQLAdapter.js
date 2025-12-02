@@ -35,6 +35,31 @@ export class MySQLAdapter extends DatabaseAdapter {
     return this.query(query)
   }
 
+  async getSchema() {
+    try {
+      const [tables] = await this.client.query('SHOW FULL TABLES')
+      const schema = {}
+
+      for (const row of tables) {
+        const tableName = Object.values(row)[0]
+        if (typeof tableName === 'string') {
+          const [columns] = await this.client.query(`DESCRIBE \`${tableName}\``)
+          schema[tableName] = columns.map(col => ({
+            name: col.Field,
+            type: col.Type,
+            nullable: col.Null === 'YES',
+            pk: col.Key === 'PRI'
+          }))
+        }
+      }
+
+      return schema
+    } catch (e) {
+      console.error('[MySQL] Error fetching schema:', e)
+      return {}
+    }
+  }
+
   async disconnect() {
     if (this.client) await this.client.end()
   }

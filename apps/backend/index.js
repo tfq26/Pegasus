@@ -14,7 +14,7 @@ import { WorkOS } from "@workos-inc/node"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
 
-import { Database } from "bun:sqlite"
+
 import { db } from "../db/index.ts"
 import { aiClient } from "./ai/AIClient.js"
 
@@ -22,6 +22,28 @@ const workos = new WorkOS(process.env.WORKOS_API_KEY)
 const clientId = process.env.WORKOS_CLIENT_ID
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
+
+// Helper to ensure user exists in DB
+const upsertUser = async (payload) => {
+  try {
+    await db.execute({
+      sql: `
+        INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
+        VALUES ($id, $email, $firstName, $lastName, $profilePictureUrl)
+        ON CONFLICT(id) DO NOTHING
+      `,
+      args: {
+        id: payload.sub || payload.id,
+        email: payload.email,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+      }
+    })
+  } catch (e) {
+    console.error("Failed to upsert user:", e)
+  }
+}
 
 app.get("/auth/login", (c) => {
   const authorizationUrl = workos.userManagement.getAuthorizationUrl({
@@ -49,22 +71,23 @@ app.get("/auth/callback", async (c) => {
     console.log("WorkOS User Object:", JSON.stringify(user, null, 2))
 
     // Upsert user into SQLite
-    const upsertUser = db.prepare(`
-      INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
-      VALUES ($id, $email, $firstName, $lastName, $profilePictureUrl)
-      ON CONFLICT(id) DO UPDATE SET
-        email = excluded.email,
-        first_name = excluded.first_name,
-        last_name = excluded.last_name,
-        profile_picture_url = excluded.profile_picture_url
-    `)
-
-    upsertUser.run({
-      $id: user.id,
-      $email: user.email,
-      $firstName: user.firstName,
-      $lastName: user.lastName,
-      $profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null
+    await db.execute({
+      sql: `
+        INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
+        VALUES ($id, $email, $firstName, $lastName, $profilePictureUrl)
+        ON CONFLICT(id) DO UPDATE SET
+          email = excluded.email,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          profile_picture_url = excluded.profile_picture_url
+      `,
+      args: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null
+      }
     })
 
     const payload = {
@@ -106,7 +129,190 @@ app.get("/auth/me", async (c) => {
     const payload = await verify(token, jwtSecret)
     return c.json({ user: payload })
   } catch (error) {
-    return c.json({ user: null })
+    return c.json({ error: "Invalid token" }, 401)
+  }
+})
+
+// Chat Routes
+app.get("/chats", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+
+    const rs = await db.execute({
+      sql: "SELECT * FROM chats WHERE user_id = $userId ORDER BY updated_at DESC",
+      args: { userId }
+    })
+    const chats = rs.rows
+    return c.json({ chats })
+  } catch (e) {
+    return c.json({ error: "Unauthorized" }, 401)
+  }
+})
+
+app.post("/chats", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    await upsertUser(payload)
+    const { title } = await c.req.json()
+
+    const id = crypto.randomUUID()
+    await db.execute({
+      sql: "INSERT INTO chats (id, user_id, title) VALUES ($id, $userId, $title)",
+      args: {
+        id,
+        userId,
+        title: title || "New Chat"
+      }
+    })
+
+    return c.json({ id, title })
+  } catch (e) {
+    return c.json({ error: "Failed to create chat" }, 500)
+  }
+})
+
+app.get("/chats/:id", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const chatId = c.req.param("id")
+
+    const chatRs = await db.execute({
+      sql: "SELECT * FROM chats WHERE id = $id AND user_id = $userId",
+      args: { id: chatId, userId }
+    })
+    const chat = chatRs.rows[0]
+    if (!chat) return c.json({ error: "Chat not found" }, 404)
+
+    const msgsRs = await db.execute({
+      sql: "SELECT * FROM messages WHERE chat_id = $chatId ORDER BY created_at ASC",
+      args: { chatId }
+    })
+    const messages = msgsRs.rows
+    return c.json({ chat, messages })
+  } catch (e) {
+    return c.json({ error: "Failed to fetch chat" }, 500)
+  }
+})
+
+app.post("/chats/:id/messages", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    await upsertUser(payload)
+    const chatId = c.req.param("id")
+    const { role, content } = await c.req.json()
+
+    const chatRs = await db.execute({
+      sql: "SELECT * FROM chats WHERE id = $id AND user_id = $userId",
+      args: { id: chatId, userId }
+    })
+    const chat = chatRs.rows[0]
+    if (!chat) return c.json({ error: "Chat not found" }, 404)
+
+    const id = crypto.randomUUID()
+    await db.execute({
+      sql: "INSERT INTO messages (id, chat_id, role, content) VALUES ($id, $chatId, $role, $content)",
+      args: {
+        id,
+        chatId,
+        role,
+        content
+      }
+    })
+
+    // Update chat timestamp
+    await db.execute({
+      sql: "UPDATE chats SET updated_at = unixepoch() WHERE id = $id",
+      args: { id: chatId }
+    })
+
+    return c.json({ id })
+  } catch (e) {
+    return c.json({ error: "Failed to save message" }, 500)
+  }
+})
+
+// Dashboard Routes
+app.get("/dashboard", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+
+    const rs = await db.execute({
+      sql: "SELECT * FROM dashboard_elements WHERE user_id = $userId ORDER BY created_at DESC",
+      args: { userId }
+    })
+    const elements = rs.rows
+    return c.json({ elements })
+  } catch (e) {
+    return c.json({ error: "Failed to fetch dashboard" }, 500)
+  }
+})
+
+app.post("/dashboard/elements", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    await upsertUser(payload)
+    const { type, title, config, query } = await c.req.json()
+
+    const id = crypto.randomUUID()
+    await db.execute({
+      sql: "INSERT INTO dashboard_elements (id, user_id, type, title, config, query) VALUES ($id, $userId, $type, $title, $config, $query)",
+      args: {
+        id,
+        userId,
+        type,
+        title,
+        config: typeof config === 'string' ? config : JSON.stringify(config),
+        query
+      }
+    })
+
+    return c.json({ id })
+  } catch (e) {
+    return c.json({ error: "Failed to create dashboard element" }, 500)
+  }
+})
+
+app.delete("/dashboard/elements/:id", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const id = c.req.param("id")
+
+    await db.execute({
+      sql: "DELETE FROM dashboard_elements WHERE id = $id AND user_id = $userId",
+      args: { id, userId }
+    })
+
+    return c.json({ success: true })
+  } catch (e) {
+    return c.json({ error: "Failed to delete dashboard element" }, 500)
   }
 })
 
@@ -124,7 +330,11 @@ app.get("/dashboard", async (c) => {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
 
-    const result = db.query("SELECT layout FROM dashboards WHERE user_id = $userId").get({ $userId: userId })
+    const rs = await db.execute({
+      sql: "SELECT layout FROM dashboards WHERE user_id = $userId",
+      args: { userId }
+    })
+    const result = rs.rows[0]
 
     if (result && result.layout) {
       return c.json({ layout: JSON.parse(result.layout) })
@@ -143,19 +353,21 @@ app.post("/dashboard", async (c) => {
   try {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
+    await upsertUser(payload)
     const { layout } = await c.req.json()
 
-    const upsertDashboard = db.prepare(`
-      INSERT INTO dashboards (user_id, layout, updated_at)
-      VALUES ($userId, $layout, unixepoch())
-      ON CONFLICT(user_id) DO UPDATE SET
-        layout = excluded.layout,
-        updated_at = unixepoch()
-    `)
-
-    upsertDashboard.run({
-      $userId: userId,
-      $layout: JSON.stringify(layout)
+    await db.execute({
+      sql: `
+        INSERT INTO dashboards (user_id, layout, updated_at)
+        VALUES ($userId, $layout, unixepoch())
+        ON CONFLICT(user_id) DO UPDATE SET
+          layout = excluded.layout,
+          updated_at = unixepoch()
+      `,
+      args: {
+        userId,
+        layout: JSON.stringify(layout)
+      }
     })
 
     return c.json({ ok: true })
@@ -174,7 +386,11 @@ app.get("/connections", async (c) => {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
 
-    const results = db.query("SELECT * FROM connections WHERE user_id = $userId ORDER BY created_at ASC").all({ $userId: userId })
+    const rs = await db.execute({
+      sql: "SELECT * FROM connections WHERE user_id = $userId ORDER BY created_at ASC",
+      args: { userId }
+    })
+    const results = rs.rows
 
     const connections = results.map(row => {
       const config = JSON.parse(row.config)
@@ -203,24 +419,30 @@ app.post("/connections", async (c) => {
     const userId = payload.sub
     const connection = await c.req.json()
 
+    // Helper to ensure user exists (in case of fresh DB with old session)
+    await upsertUser(payload)
+
     // Extract config based on provider
     let config = {}
     if (connection.provider === 'mysql') config = { mysql: connection.mysql }
     else if (connection.provider === 'mongodb') config = { mongodb: connection.mongodb }
     else if (connection.provider === 'kusto') config = { kusto: connection.kusto }
+    else if (connection.provider === 'sqlite') config = { sqlite: connection.sqlite }
+    else if (connection.provider === 'postgres') config = { postgres: connection.postgres }
 
-    const insertConnection = db.prepare(`
-      INSERT INTO connections (id, user_id, nickname, description, provider, config, created_at)
-      VALUES ($id, $userId, $nickname, $description, $provider, $config, unixepoch())
-    `)
-
-    insertConnection.run({
-      $id: connection.id || crypto.randomUUID(),
-      $userId: userId,
-      $nickname: connection.nickname,
-      $description: connection.description,
-      $provider: connection.provider,
-      $config: JSON.stringify(config)
+    await db.execute({
+      sql: `
+        INSERT INTO connections (id, user_id, nickname, description, provider, config, created_at)
+        VALUES ($id, $userId, $nickname, $description, $provider, $config, unixepoch())
+      `,
+      args: {
+        id: connection.id || crypto.randomUUID(),
+        userId,
+        nickname: connection.nickname,
+        description: connection.description ?? null,
+        provider: connection.provider,
+        config: JSON.stringify(config)
+      }
     })
 
     return c.json({ ok: true })
@@ -241,28 +463,34 @@ app.put("/connections/:id", async (c) => {
     const connectionId = c.req.param('id')
     const connection = await c.req.json()
 
+    // Helper to ensure user exists (in case of fresh DB with old session)
+    await upsertUser(payload)
+
     // Extract config based on provider
     let config = {}
     if (connection.provider === 'mysql') config = { mysql: connection.mysql }
     else if (connection.provider === 'mongodb') config = { mongodb: connection.mongodb }
     else if (connection.provider === 'kusto') config = { kusto: connection.kusto }
+    else if (connection.provider === 'sqlite') config = { sqlite: connection.sqlite }
+    else if (connection.provider === 'postgres') config = { postgres: connection.postgres }
 
-    const updateConnection = db.prepare(`
-      UPDATE connections 
-      SET nickname = $nickname,
-          description = $description,
-          provider = $provider,
-          config = $config
-      WHERE id = $id AND user_id = $userId
-    `)
-
-    const result = updateConnection.run({
-      $id: connectionId,
-      $userId: userId,
-      $nickname: connection.nickname,
-      $description: connection.description,
-      $provider: connection.provider,
-      $config: JSON.stringify(config)
+    const result = await db.execute({
+      sql: `
+        UPDATE connections 
+        SET nickname = $nickname,
+            description = $description,
+            provider = $provider,
+            config = $config
+        WHERE id = $id AND user_id = $userId
+      `,
+      args: {
+        id: connectionId,
+        userId,
+        nickname: connection.nickname,
+        description: connection.description ?? null,
+        provider: connection.provider,
+        config: JSON.stringify(config)
+      }
     })
 
     if (result.changes === 0) {
@@ -285,8 +513,10 @@ app.delete("/connections/:id", async (c) => {
     const userId = payload.sub
     const connectionId = c.req.param("id")
 
-    const deleteConnection = db.prepare("DELETE FROM connections WHERE id = $id AND user_id = $userId")
-    deleteConnection.run({ $id: connectionId, $userId: userId })
+    await db.execute({
+      sql: "DELETE FROM connections WHERE id = $id AND user_id = $userId",
+      args: { id: connectionId, userId }
+    })
 
     return c.json({ ok: true })
   } catch (error) {
@@ -295,7 +525,25 @@ app.delete("/connections/:id", async (c) => {
 })
 
 app.post("/query", async (c) => {
-  const { provider, connection, query } = await c.req.json()
+  const { provider, connection, query, source = 'user', model = null } = await c.req.json()
+  console.log(`[Backend] Received query request for provider: ${provider}`)
+
+  // Try to get user session for history
+  const token = getCookie(c, "session")
+  let userId = null
+  let userPayload = null
+  if (token) {
+    try {
+      const payload = await verify(token, jwtSecret)
+      userId = payload.sub
+      userPayload = payload
+    } catch (e) { }
+  }
+
+  // Ensure user exists if logged in
+  if (userPayload) {
+    await upsertUser(userPayload)
+  }
 
   const Adapter = adapters[provider]
 
@@ -304,67 +552,103 @@ app.post("/query", async (c) => {
   }
 
   const adapter = new Adapter(connection)
+  let result = null
+  let error = null
+  let status = 'success'
 
   try {
     await adapter.connect()
-    const result = await adapter.query(query)
-    return c.json({ ok: true, result })
+    result = await adapter.query(query)
   } catch (err) {
-    return c.json({ error: err.message }, 500)
+    status = 'error'
+    error = err.message
   } finally {
     await adapter.disconnect()
   }
+
+  // Save history if user is logged in
+  if (userId) {
+    try {
+      await db.execute({
+        sql: `INSERT INTO queries (id, user_id, query, source, model, status, connection_id) 
+              VALUES ($id, $userId, $query, $source, $model, $status, $connectionId)`,
+        args: {
+          id: crypto.randomUUID(),
+          userId,
+          query,
+          source,
+          model,
+          status,
+          connectionId: connection.id || null
+        }
+      })
+    } catch (e) {
+      console.error("Failed to save query history:", e)
+    }
+  }
+
+  if (error) {
+    return c.json({ error }, 500)
+  }
+
+  return c.json({ ok: true, result })
 })
 
 app.post("/schema", async (c) => {
-  const { provider, connection } = await c.req.json()
-
-  const Adapter = adapters[provider]
-
-  if (!Adapter) {
-    return c.json({ error: `Provider '${provider}' not supported` }, 400)
-  }
-
-  const adapter = new Adapter(connection)
-
   try {
-    await adapter.connect()
-    const tables = await adapter.listCollections()
-    console.log(`[/schema] ${provider} returned ${tables.length} tables for database ${connection.database ?? 'unknown'}`)
-    // If no specific database was provided, infer discovered databases from returned table names
-    let databases = []
-    if (!connection || !connection.database) {
-      const dbSet = new Set()
-      for (const t of tables) {
-        if (typeof t === 'string' && t.includes('.')) {
-          const [dbName] = t.split('.', 1)
-          if (dbName) dbSet.add(dbName)
-        }
-      }
-      databases = Array.from(dbSet)
-    } else {
-      databases = [connection.database]
+    const body = await c.req.json()
+    console.log('[Backend] Schema request:', JSON.stringify(body, null, 2))
+    const { provider, connection } = body
+
+    const Adapter = adapters[provider]
+
+    if (!Adapter) {
+      return c.json({ error: `Provider '${provider}' not supported` }, 400)
     }
 
-    const previews = await Promise.all(
-      tables.map(async (table) => {
-        try {
-          const rows = await adapter.sampleCollection(table, 3)
-          return { table, rows }
-        } catch (error) {
-          return { table, rows: [] }
+    const adapter = new Adapter(connection)
+
+    try {
+      await adapter.connect()
+      const tables = await adapter.listCollections()
+      console.log(`[/schema] ${provider} returned ${tables.length} tables for database ${connection.database ?? 'unknown'}`)
+      // If no specific database was provided, infer discovered databases from returned table names
+      let databases = []
+      if (!connection || !connection.database) {
+        const dbSet = new Set()
+        for (const t of tables) {
+          if (typeof t === 'string' && t.includes('.')) {
+            const [dbName] = t.split('.', 1)
+            if (dbName) dbSet.add(dbName)
+          }
         }
-      }),
-    )
-    return c.json({ ok: true, tables, previews, databases })
+        databases = Array.from(dbSet)
+      } else {
+        databases = [connection.database]
+      }
+
+      const previews = await Promise.all(
+        tables.map(async (table) => {
+          try {
+            const rows = await adapter.sampleCollection(table, 3)
+            return { table, rows }
+          } catch (error) {
+            return { table, rows: [] }
+          }
+        }),
+      )
+      return c.json({ ok: true, tables, previews, databases })
+    } catch (err) {
+      // Return a more structured error so the UI can show friendlier messages.
+      // Many driver errors include a 'code' or 'name' property; include that when present.
+      const code = (err && (err.code || err.name)) || 'UNKNOWN_ERROR'
+      const message = err && err.message ? err.message : 'An unknown error occurred while probing the schema'
+      return c.json({ error: message, code }, 500)
+    } finally {
+      await adapter.disconnect()
+    }
   } catch (err) {
-    // Return a more structured error so the UI can show friendlier messages.
-    // Many driver errors include a 'code' or 'name' property; include that when present.
-    const code = (err && (err.code || err.name)) || 'UNKNOWN_ERROR'
-    const message = err && err.message ? err.message : 'An unknown error occurred while probing the schema'
-    return c.json({ error: message, code }, 500)
-  } finally {
-    await adapter.disconnect()
+    return c.json({ error: err.message }, 500)
   }
 })
 
@@ -378,7 +662,11 @@ app.post("/ai/generate", async (c) => {
     const { prompt, connectionId, context } = await c.req.json()
 
     // 1. Fetch connection details
-    const connRow = db.query("SELECT * FROM connections WHERE id = $id AND user_id = $userId").get({ $id: connectionId, $userId: userId })
+    const rs = await db.execute({
+      sql: "SELECT * FROM connections WHERE id = $id AND user_id = $userId",
+      args: { id: connectionId, userId }
+    })
+    const connRow = rs.rows[0]
 
     if (!connRow) {
       return c.json({ error: "Connection not found" }, 404)
@@ -447,15 +735,36 @@ app.post("/ai/generate", async (c) => {
       // For MongoDB, fetch sample documents to understand structure
       if (provider === 'mongodb' && relevantTables.length > 0) {
         const samples = {}
+        const sampleValues = {} // Store sample string values for ambiguity detection
+
         // Limit sampling to avoid overwhelming the AI
         const collectionsToSample = relevantTables.slice(0, 20)
 
         for (const collection of collectionsToSample) {
           try {
-            const sampleDocs = await adapter.sampleCollection(collection, 1)
+            const sampleDocs = await adapter.sampleCollection(collection, 5) // Increased sample size slightly
             if (sampleDocs && sampleDocs.length > 0) {
               // Get field names from the sample document
               samples[collection] = Object.keys(sampleDocs[0])
+
+              // Extract string values for context
+              sampleValues[collection] = {}
+              sampleDocs.forEach(doc => {
+                Object.entries(doc).forEach(([key, value]) => {
+                  if (typeof value === 'string' && value.length > 2 && value.length < 50) {
+                    if (!sampleValues[collection][key]) sampleValues[collection][key] = new Set()
+                    if (sampleValues[collection][key].size < 5) { // Limit to 5 distinct values per field
+                      sampleValues[collection][key].add(value)
+                    }
+                  }
+                })
+              })
+
+              // Convert Sets to Arrays for JSON serialization
+              Object.keys(sampleValues[collection]).forEach(key => {
+                sampleValues[collection][key] = Array.from(sampleValues[collection][key])
+                if (sampleValues[collection][key].length === 0) delete sampleValues[collection][key]
+              })
             }
           } catch (e) {
             // Skip collections we can't sample
@@ -465,19 +774,70 @@ app.post("/ai/generate", async (c) => {
         schemaInfo = {
           collections: relevantTables,
           samples,
+          sampleValues, // Pass extracted values
           totalCollections: allTables.length,
           filtered: allTables.length > MAX_COLLECTIONS
         }
       } else {
+        // For SQL/Kusto, extract sample values similar to MongoDB
+        const sampleValues = {}
+        const tablesToSample = relevantTables.slice(0, 20)
+
+        for (const table of tablesToSample) {
+          try {
+            const sampleRows = await adapter.sampleCollection(table, 5)
+            if (sampleRows && sampleRows.length > 0) {
+              sampleValues[table] = {}
+              sampleRows.forEach(row => {
+                Object.entries(row).forEach(([key, value]) => {
+                  if (typeof value === 'string' && value.length > 2 && value.length < 50) {
+                    if (!sampleValues[table][key]) sampleValues[table][key] = new Set()
+                    if (sampleValues[table][key].size < 5) {
+                      sampleValues[table][key].add(value)
+                    }
+                  }
+                })
+              })
+
+              // Convert Sets to Arrays for JSON serialization
+              Object.keys(sampleValues[table]).forEach(key => {
+                sampleValues[table][key] = Array.from(sampleValues[table][key])
+                if (sampleValues[table][key].length === 0) delete sampleValues[table][key]
+              })
+            }
+          } catch (e) {
+            // Skip tables we can't sample
+          }
+        }
+
+        // Use enhanced schema if available (SQLite/MySQL)
+        let detailedSchema = null
+        if (typeof adapter.getSchema === 'function') {
+          try {
+            const fullSchema = await adapter.getSchema()
+            // Filter detailed schema to only relevant tables
+            detailedSchema = {}
+            for (const table of relevantTables) {
+              if (fullSchema[table]) {
+                detailedSchema[table] = fullSchema[table]
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to fetch detailed schema:', e)
+          }
+        }
+
         schemaInfo = {
           tables: relevantTables,
+          detailedSchema,
+          sampleValues,
           totalTables: allTables.length,
           filtered: allTables.length > MAX_COLLECTIONS
         }
       }
     } catch (e) {
       console.warn("Failed to fetch schema for AI context:", e)
-      schemaInfo = provider === 'mongodb' ? { collections: [], samples: {} } : { tables: [] }
+      schemaInfo = provider === 'mongodb' ? { collections: [], samples: {}, sampleValues: {} } : { tables: [] }
     } finally {
       try { await adapter.disconnect() } catch (e) { }
     }
@@ -493,8 +853,32 @@ app.post("/ai/generate", async (c) => {
 
     return c.json({ query: generatedQuery })
   } catch (error) {
-    console.error("AI Error:", error)
+    console.error("AI Generation Error:", error)
     return c.json({ error: error.message }, 500)
+  }
+})
+
+app.post("/ai/recommend-visualization", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const { query, results } = await c.req.json()
+
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      return c.json({ error: "No results provided for analysis" }, 400)
+    }
+
+    const recommendation = await aiClient.recommendVisualization(query, results)
+
+    if (!recommendation) {
+      return c.json({ error: "Failed to generate recommendation" }, 500)
+    }
+
+    return c.json(recommendation)
+  } catch (e) {
+    console.error("AI Recommendation Error:", e)
+    return c.json({ error: "Failed to generate recommendation" }, 500)
   }
 })
 
@@ -538,7 +922,11 @@ app.post("/ai/search", async (c) => {
     const { term, connectionId } = await c.req.json()
 
     // 1. Fetch connection
-    const connRow = db.query("SELECT * FROM connections WHERE id = $id AND user_id = $userId").get({ $id: connectionId, $userId: userId })
+    const rs = await db.execute({
+      sql: "SELECT * FROM connections WHERE id = $id AND user_id = $userId",
+      args: { id: connectionId, userId }
+    })
+    const connRow = rs.rows[0]
     if (!connRow) return c.json({ error: "Connection not found" }, 404)
 
     const config = JSON.parse(connRow.config)
@@ -585,6 +973,70 @@ app.post("/ai/search", async (c) => {
   } catch (error) {
     console.error("AI Search Error:", error)
     return c.json({ error: error.message }, 500)
+  }
+})
+
+// Queries Routes
+app.get("/queries", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+
+    const rs = await db.execute({
+      sql: "SELECT * FROM queries WHERE user_id = $userId ORDER BY created_at DESC LIMIT 50",
+      args: { userId }
+    })
+    const queries = rs.rows
+
+    // Map to frontend expected format
+    const mapped = queries.map(q => ({
+      id: q.id,
+      query: q.query,
+      timestamp: q.created_at * 1000,
+      source: q.source,
+      model: q.model,
+      status: q.status,
+      connection_id: q.connection_id
+    }))
+
+    return c.json(mapped)
+  } catch (e) {
+    console.error("Fetch queries error:", e)
+    return c.json({ error: "Failed to fetch queries" }, 500)
+  }
+})
+
+app.post("/queries", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    await upsertUser(payload)
+    const { query, source, status, connection_id, model } = await c.req.json()
+
+    const id = crypto.randomUUID()
+    await db.execute({
+      sql: "INSERT INTO queries (id, user_id, query, source, model, status, connection_id) VALUES ($id, $userId, $query, $source, $model, $status, $connectionId)",
+      args: {
+        id,
+        userId,
+        query,
+        source: source || 'user',
+        model: model || null,
+        status: status || 'success',
+        connectionId: connection_id
+      }
+    })
+
+    return c.json({ id })
+  } catch (e) {
+    console.error("Save query error:", e)
+    return c.json({ error: "Failed to save query" }, 500)
   }
 })
 

@@ -1,4 +1,4 @@
-import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig } from '@/lib/db-connections'
+import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, PostgresConfig } from '@/lib/db-connections'
 import type { SchemaPreview } from '@/lib/api'
 
 export type ConnectionFormState = {
@@ -6,8 +6,10 @@ export type ConnectionFormState = {
   description: string
   provider: Provider
   mysql: MySQLConfig
+  postgres: PostgresConfig
   mongodb: MongoConfig
   kusto: KustoConfig
+  sqlite: SQLiteConfig
 }
 
 export type ConnectionStatusState = {

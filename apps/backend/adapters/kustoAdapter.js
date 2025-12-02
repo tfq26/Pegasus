@@ -94,6 +94,47 @@ export class KustoAdapter extends DatabaseAdapter {
     return this.query(sampleQuery)
   }
 
+  async getSchema() {
+    try {
+      const result = await this.client.execute(this.connection.database, '.show database schema')
+      const tableResult = result.primaryResults?.[0]
+      if (!tableResult) return {}
+
+      let rows = []
+      if (typeof tableResult.toArray === 'function') {
+        rows = tableResult.toArray()
+      } else if (Array.isArray(tableResult.rows)) {
+        rows = tableResult.rows
+      }
+
+      const schema = {}
+
+      // Kusto schema result typically has: TableName, ColumnName, ColumnType
+      for (const row of rows) {
+        const tableName = row.TableName || row.Name
+        const colName = row.ColumnName
+        const colType = row.ColumnType || row.CslType
+
+        if (tableName && colName) {
+          if (!schema[tableName]) {
+            schema[tableName] = []
+          }
+          schema[tableName].push({
+            name: colName,
+            type: colType,
+            nullable: true, // Kusto columns are generally nullable
+            pk: false
+          })
+        }
+      }
+
+      return schema
+    } catch (e) {
+      console.error('[Kusto] Error fetching schema:', e)
+      return {}
+    }
+  }
+
   async disconnect() {
     // No persistent connection needed for Kusto
     this.client = null

@@ -257,8 +257,10 @@ const formatRow = (row: Record<string, unknown>) => {
                   </SelectTrigger>
                   <SelectContent class="bg-stone-900 border-stone-800">
                     <SelectItem value="mysql">MySQL</SelectItem>
+                    <SelectItem value="postgres">PostgreSQL</SelectItem>
                     <SelectItem value="mongodb">MongoDB</SelectItem>
                     <SelectItem value="kusto">Kusto</SelectItem>
+                    <SelectItem value="sqlite">SQLite</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -297,6 +299,36 @@ const formatRow = (row: Record<string, unknown>) => {
               <div class="space-y-1.5 md:col-span-2">
                 <label class="text-[10px] uppercase tracking-wide text-stone-500">Password</label>
                 <input v-model="props.connectionForm.mysql.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+              </div>
+            </div>
+
+            <!-- PostgreSQL -->
+            <div v-else-if="props.connectionForm.provider === 'postgres'" class="grid gap-4 md:grid-cols-3">
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Host</label>
+                <input v-model="props.connectionForm.postgres.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Port</label>
+                <input v-model.number="props.connectionForm.postgres.port" type="number" placeholder="5432" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database</label>
+                <input v-model="props.connectionForm.postgres.database" placeholder="postgres" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">User</label>
+                <input v-model="props.connectionForm.postgres.user" placeholder="postgres" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+              </div>
+              <div class="space-y-1.5 md:col-span-2">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Password</label>
+                <input v-model="props.connectionForm.postgres.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+              </div>
+              <div class="space-y-1.5 md:col-span-3">
+                 <label class="flex items-center gap-2 text-sm text-stone-400 cursor-pointer">
+                    <input type="checkbox" v-model="props.connectionForm.postgres.ssl" class="rounded border-stone-700 bg-stone-900/50 text-violet-600 focus:ring-violet-500" />
+                    Enable SSL (Required for most cloud databases)
+                 </label>
               </div>
             </div>
 
@@ -468,6 +500,29 @@ const formatRow = (row: Record<string, unknown>) => {
               </div>
             </div>
 
+            <!-- SQLite -->
+            <div v-else-if="props.connectionForm.provider === 'sqlite'" class="space-y-4">
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database File Path</label>
+                <input 
+                  v-model="props.connectionForm.sqlite.path" 
+                  placeholder="/path/to/database.db or :memory:" 
+                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors font-mono" 
+                />
+                <p class="text-[10px] text-stone-600">Absolute path to your SQLite database file, or ":memory:" for in-memory database</p>
+              </div>
+
+              <!-- Helper Text -->
+              <div class="rounded-md bg-stone-900/50 p-3 text-[11px] text-stone-400 border border-stone-800">
+                <p class="font-medium text-stone-300 mb-1">Example paths:</p>
+                <ul class="list-disc list-inside space-y-0.5">
+                  <li><code class="text-violet-400">/Users/taufeeqali/Projects/Pegasus/apps/backend/test-data.db</code></li>
+                  <li><code class="text-violet-400">./data/myapp.db</code> (relative to backend directory)</li>
+                  <li><code class="text-violet-400">:memory:</code> (temporary in-memory database)</li>
+                </ul>
+              </div>
+            </div>
+
             <DialogFooter class="flex justify-end gap-3 pt-4 border-t border-stone-800/50">
               <button
                 type="button"
@@ -592,7 +647,7 @@ const formatRow = (row: Record<string, unknown>) => {
       </div>
       <h3 class="text-lg font-semibold text-stone-200 mb-2">No connections yet</h3>
       <p class="text-sm text-stone-500 max-w-sm mb-6">
-        Add a database connection to start querying your data. We support MySQL, MongoDB, and Kusto.
+        Add a database connection to start querying your data. We support MySQL, PostgreSQL, MongoDB, and Kusto.
       </p>
       <button 
         @click="open = true"

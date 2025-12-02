@@ -70,6 +70,9 @@ export async function fetchTableEntries({
   if (provider === 'mysql') {
     const safeTable = table.replace(/`/g, '``')
     queryPayload = `SELECT * FROM \`${safeTable}\` LIMIT ${limit} OFFSET ${offset}`
+  } else if (provider === 'sqlite') {
+    const safeTable = table.replace(/"/g, '""')
+    queryPayload = `SELECT * FROM "${safeTable}" LIMIT ${limit} OFFSET ${offset}`
   } else if (provider === 'mongodb') {
     connection = buildConnectionPayload(entry, { collection: table })
     queryPayload = JSON.stringify({
@@ -196,4 +199,95 @@ export async function fetchSettings() {
   }
 
   return body.settings || {}
+}
+
+// Chat API
+export async function fetchChats() {
+  const response = await fetch(`${QUERY_API_URL}/chats`, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch chats')
+  const body = await response.json()
+  return body.chats || []
+}
+
+export async function createChat(title?: string) {
+  const response = await fetch(`${QUERY_API_URL}/chats`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ title })
+  })
+  if (!response.ok) throw new Error('Failed to create chat')
+  return await response.json()
+}
+
+export async function fetchChatHistory(chatId: string) {
+  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}`, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch chat history')
+  return await response.json()
+}
+
+export async function saveMessage(chatId: string, role: 'user' | 'ai', content: string) {
+  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ role, content })
+  })
+  if (!response.ok) throw new Error('Failed to save message')
+  return await response.json()
+}
+
+// Dashboard API
+export async function fetchDashboardElements() {
+  const response = await fetch(`${QUERY_API_URL}/dashboard`, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch dashboard')
+  const body = await response.json()
+  return body.elements || []
+}
+
+export async function createDashboardElement(element: any) {
+  const response = await fetch(`${QUERY_API_URL}/dashboard/elements`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(element)
+  })
+  if (!response.ok) throw new Error('Failed to create dashboard element')
+  return await response.json()
+}
+
+export async function deleteDashboardElement(id: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboard/elements/${id}`, {
+    method: 'DELETE',
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to delete dashboard element')
+  return true
+}
+// AI
+export async function recommendVisualization(query: string, results: any[]) {
+  const response = await fetch(`${QUERY_API_URL}/ai/recommend-visualization`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, results }),
+  })
+  if (!response.ok) throw new Error('Failed to get recommendation')
+  return response.json()
+}
+
+// Queries
+export async function fetchQueries() {
+  const response = await fetch(`${QUERY_API_URL}/queries`)
+  if (!response.ok) throw new Error('Failed to fetch queries')
+  return response.json()
+}
+
+export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string) {
+  const response = await fetch(`${QUERY_API_URL}/queries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, source, status, connection_id: connectionId }),
+  })
+  if (!response.ok) throw new Error('Failed to save query')
+  return response.json()
 }

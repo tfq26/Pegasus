@@ -1,13 +1,15 @@
 <template>
   <div class="flex-1 overflow-hidden relative bg-[#1e1e1e]">
     <CodeEditor
-      v-if="mode === 'write'"
+      v-if="props.mode === 'write'"
+      :key="'write-mode'"
       v-model="localInput"
       language="sql"
       class="w-full h-full"
     />
     <textarea
       v-else
+      :key="'chat-mode'"
       v-model="localInput"
       placeholder="Ask Pegasus..."
       class="w-full h-full bg-transparent text-stone-200 p-4 resize-none focus:outline-none font-sans text-base placeholder:text-stone-600"

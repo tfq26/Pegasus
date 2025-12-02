@@ -38,6 +38,14 @@ export class AIClient {
         return this.provider.listModels()
     }
 
+    /**
+     * Recommends a visualization type and config.
+     */
+    async recommendVisualization(query, results) {
+        this.ensureConfigured()
+        return this.provider.recommendVisualization(query, results)
+    }
+
     ensureConfigured() {
         if (!this.provider.config.apiKey) {
             throw new Error("AI is not configured. Please set GEMINI_API_KEY in your environment variables.")

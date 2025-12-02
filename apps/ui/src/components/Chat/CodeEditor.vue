@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useColorMode } from '@vueuse/core' // Optional if your app tracks dark/light
 import MonacoEditor from 'monaco-editor-vue3'
 import * as monaco from 'monaco-editor'
@@ -12,7 +12,14 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue'])
 const modelValue = ref(props.modelValue)
-const colorMode = useColorMode() // auto-detects prefers-color-scheme
+const colorMode = useColorMode()
+const editorMountKey = ref(0)
+const editorInstance = ref<any>(null)
+
+// Create a key that forces remount when content changes significantly
+const editorKey = computed(() => {
+  return `monaco-${editorMountKey.value}`
+})
 
 const editorOptions = ref({
   fontSize: 14,
@@ -23,7 +30,55 @@ const editorOptions = ref({
   theme: colorMode.value === 'dark' ? 'pegasus-sql-dark' : 'pegasus-sql-light',
 })
 
+// Handle editor mount
+const handleEditorMount = (editor: any) => {
+  console.log('CodeEditor: Monaco editor mounted')
+  editorInstance.value = editor
+  
+  // Set initial value
+  if (modelValue.value && modelValue.value !== editor.getValue()) {
+    console.log('CodeEditor: Setting initial value on mount:', modelValue.value?.substring(0, 50))
+    editor.setValue(modelValue.value)
+  }
+  
+  // Listen for changes
+  editor.onDidChangeModelContent(() => {
+    const value = editor.getValue()
+    if (value !== modelValue.value) {
+      modelValue.value = value
+    }
+  })
+}
+
+// Watch for prop changes and update editor directly
+watch(() => props.modelValue, (val, oldVal) => {
+  console.log('CodeEditor: modelValue prop changed to:', val?.substring(0, 50))
+  console.log('CodeEditor: current local modelValue.value:', modelValue.value?.substring(0, 50))
+  
+  if (val !== modelValue.value) {
+    console.log('CodeEditor: updating local modelValue')
+    const wasEmpty = !modelValue.value || modelValue.value.length === 0
+    const isNowEmpty = !val || val.length === 0
+    modelValue.value = val
+    
+    // Update editor instance directly if it exists
+    if (editorInstance.value && editorInstance.value.getValue() !== val) {
+      console.log('CodeEditor: updating editor instance directly')
+      editorInstance.value.setValue(val || '')
+    }
+    
+    // Force remount if transitioning between empty and non-empty
+    if (wasEmpty !== isNowEmpty) {
+      console.log('CodeEditor: forcing remount due to empty/non-empty transition')
+      editorMountKey.value++
+    }
+  } else {
+    console.log('CodeEditor: values are the same, skipping update')
+  }
+}, { immediate: true })
+
 watch(modelValue, val => {
+  console.log('CodeEditor: local modelValue changed, emitting update:', val?.substring(0, 50))
   emit('update:modelValue', val)
 })
 
@@ -34,6 +89,8 @@ watch(colorMode, newMode => {
 })
 
 onMounted(() => {
+  console.log('CodeEditor: MOUNTED with modelValue:', props.modelValue?.substring(0, 50))
+  console.log('CodeEditor: MOUNTED with local modelValue.value:', modelValue.value?.substring(0, 50))
   // Register SQL language highlighting
   if (!monaco.languages.getLanguages().some(l => l.id === 'sql')) {
     monaco.languages.register({ id: 'sql' })
@@ -97,12 +154,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <MonacoEditor
-    v-model="modelValue"
-    language="sql"
-    :options="editorOptions"
-    class="border border-slate-200 dark:border-slate-700 overflow-hidden"
-  />
+  <div class="w-full h-full relative">
+    <MonacoEditor
+      :key="editorKey"
+      v-model="modelValue"
+      language="sql"
+      :options="editorOptions"
+      @editorDidMount="handleEditorMount"
+      class="border border-slate-200 dark:border-slate-700 overflow-hidden w-full h-full"
+    />
+  </div>
 </template>
 
 <style scoped>

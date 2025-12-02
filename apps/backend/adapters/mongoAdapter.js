@@ -124,4 +124,45 @@ export class MongoAdapter extends DatabaseAdapter {
     const target = this.db.collection(name)
     return target.find({}).limit(safeLimit).toArray()
   }
+
+  async getSchema() {
+    try {
+      const collections = await this.listCollections()
+      const schema = {}
+
+      // Limit to first 20 collections to avoid timeout
+      const collectionsToScan = collections.slice(0, 20)
+
+      for (const collName of collectionsToScan) {
+        const samples = await this.sampleCollection(collName, 5)
+        if (samples.length > 0) {
+          const fields = {}
+
+          // Infer schema from samples
+          samples.forEach(doc => {
+            Object.entries(doc).forEach(([key, value]) => {
+              if (!fields[key]) {
+                let type = typeof value
+                if (value === null) type = 'null'
+                else if (Array.isArray(value)) type = 'array'
+                else if (value instanceof Date) type = 'date'
+                else if (value && typeof value === 'object' && value._bsontype === 'ObjectId') type = 'objectId'
+
+                fields[key] = { name: key, type: type, nullable: true, pk: key === '_id' }
+              }
+            })
+          })
+
+          schema[collName] = Object.values(fields)
+        } else {
+          schema[collName] = []
+        }
+      }
+
+      return schema
+    } catch (e) {
+      console.error('[Mongo] Error fetching schema:', e)
+      return {}
+    }
+  }
 }

@@ -50,14 +50,7 @@
         </div>
       </div>
 
-      <button
-        @click="showAddModal = true"
-        class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium shadow-lg shadow-violet-600/20 transition-all hover:scale-105"
-        :disabled="isLocked"
-        :class="{ 'opacity-50 cursor-not-allowed': isLocked }"
-      >
-        + Add Element
-      </button>
+
     </header>
 
     <!-- Main Grid -->
@@ -81,7 +74,7 @@
         <template #item="{ item }">
           <div 
             class="dashboard-card w-full h-full flex flex-col"
-            :class="{ 'pointer-events-none': isLocked && !showAddModal }"
+            :class="{ 'pointer-events-none': isLocked }"
           >
             <!-- Card Content -->
             <div class="card-content">
@@ -109,16 +102,20 @@
                     </svg>
                   </div>
                   <div>
-                    <h3 class="card-title">{{ getCardData(item.i)?.title }}</h3>
-                    <p class="card-subtitle">{{ getCardData(item.i)?.subtitle }}</p>
+                    <h3 class="card-title">{{ getElement(item.i)?.title }}</h3>
+                    <p class="card-subtitle text-xs text-stone-500 truncate max-w-[200px]">{{ getElement(item.i)?.query }}</p>
                   </div>
                 </div>
               </div>
 
-              <div class="card-body">
-                <div class="card-preview">
-                  {{ getCardData(item.i)?.preview }}
-                </div>
+              <div class="card-body relative overflow-hidden">
+                <ChartRenderer 
+                  v-if="getElement(item.i)"
+                  :type="getElement(item.i)!.type"
+                  :data="getElement(item.i)!.config.data"
+                  :options="{ ...getElement(item.i)!.config.options, maintainAspectRatio: false, responsive: true }"
+                  class="w-full h-full"
+                />
               </div>
             </div>
           </div>
@@ -128,73 +125,29 @@
 
       <!-- Empty State -->
       <div
-        v-if="!layout.length"
+        v-if="!layout.length && !isLoading"
         class="empty-state"
       >
         <div class="empty-state-icon">📊</div>
         <h2 class="empty-state-title">No dashboard elements yet</h2>
-        <p class="empty-state-text">Add your first element to get started</p>
-        <button
-          @click="showAddModal = true"
-          class="empty-state-btn"
-        >
-          + Add Your First Element
-        </button>
+        <p class="empty-state-text">Ask AI in Chat to "Create a dashboard element" from your query results.</p>
+      </div>
+      
+      <div v-if="isLoading" class="flex items-center justify-center h-full">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500"></div>
       </div>
     </div>
-
-    <!-- Add Element Modal -->
-    <transition name="modal">
-      <div
-        v-if="showAddModal"
-        class="modal-overlay"
-        @click.self="showAddModal = false"
-      >
-        <div class="modal-content">
-          <div class="modal-header">
-            <h2 class="modal-title">Add Dashboard Element</h2>
-            <button
-              @click="showAddModal = false"
-              class="modal-close"
-            >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </div>
-
-          <div class="modal-grid">
-            <div
-              v-for="el in elementTemplates"
-              :key="el.id"
-              class="element-card"
-              @click="addElement(el)"
-            >
-              <div class="element-preview">{{ el.preview }}</div>
-              <h3 class="element-title">{{ el.title }}</h3>
-              <p class="element-subtitle">{{ el.subtitle }}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, onBeforeUnmount } from 'vue'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
+import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import { toast } from 'vue-sonner'
+import { fetchDashboardElements, deleteDashboardElement } from '@/lib/api'
 
 defineOptions({ name: 'DashboardPage' })
-
-interface ElementTemplate {
-  id: string
-  title: string
-  subtitle: string
-  preview: string
-  description: string
-}
 
 interface LayoutItem {
   i: string
@@ -204,234 +157,106 @@ interface LayoutItem {
   h: number
 }
 
-interface DashboardCard extends ElementTemplate {
-  i: string
+interface DashboardElement {
+  id: string
+  title: string
+  type: string
+  config: any
+  query: string
 }
 
-const showAddModal = ref(false)
 const layout = ref<LayoutItem[]>([])
-const cardData = ref<Map<string, DashboardCard>>(new Map())
+const elements = ref<Map<string, DashboardElement>>(new Map())
 const isLoading = ref(true)
 
 // Layout State
-const isCompact = ref(false) // Default to free placement
+const isCompact = ref(false)
 const isLocked = ref(false)
 const showGrid = ref(false)
 
 // Computed grid style for background pattern
 const gridStyle = computed(() => {
   if (!showGrid.value) return {}
-  // 12 columns + 8px gap
-  // Row height 30px + 8px gap
   return {
     backgroundImage: `
       linear-gradient(to right, rgba(139, 92, 246, 0.05) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(139, 92, 246, 0.05) 1px, transparent 1px)
     `,
-    backgroundSize: `calc((100% - 8px) / 12) 38px`, // (100% - margin) / 12 cols, 30px + 8px gap
-    backgroundPosition: '8px 8px' // Match grid margin
+    backgroundSize: `calc((100% - 8px) / 12) 38px`,
+    backgroundPosition: '8px 8px'
   }
 })
 
-// Widget templates
-const elementTemplates: ElementTemplate[] = [
-  { id: 'T1', title: 'User Growth', subtitle: 'Active vs New Users', preview: '📈', description: 'Shows user growth trends.' },
-  { id: 'T2', title: 'Log Volume', subtitle: 'Error vs Info Logs', preview: '📊', description: 'Daily log distribution.' },
-  { id: 'T3', title: 'CPU Utilization', subtitle: 'Resource Load', preview: '🖥️', description: 'System performance tracking.' },
-  { id: 'T4', title: 'Revenue Projection', subtitle: 'AI Predictions', preview: '💡', description: 'Revenue growth forecast.' },
-  { id: 'T5', title: 'Query Latency', subtitle: 'Avg Response Time', preview: '⏱️', description: 'Latency analytics.' },
-  { id: 'T6', title: 'Data Integrity', subtitle: 'Consistency Check', preview: '🧩', description: 'Validation results across datasets.' },
-  { id: 'T7', title: 'Active Sessions', subtitle: 'Real-time Users', preview: '👥', description: 'Current active sessions.' },
-  { id: 'T8', title: 'Storage Usage', subtitle: 'Disk Space', preview: '💾', description: 'Storage capacity monitoring.' },
-  { id: 'T9', title: 'API Response', subtitle: 'Endpoint Health', preview: '🔌', description: 'API performance metrics.' }
-]
+const getElement = (id: string) => elements.value.get(id)
 
-// Helper to get card data by ID
-const getCardData = (id: string): DashboardCard | undefined => {
-  return cardData.value.get(id)
-}
-
-// Load saved layout from database
-onMounted(async () => {
-  await fetchLayout()
-})
-
-const fetchLayout = async () => {
+const loadDashboard = async () => {
   isLoading.value = true
   try {
-    const res = await fetch('http://localhost:3000/dashboard', {
-      credentials: 'include'
+    const data = await fetchDashboardElements()
+    
+    // Clear existing
+    layout.value = []
+    elements.value.clear()
+    
+    // Map to layout
+    // For now, we'll just auto-layout them if no specific layout is saved
+    // Ideally, we should save layout positions in the backend too.
+    // The current schema doesn't have layout info per element, so we'll just stack them.
+    
+    let yOffset = 0
+    data.forEach((el: any, index: number) => {
+      const id = el.id.toString()
+      layout.value.push({
+        i: id,
+        x: (index % 2) * 6, // 2 columns
+        y: Math.floor(index / 2) * 8,
+        w: 6,
+        h: 8
+      })
+      
+      elements.value.set(id, {
+        id: id,
+        title: el.title,
+        type: el.type,
+        config: typeof el.config === 'string' ? JSON.parse(el.config) : el.config,
+        query: el.query
+      })
     })
     
-    if (res.ok) {
-      const data = await res.json()
-      
-      if (data.layout) {
-        // Restore layout preferences
-        if (data.layout.preferences) {
-          isCompact.value = data.layout.preferences.isCompact ?? false
-          showGrid.value = data.layout.preferences.showGrid ?? false
-          isLocked.value = data.layout.preferences.isLocked ?? false
-        }
-
-        // Restore items
-        const items = data.layout.items || []
-        
-        if (Array.isArray(items) && items.length > 0) {
-          layout.value = items.map((item: any) => ({
-            i: item.i,
-            x: item.x,
-            y: item.y,
-            w: item.w,
-            h: item.h
-          }))
-          
-          items.forEach((item: any) => {
-            cardData.value.set(item.i, {
-              i: item.i,
-              id: item.id,
-              title: item.title,
-              subtitle: item.subtitle,
-              preview: item.preview,
-              description: item.description
-            })
-          })
-        } else {
-          loadDefaultLayout()
-        }
-      } else {
-        loadDefaultLayout()
-      }
-    } else {
-      loadDefaultLayout()
-    }
   } catch (e) {
     console.error('Failed to load dashboard:', e)
-    loadDefaultLayout()
+    toast.error('Failed to load dashboard')
   } finally {
     isLoading.value = false
   }
 }
 
-// Load default layout with 3 cards
-const loadDefaultLayout = () => {
-  const defaultItems = [
-    { template: elementTemplates[0], x: 0, y: 0, w: 4, h: 6 },
-    { template: elementTemplates[1], x: 4, y: 0, w: 4, h: 6 },
-    { template: elementTemplates[2], x: 8, y: 0, w: 4, h: 6 }
-  ]
-  
-  defaultItems.forEach((item, index) => {
-    const id = `default-${index + 1}`
-    layout.value.push({
-      i: id,
-      x: item.x,
-      y: item.y,
-      w: item.w,
-      h: item.h
-    })
-    cardData.value.set(id, {
-      i: id,
-      ...item.template
-    })
-  })
-  
-  saveLayout()
+onMounted(async () => {
+  await loadDashboard()
+  window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('keyup', handleKeyUp)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('keyup', handleKeyUp)
+})
+
+const removeElement = async (id: string) => {
+  try {
+    await deleteDashboardElement(id)
+    layout.value = layout.value.filter(item => item.i !== id)
+    elements.value.delete(id)
+    toast.success('Element removed')
+  } catch (e) {
+    toast.error('Failed to remove element')
+  }
 }
 
-// Add new element to dashboard
-const addElement = (template: ElementTemplate) => {
-  const newId = crypto.randomUUID()
-  
-  // Find a good position for the new element
-  const maxY = layout.value.length > 0 
-    ? Math.max(...layout.value.map(item => item.y + item.h))
-    : 0
-  
-  // Add to layout
-  layout.value.push({
-    i: newId,
-    x: 0,
-    y: maxY,
-    w: 4,
-    h: 6
-  })
-  
-  // Add to card data
-  cardData.value.set(newId, {
-    i: newId,
-    ...template
-  })
-  
-  showAddModal.value = false
-  saveLayout()
-  
-  toast.success('Element added!', {
-    description: `${template.title} was added to your dashboard.`,
-    position: 'top-right'
-  })
-}
-
-// Remove element from dashboard
-const removeElement = (id: string) => {
-  const card = cardData.value.get(id)
-  
-  layout.value = layout.value.filter(item => item.i !== id)
-  cardData.value.delete(id)
-  
-  saveLayout()
-  
-  toast.success('Element removed!', {
-    description: `${card?.title || 'Element'} was removed from your dashboard.`,
-    position: 'top-right'
-  })
-}
-
-// Handle layout updates (drag/resize)
 const onLayoutUpdated = (newLayout: LayoutItem[]) => {
   layout.value = newLayout
-  saveLayout()
+  // TODO: Save layout positions to backend
 }
-
-// Save layout to database
-let saveTimeout: Timer | null = null
-
-const saveLayout = async () => {
-  // Debounce save
-  if (saveTimeout) clearTimeout(saveTimeout)
-  
-  saveTimeout = setTimeout(async () => {
-    try {
-      const items = layout.value.map(item => ({
-        ...item,
-        ...cardData.value.get(item.i)
-      }))
-
-      const dataToSave = {
-        items,
-        preferences: {
-          isCompact: isCompact.value,
-          showGrid: showGrid.value,
-          isLocked: isLocked.value
-        }
-      }
-      
-      await fetch('http://localhost:3000/dashboard', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ layout: dataToSave })
-      })
-    } catch (e) {
-      console.error('Failed to save dashboard:', e)
-    }
-  }, 1000) // 1 second debounce
-}
-
-// Watch for preference changes to save them
-watch([isCompact, showGrid, isLocked], saveLayout)
 
 // Track Control/Command key state
 const isCtrlPressed = ref(false)
@@ -447,17 +272,6 @@ const handleKeyUp = (e: KeyboardEvent) => {
     isCtrlPressed.value = false
   }
 }
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
-})
-
-import { onBeforeUnmount } from 'vue'
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-  window.removeEventListener('keyup', handleKeyUp)
-})
 </script>
 
 <style scoped>

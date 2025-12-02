@@ -36,7 +36,7 @@
             Open Dashboard
           </RouterLink>
           <RouterLink
-            to="/chat"
+            to="/query"
             class="px-6 py-3 bg-stone-800 hover:bg-stone-700 rounded-xl text-stone-200 font-medium text-sm border border-stone-700 transition"
           >
             Query Pegasus →

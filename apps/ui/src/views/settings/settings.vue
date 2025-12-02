@@ -187,6 +187,17 @@ const connectionForm = reactive<ConnectionFormState>({
     clientId: '',
     clientSecret: '',
   },
+  sqlite: {
+    path: '',
+  },
+  postgres: {
+    host: '127.0.0.1',
+    port: 5432,
+    user: 'postgres',
+    password: '',
+    database: 'postgres',
+    ssl: false
+  }
 })
 
 const canAddConnection = computed(() => connectionForm.nickname.trim().length > 0)
@@ -290,6 +301,17 @@ const resetConnectionForm = () => {
       clientId: '',
       clientSecret: '',
     },
+    sqlite: {
+      path: '',
+    },
+    postgres: {
+      host: '127.0.0.1',
+      port: 5432,
+      user: 'postgres',
+      password: '',
+      database: 'postgres',
+      ssl: false
+    }
   }
   Object.assign(connectionForm, fresh)
 }
@@ -341,6 +363,12 @@ const addConnection = async () => {
   if (payload.provider === 'kusto') {
     payload.kusto = { ...connectionForm.kusto }
   }
+  if (payload.provider === 'sqlite') {
+    payload.sqlite = { ...connectionForm.sqlite }
+  }
+  if (payload.provider === 'postgres') {
+    payload.postgres = { ...connectionForm.postgres }
+  }
 
   try {
     const res = await fetch('http://localhost:3000/connections', {
@@ -388,6 +416,12 @@ const editConnection = (conn: ConnectionEntry) => {
       ...conn.kusto 
     }
   }
+  if (conn.provider === 'sqlite' && conn.sqlite) {
+    connectionForm.sqlite = { ...conn.sqlite }
+  }
+  if (conn.provider === 'postgres' && conn.postgres) {
+    connectionForm.postgres = { ...conn.postgres }
+  }
 }
 
 const updateConnection = async () => {
@@ -408,6 +442,12 @@ const updateConnection = async () => {
   }
   if (payload.provider === 'kusto') {
     payload.kusto = { ...connectionForm.kusto }
+  }
+  if (payload.provider === 'sqlite') {
+    payload.sqlite = { ...connectionForm.sqlite }
+  }
+  if (payload.provider === 'postgres') {
+    payload.postgres = { ...connectionForm.postgres }
   }
 
   try {
