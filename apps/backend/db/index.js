@@ -46,9 +46,37 @@ class CustomTursoClient {
       args = stmt.args || []
     }
 
-    // Convert named args to positional if needed, or handle them
-    // Turso HTTP API expects args in a specific format
-    // For simplicity, we'll assume basic args for now or implement basic conversion
+    // Handle Named Arguments -> Positional Arguments Conversion
+    if (args && !Array.isArray(args) && typeof args === 'object') {
+      const namedValues = args
+      const positionalArgs = []
+
+      // Regex to find named parameters (e.g. $id, :name, @email)
+      // We replace them with ? and push the corresponding value to positionalArgs
+      sql = sql.replace(/([:@$][a-zA-Z0-9_]+)/g, (match, paramName) => {
+        // paramName includes the prefix, e.g. "$id"
+        // The args object might have keys with or without prefix
+
+        // Try exact match first
+        let val = namedValues[paramName]
+
+        // If undefined, try without prefix
+        if (val === undefined) {
+          const cleanName = paramName.substring(1)
+          val = namedValues[cleanName]
+        }
+
+        if (val === undefined) {
+          console.warn(`[DB] Warning: Missing value for parameter ${paramName}`)
+          return match // Keep it if we can't find it (will likely error)
+        }
+
+        positionalArgs.push(val)
+        return "?"
+      })
+
+      args = positionalArgs
+    }
 
     // Construct the HTTP URL
     const httpUrl = this.url.replace("libsql://", "https://") + "/v2/pipeline"
