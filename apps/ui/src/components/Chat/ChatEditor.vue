@@ -1,5 +1,5 @@
 <template>
-  <div class="flex-1 overflow-hidden relative bg-[#1e1e1e]">
+  <div class="flex-1 overflow-hidden relative bg-background">
     <CodeEditor
       v-if="props.mode === 'write'"
       :key="'write-mode'"
@@ -12,7 +12,7 @@
       :key="'chat-mode'"
       v-model="localInput"
       placeholder="Ask Pegasus..."
-      class="w-full h-full bg-transparent text-stone-200 p-4 resize-none focus:outline-none font-sans text-base placeholder:text-stone-600"
+      class="w-full h-full bg-transparent text-foreground p-4 resize-none focus:outline-none font-sans text-base placeholder:text-muted-foreground"
       @keydown.enter.exact.prevent="$emit('submit')"
     ></textarea>
   </div>

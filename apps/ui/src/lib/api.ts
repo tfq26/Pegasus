@@ -3,10 +3,10 @@ import type { ConnectionEntry, Provider } from './db-connections'
 
 const DEFAULT_QUERY_API_URL = 'http://localhost:3000'
 
-const derivedApiUrl =
+const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
   (typeof window !== 'undefined'
     ? (window as Window & { __QUERY_API_URL__?: string }).__QUERY_API_URL__
-    : undefined) ?? DEFAULT_QUERY_API_URL
+    : undefined) || DEFAULT_QUERY_API_URL
 
 export const QUERY_API_URL = derivedApiUrl
 
@@ -264,12 +264,41 @@ export async function deleteDashboardElement(id: string) {
   if (!response.ok) throw new Error('Failed to delete dashboard element')
   return true
 }
+
+export async function updateDashboardElement(id: string, updates: any) {
+  const response = await fetch(`${QUERY_API_URL}/dashboard/elements/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(updates)
+  })
+  if (!response.ok) throw new Error('Failed to update dashboard element')
+  return await response.json()
+}
+
+export async function fetchDashboardLayout() {
+  const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, { credentials: 'include' })
+  if (!response.ok) throw new Error('Failed to fetch dashboard layout')
+  const body = await response.json()
+  return body.layout
+}
+
+export async function saveDashboardLayout(layout: any[]) {
+  const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ layout })
+  })
+  if (!response.ok) throw new Error('Failed to save dashboard layout')
+  return await response.json()
+}
 // AI
-export async function recommendVisualization(query: string, results: any[]) {
+export async function recommendVisualization(query: string, results: any[], previousConfig: any = null) {
   const response = await fetch(`${QUERY_API_URL}/ai/recommend-visualization`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, results }),
+    body: JSON.stringify({ query, results, previousConfig }),
   })
   if (!response.ok) throw new Error('Failed to get recommendation')
   return response.json()
@@ -277,7 +306,7 @@ export async function recommendVisualization(query: string, results: any[]) {
 
 // Queries
 export async function fetchQueries() {
-  const response = await fetch(`${QUERY_API_URL}/queries`)
+  const response = await fetch(`${QUERY_API_URL}/queries`, { credentials: 'include' })
   if (!response.ok) throw new Error('Failed to fetch queries')
   return response.json()
 }
@@ -286,8 +315,78 @@ export async function saveQuery(query: string, source: 'user' | 'ai', status: 's
   const response = await fetch(`${QUERY_API_URL}/queries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ query, source, status, connection_id: connectionId }),
   })
   if (!response.ok) throw new Error('Failed to save query')
   return response.json()
+}
+
+// Dashboard V2 API (Multi-dashboard)
+export async function fetchDashboards() {
+  const response = await fetch(`${QUERY_API_URL}/dashboards`, {
+    credentials: 'include',
+    cache: 'no-store'
+  })
+  if (!response.ok) throw new Error('Failed to fetch dashboards')
+  const body = await response.json()
+  return body.dashboards || []
+}
+
+export async function createDashboard(title: string, data: any) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ title, data })
+  })
+  if (!response.ok) throw new Error('Failed to create dashboard')
+  return await response.json()
+}
+
+export async function fetchDashboard(id: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
+    credentials: 'include',
+    cache: 'no-store'
+  })
+  if (!response.ok) throw new Error('Failed to fetch dashboard')
+  const body = await response.json()
+  return body.dashboard
+}
+
+export async function updateDashboard(id: string, updates: { title?: string, data?: any }) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(updates)
+  })
+  if (!response.ok) throw new Error('Failed to update dashboard')
+  return await response.json()
+}
+
+export async function deleteDashboard(id: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
+    method: 'DELETE',
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to delete dashboard')
+  return true
+}
+
+export async function shareDashboard(id: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}/share`, {
+    method: 'POST',
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to share dashboard')
+  const body = await response.json()
+  return body.token
+}
+
+export async function fetchSharedDashboard(token: string) {
+  const response = await fetch(`${QUERY_API_URL}/shared/dashboard/${token}`)
+  if (!response.ok) throw new Error('Failed to fetch shared dashboard')
+  const body = await response.json()
+  return body.dashboard
 }

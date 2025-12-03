@@ -195,11 +195,34 @@ app.get("/chats/:id", async (c) => {
     const chat = chatRs.rows[0]
     if (!chat) return c.json({ error: "Chat not found" }, 404)
 
-    const msgsRs = await db.execute({
-      sql: "SELECT * FROM messages WHERE chat_id = $chatId ORDER BY created_at ASC",
-      args: { chatId }
-    })
-    const messages = msgsRs.rows
+    let messages = []
+    try {
+      if (chat.messages && chat.messages !== '[]') {
+        messages = JSON.parse(chat.messages)
+      } else {
+        // Fallback to legacy messages table
+        const msgsRs = await db.execute({
+          sql: "SELECT * FROM messages WHERE chat_id = $chatId ORDER BY created_at ASC",
+          args: { chatId }
+        })
+        messages = msgsRs.rows
+
+        // Lazy migration: Save to chat blob
+        if (messages.length > 0) {
+          await db.execute({
+            sql: "UPDATE chats SET messages = $messages WHERE id = $id",
+            args: {
+              id: chatId,
+              messages: JSON.stringify(messages)
+            }
+          })
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse chat messages:", e)
+      messages = []
+    }
+
     return c.json({ chat, messages })
   } catch (e) {
     return c.json({ error: "Failed to fetch chat" }, 500)
@@ -224,24 +247,61 @@ app.post("/chats/:id/messages", async (c) => {
     const chat = chatRs.rows[0]
     if (!chat) return c.json({ error: "Chat not found" }, 404)
 
-    const id = crypto.randomUUID()
+    let messages = []
+    try {
+      messages = chat.messages ? JSON.parse(chat.messages) : []
+    } catch (e) { messages = [] }
+
+    // Fallback: If empty, check legacy table to ensure we don't overwrite history
+    if (messages.length === 0) {
+      const msgsRs = await db.execute({
+        sql: "SELECT * FROM messages WHERE chat_id = $chatId ORDER BY created_at ASC",
+        args: { chatId }
+      })
+      if (msgsRs.rows.length > 0) messages = msgsRs.rows
+    }
+
+    const newMessage = {
+      id: crypto.randomUUID(),
+      chat_id: chatId,
+      role,
+      content,
+      created_at: Math.floor(Date.now() / 1000)
+    }
+
+    messages.push(newMessage)
+
     await db.execute({
-      sql: "INSERT INTO messages (id, chat_id, role, content) VALUES ($id, $chatId, $role, $content)",
+      sql: "UPDATE chats SET messages = $messages, updated_at = unixepoch() WHERE id = $id",
       args: {
-        id,
-        chatId,
-        role,
-        content
+        id: chatId,
+        messages: JSON.stringify(messages)
       }
     })
 
-    // Update chat timestamp
-    await db.execute({
-      sql: "UPDATE chats SET updated_at = unixepoch() WHERE id = $id",
-      args: { id: chatId }
-    })
+    console.log(`[DB] Saved message to chat ${chatId} (Blob size: ${messages.length})`)
 
-    return c.json({ id })
+    // Background Task: Auto-label chat if it's new and has enough context
+    if (chat.title === 'New Chat' && messages.length >= 2) {
+      // Fire and forget - do not await
+      (async () => {
+        try {
+          console.log(`[AI] Generating title for chat ${chatId}...`)
+          const newTitle = await aiClient.generateTitle(messages)
+          if (newTitle) {
+            await db.execute({
+              sql: "UPDATE chats SET title = $title WHERE id = $id",
+              args: { id: chatId, title: newTitle }
+            })
+            console.log(`[AI] Updated chat ${chatId} title to: "${newTitle}"`)
+          }
+        } catch (e) {
+          console.error("[AI] Failed to auto-label chat:", e)
+        }
+      })()
+    }
+
+    return c.json({ id: newMessage.id })
   } catch (e) {
     return c.json({ error: "Failed to save message" }, 500)
   }
@@ -316,13 +376,47 @@ app.delete("/dashboard/elements/:id", async (c) => {
   }
 })
 
+app.put("/dashboard/elements/:id", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const id = c.req.param("id")
+    const { query, config, title } = await c.req.json()
+
+    await db.execute({
+      sql: `
+        UPDATE dashboard_elements 
+        SET query = COALESCE($query, query),
+            config = COALESCE($config, config),
+            title = COALESCE($title, title)
+        WHERE id = $id AND user_id = $userId
+      `,
+      args: {
+        id,
+        userId,
+        query: query !== undefined ? query : null,
+        config: config ? (typeof config === 'string' ? config : JSON.stringify(config)) : null,
+        title: title !== undefined ? title : null
+      }
+    })
+
+    return c.json({ ok: true })
+  } catch (e) {
+    console.error("Failed to update dashboard element:", e)
+    return c.json({ error: "Failed to update dashboard element" }, 500)
+  }
+})
+
 app.get("/auth/logout", (c) => {
   deleteCookie(c, "session")
   return c.redirect("http://localhost:5173")
 })
 
 // Dashboard Endpoints
-app.get("/dashboard", async (c) => {
+app.get("/dashboard/layout", async (c) => {
   const token = getCookie(c, "session")
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -346,7 +440,7 @@ app.get("/dashboard", async (c) => {
   }
 })
 
-app.post("/dashboard", async (c) => {
+app.post("/dashboard/layout", async (c) => {
   const token = getCookie(c, "session")
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -374,6 +468,157 @@ app.post("/dashboard", async (c) => {
   } catch (error) {
     console.error("Dashboard save error:", error)
     return c.json({ error: "Failed to save" }, 500)
+  }
+})
+
+// Dashboard V2 Endpoints (Multi-dashboard)
+app.get("/dashboards", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const rs = await db.execute({
+      sql: "SELECT id, title, is_public, share_token, updated_at FROM dashboards_v2 WHERE user_id = $userId ORDER BY updated_at DESC",
+      args: { userId }
+    })
+    return c.json({ dashboards: rs.rows })
+  } catch (e) {
+    return c.json({ error: "Failed to fetch dashboards" }, 500)
+  }
+})
+
+app.post("/dashboards", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const { title, data } = await c.req.json()
+    const id = crypto.randomUUID()
+    await db.execute({
+      sql: "INSERT INTO dashboards_v2 (id, user_id, title, data) VALUES ($id, $userId, $title, $data)",
+      args: { id, userId, title, data: JSON.stringify(data) }
+    })
+    return c.json({ id })
+  } catch (e) {
+    return c.json({ error: "Failed to create dashboard" }, 500)
+  }
+})
+
+app.get("/dashboards/:id", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const id = c.req.param("id")
+    const rs = await db.execute({
+      sql: "SELECT * FROM dashboards_v2 WHERE id = $id AND user_id = $userId",
+      args: { id, userId }
+    })
+    if (rs.rows.length === 0) return c.json({ error: "Dashboard not found" }, 404)
+    const dashboard = rs.rows[0]
+    dashboard.data = JSON.parse(dashboard.data)
+    return c.json({ dashboard })
+  } catch (e) {
+    return c.json({ error: "Failed to fetch dashboard" }, 500)
+  }
+})
+
+app.put("/dashboards/:id", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const id = c.req.param("id")
+    const { title, data } = await c.req.json()
+
+    console.log(`[Backend] Updating dashboard ${id} for user ${userId}`)
+    if (data) console.log(`[Backend] New data element count: ${data.elements?.length}`)
+
+    const result = await db.execute({
+      sql: `UPDATE dashboards_v2 SET 
+            title = COALESCE($title, title), 
+            data = COALESCE($data, data), 
+            updated_at = unixepoch() 
+            WHERE id = $id AND user_id = $userId`,
+      args: {
+        id,
+        userId,
+        title: title || null,
+        data: data ? JSON.stringify(data) : null
+      }
+    })
+
+    console.log(`[Backend] Update result: ${JSON.stringify(result)}`)
+
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: "Failed to update dashboard" }, 500)
+  }
+})
+
+app.delete("/dashboards/:id", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const id = c.req.param("id")
+    await db.execute({
+      sql: "DELETE FROM dashboards_v2 WHERE id = $id AND user_id = $userId",
+      args: { id, userId }
+    })
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: "Failed to delete dashboard" }, 500)
+  }
+})
+
+app.post("/dashboards/:id/share", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const id = c.req.param("id")
+
+    // Generate a secure token if one doesn't exist
+    const shareToken = crypto.randomUUID()
+
+    await db.execute({
+      sql: "UPDATE dashboards_v2 SET share_token = COALESCE(share_token, $token), is_public = 1 WHERE id = $id AND user_id = $userId",
+      args: { id, userId, token: shareToken }
+    })
+
+    const rs = await db.execute({
+      sql: "SELECT share_token FROM dashboards_v2 WHERE id = $id AND user_id = $userId",
+      args: { id, userId }
+    })
+
+    return c.json({ token: rs.rows[0].share_token })
+  } catch (e) {
+    return c.json({ error: "Failed to share dashboard" }, 500)
+  }
+})
+
+app.get("/shared/dashboard/:token", async (c) => {
+  try {
+    const token = c.req.param("token")
+    const rs = await db.execute({
+      sql: "SELECT title, data, updated_at FROM dashboards_v2 WHERE share_token = $token AND is_public = 1",
+      args: { token }
+    })
+
+    if (rs.rows.length === 0) return c.json({ error: "Dashboard not found or not public" }, 404)
+
+    const dashboard = rs.rows[0]
+    dashboard.data = JSON.parse(dashboard.data)
+    return c.json({ dashboard })
+  } catch (e) {
+    return c.json({ error: "Failed to fetch shared dashboard" }, 500)
   }
 })
 
@@ -582,6 +827,7 @@ app.post("/query", async (c) => {
           connectionId: connection.id || null
         }
       })
+      console.log(`[DB] Saved query history for user ${userId} (Source: ${source})`)
     } catch (e) {
       console.error("Failed to save query history:", e)
     }
@@ -597,7 +843,7 @@ app.post("/query", async (c) => {
 app.post("/schema", async (c) => {
   try {
     const body = await c.req.json()
-    console.log('[Backend] Schema request:', JSON.stringify(body, null, 2))
+    // console.log('[Backend] Schema request:', JSON.stringify(body, null, 2))
     const { provider, connection } = body
 
     const Adapter = adapters[provider]
@@ -863,13 +1109,21 @@ app.post("/ai/recommend-visualization", async (c) => {
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
-    const { query, results } = await c.req.json()
+    const { query, results, previousConfig } = await c.req.json()
+
+    console.log("[AI Viz] Request received:", {
+      query,
+      resultsCount: results?.length,
+      hasPreviousConfig: !!previousConfig
+    })
 
     if (!results || !Array.isArray(results) || results.length === 0) {
       return c.json({ error: "No results provided for analysis" }, 400)
     }
 
-    const recommendation = await aiClient.recommendVisualization(query, results)
+    const recommendation = await aiClient.recommendVisualization(query, results, previousConfig)
+
+    console.log("[AI Viz] Recommendation generated:", recommendation ? recommendation.type : 'null')
 
     if (!recommendation) {
       return c.json({ error: "Failed to generate recommendation" }, 500)
@@ -878,7 +1132,7 @@ app.post("/ai/recommend-visualization", async (c) => {
     return c.json(recommendation)
   } catch (e) {
     console.error("AI Recommendation Error:", e)
-    return c.json({ error: "Failed to generate recommendation" }, 500)
+    return c.json({ error: e.message || "Failed to generate recommendation" }, 500)
   }
 })
 

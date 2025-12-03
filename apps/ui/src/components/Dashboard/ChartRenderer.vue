@@ -1,6 +1,10 @@
 <template>
   <div class="w-full h-full relative">
-    <component :is="chartComponent" :data="data" :options="options" />
+    <div v-if="type === 'stat'" class="flex flex-col items-center justify-center h-full p-4 text-center">
+      <div class="text-4xl font-bold text-primary mb-2">{{ formatStatValue(data) }}</div>
+      <div class="text-sm text-muted-foreground uppercase tracking-wider">{{ options?.label || '' }}</div>
+    </div>
+    <component v-else :is="chartComponent" :data="data" :options="options" />
   </div>
 </template>
 
@@ -29,6 +33,18 @@ const props = defineProps<{
   data: any
   options: any
 }>()
+
+const formatStatValue = (val: any) => {
+  if (typeof val === 'object' && val !== null) {
+      // If data is passed as { datasets: [{ data: [value] }] } which is common for charts
+      if (val.datasets && val.datasets[0] && val.datasets[0].data) {
+          return val.datasets[0].data[0]
+      }
+      // If passed as { value: ... }
+      if (val.value !== undefined) return val.value
+  }
+  return val
+}
 
 const chartComponent = computed(() => {
   switch (props.type) {

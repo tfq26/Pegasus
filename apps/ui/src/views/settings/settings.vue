@@ -1,9 +1,9 @@
 <template>
-  <div class="min-h-screen bg-stone-950 text-stone-100 flex overflow-hidden">
+  <div class="min-h-screen bg-background text-foreground flex overflow-hidden transition-colors duration-300">
     <aside
-      class="w-64 border-r border-stone-800 bg-stone-900/80 backdrop-blur-md p-6 flex flex-col sticky top-0 h-screen overflow-y-auto z-10"
+      class="w-64 border-r border-border bg-card/80 backdrop-blur-md p-6 flex flex-col sticky top-0 h-screen overflow-y-auto z-10"
     >
-      <h2 class="text-xl font-semibold text-violet-400 mb-6">Settings</h2>
+      <h2 class="text-xl font-semibold text-primary mb-6">Settings</h2>
       <nav class="space-y-2">
         <button
           v-for="tab in tabs"
@@ -12,8 +12,8 @@
           :class="[
             'w-full text-left px-3 py-2 rounded-md transition-all duration-200 text-sm font-medium',
             activeTab === tab.id
-              ? 'bg-violet-600/20 text-violet-400 border border-violet-500/40'
-              : 'text-stone-400 hover:bg-stone-800 hover:text-violet-300'
+              ? 'bg-primary/10 text-primary border border-primary/20'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
           ]"
         >
           {{ tab.label }}
@@ -21,7 +21,7 @@
       </nav>
     </aside>
 
-    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-stone-950 relative">
+    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-background relative">
       <div class="flex-1 overflow-y-auto p-10 pb-32">
         <section v-if="activeTab === 'general'" class="fade-section">
           <GeneralTab :settings="settings" :is-dark="isDark" :toggle-theme="toggleTheme" />
@@ -71,14 +71,14 @@
       </div>
 
       <!-- Sticky Footer Action Bar -->
-      <div class="absolute bottom-0 left-0 right-0 border-t border-stone-800 bg-stone-900/90 backdrop-blur-md p-4 flex justify-between items-center z-20">
-        <div class="text-xs text-stone-500">
+      <div class="absolute bottom-0 left-0 right-0 border-t border-border bg-background/90 backdrop-blur-md p-4 flex justify-between items-center z-20">
+        <div class="text-xs text-muted-foreground">
           <span v-if="activeTab === 'database'">Database connections are saved automatically.</span>
           <span v-else>Changes are saved locally.</span>
         </div>
         <button
           v-if="activeTab !== 'database'"
-          class="px-6 py-2 rounded-md bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition shadow-lg shadow-violet-900/20"
+          class="px-6 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition shadow-lg shadow-primary/20"
           @click="saveSettings"
         >
           Save Changes
@@ -91,6 +91,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
+import { useColorMode } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import GeneralTab from './GeneralTab.vue'
 import AITab from './AITab.vue'
@@ -110,32 +111,24 @@ defineOptions({ name: 'SettingsPage' })
 const tabs = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'Pegasus AI' },
-  { id: 'queries', label: 'Queries' },
-  { id: 'data', label: 'Data' },
-  { id: 'cloud', label: 'Cloud' },
-  { id: 'view', label: 'View' },
-  { id: 'integrations', label: 'Integrations' },
   { id: 'database', label: 'Database Connections' }
 ]
 
 const activeTab = ref('general')
 
 // --- Theme ---
-const isDark = ref(document.documentElement.classList.contains('dark'))
+const mode = useColorMode({
+  emitAuto: true,
+  selector: 'html',
+  attribute: 'class',
+  storageKey: 'pegasus-theme',
+})
+
+const isDark = computed(() => mode.value === 'dark')
 
 const toggleTheme = () => {
-  isDark.value = !isDark.value
-  document.documentElement.classList.toggle('dark', isDark.value)
-  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+  mode.value = mode.value === 'dark' ? 'light' : 'dark'
 }
-
-onMounted(() => {
-  const saved = localStorage.getItem('theme')
-  if (saved) {
-    document.documentElement.classList.toggle('dark', saved === 'dark')
-    isDark.value = saved === 'dark'
-  }
-})
 
 onMounted(() => {
   loadConnections()
@@ -408,8 +401,6 @@ const editConnection = (conn: ConnectionEntry) => {
   }
   if (conn.provider === 'kusto' && conn.kusto) {
     connectionForm.kusto = { 
-      cluster: '', 
-      database: '', 
       tenantId: '', 
       clientId: '', 
       clientSecret: '', 

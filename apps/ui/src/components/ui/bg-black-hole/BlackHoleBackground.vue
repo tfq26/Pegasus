@@ -2,43 +2,43 @@
   <div
     data-slot="black-hole-background"
     :class="[
-      'relative size-full overflow-hidden',
-  `before:absolute before:left-1/2 before:top-1/2 before:block before:size-[140%] before:content-[''] before:[background:radial-gradient(ellipse_at_50%_55%,transparent_10%,black_50%)] before:[transform:translate3d(-50%,-50%,0)] dark:before:[background:radial-gradient(ellipse_at_50%_55%,transparent_10%,black_50%)]`,
-      `after:absolute after:left-1/2 after:top-1/2 after:z-[5] after:block after:size-full after:mix-blend-overlay after:content-[''] after:[background:radial-gradient(ellipse_at_50%_75%,#a900ff_20%,transparent_75%)] after:[transform:translate3d(-50%,-50%,0)]`,
+      'relative size-full overflow-hidden bg-background',
+      `before:absolute before:left-1/2 before:top-1/2 before:block before:size-[140%] before:content-[''] before:[background:radial-gradient(ellipse_at_50%_55%,transparent_10%,hsl(var(--foreground))_50%)] before:[transform:translate3d(-50%,-50%,0)] before:opacity-20 dark:before:opacity-100 dark:before:[background:radial-gradient(ellipse_at_50%_55%,transparent_10%,black_50%)]`,
+      `after:absolute after:left-1/2 after:top-1/2 after:z-[5] after:block after:size-full after:mix-blend-overlay after:content-[''] after:[background:radial-gradient(ellipse_at_50%_75%,hsl(var(--primary))_20%,transparent_75%)] after:[transform:translate3d(-50%,-50%,0)] after:opacity-60 dark:after:opacity-100`,
     ]"
     v-bind="props"
   >
     <slot></slot>
     <canvas
       ref="canvasRef"
-      class="absolute inset-0 block size-full opacity-10 dark:opacity-20"
+      class="absolute inset-0 block size-full opacity-30 dark:opacity-20"
     />
     <motion.div
       :class="[
         'absolute left-1/2 top-[-71.5%] z-[3] h-[140%] w-[30%] rounded-b-full opacity-75 mix-blend-plus-darker blur-3xl [background-position:0%_100%] [background-size:100%_200%] [transform:translate3d(-50%,0,0)] dark:mix-blend-plus-lighter',
-        '[background:linear-gradient(20deg,#00f8f1,#ffbd1e40_16.5%,#fe848f_33%,#fe848f40_49.5%,#00f8f1_66%,#00f8f180_85.5%,#ffbd1e_100%)_0_100%_/_100%_200%] dark:[background:linear-gradient(20deg,#00f8f1,#ffbd1e20_16.5%,#fe848f_33%,#fe848f20_49.5%,#00f8f1_66%,#00f8f160_85.5%,#ffbd1e_100%)_0_100%_/_100%_200%]',
+        '[background:linear-gradient(20deg,hsl(var(--primary)),hsl(var(--secondary))_16.5%,hsl(var(--accent))_33%,hsl(var(--accent))_49.5%,hsl(var(--primary))_66%,hsl(var(--primary))_85.5%,hsl(var(--secondary))_100%)_0_100%_/_100%_200%]',
       ]"
       :animate="{ backgroundPosition: '0% 300%' }"
       :transition="{ duration: 5, ease: 'linear', repeat: Infinity }"
     />
     <div
-      class="absolute left-0 top-0 z-[7] size-full opacity-50 mix-blend-overlay dark:[background:repeating-linear-gradient(transparent,transparent_1px,white_1px,white_2px)]"
+      class="absolute left-0 top-0 z-[7] size-full opacity-50 mix-blend-overlay dark:[background:repeating-linear-gradient(transparent,transparent_1px,white_1px,white_2px)] [background:repeating-linear-gradient(transparent,transparent_1px,hsl(var(--border))_1px,hsl(var(--border))_2px)]"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from "vue";
 import { motion } from "motion-v";
 
 const props = defineProps({
-  strokeColor: { type: String, required: false, default: "#737373" },
+  strokeColor: { type: String, required: false },
   numberOfLines: { type: Number, required: false, default: 50 },
   numberOfDiscs: { type: Number, required: false, default: 50 },
   particleRGBColor: {
     type: Array,
     required: false,
-    default: () => [255, 255, 255],
+    default: () => [100, 100, 100], // Darker default for light mode visibility
   },
   class: { type: String, required: false },
 });
@@ -56,6 +56,29 @@ const stateRef = ref({
   render: { width: 0, height: 0, dpi: 1 },
   particleArea: {},
 });
+
+// Determine stroke color based on theme or prop
+const currentStrokeColor = computed(() => {
+  if (props.strokeColor) return props.strokeColor;
+  // Check if we are in dark mode
+  if (typeof window !== 'undefined' && document.documentElement.classList.contains('dark')) {
+    return "#737373"; // Original dark mode color
+  }
+  return "#a3a3a3"; // Lighter gray for light mode
+});
+
+// Watch for theme changes to update canvas
+if (typeof window !== 'undefined') {
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.attributeName === 'class') {
+        // Re-render lines with new color
+        setLines();
+      }
+    });
+  });
+  observer.observe(document.documentElement, { attributes: true });
+}
 
 function linear(p) {
   return p;
@@ -191,7 +214,7 @@ function setLines() {
       ctx.beginPath();
       ctx.moveTo(p0.x, p0.y);
       ctx.lineTo(p1.x, p1.y);
-      ctx.strokeStyle = props.strokeColor;
+      ctx.strokeStyle = currentStrokeColor.value;
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.closePath();
@@ -247,7 +270,7 @@ function setParticles() {
 }
 
 function drawDiscs(ctx) {
-  ctx.strokeStyle = props.strokeColor;
+  ctx.strokeStyle = currentStrokeColor.value;
   ctx.lineWidth = 2;
   const outerDisc = stateRef.value.startDisc;
   ctx.beginPath();

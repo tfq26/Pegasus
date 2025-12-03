@@ -1,3 +1,6 @@
+import { PromptBuilder } from '../PromptBuilder.js'
+import { VisualizationPrompts } from '../VisualizationPrompts.js'
+
 /**
  * Abstract base class for AI Providers.
  * All providers (Gemini, OpenAI, etc.) must extend this class.
@@ -8,33 +11,97 @@ export class AIProvider {
     }
 
     /**
+     * Generates content from the AI model.
+     * @param {Array<{role: string, content: string}>} messages - List of messages.
+     * @param {object} options - Options like json mode.
+     * @returns {Promise<string>} The generated text.
+     */
+    async generateContent(messages, options = {}) {
+        throw new Error('generateContent must be implemented')
+    }
+
+    /**
      * Generates a database query from natural language.
-     * @param {string} prompt - The user's natural language request.
-     * @param {object} context - Schema info, dialect, etc.
-     * @returns {Promise<string>} The generated SQL/KQL/Mongo query.
      */
     async generateQuery(prompt, context) {
-        throw new Error('generateQuery must be implemented')
+        const systemInstruction = PromptBuilder.buildQueryPrompt(context)
+
+        const history = (context.previousContext || [])
+            .filter(msg => msg.content)
+            .map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'assistant',
+                content: msg.content
+            }))
+
+        const messages = [
+            { role: 'system', content: systemInstruction },
+            ...history,
+            { role: 'user', content: prompt }
+        ]
+
+        const response = await this.generateContent(messages)
+        return PromptBuilder.cleanResponse(response, context.dialect)
     }
 
     /**
      * Analyzes query results to answer a user question.
-     * @param {string} question - The user's question about the data.
-     * @param {any[]} results - The query results.
-     * @param {string} query - The query that was executed.
-     * @returns {Promise<string>} The analysis/answer.
      */
     async analyzeResults(question, results, query) {
-        throw new Error('analyzeResults must be implemented')
+        const prompt = PromptBuilder.buildAnalysisPrompt(question, results, query)
+        const messages = [{ role: 'user', content: prompt }]
+
+        const response = await this.generateContent(messages, { json: true })
+        return response
     }
 
     /**
      * Disambiguates a vague term by choosing from candidates.
-     * @param {string} term - The vague term (e.g. "users").
-     * @param {string[]} candidates - List of possible matches.
-     * @returns {Promise<string[]>} The filtered/ranked candidates or a question.
      */
     async disambiguate(term, candidates) {
-        throw new Error('disambiguate must be implemented')
+        const prompt = PromptBuilder.buildDisambiguationPrompt(term, candidates)
+        const messages = [{ role: 'user', content: prompt }]
+
+        const response = await this.generateContent(messages, { json: true })
+
+        try {
+            const jsonStr = PromptBuilder.cleanResponse(response)
+            return JSON.parse(jsonStr)
+        } catch (e) {
+            console.warn("Failed to parse disambiguation response", e)
+            return candidates.slice(0, 8) // Fallback
+        }
+    }
+
+    /**
+     * Recommends a visualization type and config.
+     */
+    async recommendVisualization(query, results, previousConfig = null) {
+        const prompt = VisualizationPrompts.buildVisualizationPrompt(query, results, previousConfig)
+        const messages = [{ role: 'user', content: prompt }]
+
+        const response = await this.generateContent(messages, { json: true })
+
+        try {
+            const jsonStr = PromptBuilder.cleanResponse(response)
+            // If response is "null" or empty, return null
+            if (!jsonStr || jsonStr === 'null') return null
+            return JSON.parse(jsonStr)
+        } catch (e) {
+            console.warn("Failed to parse visualization recommendation", e)
+            return null
+        }
+    }
+
+    /**
+     * Generates a title for a chat session.
+     */
+    async generateTitle(messages) {
+        const prompt = PromptBuilder.buildTitlePrompt(messages)
+        const response = await this.generateContent([{ role: 'user', content: prompt }])
+        return PromptBuilder.cleanResponse(response)
+    }
+
+    async listModels() {
+        throw new Error('listModels must be implemented')
     }
 }

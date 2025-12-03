@@ -112,18 +112,18 @@ onMounted(() => {
     base: 'vs-dark',
     inherit: true,
     rules: [
-      { token: 'keyword', foreground: 'a259ff', fontStyle: 'bold' },
-      { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-      { token: 'number', foreground: 'fbbf24' },
-      { token: 'string', foreground: '10b981' },
+      { token: 'keyword', foreground: 'a78bfa', fontStyle: 'bold' }, // primary-400
+      { token: 'comment', foreground: '78716c', fontStyle: 'italic' }, // stone-500
+      { token: 'number', foreground: 'fbbf24' }, // amber-400
+      { token: 'string', foreground: '34d399' }, // emerald-400
     ],
     colors: {
-      'editor.background': '#1e1e1e', // deep neutral dark gray
-      'editor.foreground': '#e5e7eb', // stone-200
-      'editor.lineHighlightBackground': '#2a2a2a',
-      'editorCursor.foreground': '#a259ff',
-      'editor.selectionBackground': '#4c1d95aa',
-      'editorLineNumber.foreground': '#6b7280',
+      'editor.background': '#0c0a09', // stone-950 (background)
+      'editor.foreground': '#f5f5f4', // stone-100 (foreground)
+      'editor.lineHighlightBackground': '#1c1917', // stone-900
+      'editorCursor.foreground': '#a78bfa', // primary
+      'editor.selectionBackground': '#8b5cf633', // primary/20
+      'editorLineNumber.foreground': '#57534e', // stone-600
     },
   })
 
@@ -132,18 +132,18 @@ onMounted(() => {
     base: 'vs',
     inherit: true,
     rules: [
-      { token: 'keyword', foreground: '7c3aed', fontStyle: 'bold' },
-      { token: 'comment', foreground: '9ca3af', fontStyle: 'italic' },
-      { token: 'number', foreground: 'b45309' },
-      { token: 'string', foreground: '059669' },
+      { token: 'keyword', foreground: '7c3aed', fontStyle: 'bold' }, // primary-600
+      { token: 'comment', foreground: 'a8a29e', fontStyle: 'italic' }, // stone-400
+      { token: 'number', foreground: 'd97706' }, // amber-600
+      { token: 'string', foreground: '059669' }, // emerald-600
     ],
     colors: {
-      'editor.background': '#f9fafb', // Tailwind gray-50
-      'editor.foreground': '#374151', // gray-700
-      'editor.lineHighlightBackground': '#f3f4f6',
-      'editorCursor.foreground': '#7c3aed',
-      'editor.selectionBackground': '#c4b5fd66',
-      'editorLineNumber.foreground': '#9ca3af',
+      'editor.background': '#ffffff', // white (background)
+      'editor.foreground': '#0c0a09', // stone-950 (foreground)
+      'editor.lineHighlightBackground': '#f5f5f4', // stone-100
+      'editorCursor.foreground': '#7c3aed', // primary
+      'editor.selectionBackground': '#8b5cf620', // primary/10
+      'editorLineNumber.foreground': '#a8a29e', // stone-400
     },
   })
 
@@ -161,7 +161,7 @@ onMounted(() => {
       language="sql"
       :options="editorOptions"
       @editorDidMount="handleEditorMount"
-      class="border border-slate-200 dark:border-slate-700 overflow-hidden w-full h-full"
+      class="border border-border overflow-hidden w-full h-full"
     />
   </div>
 </template>

@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { toast } from 'vue-sonner'
-import { ChevronDown, Database } from 'lucide-vue-next'
+import { ChevronDown, Database, Eye, Edit, Trash } from 'lucide-vue-next'
 import Pagination from '@/components/ui/pagination/Pagination.vue'
 import JsonViewer from '@/components/JsonViewer.vue'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { 
   Select,
   SelectContent,
@@ -80,15 +86,159 @@ const viewer = ref<ViewerState>({
 })
 
 const expandedRows = ref<Set<number>>(new Set())
+const selectedRows = ref<Set<number>>(new Set())
 
+const toggleRowSelection = (index: number, event: MouseEvent) => {
+  if (event.shiftKey && selectedRows.value.size > 0) {
+    // Shift-click: select range
+    const indices = Array.from(selectedRows.value)
+    const lastSelected = Math.max(...indices)
+    const start = Math.min(lastSelected, index)
+    const end = Math.max(lastSelected, index)
+    for (let i = start; i <= end; i++) {
+      selectedRows.value.add(i)
+    }
+  } else if (event.ctrlKey || event.metaKey) {
+    // Ctrl/Cmd-click: toggle individual
+    if (selectedRows.value.has(index)) {
+      selectedRows.value.delete(index)
+    } else {
+      selectedRows.value.add(index)
+    }
+  } else {
+    // Normal click: select only this row
+    selectedRows.value.clear()
+    selectedRows.value.add(index)
+  }
+}
+
+const copySelectedRows = async () => {
+  if (selectedRows.value.size === 0) return
+  
+  const indices = Array.from(selectedRows.value).sort((a, b) => a - b)
+  const rowsToCopy = indices.map(i => viewer.value.entries[i]).filter(row => row !== undefined)
+  
+  // Format as TSV (tab-separated values) for Excel compatibility
+  const headers = viewerColumns.value.join('\t')
+  const rows = rowsToCopy.map(row => 
+    viewerColumns.value.map(col => formatCellValue(row[col])).join('\t')
+  ).join('\n')
+  
+  const text = headers + '\n' + rows
+  
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`Copied ${selectedRows.value.size} row${selectedRows.value.size > 1 ? 's' : ''}`)
+  } catch (e) {
+    toast.error('Failed to copy')
+  }
+}
+
+const copyAllRows = async () => {
+  const headers = viewerColumns.value.join('\t')
+  const rows = viewer.value.entries.map(row => 
+    viewerColumns.value.map(col => formatCellValue(row[col])).join('\t')
+  ).join('\n')
+  
+  const text = headers + '\n' + rows
+  
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`Copied ${viewer.value.entries.length} rows`)
+  } catch (e) {
+    toast.error('Failed to copy')
+  }
+}
+
+const renamingTable = ref<{ conn: ConnectionEntry; oldName: string; newName: string } | null>(null)
+
+const startRenameTable = (conn: ConnectionEntry, table: string) => {
+  renamingTable.value = {
+    conn,
+    oldName: table,
+    newName: table
+  }
+  
+  // Auto-focus and select the input on next tick
+  nextTick(() => {
+    const input = document.querySelector('input[type="text"]') as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  })
+}
+
+const cancelRename = () => {
+  renamingTable.value = null
+}
+
+const confirmRename = async () => {
+  if (!renamingTable.value) return
+  
+  const { conn, oldName, newName } = renamingTable.value
+  
+  if (newName === oldName || !newName.trim()) {
+    renamingTable.value = null
+    return
+  }
+  
+  // TODO: Implement actual table rename via backend
+  toast.info('Table rename', {
+    description: `Renaming tables is not yet supported. Would rename "${oldName}" to "${newName}"`
+  })
+  
+  renamingTable.value = null
+}
+
+const copyAllTableData = async (conn: ConnectionEntry, table: string) => {
+  toast.info('Fetching all data...')
+  
+  try {
+    // Fetch all data (up to a reasonable limit)
+    const result = await fetchTableEntries({
+      entry: conn,
+      table,
+      page: 1,
+      limit: 1000, // Fetch up to 1000 rows
+    })
+    
+    if (result.rows.length === 0) {
+      toast.warning('No data to copy')
+      return
+    }
+    
+    // Get all columns
+    const columns = new Set<string>()
+    result.rows.forEach((row: any) => {
+      Object.keys(row).forEach(key => columns.add(key))
+    })
+    const columnArray = Array.from(columns)
+    
+    // Format as TSV
+    const headers = columnArray.join('\t')
+    const rows = result.rows.map((row: any) => 
+      columnArray.map(col => formatCellValue(row[col])).join('\t')
+    ).join('\n')
+    
+    const text = headers + '\n' + rows
+    
+    await navigator.clipboard.writeText(text)
+    toast.success(`Copied ${result.rows.length} rows from ${table}`)
+  } catch (e) {
+    toast.error('Failed to copy table data', {
+      description: e instanceof Error ? e.message : String(e)
+    })
+  }
+}
 
 const schemaFor = (id: string) => connectionSchemas.value[id]
 
 const statusDotClasses = (status?: ConnectionSchemaState['status']) => {
-  if (status === 'connected') return 'bg-emerald-500'
-  if (status === 'error') return 'bg-rose-500'
+  if (status === 'connected') return 'bg-emerald-500 dark:bg-emerald-400'
+  if (status === 'error') return 'bg-destructive'
   if (status === 'loading') return 'bg-amber-500/80 animate-pulse'
-  return 'bg-stone-500'
+  return 'bg-muted-foreground'
 }
 
 const statusLabel = (state?: ConnectionSchemaState) => {
@@ -122,7 +272,7 @@ const refreshSchemas = async () => {
         }
         // cache top-level tables so we can restore after DB-scoped views
         dbTablesCache.value[conn.id] = dbTablesCache.value[conn.id] || {}
-        dbTablesCache.value[conn.id]['__root'] = schema.tables
+        dbTablesCache.value[conn.id]!['__root'] = schema.tables
       } catch (error) {
         connectionSchemas.value[conn.id] = {
           status: 'error',
@@ -155,6 +305,7 @@ const openViewer = (connection: ConnectionEntry, table: string) => {
     error: '',
   }
   expandedRows.value = new Set()
+  selectedRows.value = new Set()
   loadViewerPage(1)
 }
 
@@ -212,7 +363,7 @@ const loadTablesForDatabase = async (conn: ConnectionEntry, db: string) => {
 
     // ensure cache structures exist
     dbTablesCache.value[conn.id] = dbTablesCache.value[conn.id] || {}
-    dbTablesCache.value[conn.id][db] = schema.tables
+    dbTablesCache.value[conn.id]![db] = schema.tables
 
     // replace the tables for this connection with the schema for the selected DB
     connectionSchemas.value[conn.id] = {
@@ -234,6 +385,7 @@ const loadViewerPage = async (page: number) => {
   viewer.value.loading = true
   viewer.value.error = ''
   expandedRows.value = new Set() // Reset expanded rows when changing pages
+  selectedRows.value = new Set() // Reset selected rows when changing pages
 
   try {
     const result = await fetchTableEntries({
@@ -305,7 +457,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col h-full text-sm select-none">
-    <div class="flex border-b border-stone-800">
+    <div class="flex border-b border-border">
       <button
         v-for="tab in sidebarTabs"
         :key="tab"
@@ -313,8 +465,8 @@ onBeforeUnmount(() => {
         class="flex-1 py-2 text-center capitalize transition-colors"
         :class="[
           activeTab === tab
-            ? 'bg-stone-900 text-violet-400 font-semibold border-b-2 border-violet-500'
-            : 'text-stone-400 hover:text-violet-300'
+            ? 'bg-muted/50 text-primary font-semibold border-b-2 border-primary'
+            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20'
         ]"
       >
         {{ tab }}
@@ -330,21 +482,26 @@ onBeforeUnmount(() => {
               :model-value="selectedConnectionId" 
               @update:model-value="emit('update:selectedConnectionId', $event)"
             >
-              <SelectTrigger class="w-full h-9 text-xs bg-stone-950 border-stone-800">
+              <SelectTrigger class="w-full h-9 text-xs bg-background border-border text-foreground">
                 <SelectValue placeholder="Select a connection" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem
-                  v-for="conn in connections"
-                  :key="conn.id"
-                  :value="conn.id"
-                >
-                  <div class="flex items-center gap-2">
-                    <Database class="w-3 h-3 text-stone-500" />
-                    <span class="font-medium">{{ conn.nickname }}</span>
-                    <!-- <span class="text-[10px] text-stone-500 uppercase ml-auto">{{ conn.provider }}</span> -->
-                  </div>
+                <SelectItem v-if="connections.length === 0" value="no-connections" disabled>
+                  <span class="text-muted-foreground">No databases found</span>
                 </SelectItem>
+                <template v-else>
+                  <SelectItem
+                    v-for="conn in connections"
+                    :key="conn.id"
+                    :value="conn.id"
+                  >
+                    <div class="flex items-center gap-2">
+                      <Database class="w-3 h-3 text-muted-foreground" />
+                      <span class="font-medium text-foreground">{{ conn.nickname }}</span>
+                      <!-- <span class="text-[10px] text-muted-foreground uppercase ml-auto">{{ conn.provider }}</span> -->
+                    </div>
+                  </SelectItem>
+                </template>
               </SelectContent>
             </Select>
           </div>
@@ -354,20 +511,20 @@ onBeforeUnmount(() => {
             <article
               v-for="conn in [connections.find(c => c.id === selectedConnectionId)!]"
               :key="conn.id"
-              class="rounded-md border border-stone-800 bg-stone-950 p-3 space-y-2"
+              class="rounded-md border border-border bg-card p-3 space-y-2"
             >
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="font-semibold text-stone-100">{{ conn.nickname }}</p>
-                  <p class="text-xs text-stone-500">{{ conn.provider.toUpperCase() }}</p>
+                  <p class="font-semibold text-foreground">{{ conn.nickname }}</p>
+                  <p class="text-xs text-muted-foreground">{{ conn.provider.toUpperCase() }}</p>
                 </div>
-                <div class="flex items-center gap-2 text-xs text-stone-400">
+                <div class="flex items-center gap-2 text-xs text-muted-foreground">
                   <span :class="['h-2 w-2 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
                   <span>{{ statusLabel(schemaFor(conn.id)) }}</span>
-                  <span class="text-[11px] text-stone-500">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
+                  <span class="text-[11px] text-muted-foreground">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
                 </div>
               </div>
-              <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-rose-400">
+              <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-destructive">
                 {{ schemaFor(conn.id)?.error }}
               </p>
 
@@ -377,26 +534,26 @@ onBeforeUnmount(() => {
                   <li
                     v-for="db in schemaFor(conn.id)?.databases"
                     :key="`${conn.id}-db-${db}`"
-                    class="group rounded-md border border-stone-800 bg-stone-900/30 px-3 py-2 transition hover:border-violet-500 flex items-center justify-between"
+                    class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary flex items-center justify-between"
                   >
                     <div class="flex items-center gap-2">
                       <button @click="loadTablesForDatabase(conn, db)" class="flex items-center gap-2 text-left">
                         <span
-                          class="text-stone-400 transition-transform"
+                          class="text-muted-foreground transition-transform"
                           :style="{ transform: expandedDbByConn[conn.id] === db ? 'rotate(90deg)' : 'rotate(0deg)' }"
                         >
                           ▸
                         </span>
                         <div class="flex flex-col">
-                          <span class="font-medium text-stone-100 truncate">{{ db }}</span>
-                          <span class="text-[10px] uppercase tracking-[0.3em] text-stone-500">Database</span>
+                          <span class="font-medium text-foreground truncate">{{ db }}</span>
+                          <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Database</span>
                         </div>
                       </button>
                     </div>
-                    <div class="text-xs text-stone-400">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
+                    <div class="text-xs text-muted-foreground">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
                   </li>
                 </ul>
-                <p class="text-xs text-stone-500 mt-2">Select a database to list its collections.</p>
+                <p class="text-xs text-muted-foreground mt-2">Select a database to list its collections.</p>
               </div>
 
               <!-- Otherwise show tables/collections (either from a DB-scoped probe or legacy schema) -->
@@ -404,46 +561,75 @@ onBeforeUnmount(() => {
                 <li
                   v-for="table in schemaFor(conn.id)?.tables"
                   :key="`${conn.id}-${table}`"
-                  class="group rounded-md border border-stone-800 bg-stone-900/40 px-3 py-2 transition hover:border-violet-500"
                 >
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex flex-col">
-                      <span class="font-medium text-stone-100 truncate">{{ table }}</span>
-                      <span class="text-[10px] uppercase tracking-[0.3em] text-stone-500">
-                        {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
-                      <button
-                        @click="openViewer(conn, table)"
-                        class="rounded-md border border-stone-700 p-2 text-stone-200 hover:border-violet-500 hover:bg-stone-800 transition-colors"
-                        title="View entries"
+                  <ContextMenu>
+                    <ContextMenuTrigger class="w-full">
+                      <div class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary">
+                        <div class="flex items-center justify-between gap-2">
+                          <div class="flex flex-col flex-1 min-w-0">
+                            <input
+                              v-if="renamingTable?.oldName === table && renamingTable?.conn.id === conn.id"
+                              v-model="renamingTable.newName"
+                              @keyup.enter="confirmRename"
+                              @keyup.escape="cancelRename"
+                              @blur="confirmRename"
+                              class="font-medium text-foreground bg-muted border border-primary rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                              @click.stop
+                            />
+                            <span v-else class="font-medium text-foreground truncate">{{ table }}</span>
+                            <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                              {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
+                            </span>
+                          </div>
+                          <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                            <button
+                              @click.stop="openViewer(conn, table)"
+                              class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
+                              title="View entries"
+                            >
+                              <Eye class="w-4 h-4" />
+                            </button>
+                            <button
+                              @click.stop="handleEditTable(conn, table)"
+                              class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
+                              title="Edit values"
+                            >
+                              <Edit class="w-4 h-4" />
+                            </button>
+                            <button
+                              @click.stop="handleDeleteTable(table)"
+                              class="rounded-md border border-border p-2 text-muted-foreground hover:text-destructive hover:border-destructive hover:bg-muted transition-colors"
+                              title="Delete table"
+                            >
+                              <Trash class="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </ContextMenuTrigger>
+                    
+                    <ContextMenuContent class="w-56 bg-popover border-border">
+                      <ContextMenuItem 
+                        @select="copyAllTableData(conn, table)"
+                        class="text-foreground hover:bg-muted focus:bg-muted"
                       >
-                        <img src="/icons/eye/eye-white.svg" alt="View" class="w-4 h-4" />
-                      </button>
-                      <button
-                        @click="handleEditTable(conn, table)"
-                        class="rounded-md border border-stone-700 p-2 text-stone-200 hover:border-violet-500 hover:bg-stone-800 transition-colors"
-                        title="Edit values"
+                        Copy All Data
+                      </ContextMenuItem>
+                      <ContextMenuItem 
+                        @select="startRenameTable(conn, table)"
+                        class="text-foreground hover:bg-muted focus:bg-muted"
                       >
-                        <img src="/icons/edit/edit-white.svg" alt="Edit" class="w-4 h-4" />
-                      </button>
-                      <button
-                        @click="handleDeleteTable(table)"
-                        class="rounded-md border border-stone-700 p-2 text-stone-200 hover:border-rose-500 hover:bg-stone-800 transition-colors"
-                        title="Delete table"
-                      >
-                        <img src="/icons/delete/delete-white.svg" alt="Delete" class="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+                        Rename Table
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 </li>
               </ul>
 
-              <p v-else class="text-xs text-stone-500">No tables or collections available yet.</p>
+              <p v-else class="text-xs text-muted-foreground">No tables or collections available yet.</p>
             </article>
           </div>
-          <p v-else class="text-xs text-stone-500 px-2">
+          <p v-else class="text-xs text-muted-foreground px-2">
             Select a connection to browse its schema.
           </p>
         </div>
@@ -451,7 +637,7 @@ onBeforeUnmount(() => {
 
       <template v-else-if="activeTab === 'chats'">
         <div class="px-2 space-y-3">
-          <button @click="emit('create-chat')" class="w-full py-2 px-4 bg-violet-600 hover:bg-violet-500 rounded-lg text-white text-sm font-medium transition-colors shadow-lg shadow-violet-900/20">
+          <button @click="emit('create-chat')" class="w-full py-2 px-4 bg-primary hover:bg-primary/90 rounded-lg text-primary-foreground text-sm font-medium transition-colors shadow-lg shadow-primary/20">
             + New Chat
           </button>
           <div v-if="props.chats && props.chats.length > 0" class="space-y-2">
@@ -459,13 +645,13 @@ onBeforeUnmount(() => {
               v-for="chat in props.chats"
               :key="chat.id"
               @click="emit('select-chat', chat.id)"
-              :class="['p-3 rounded-lg cursor-pointer transition-colors text-sm border', props.selectedChatId === chat.id ? 'bg-violet-500/10 border-violet-500/30 text-violet-300' : 'bg-stone-900 border-stone-800 hover:bg-stone-800 text-stone-400']"
+              :class="['p-3 rounded-lg cursor-pointer transition-colors text-sm border', props.selectedChatId === chat.id ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border hover:bg-muted text-muted-foreground']"
             >
               <div class="font-medium truncate">{{ chat.title }}</div>
-              <div class="text-xs text-stone-600 mt-1">{{ new Date(chat.updated_at * 1000).toLocaleDateString() }}</div>
+              <div class="text-xs text-muted-foreground/70 mt-1">{{ new Date(chat.updated_at * 1000).toLocaleDateString() }}</div>
             </div>
           </div>
-          <div v-else class="text-center text-stone-600 text-sm py-8">
+          <div v-else class="text-center text-muted-foreground text-sm py-8">
             No chats yet. Start a new conversation!
           </div>
         </div>
@@ -473,30 +659,30 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <div class="px-2 space-y-3">
-          <h2 class="py-1 font-semibold text-violet-500">Past Queries</h2>
+          <h2 class="py-1 font-semibold text-primary">Past Queries</h2>
           <div v-if="props.queryHistory && props.queryHistory.length > 0" class="space-y-1">
             <div
               v-for="q in props.queryHistory"
               :key="q.id"
               @click="() => { console.log('Explorer: clicked query', q.query); emit('load-query', q.query) }"
-              class="flex items-center justify-between p-2 rounded-md hover:bg-stone-800/70 cursor-pointer transition"
+              class="flex items-center justify-between p-2 rounded-md hover:bg-muted/70 cursor-pointer transition"
             >
               <div class="flex items-center gap-2 truncate flex-1 min-w-0">
                 <span
                   v-if="q.source === 'ai'"
-                  class="inline-block w-4 h-4 bg-violet-600 rounded-sm flex-shrink-0"
+                  class="inline-block w-4 h-4 bg-primary rounded-sm flex-shrink-0"
                   title="Generated by Pegasus AI"
                 ></span>
-                <span class="truncate text-stone-200 text-xs font-mono">
+                <span class="truncate text-foreground text-xs font-mono">
                   {{ q.query }}
                 </span>
               </div>
-              <span class="text-[10px] text-stone-500 ml-2 flex-shrink-0">
+              <span class="text-[10px] text-muted-foreground ml-2 flex-shrink-0">
                 {{ new Date(q.timestamp).toLocaleTimeString() }}
               </span>
             </div>
           </div>
-          <div v-else class="text-center text-stone-600 text-sm py-8">
+          <div v-else class="text-center text-muted-foreground text-sm py-8">
             No queries yet. Run a query to see it here!
           </div>
         </div>
@@ -505,82 +691,116 @@ onBeforeUnmount(() => {
 
     <div
       v-if="viewer.open"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/90 px-4 py-6"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4 py-6"
       @click.self="closeViewer"
     >
-      <div class="relative max-w-4xl w-full rounded-2xl border border-stone-700 bg-stone-950 p-6 shadow-2xl">
+      <div class="relative max-w-4xl w-full rounded-2xl border border-border bg-background p-6 shadow-2xl">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-lg font-semibold text-stone-100">Entries in {{ viewer.table }}</p>
-            <p class="text-xs text-stone-400">{{ viewer.connection?.nickname }}</p>
+            <p class="text-lg font-semibold text-foreground">Entries in {{ viewer.table }}</p>
+            <p class="text-xs text-muted-foreground">{{ viewer.connection?.nickname }}</p>
           </div>
           <button
             @click="closeViewer"
-            class="text-xs text-stone-400 hover:text-white"
+            class="text-xs text-muted-foreground hover:text-foreground"
           >
             Close
           </button>
         </div>
 
         <div class="mt-4 space-y-3">
-          <div v-if="viewer.loading" class="text-xs text-stone-400">Loading rows…</div>
-          <div v-else-if="viewer.error" class="rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+          <div v-if="viewer.loading" class="text-xs text-muted-foreground">Loading rows…</div>
+          <div v-else-if="viewer.error" class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {{ viewer.error }}
           </div>
-          <div v-else-if="viewer.entries.length" class="max-h-96 overflow-auto rounded-md border border-stone-800 bg-stone-900/60">
-            <table class="w-full table-auto text-xs text-stone-200">
-              <thead class="text-left text-[11px] uppercase tracking-[0.2em] text-stone-400">
-                <tr>
-                  <th class="px-2 py-1 sticky top-0 bg-stone-900 w-8"></th>
-                  <th
-                    v-for="col in viewerColumns"
-                    :key="col"
-                    class="px-2 py-1 sticky top-0 bg-stone-900"
-                  >
-                    {{ col }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <template v-for="(entry, index) in viewer.entries" :key="`row-${index}`">
-                  <!-- Main row -->
-                  <tr
-                    class="border-t border-stone-800 hover:bg-stone-800/30 cursor-pointer transition-colors"
-                    @click="toggleRowExpansion(index)"
-                  >
-                    <td class="px-2 py-1 align-top">
-                      <ChevronDown
-                        class="w-4 h-4 text-stone-500 transition-transform"
-                        :class="{ 'rotate-0': expandedRows.has(index), '-rotate-90': !expandedRows.has(index) }"
-                      />
-                    </td>
-                    <td
-                      v-for="col in viewerColumns"
-                      :key="`cell-${index}-${col}`"
-                      class="px-2 py-1 align-top"
-                    >
-                      <JsonViewer v-if="isJsonValue(entry[col])" :data="entry[col]" :max-depth="1" />
-                      <span v-else class="text-stone-200">{{ formatCellValue(entry[col]) }}</span>
-                    </td>
-                  </tr>
-                  
-                  <!-- Expanded row -->
-                  <tr v-if="expandedRows.has(index)" class="border-t border-stone-800 bg-stone-900/80">
-                    <td :colspan="viewerColumns.length + 1" class="px-4 py-3">
-                      <div class="rounded-lg border border-stone-700 bg-stone-950/50 p-4">
-                        <div class="flex items-center justify-between mb-3">
-                          <h4 class="text-sm font-semibold text-violet-400">Full Document</h4>
-                          <span class="text-[10px] text-stone-500">Row {{ index + 1 }}</span>
-                        </div>
-                        <JsonViewer :data="entry" :max-depth="10" />
-                      </div>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
+          <div v-else-if="viewer.entries.length" class="max-h-96 overflow-auto rounded-md border border-border bg-muted/30">
+            <ContextMenu>
+              <ContextMenuTrigger class="w-full">
+                <table class="w-full table-auto text-xs text-foreground">
+                  <thead class="text-left text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                    <tr>
+                      <th class="px-2 py-1 sticky top-0 bg-muted w-8"></th>
+                      <th
+                        v-for="col in viewerColumns"
+                        :key="col"
+                        class="px-2 py-1 sticky top-0 bg-muted"
+                      >
+                        {{ col }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="(entry, index) in viewer.entries" :key="`row-${index}`">
+                      <!-- Main row -->
+                      <tr
+                        :class="[
+                          'border-t border-border transition-colors',
+                          selectedRows.has(index) 
+                            ? 'bg-primary/20 hover:bg-primary/30' 
+                            : 'hover:bg-muted/30'
+                        ]"
+                        @click="(e) => { 
+                          if (!e.defaultPrevented) {
+                            toggleRowSelection(index, e)
+                          }
+                        }"
+                      >
+                        <td class="px-2 py-1 align-top">
+                          <button
+                            @click.stop="toggleRowExpansion(index)"
+                            class="p-1 hover:bg-muted rounded transition-colors"
+                          >
+                            <ChevronDown
+                              class="w-4 h-4 text-muted-foreground transition-transform"
+                              :class="{ 'rotate-0': expandedRows.has(index), '-rotate-90': !expandedRows.has(index) }"
+                            />
+                          </button>
+                        </td>
+                        <td
+                          v-for="col in viewerColumns"
+                          :key="`cell-${index}-${col}`"
+                          class="px-2 py-1 align-top"
+                        >
+                          <JsonViewer v-if="isJsonValue(entry[col])" :data="entry[col]" :max-depth="1" />
+                          <span v-else class="text-foreground">{{ formatCellValue(entry[col]) }}</span>
+                        </td>
+                      </tr>
+                      
+                      <!-- Expanded row -->
+                      <tr v-if="expandedRows.has(index)" class="border-t border-border bg-muted/50">
+                        <td :colspan="viewerColumns.length + 1" class="px-4 py-3">
+                          <div class="rounded-lg border border-border bg-background p-4">
+                            <div class="flex items-center justify-between mb-3">
+                              <h4 class="text-sm font-semibold text-primary">Full Document</h4>
+                              <span class="text-[10px] text-muted-foreground">Row {{ index + 1 }}</span>
+                            </div>
+                            <JsonViewer :data="entry" :max-depth="10" />
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </ContextMenuTrigger>
+              
+              <ContextMenuContent class="w-64 bg-popover border-border">
+                <ContextMenuItem 
+                  v-if="selectedRows.size > 0"
+                  @select="copySelectedRows"
+                  class="text-foreground hover:bg-muted focus:bg-muted"
+                >
+                  Copy {{ selectedRows.size }} Selected Row{{ selectedRows.size > 1 ? 's' : '' }}
+                </ContextMenuItem>
+                <ContextMenuItem 
+                  @select="copyAllRows"
+                  class="text-foreground hover:bg-muted focus:bg-muted"
+                >
+                  Copy All Rows ({{ viewer.entries.length }})
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           </div>
-          <p v-else class="text-xs text-stone-500">No rows were returned for {{ viewer.table }}.</p>
+          <p v-else class="text-xs text-muted-foreground">No rows were returned for {{ viewer.table }}.</p>
         </div>
 
         <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -590,9 +810,14 @@ onBeforeUnmount(() => {
             :has-next="viewer.hasMore"
             @page-change="loadViewerPage"
           />
-          <p class="text-xs text-stone-400">
-            Showing up to {{ viewer.limit }} rows per page
-          </p>
+          <div class="flex items-center gap-4 text-xs text-muted-foreground">
+            <span v-if="selectedRows.size > 0" class="text-primary font-medium">
+              {{ selectedRows.size }} selected
+            </span>
+            <span>
+              Showing up to {{ viewer.limit }} rows per page
+            </span>
+          </div>
         </div>
       </div>
     </div>

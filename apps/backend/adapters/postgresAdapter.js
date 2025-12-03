@@ -61,7 +61,20 @@ export class PostgresAdapter extends DatabaseAdapter {
         if (!this.client) await this.connect()
 
         const res = await this.client.query(query)
-        return res.rows
+
+        // Postgres returns 'command' (e.g. 'SELECT', 'INSERT') and 'rowCount'
+        const command = res.command ? res.command.toUpperCase() : ''
+
+        if (command === 'SELECT' || command === 'SHOW' || (res.rows && res.rows.length > 0)) {
+            return res.rows
+        } else {
+            // For mutations/DDL
+            return {
+                affectedRows: res.rowCount,
+                command: res.command,
+                message: `${res.command} successful. ${res.rowCount !== null ? res.rowCount + ' rows affected' : ''}`.trim()
+            }
+        }
     }
 
     async getSchema() {

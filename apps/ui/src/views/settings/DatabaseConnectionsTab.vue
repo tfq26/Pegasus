@@ -11,6 +11,8 @@ import DialogTrigger from '@/components/ui/dialog/DialogTrigger.vue'
 import { 
   Activity,
   AlertCircle, 
+  ChevronDown,
+  ChevronRight,
   Database,
   Edit,
   Loader2,
@@ -50,9 +52,11 @@ const props = defineProps<{
 }>()
 
 const open = ref(false)
+const showAdvancedKusto = ref(false)
 
 const closeModal = () => {
   open.value = false
+  showAdvancedKusto.value = false
 }
 
 const syncMongoDatabase = (uri?: string) => {
@@ -97,7 +101,7 @@ const probeTempSchema = async () => {
     tempDatabases.value = _any.databases || (props.connectionForm.mongodb.database ? [props.connectionForm.mongodb.database] : [])
     // If the probe found exactly one database and the user hasn't provided one, auto-fill it
     if (!props.connectionForm.mongodb.database?.trim() && tempDatabases.value.length === 1) {
-      props.connectionForm.mongodb.database = tempDatabases.value[0]
+      props.connectionForm.mongodb.database = tempDatabases.value[0]!
     }
     // If the backend did NOT return a list of databases, we can still auto-select a collection
     // (legacy flow for servers that return collections directly). When databases are returned
@@ -111,8 +115,8 @@ const probeTempSchema = async () => {
       if (nonSystem) {
         if (nonSystem.includes('.')) {
           const [db, coll] = nonSystem.split('.', 2)
-          props.connectionForm.mongodb.database = db
-          props.connectionForm.mongodb.collection = coll
+          props.connectionForm.mongodb.database = db!
+          props.connectionForm.mongodb.collection = coll!
         } else {
           props.connectionForm.mongodb.collection = nonSystem
         }
@@ -395,7 +399,7 @@ const formatRow = (row: Record<string, unknown>) => {
                         <span class="text-sm text-stone-200 font-medium">{{ table }}</span>
                       </div>
                       <button 
-                        @click="() => { const parts = table.split('.',2); if (parts.length === 2) { props.connectionForm.mongodb.database = parts[0]; props.connectionForm.mongodb.collection = parts[1]; } else { props.connectionForm.mongodb.collection = table } }" 
+                        @click="() => { const parts = table.split('.',2); if (parts.length === 2) { props.connectionForm.mongodb.database = parts[0]!; props.connectionForm.mongodb.collection = parts[1]!; } else { props.connectionForm.mongodb.collection = table } }" 
                         class="opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-violet-600/20 text-violet-300 text-[10px] font-medium hover:bg-violet-600/30 transition-all"
                       >
                         Select
@@ -462,30 +466,45 @@ const formatRow = (row: Record<string, unknown>) => {
                   class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
                 />
               </div>
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Tenant ID</label>
-                <input 
-                  v-model="props.connectionForm.kusto.tenantId" 
-                  placeholder="Azure Tenant ID" 
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
-                />
+
+              <!-- Advanced Auth Toggle -->
+              <div class="pt-2">
+                <button 
+                  type="button" 
+                  @click="showAdvancedKusto = !showAdvancedKusto"
+                  class="flex items-center gap-2 text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium select-none"
+                >
+                  <component :is="showAdvancedKusto ? ChevronDown : ChevronRight" class="w-3.5 h-3.5" />
+                  Advanced Authentication (Service Principal)
+                </button>
               </div>
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Client ID</label>
-                <input 
-                  v-model="props.connectionForm.kusto.clientId" 
-                  placeholder="Azure Client ID (App ID)" 
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
-                />
-              </div>
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Client Secret</label>
-                <input 
-                  v-model="props.connectionForm.kusto.clientSecret" 
-                  type="password"
-                  placeholder="Azure Client Secret" 
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
-                />
+
+              <div v-if="showAdvancedKusto" class="space-y-4 pl-3 border-l-2 border-stone-800/50 ml-1.5 animate-in slide-in-from-top-2 fade-in duration-200">
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Tenant ID</label>
+                  <input 
+                    v-model="props.connectionForm.kusto.tenantId" 
+                    placeholder="Azure Tenant ID" 
+                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Client ID</label>
+                  <input 
+                    v-model="props.connectionForm.kusto.clientId" 
+                    placeholder="Azure Client ID (App ID)" 
+                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Client Secret</label>
+                  <input 
+                    v-model="props.connectionForm.kusto.clientSecret" 
+                    type="password"
+                    placeholder="Azure Client Secret" 
+                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  />
+                </div>
               </div>
 
               <!-- Helper Text -->

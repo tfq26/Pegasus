@@ -1,28 +1,28 @@
 <template>
   <div
-    class="relative flex h-full w-full flex-col items-center justify-center overflow-hidden text-stone-100"
+    class="relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground"
   >
     <Ripple
-      class="bg-white/5 [mask-image:linear-gradient(to_bottom,white,transparent)] absolute inset-0"
-      circle-class="border-[hsl(var(--primary))] bg-[#0000]/25 dark:bg-[#fff]/25 rounded-md"
+      class="bg-foreground/5 [mask-image:linear-gradient(to_bottom,white,transparent)] absolute inset-0"
+      circle-class="border-[hsl(var(--primary))] bg-foreground/5 dark:bg-foreground/10 rounded-md"
     />
     <div class="z-10 w-full flex flex-col justify-between h-full">
       <div
         class="flex flex-col items-center justify-center grow text-center px-10 select-none"
       >
         <div
-          class="w-20 h-20 mb-6 flex items-center justify-center rounded-2xl bg-violet-600/20 text-violet-400 shadow-lg shadow-violet-500/20"
+          class="w-20 h-20 mb-6 flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg shadow-primary/20"
         >
-          <img src="/pegasus-white.svg" alt="Pegasus Logo" class="w-10 h-10" />
+          <img src="/pegasus-white.svg" alt="Pegasus Logo" class="w-10 h-10 dark:invert-0 invert" />
         </div>
 
         <h1
-          class="text-5xl font-extrabold mb-4 text-violet-400 tracking-wide drop-shadow-[0_0_20px_rgba(139,92,246,0.25)]"
+          class="text-5xl font-extrabold mb-4 text-primary tracking-wide drop-shadow-sm"
         >
-          Pegasus
+          Data that reaches new heights
         </h1>
         <p
-          class="text-stone-400 text-lg max-w-2xl mb-10 leading-relaxed animate-fadeIn"
+          class="text-muted-foreground text-lg max-w-2xl mb-10 leading-relaxed animate-fadeIn"
         >
           The next generation of data management — where security, insight, and AI
           converge into one seamless, collaborative workspace.
@@ -31,13 +31,13 @@
         <div class="flex gap-4">
           <RouterLink
             to="/dashboard"
-            class="px-6 py-3 bg-violet-600 rounded-xl hover:bg-violet-500 text-white font-medium text-sm tracking-wide shadow-md shadow-violet-600/20 transition"
+            class="px-6 py-3 bg-primary rounded-xl hover:bg-primary/90 text-primary-foreground font-medium text-sm tracking-wide shadow-md shadow-primary/20 transition"
           >
             Open Dashboard
           </RouterLink>
           <RouterLink
             to="/query"
-            class="px-6 py-3 bg-stone-800 hover:bg-stone-700 rounded-xl text-stone-200 font-medium text-sm border border-stone-700 transition"
+            class="px-6 py-3 bg-secondary hover:bg-secondary/80 rounded-xl text-secondary-foreground font-medium text-sm border border-border transition"
           >
             Query Pegasus →
           </RouterLink>
@@ -45,26 +45,26 @@
       </div>
 
       <div
-        class="bg-stone-950/80 backdrop-blur-md py-10 px-20 grid grid-cols-4 gap-8"
+        class="bg-background/80 backdrop-blur-md py-10 px-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-border"
       >
         <div
           v-for="action in quickActions"
           :key="action.title"
-          class="group flex flex-col items-center justify-center text-center p-6 rounded-2xl border border-stone-800 bg-stone-900 hover:bg-stone-800/70 hover:border-violet-500/30 transition-all duration-300 cursor-pointer"
+          class="group flex flex-col items-center justify-center text-center p-6 rounded-2xl border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-all duration-300 cursor-pointer shadow-sm"
         >
           <div
-            class="text-3xl mb-3 text-violet-400 group-hover:scale-110 transition-transform"
+            class="text-3xl mb-3 text-primary group-hover:scale-110 transition-transform"
           >
             {{ action.icon }}
           </div>
-          <h3 class="font-semibold text-violet-400 mb-2">{{ action.title }}</h3>
-          <p class="text-stone-400 text-sm leading-relaxed">
+          <h3 class="font-semibold text-foreground mb-2">{{ action.title }}</h3>
+          <p class="text-muted-foreground text-sm leading-relaxed">
             {{ action.description }}
           </p>
         </div>
       </div>
 
-      <footer class="py-4 text-center text-stone-600 text-xs border-t border-stone-800">
+      <footer class="py-4 text-center text-muted-foreground text-xs border-t border-border bg-background">
         © {{ new Date().getFullYear() }} Pegasus — Intelligent Cloud Insight Platform
       </footer>
     </div>

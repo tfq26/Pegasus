@@ -73,12 +73,21 @@
         @close="resultsPanelVisible = false"
         @analyze="handleAnalyze"
         @resolve-ambiguity="handleResolveAmbiguity"
+        @create-dashboard-element="handleCreateDashboardElement"
+        :has-recommendation="hasRecommendation"
       />
 
       <AmbiguityDialog
         v-model:open="ambiguityDialogVisible"
         :ambiguity="ambiguity"
         @resolve="handleResolveAmbiguity"
+      />
+
+      <ChatHistoryModal
+        v-model:open="previewVisible"
+        :chat="previewChat"
+        :messages="previewMessages"
+        @continue="handleContinueChat"
       />
 
       <DashboardElementPreview
@@ -95,6 +104,7 @@
 <script setup lang="ts">
 
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 import ChatSidebar from '../components/Chat/ChatSidebar.vue'
 import ChatToolbar from '../components/Chat/ChatToolbar.vue'
@@ -102,6 +112,7 @@ import ChatEditor from '../components/Chat/ChatEditor.vue'
 import ResultsPanel from '../components/Chat/ResultsPanel.vue'
 import AmbiguityDialog from '../components/Chat/AmbiguityDialog.vue'
 import DashboardElementPreview from '../components/Dashboard/DashboardElementPreview.vue'
+import ChatHistoryModal from '../components/Chat/ChatHistoryModal.vue'
 import {
   Select,
   SelectContent,
@@ -131,6 +142,11 @@ const selectedConnectionId = ref('')
 const chats = ref<any[]>([])
 const selectedChatId = ref('')
 
+// Preview Modal State
+const previewChat = ref<any>(null)
+const previewMessages = ref<any[]>([])
+const previewVisible = ref(false)
+
 const loadChats = async () => {
   try {
     chats.value = await fetchChats()
@@ -140,26 +156,64 @@ const loadChats = async () => {
 }
 
 const handleSelectChat = async (id: string) => {
-  selectedChatId.value = id
+  // Instead of loading immediately, open the modal
   try {
+    const chat = chats.value.find(c => c.id === id)
+    if (!chat) return
+
     const data = await fetchChatHistory(id)
-    chatHistory.value = data.messages.map((m: any) => ({
+    const messages = data.messages.map((m: any) => ({
       role: m.role === 'ai' ? 'assistant' : m.role,
       content: m.content,
       timestamp: m.created_at * 1000
     }))
+
+    previewChat.value = chat
+    previewMessages.value = messages
+    previewVisible.value = true
   } catch (e) {
-    console.error('Failed to load chat history', e)
+    console.error('Failed to load chat history for preview', e)
+    toast.error('Failed to load chat history')
   }
 }
+
+const handleContinueChat = async (id: string) => {
+  previewVisible.value = false
+  selectedChatId.value = id
+  
+  // Load into main editor
+  chatHistory.value = previewMessages.value
+  
+  // If we have a selected connection, good. If not, maybe we should try to restore it?
+  // For now, we assume user manages connection.
+  
+  toast.success('Chat loaded')
+}
+
+
 
 const handleCreateChat = async () => {
   try {
     const newChat = await createChat('New Chat')
     chats.value.unshift(newChat)
-    await handleSelectChat(newChat.id)
+    
+    // Directly switch to the new chat
+    selectedChatId.value = newChat.id
+    chatHistory.value = []
+    
+    // Reset state
+    mode.value = 'chat'
+    chatInput.value = ''
+    writeInput.value = ''
+    queryResult.value = null
+    queryError.value = ''
+    lastQuery.value = ''
+    resultsPanelVisible.value = false
+    
+    toast.success('New chat created')
   } catch (e) {
     console.error('Failed to create chat', e)
+    toast.error('Failed to create chat')
   }
 }
 
@@ -225,11 +279,11 @@ const currentInput = computed({
   }
 })
 
-const chatHistory = ref([])
-const encryptionKey = ref(null)
+const chatHistory = ref<any[]>([])
+const encryptionKey = ref<CryptoKey | null>(null)
 const sidebarOpen = ref(true)
 const sidebarSide = ref<'left' | 'right'>('left')
-const resultsPanelVisible = ref(false)
+const resultsPanelVisible = ref(true)
 const resultsPanelPosition = ref<'bottom' | 'right'>('bottom')
 const availableModels = ref<any[]>([])
 const queryHistory = ref<any[]>([])
@@ -242,9 +296,15 @@ const aiOptions = ref({
 })
 
 const dashboardPreviewVisible = ref(false)
-const dashboardPreviewConfig = ref(null)
+const dashboardPreviewConfig = ref<any>(null)
+const hasRecommendation = ref(false)
 
 const handleCreateDashboardElement = async () => {
+  if (hasRecommendation.value && dashboardPreviewConfig.value) {
+    dashboardPreviewVisible.value = true
+    return
+  }
+
   if (!queryResult.value || !lastQuery.value) return
   
   toast.info('Generating chart recommendation...')
@@ -253,7 +313,10 @@ const handleCreateDashboardElement = async () => {
     dashboardPreviewConfig.value = config
     dashboardPreviewVisible.value = true
   } catch (e) {
-    toast.error('Failed to generate recommendation')
+    console.error('Visualization recommendation failed:', e)
+    toast.error('Failed to generate recommendation', {
+      description: e instanceof Error ? e.message : String(e)
+    })
   }
 }
 
@@ -265,14 +328,33 @@ const loadQueries = async () => {
   }
 }
 
+const route = useRoute()
+
+// ... existing code ...
+
 onMounted(async () => {
   await loadConnections()
   await loadChats()
   await loadQueries()
-  if (chats.value.length > 0) {
-    await handleSelectChat(chats.value[0].id)
-  } else {
-    await handleCreateChat()
+  // Do not auto-select chat to avoid opening modal
+  // if (chats.value.length > 0) {
+  //   await handleSelectChat(chats.value[0].id)
+  // } else {
+  //   await handleCreateChat()
+  // }
+
+  // Handle query params for loading query from dashboard
+  const queryParam = route.query.loadQuery as string
+  const connectionParam = route.query.connectionId as string
+  
+  if (queryParam) {
+    // Wait a bit for everything to settle
+    setTimeout(async () => {
+      if (connectionParam) {
+        selectedConnectionId.value = connectionParam
+      }
+      await handleLoadQuery(queryParam)
+    }, 500)
   }
 
   window.addEventListener('pegasus:connections-updated', loadConnections)
@@ -385,6 +467,9 @@ const run = async () => {
   const timestamp = Date.now()
 
   if (mode.value === 'write') {
+    // Show results panel immediately
+    resultsPanelVisible.value = true
+    
     isExecuting.value = true
     queryError.value = ''
     queryResult.value = null
@@ -394,10 +479,13 @@ const run = async () => {
       const response = await fetch(`${queryApiUrl}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           provider: selectedConnection.value.provider,
           connection: buildConnectionPayload(selectedConnection.value),
           query: payload,
+          source: 'user',
+          model: null
         }),
       })
 
@@ -431,13 +519,21 @@ const run = async () => {
     }
     queryHistory.value.unshift(queryEntry)
     
-    // Persist query
-    saveQuery(payload, 'user', 'success', selectedConnection.value.id).catch(console.error)
+    // Persist query handled by backend
+    // saveQuery(payload, 'user', 'success', selectedConnection.value.id).catch(console.error)
+
+    // Show results panel and force layout update
+    resultsPanelVisible.value = true
+    await nextTick()
 
     // AI Analysis if enabled
     if (aiOptions.value.model) {
+        // Save to local DB
         const encrypted = await encryptData(encryptionKey.value, chatHistory.value)
         await db.conversations.put({ id: 'current', messages: encrypted, updatedAt: Date.now() })
+        
+        // Trigger post-query actions (Analysis & Dashboard)
+        handlePostQueryActions(payload, body.result)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -479,7 +575,23 @@ const handleAIGenerate = async () => {
     return
   }
 
+  // Auto-create chat if none selected
+  if (!selectedChatId.value) {
+    try {
+      const newChat = await createChat('New Chat')
+      chats.value.unshift(newChat)
+      selectedChatId.value = newChat.id
+      chatHistory.value = []
+    } catch (e) {
+      console.error('Failed to auto-create chat', e)
+    }
+  }
+
   const userPrompt = chatInput.value.trim()
+  
+  // Show results panel immediately
+  resultsPanelVisible.value = true
+  
   isExecuting.value = true
   
   try {
@@ -571,10 +683,13 @@ const handleAIGenerate = async () => {
       const response = await fetch(`${queryApiUrl}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           provider: selectedConnection.value.provider,
           connection: buildConnectionPayload(selectedConnection.value),
           query: queryPayload,
+          source: 'ai',
+          model: aiOptions.value.model
         }),
       })
 
@@ -613,10 +728,14 @@ const handleAIGenerate = async () => {
       
       // Clear input and show results
       chatInput.value = ''
+      resultsPanelVisible.value = true
       toast.success('Query executed', {
         description: `${Array.isArray(body.result) ? body.result.length : 1} result${Array.isArray(body.result) && body.result.length !== 1 ? 's' : ''} returned`,
         position: 'top-right',
       })
+      
+      // Trigger post-query actions
+      handlePostQueryActions(query, body.result)
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
@@ -632,9 +751,11 @@ const handleEditTable = (conn: ConnectionEntry, table: string) => {
   selectedConnectionId.value = conn.id
   
   if (conn.provider === 'kusto') {
-    writeInput.value = `.ingest inline into table ['${table}'] <|
-// Add your data here (comma separated values)
-// 1, "value", ...`
+    writeInput.value = `.set-or-append ['${table}'] <|
+datatable(Column1:string, Column2:int) [
+  "Value1", 1,
+  "Value2", 2
+]`
   } else if (conn.provider === 'mysql') {
     writeInput.value = `INSERT INTO ${table} (col1, col2) VALUES (val1, val2);`
   } else if (conn.provider === 'mongodb') {
@@ -667,6 +788,194 @@ const handleAnalyze = async () => {
   } finally {
     isAnalyzing.value = false
   }
+}
+
+const handlePostQueryActions = async (query: string, results: any) => {
+  // 1. Auto-analyze
+  handleAnalyze()
+  
+  // 2. Dashboard Recommendation
+  hasRecommendation.value = false
+  if (!results || !Array.isArray(results) || results.length === 0) {
+    console.log('[Dashboard] Results not suitable for visualization')
+    return
+  }
+
+  // HEURISTIC: Check for single-value result (Stat Card)
+  if (results.length === 1) {
+    const row = results[0]
+    const keys = Object.keys(row)
+    if (keys.length === 1) {
+      const val = row[keys[0]!]
+      // If it's a number or a string that looks like a number
+      if (typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val)))) {
+        console.log('[Dashboard] Auto-detected Stat Card')
+        const config = {
+          type: 'stat',
+          title: keys[0], // Use column name as title
+          config: {
+            value: val,
+            label: keys[0]
+          }
+        }
+        
+        dashboardPreviewConfig.value = config
+        hasRecommendation.value = true
+        toast.success("Visualization available!", {
+          description: `Auto-detected Stat Card for ${keys[0]}`,
+          action: {
+            label: "Preview",
+            onClick: () => dashboardPreviewVisible.value = true
+          }
+        })
+        return // Skip AI
+      }
+    }
+  }
+
+  // If not a simple stat, try heuristic detection first
+  const heuristicConfig = detectVisualizationType(results)
+  
+  if (heuristicConfig) {
+    console.log('[Dashboard] Heuristic detected:', heuristicConfig.type)
+    dashboardPreviewConfig.value = heuristicConfig
+    hasRecommendation.value = true
+    toast.success("Visualization available!", {
+      description: `Detected ${heuristicConfig.type} chart`,
+      action: {
+        label: "Preview",
+        onClick: () => dashboardPreviewVisible.value = true
+      }
+    })
+    return
+  }
+
+  // If heuristics fail, ask AI
+  try {
+      console.log('[Dashboard] Requesting AI recommendation for:', query)
+      const config = await recommendVisualization(query, results)
+      console.log('[Dashboard] Recommendation received:', config)
+      
+      if (config) {
+          dashboardPreviewConfig.value = config
+          hasRecommendation.value = true
+          toast.success("Visualization available!", {
+            description: `AI suggested a ${config.type} chart`,
+            action: {
+              label: "Preview",
+              onClick: () => dashboardPreviewVisible.value = true
+            }
+          })
+      } else {
+        console.log('[Dashboard] No visualization recommended by AI')
+        // Don't show toast - heuristics should have already handled common cases
+      }
+  } catch (e) {
+      console.error("[Dashboard] AI recommendation failed (this is OK if heuristics worked):", e)
+      // Don't show error toast - heuristics should have already provided a visualization
+  }
+}
+
+// Heuristic visualization detection
+const detectVisualizationType = (results: any[]) => {
+  if (!results || results.length === 0) return null
+  
+  const firstRow = results[0]
+  const keys = Object.keys(firstRow)
+  
+  if (keys.length < 2) return null
+  
+  // Check for time-series data (date/month/time column + numeric columns)
+  const timeKeywords = ['date', 'month', 'year', 'time', 'day', 'week', 'quarter', 'timestamp']
+  const timeColumn = keys.find(k => 
+    timeKeywords.some(keyword => k.toLowerCase().includes(keyword))
+  )
+  
+  if (timeColumn) {
+    // Found a time column, check for numeric columns
+    const numericColumns = keys.filter(k => {
+      if (k === timeColumn) return false
+      const val = firstRow[k]
+      return typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val)))
+    })
+    
+    if (numericColumns.length > 0) {
+      // Build line chart config
+      const labels = results.map(r => r[timeColumn])
+      const datasets = numericColumns.map((col, idx) => ({
+        label: col,
+        data: results.map(r => typeof r[col] === 'number' ? r[col] : parseFloat(r[col])),
+        borderColor: `hsl(${idx * 60}, 70%, 50%)`,
+        backgroundColor: `hsl(${idx * 60}, 70%, 50%, 0.1)`,
+        tension: 0.4
+      }))
+      
+      return {
+        type: 'line',
+        title: `${numericColumns.join(', ')} over ${timeColumn}`,
+        config: {
+          data: {
+            labels,
+            datasets
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: numericColumns.length > 1 },
+              title: { display: false }
+            },
+            scales: {
+              y: { beginAtZero: false }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Check for categorical data (string column + numeric columns) - Bar Chart
+  const stringColumns = keys.filter(k => typeof firstRow[k] === 'string')
+  const numericColumns = keys.filter(k => {
+    const val = firstRow[k]
+    return typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val)))
+  })
+  
+  // If we have 1 string column (category) and 1+ numeric columns (values), suggest bar chart
+  if (stringColumns.length >= 1 && numericColumns.length >= 1) {
+    const categoryColumn = stringColumns[0]!
+    const labels = results.map(r => r[categoryColumn])
+    
+    const datasets = numericColumns.map((col, idx) => ({
+      label: col,
+      data: results.map(r => typeof r[col] === 'number' ? r[col] : parseFloat(r[col])),
+      backgroundColor: `hsl(${idx * 60}, 70%, 50%)`,
+      borderColor: `hsl(${idx * 60}, 70%, 60%)`,
+      borderWidth: 1
+    }))
+    
+    return {
+      type: 'bar',
+      title: `${numericColumns.join(', ')} by ${categoryColumn}`,
+      config: {
+        data: {
+          labels,
+          datasets
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: numericColumns.length > 1 },
+            title: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      }
+    }
+  }
+  
+  return null
 }
 
 // Clear analysis when running new query

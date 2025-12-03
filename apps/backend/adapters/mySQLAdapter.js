@@ -13,8 +13,22 @@ export class MySQLAdapter extends DatabaseAdapter {
   }
 
   async query(query) {
-    const [rows] = await this.client.query(query)
-    return rows
+    if (!this.client) await this.connect()
+
+    const [result, fields] = await this.client.query(query)
+
+    // MySQL returns an array for SELECT, but an object (ResultSetHeader) for mutations
+    if (Array.isArray(result)) {
+      return result
+    } else {
+      // It's a mutation result (OkPacket/ResultSetHeader)
+      return {
+        affectedRows: result.affectedRows,
+        insertId: result.insertId,
+        message: `${result.affectedRows} rows affected`,
+        warningStatus: result.warningStatus
+      }
+    }
   }
 
   async listCollections() {

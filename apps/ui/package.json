@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
+    "@types/markdown-it": "^14.1.2",
     "@vueuse/core": "^14.1.0",
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
@@ -23,6 +24,7 @@
     "dexie": "^4.2.1",
     "interactjs": "^1.10.27",
     "lucide-vue-next": "^0.553.0",
+    "markdown-it": "^14.1.0",
     "monaco-editor-vue3": "^1.0.4",
     "motion-v": "^1.7.4",
     "pinia": "^3.0.3",

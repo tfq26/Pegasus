@@ -5,7 +5,7 @@ import 'vue-sonner/style.css' // vue-sonner v2 requires this import
 </script>
 
 <template>
-  <div class="min-h-screen w-screen flex flex-col bg-stone-950 text-stone-100">
+  <div class="h-full w-full flex flex-col bg-background text-foreground transition-colors duration-300">
     <!-- Fixed Navbar -->
     <Navbar />
 
@@ -13,12 +13,12 @@ import 'vue-sonner/style.css' // vue-sonner v2 requires this import
     <Toaster position="top-right" richColors />
 
     <!-- Main layout -->
-    <div class="flex flex-1 overflow-hidden">
+    <div class="flex flex-1 overflow-hidden pt-16">
       <!-- Main content area with offset to avoid navbar clipping -->
       <main
-        class="flex-1 bg-stone-950 overflow-y-auto pt-16 px-4"
+        class="flex-1 bg-background overflow-y-auto"
       >
-        <router-view class="w-full h-full" />
+        <router-view class="w-full" />
       </main>
     </div>
   </div>

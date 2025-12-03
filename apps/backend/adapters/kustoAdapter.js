@@ -1,5 +1,8 @@
 import { DatabaseAdapter } from "./DatabaseAdapter.js"
 import { Client as KustoClient, KustoConnectionStringBuilder } from "azure-kusto-data"
+import fs from 'fs'
+import path from 'path'
+
 
 export class KustoAdapter extends DatabaseAdapter {
   async connect() {
@@ -18,22 +21,88 @@ export class KustoAdapter extends DatabaseAdapter {
         tenantId
       )
     } else {
-      throw new Error("Kusto connection requires Tenant ID, Client ID, and Client Secret.")
+      // If no explicit credentials, try Azure CLI authentication (requires 'az login')
+      if (typeof KustoConnectionStringBuilder.withAzCliAuthentication === 'function') {
+        kcsb = KustoConnectionStringBuilder.withAzCliAuthentication(cluster)
+      } else {
+        throw new Error("Kusto connection requires Tenant ID, Client ID, and Client Secret. (Azure CLI authentication is not supported in this environment)")
+      }
     }
 
     this.client = new KustoClient(kcsb)
   }
 
   async query(query) {
-    const result = await this.client.execute(this.connection.database, query)
-    const tableResult = result.primaryResults?.[0]
-    if (!tableResult) {
-      return []
+    try {
+      const result = await this.client.execute(this.connection.database, query)
+
+      // Handle case where result is directly an array
+      if (Array.isArray(result)) return result
+
+      const tableResult = result.primaryResults?.[0]
+      if (!tableResult) {
+        return []
+      }
+
+      // 1. Try to access raw rows directly (most reliable for this library version)
+      if (Array.isArray(tableResult._rows)) {
+        return this._mapRows(tableResult._rows, tableResult.columns)
+      }
+
+      // 2. Try toArray()
+      try {
+        if (typeof tableResult.toArray === 'function') {
+          return tableResult.toArray()
+        }
+      } catch (e) {
+        console.warn('[Kusto] toArray() failed:', e)
+      }
+
+      // 3. Try rows() generator or property
+      let rows = []
+      try {
+        if (typeof tableResult.rows === 'function') {
+          // It's a generator method, must be called with context
+          rows = Array.from(tableResult.rows())
+        } else if (Array.isArray(tableResult.rows)) {
+          rows = tableResult.rows
+        }
+      } catch (e) {
+        console.warn('[Kusto] Failed to access .rows():', e)
+      }
+
+      if (!Array.isArray(rows)) return []
+
+      return this._mapRows(rows, tableResult.columns)
+
+    } catch (error) {
+      console.error('[Kusto] Query execution error:', error)
+      throw error
+    }
+  }
+
+  _mapRows(rows, columns) {
+    if (!rows || rows.length === 0) return []
+
+    // If rows are already objects, return them
+    if (typeof rows[0] === 'object' && !Array.isArray(rows[0])) {
+      return rows
     }
 
-    // Handle both row-oriented and column-oriented results if necessary, 
-    // but typically toArray() gives objects
-    return typeof tableResult.toArray === 'function' ? tableResult.toArray() : tableResult.rows ?? []
+    // Map array rows to objects using columns
+    if (columns && Array.isArray(columns) && columns.length > 0) {
+      return rows.map(row => {
+        const obj = {}
+        columns.forEach((col, i) => {
+          const colName = col.name || col.Name || `col${i}`
+          // Handle case where row might be object or array
+          obj[colName] = (row && typeof row === 'object' && !Array.isArray(row)) ? row[colName] : row[i]
+        })
+        return obj
+      })
+    }
+
+    return rows
   }
 
   async listCollections() {
@@ -67,7 +136,13 @@ export class KustoAdapter extends DatabaseAdapter {
         })
         .filter(Boolean)
     } catch (error) {
-      console.error("Kusto Error:", error)
+      const isConnectionError = error.code === 'ECONNREFUSED' ||
+        (error.message && error.message.includes('ECONNREFUSED')) ||
+        (error.message && error.message.includes('Failed to get cloud info'));
+
+      if (!isConnectionError) {
+        console.error("Kusto Error:", error)
+      }
 
       const isEntityNotFound = error.code === 'BadRequest_EntityNotFound' ||
         (error.message && error.message.includes("EntityNotFound")) ||

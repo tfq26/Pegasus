@@ -2,18 +2,9 @@
   <transition name="sidebar-slide">
     <aside 
       v-if="visible" 
-      class="shrink-0 border-r border-stone-800 overflow-y-auto relative bg-stone-950 transition-all duration-75 ease-out"
+      class="shrink-0 border-r border-border overflow-y-auto relative bg-background transition-all duration-75 ease-out"
       :style="{ width: `${sidebarWidth}px` }"
     >
-      <button
-        class="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-l-lg bg-stone-900/80 text-stone-400 hover:text-violet-400 hover:bg-stone-800 transition-all"
-        @click="$emit('toggle')"
-        aria-label="Toggle sidebar"
-      >
-        <svg v-if="side === 'left'" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-      </button>
-
       <div class="h-full">
         <Explorer 
           :connections="connections"
@@ -31,8 +22,10 @@
 
       <!-- Resize Handle -->
       <div
-        class="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-violet-500/50 transition-colors z-20"
+        class="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-20"
         @mousedown="startResize"
+        @dblclick="$emit('toggle')"
+        title="Double-click to close sidebar"
       ></div>
     </aside>
   </transition>

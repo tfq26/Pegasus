@@ -6,7 +6,7 @@
       'z-10': isDragging || isResizing,
       'cursor-move': isDraggable && !isLocked,
       'cursor-default': !isDraggable || isLocked,
-      'shadow-xl ring-2 ring-violet-500/50': isDragging || isResizing
+      'shadow-xl ring-2 ring-primary/50': isDragging || isResizing
     }"
     :style="style"
     @mousedown="onMouseDown"
@@ -20,7 +20,7 @@
       @mousedown.stop="onResizeStart"
     >
       <div class="absolute bottom-1 right-1 w-0 h-0 border-style-solid 
-      border-width-0-0-8-8 border-color-transparent-transparent-violet-500-transparent
+      border-width-0-0-8-8 border-color-transparent-transparent-primary-transparent
       opacity-50 hover:opacity-100 rounded-lg"></div>
     </div>
   </div>
@@ -223,5 +223,10 @@ onUnmounted(() => {
 <style scoped>
 .border-style-solid { border-style: solid; }
 .border-width-0-0-8-8 { border-width: 0 0 8px 8px; }
-.border-color-transparent-transparent-violet-500-transparent { border-color: transparent transparent rgba(139, 92, 246, 0.8) transparent; }
+/* Use a CSS variable for the border color to support theming, or fallback to a hardcoded value if needed. 
+   Since we can't easily use Tailwind classes inside this specific border-color hack, we'll try to use the variable directly. */
+.border-color-transparent-transparent-primary-transparent { 
+  border-color: transparent transparent rgb(124 58 237 / 0.8) transparent; /* Fallback */
+  border-color: transparent transparent oklch(var(--color-primary) / 0.8) transparent; 
+}
 </style>

@@ -20,11 +20,23 @@ export class SQLiteAdapter extends DatabaseAdapter {
     console.log(`[SQLite] Executing query: ${query}`)
     try {
       // Determine if this is a SELECT query or a mutation
-      const isSelect = query.trim().toUpperCase().startsWith('SELECT')
+      const trimmedQuery = query.trim().toUpperCase()
+      const isSelect = trimmedQuery.startsWith('SELECT') || trimmedQuery.startsWith('PRAGMA')
+      const isMutation = trimmedQuery.startsWith('INSERT') || trimmedQuery.startsWith('UPDATE') || trimmedQuery.startsWith('DELETE')
+      const isDDL = trimmedQuery.startsWith('CREATE') || trimmedQuery.startsWith('DROP') || trimmedQuery.startsWith('ALTER')
 
       if (isSelect) {
         return this.db.query(query).all()
+      } else if (isMutation || isDDL) {
+        const result = this.db.run(query)
+        // Return a meaningful result for mutations/DDL
+        return {
+          affectedRows: result.changes,
+          lastInsertRowid: result.lastInsertRowid,
+          message: isDDL ? 'Schema updated successfully' : `${result.changes} rows affected`
+        }
       } else {
+        // Fallback for other queries
         return this.db.run(query)
       }
     } catch (error) {
@@ -70,11 +82,11 @@ export class SQLiteAdapter extends DatabaseAdapter {
       ).all()
 
       const schema = {}
-      
+
       for (const t of tables) {
         const tableName = t.name
         const columns = this.db.query(`PRAGMA table_info("${tableName}")`).all()
-        
+
         schema[tableName] = columns.map(col => ({
           name: col.name,
           type: col.type,
@@ -82,7 +94,7 @@ export class SQLiteAdapter extends DatabaseAdapter {
           pk: col.pk > 0
         }))
       }
-      
+
       return schema
     } catch (e) {
       console.error('[SQLite] Error fetching schema:', e)

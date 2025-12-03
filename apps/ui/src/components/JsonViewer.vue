@@ -61,11 +61,11 @@ const formatPrimitive = (value: unknown): string => {
 }
 
 const getValueColor = (value: unknown): string => {
-  if (value === null || value === undefined) return 'text-stone-500'
-  if (typeof value === 'string') return 'text-emerald-400'
-  if (typeof value === 'number') return 'text-blue-400'
-  if (typeof value === 'boolean') return 'text-orange-400'
-  return 'text-stone-300'
+  if (value === null || value === undefined) return 'text-muted-foreground'
+  if (typeof value === 'string') return 'text-emerald-500 dark:text-emerald-400'
+  if (typeof value === 'number') return 'text-blue-500 dark:text-blue-400'
+  if (typeof value === 'boolean') return 'text-orange-500 dark:text-orange-400'
+  return 'text-foreground'
 }
 
 const itemCount = computed(() => {
@@ -87,53 +87,53 @@ const itemCount = computed(() => {
       <div class="flex items-center gap-1 group">
         <button
           @click="toggleExpanded"
-          class="flex items-center gap-1 hover:bg-stone-800/50 rounded px-1 py-0.5 transition-colors"
+          class="flex items-center gap-1 hover:bg-muted rounded px-1 py-0.5 transition-colors"
         >
           <ChevronRight
             v-if="!expanded"
-            class="w-3 h-3 text-stone-500 transition-transform"
+            class="w-3 h-3 text-muted-foreground transition-transform"
           />
           <ChevronDown
             v-else
-            class="w-3 h-3 text-stone-500 transition-transform"
+            class="w-3 h-3 text-muted-foreground transition-transform"
           />
-          <span class="text-stone-400">
+          <span class="text-muted-foreground">
             {{ dataType === 'array' ? '[' : '{' }}
           </span>
-          <span v-if="!expanded" class="text-stone-600 text-[10px]">
+          <span v-if="!expanded" class="text-muted-foreground/70 text-[10px]">
             {{ itemCount }} {{ dataType === 'array' ? 'items' : 'keys' }}
           </span>
-          <span v-if="!expanded" class="text-stone-400">
+          <span v-if="!expanded" class="text-muted-foreground">
             {{ dataType === 'array' ? ']' : '}' }}
           </span>
         </button>
         
         <button
           @click="copyValue"
-          class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-violet-500/20 transition-all"
+          class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-primary/20 transition-all"
           title="Copy JSON"
         >
-          <Check v-if="copied" class="w-3 h-3 text-emerald-400" />
-          <Copy v-else class="w-3 h-3 text-stone-500" />
+          <Check v-if="copied" class="w-3 h-3 text-emerald-500" />
+          <Copy v-else class="w-3 h-3 text-muted-foreground" />
         </button>
       </div>
 
-      <div v-if="expanded && depth < maxDepth" class="ml-4 border-l border-stone-800 pl-2 mt-1 space-y-1">
+      <div v-if="expanded && depth < maxDepth" class="ml-4 border-l border-border pl-2 mt-1 space-y-1">
         <div
           v-for="[key, value] in entries"
           :key="String(key)"
           class="flex items-start gap-2"
         >
-          <span class="text-violet-400 shrink-0">{{ key }}:</span>
+          <span class="text-primary shrink-0">{{ key }}:</span>
           <JsonViewer :data="value" :depth="depth + 1" :max-depth="maxDepth" />
         </div>
       </div>
 
-      <div v-if="expanded && depth >= maxDepth" class="ml-4 text-stone-600 text-[10px]">
+      <div v-if="expanded && depth >= maxDepth" class="ml-4 text-muted-foreground/70 text-[10px]">
         ... (max depth reached)
       </div>
 
-      <div v-if="expanded" class="text-stone-400">
+      <div v-if="expanded" class="text-muted-foreground">
         {{ dataType === 'array' ? ']' : '}' }}
       </div>
     </div>
