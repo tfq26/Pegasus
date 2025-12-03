@@ -13,6 +13,7 @@ console.log(`[DB] Connecting to ${url.startsWith('file:') ? 'local file' : 'Turs
 console.log(`[DB] URL: ${url}`)
 console.log(`[DB] Token Length: ${authToken ? authToken.length : 0}`)
 console.log(`[DB] Token Start: ${authToken ? authToken.substring(0, 10) + "..." : "None"}`)
+console.log(`[DB] Token End: ${authToken ? "..." + authToken.substring(authToken.length - 10) : "None"}`)
 
 export const db = createClient({
   url,
