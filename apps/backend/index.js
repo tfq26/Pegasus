@@ -151,6 +151,16 @@ app.get("/auth/me", async (c) => {
   }
 })
 
+// Test DB Route
+app.get("/test-db", async (c) => {
+  try {
+    const rs = await db.execute("SELECT 1 as val")
+    return c.json({ success: true, val: rs.rows[0], url: process.env.TURSO_DB_URL })
+  } catch (e) {
+    return c.json({ success: false, error: e.message, stack: e.stack, url: process.env.TURSO_DB_URL }, 500)
+  }
+})
+
 // Chat Routes
 app.get("/chats", async (c) => {
   const token = getCookie(c, "session")
