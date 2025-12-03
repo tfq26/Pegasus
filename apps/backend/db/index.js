@@ -1,4 +1,4 @@
-import { createClient } from "@libsql/client"
+import { createClient } from "@libsql/client/http"
 import { join, dirname } from "path"
 import { fileURLToPath } from "url"
 
