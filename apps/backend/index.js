@@ -36,16 +36,20 @@ const upsertUser = async (payload) => {
     await db.execute({
       sql: `
         INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
-        VALUES ($id, $email, $firstName, $lastName, $profilePictureUrl)
-        ON CONFLICT(id) DO NOTHING
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          email = excluded.email,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          profile_picture_url = excluded.profile_picture_url
       `,
-      args: {
-        id: payload.sub || payload.id,
-        email: payload.email,
-        firstName: payload.firstName,
-        lastName: payload.lastName,
-        profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-      }
+      args: [
+        payload.sub || payload.id,
+        payload.email,
+        payload.firstName,
+        payload.lastName,
+        (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+      ]
     })
   } catch (e) {
     console.error("Failed to upsert user:", e)
@@ -88,20 +92,20 @@ app.get("/auth/callback", async (c) => {
     await db.execute({
       sql: `
         INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
-        VALUES ($id, $email, $firstName, $lastName, $profilePictureUrl)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           email = excluded.email,
           first_name = excluded.first_name,
           last_name = excluded.last_name,
           profile_picture_url = excluded.profile_picture_url
       `,
-      args: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null
-      }
+      args: [
+        user.id,
+        user.email,
+        user.firstName,
+        user.lastName,
+        user.profile_picture_url || user.profilePictureUrl || null
+      ]
     })
 
     const payload = {
