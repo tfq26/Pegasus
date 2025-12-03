@@ -204,6 +204,20 @@ app.get("/test-fetch", async (c) => {
   }
 })
 
+// Fix User Route (Temporary)
+app.get("/fix-user", async (c) => {
+  try {
+    const email = "batsteel209@gmail.com"
+    await db.execute({
+      sql: "DELETE FROM users WHERE email = ?",
+      args: [email]
+    })
+    return c.json({ success: true, message: `Deleted user ${email}` })
+  } catch (e) {
+    return c.json({ success: false, error: e.message }, 500)
+  }
+})
+
 // Chat Routes
 app.get("/chats", async (c) => {
   const token = getCookie(c, "session")
