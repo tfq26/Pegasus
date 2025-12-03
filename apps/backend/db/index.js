@@ -18,6 +18,7 @@ console.log(`[DB] Token End: ${authToken ? "..." + authToken.substring(authToken
 export const db = createClient({
   url,
   authToken,
+  fetch: fetch, // Explicitly use global fetch
 })
 
 // Initialize tables
