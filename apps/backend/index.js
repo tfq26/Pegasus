@@ -73,6 +73,8 @@ app.get("/auth/callback", async (c) => {
     const { user } = await workos.userManagement.authenticateWithCode({
       code,
       clientId,
+      // Some providers/flows require redirectUri to match
+      redirectUri,
     })
 
     console.log("WorkOS User Object:", JSON.stringify(user, null, 2))
@@ -110,15 +112,19 @@ app.get("/auth/callback", async (c) => {
 
     const token = await sign(payload, jwtSecret)
 
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
+
     setCookie(c, "session", token, {
       httpOnly: true,
-      secure: false, // Set to true in production with HTTPS
+      secure: isProduction,
       sameSite: "Lax",
       path: "/",
       maxAge: 60 * 60 * 24,
     })
 
-    return c.redirect("http://localhost:5173")
+    // Redirect to the first allowed origin (frontend)
+    const frontendUrl = allowedOrigins[0] || "http://localhost:5173"
+    return c.redirect(frontendUrl)
   } catch (error) {
     console.error("Auth error:", error)
     return c.json({ error: error.message }, 500)
