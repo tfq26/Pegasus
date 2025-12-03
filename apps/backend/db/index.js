@@ -7,7 +7,7 @@ const __dirname = dirname(__filename)
 
 // Initialize database using Turso URL or local file
 const url = process.env.TURSO_DB_URL || `file:${join(__dirname, "pegasus.db")}`
-const authToken = process.env.TURSO_AUTH_TOKEN
+const authToken = process.env.TURSO_AUTH_TOKEN ? process.env.TURSO_AUTH_TOKEN.trim() : undefined
 
 console.log(`[DB] Connecting to ${url.startsWith('file:') ? 'local file' : 'Turso'}`)
 console.log(`[DB] URL: ${url}`)
