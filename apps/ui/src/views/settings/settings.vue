@@ -103,7 +103,7 @@ import IntegrationsTab from './IntegrationsTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema } from '@/lib/api'
+import { fetchConnectionSchema, QUERY_API_URL } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
 
 defineOptions({ name: 'SettingsPage' })
@@ -129,10 +129,6 @@ const isDark = computed(() => mode.value === 'dark')
 const toggleTheme = () => {
   mode.value = mode.value === 'dark' ? 'light' : 'dark'
 }
-
-onMounted(() => {
-  loadConnections()
-})
 
 // --- Settings model ---
 const settings = ref<SettingsModel>({
@@ -321,7 +317,7 @@ const summaryFor = (conn: ConnectionEntry) => {
 
 const loadConnections = async () => {
   try {
-    const res = await fetch('http://localhost:3000/connections', {
+    const res = await fetch(`${QUERY_API_URL}/connections`, {
       credentials: 'include'
     })
     
@@ -364,7 +360,7 @@ const addConnection = async () => {
   }
 
   try {
-    const res = await fetch('http://localhost:3000/connections', {
+    const res = await fetch(`${QUERY_API_URL}/connections`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -442,7 +438,7 @@ const updateConnection = async () => {
   }
 
   try {
-    const res = await fetch(`http://localhost:3000/connections/${editingConnectionId.value}`, {
+    const res = await fetch(`${QUERY_API_URL}/connections/${editingConnectionId.value}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -470,7 +466,7 @@ const updateConnection = async () => {
 
 const deleteConnection = async (id: string) => {
   try {
-    const res = await fetch(`http://localhost:3000/connections/${id}`, {
+    const res = await fetch(`${QUERY_API_URL}/connections/${id}`, {
       method: 'DELETE',
       credentials: 'include'
     })
@@ -490,7 +486,7 @@ const deleteConnection = async (id: string) => {
 
 const saveSettings = async () => {
   try {
-    const res = await fetch('http://localhost:3000/settings', {
+    const res = await fetch(`${QUERY_API_URL}/settings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -511,8 +507,9 @@ const saveSettings = async () => {
 }
 
 onMounted(async () => {
+  loadConnections()
   try {
-    const res = await fetch('http://localhost:3000/settings', {
+    const res = await fetch(`${QUERY_API_URL}/settings`, {
       credentials: 'include'
     })
     

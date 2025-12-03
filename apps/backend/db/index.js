@@ -48,6 +48,10 @@ class CustomTursoClient {
 
     // Handle Named Arguments -> Positional Arguments Conversion
     if (args && !Array.isArray(args) && typeof args === 'object') {
+      console.log("[DB] Converting named args to positional...")
+      console.log("[DB] SQL:", sql)
+      console.log("[DB] Args:", JSON.stringify(args))
+
       const namedValues = args
       const positionalArgs = []
 

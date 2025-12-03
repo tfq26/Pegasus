@@ -829,16 +829,16 @@ app.post("/connections", async (c) => {
     await db.execute({
       sql: `
         INSERT INTO connections (id, user_id, nickname, description, provider, config, created_at)
-        VALUES ($id, $userId, $nickname, $description, $provider, $config, unixepoch())
+        VALUES (?, ?, ?, ?, ?, ?, unixepoch())
       `,
-      args: {
-        id: connection.id || crypto.randomUUID(),
+      args: [
+        connection.id || crypto.randomUUID(),
         userId,
-        nickname: connection.nickname,
-        description: connection.description ?? null,
-        provider: connection.provider,
-        config: JSON.stringify(config)
-      }
+        connection.nickname,
+        connection.description ?? null,
+        connection.provider,
+        JSON.stringify(config)
+      ]
     })
 
     return c.json({ ok: true })
