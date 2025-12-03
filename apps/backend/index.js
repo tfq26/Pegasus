@@ -70,6 +70,11 @@ app.get("/auth/callback", async (c) => {
   }
 
   try {
+    console.log("Auth Debug Info:")
+    console.log("- Redirect URI:", redirectUri)
+    console.log("- Client ID:", clientId)
+    console.log("- API Key Loaded:", process.env.WORKOS_API_KEY ? "Yes (" + process.env.WORKOS_API_KEY.substring(0, 4) + "...)" : "No")
+
     const { user } = await workos.userManagement.authenticateWithCode({
       code,
       clientId,
