@@ -223,6 +223,30 @@ app.get("/test-fetch", async (c) => {
   }
 })
 
+// Test Adapter Route
+app.get("/test-adapter", async (c) => {
+  try {
+    const { SQLiteAdapter } = await import('./adapters/sqliteAdapter.js')
+    const config = {
+      provider: 'sqlite',
+      sqlite: {
+        path: process.env.TURSO_DB_URL?.replace("libsql://", "https://"),
+        authToken: process.env.TURSO_AUTH_TOKEN
+      }
+    }
+
+    console.log("Testing SQLiteAdapter with config:", JSON.stringify(config, null, 2))
+
+    const adapter = new SQLiteAdapter(config)
+    await adapter.connect()
+    const tables = await adapter.listCollections()
+
+    return c.json({ success: true, tables })
+  } catch (e) {
+    return c.json({ success: false, error: e.message, stack: e.stack }, 500)
+  }
+})
+
 // Fix User Route (Temporary)
 app.get("/fix-user", async (c) => {
   try {

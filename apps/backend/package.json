@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "bun run index.js",
+    "test": "bun test",
     "build": "echo 'Backend build complete'",
     "clean": "rm -rf node_modules"
   },

@@ -13,10 +13,12 @@ export class SQLiteAdapter extends DatabaseAdapter {
     }
 
     console.log(`[SQLite] Connecting to database at: ${url}`)
+    console.log(`[SQLite] Auth Token present: ${!!authToken}`)
 
     try {
       // If remote URL, use custom fetch client to avoid Vercel issues
       if (url.startsWith('http') || url.startsWith('libsql')) {
+        console.log("[SQLite] Using CustomFetchClient for remote connection")
         this.db = new CustomFetchClient(url, authToken)
       } else {
         this.db = createClient({ url })
