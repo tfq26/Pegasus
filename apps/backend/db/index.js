@@ -10,17 +10,20 @@ const url = process.env.TURSO_DB_URL || `file:${join(__dirname, "pegasus.db")}`
 const authToken = process.env.TURSO_AUTH_TOKEN
 
 console.log(`[DB] Connecting to ${url.startsWith('file:') ? 'local file' : 'Turso'}`)
+console.log(`[DB] URL: ${url}`)
+console.log(`[DB] Token Length: ${authToken ? authToken.length : 0}`)
+console.log(`[DB] Token Start: ${authToken ? authToken.substring(0, 10) + "..." : "None"}`)
 
 export const db = createClient({
-    url,
-    authToken,
+  url,
+  authToken,
 })
 
 // Initialize tables
 const initDb = async () => {
-    try {
-        // Users Table
-        await db.execute(`
+  try {
+    // Users Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE,
@@ -31,8 +34,8 @@ const initDb = async () => {
       )
     `)
 
-        // Dashboards Table
-        await db.execute(`
+    // Dashboards Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS dashboards (
         user_id TEXT PRIMARY KEY,
         layout TEXT,
@@ -41,8 +44,8 @@ const initDb = async () => {
       )
     `)
 
-        // Connections Table
-        await db.execute(`
+    // Connections Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -55,8 +58,8 @@ const initDb = async () => {
       )
     `)
 
-        // User Settings Table
-        await db.execute(`
+    // User Settings Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS user_settings (
         user_id TEXT PRIMARY KEY,
         settings TEXT,
@@ -65,8 +68,8 @@ const initDb = async () => {
       )
     `)
 
-        // Chats Table
-        await db.execute(`
+    // Chats Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS chats (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -78,15 +81,15 @@ const initDb = async () => {
       )
     `)
 
-        // Migration: Add messages column to chats if it doesn't exist
-        try {
-            await db.execute("ALTER TABLE chats ADD COLUMN messages TEXT DEFAULT '[]'")
-        } catch (e) {
-            // Ignore error if column already exists
-        }
+    // Migration: Add messages column to chats if it doesn't exist
+    try {
+      await db.execute("ALTER TABLE chats ADD COLUMN messages TEXT DEFAULT '[]'")
+    } catch (e) {
+      // Ignore error if column already exists
+    }
 
-        // Messages Table
-        await db.execute(`
+    // Messages Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
         chat_id TEXT,
@@ -97,8 +100,8 @@ const initDb = async () => {
       )
     `)
 
-        // Dashboard Elements Table
-        await db.execute(`
+    // Dashboard Elements Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS dashboard_elements (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -111,8 +114,8 @@ const initDb = async () => {
       )
     `)
 
-        // Queries History Table
-        await db.execute(`
+    // Queries History Table
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS queries (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -126,15 +129,15 @@ const initDb = async () => {
       )
     `)
 
-        // Migration: Add model column if it doesn't exist (for existing tables)
-        try {
-            await db.execute("ALTER TABLE queries ADD COLUMN model TEXT")
-        } catch (e) {
-            // Ignore error if column already exists
-        }
+    // Migration: Add model column if it doesn't exist (for existing tables)
+    try {
+      await db.execute("ALTER TABLE queries ADD COLUMN model TEXT")
+    } catch (e) {
+      // Ignore error if column already exists
+    }
 
-        // Dashboards V2 Table (Multi-dashboard support)
-        await db.execute(`
+    // Dashboards V2 Table (Multi-dashboard support)
+    await db.execute(`
       CREATE TABLE IF NOT EXISTS dashboards_v2 (
         id TEXT PRIMARY KEY,
         user_id TEXT,
@@ -148,63 +151,63 @@ const initDb = async () => {
       )
     `)
 
-        // Migration: Move v1 data to v2
-        try {
-            const v2Check = await db.execute("SELECT count(*) as count FROM dashboards_v2")
-            const count = Number(v2Check.rows[0]?.count) || 0
+    // Migration: Move v1 data to v2
+    try {
+      const v2Check = await db.execute("SELECT count(*) as count FROM dashboards_v2")
+      const count = Number(v2Check.rows[0]?.count) || 0
 
-            if (count === 0) {
-                console.log("[DB] Migrating legacy dashboards to v2...")
-                const usersRs = await db.execute("SELECT id FROM users")
+      if (count === 0) {
+        console.log("[DB] Migrating legacy dashboards to v2...")
+        const usersRs = await db.execute("SELECT id FROM users")
 
-                for (const user of usersRs.rows) {
-                    const userId = user.id
+        for (const user of usersRs.rows) {
+          const userId = user.id
 
-                    // Get Layout
-                    const layoutRs = await db.execute({
-                        sql: "SELECT layout FROM dashboards WHERE user_id = $userId",
-                        args: { userId }
-                    })
-                    const layout = layoutRs.rows[0]?.layout ? JSON.parse(layoutRs.rows[0].layout) : []
+          // Get Layout
+          const layoutRs = await db.execute({
+            sql: "SELECT layout FROM dashboards WHERE user_id = $userId",
+            args: { userId }
+          })
+          const layout = layoutRs.rows[0]?.layout ? JSON.parse(layoutRs.rows[0].layout) : []
 
-                    // Get Elements
-                    const elementsRs = await db.execute({
-                        sql: "SELECT * FROM dashboard_elements WHERE user_id = $userId",
-                        args: { userId }
-                    })
+          // Get Elements
+          const elementsRs = await db.execute({
+            sql: "SELECT * FROM dashboard_elements WHERE user_id = $userId",
+            args: { userId }
+          })
 
-                    if (elementsRs.rows.length > 0 || layout.length > 0) {
-                        const elements = elementsRs.rows.map((row) => ({
-                            id: row.id,
-                            type: row.type,
-                            title: row.title,
-                            config: typeof row.config === 'string' ? JSON.parse(row.config) : row.config,
-                            query: row.query
-                        }))
+          if (elementsRs.rows.length > 0 || layout.length > 0) {
+            const elements = elementsRs.rows.map((row) => ({
+              id: row.id,
+              type: row.type,
+              title: row.title,
+              config: typeof row.config === 'string' ? JSON.parse(row.config) : row.config,
+              query: row.query
+            }))
 
-                        const dashboardId = crypto.randomUUID()
-                        const data = JSON.stringify({ layout, elements })
+            const dashboardId = crypto.randomUUID()
+            const data = JSON.stringify({ layout, elements })
 
-                        await db.execute({
-                            sql: `INSERT INTO dashboards_v2 (id, user_id, title, data) VALUES ($id, $userId, 'Default Dashboard', $data)`,
-                            args: {
-                                id: dashboardId,
-                                userId,
-                                data
-                            }
-                        })
-                        console.log(`[DB] Migrated dashboard for user ${userId}`)
-                    }
-                }
-            }
-        } catch (e) {
-            console.error("[DB] Migration failed:", e)
+            await db.execute({
+              sql: `INSERT INTO dashboards_v2 (id, user_id, title, data) VALUES ($id, $userId, 'Default Dashboard', $data)`,
+              args: {
+                id: dashboardId,
+                userId,
+                data
+              }
+            })
+            console.log(`[DB] Migrated dashboard for user ${userId}`)
+          }
         }
-
-        console.log("[DB] Tables initialized")
+      }
     } catch (e) {
-        console.error("[DB] Failed to initialize tables:", e)
+      console.error("[DB] Migration failed:", e)
     }
+
+    console.log("[DB] Tables initialized")
+  } catch (e) {
+    console.error("[DB] Failed to initialize tables:", e)
+  }
 }
 
 initDb()
