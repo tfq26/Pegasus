@@ -1,4 +1,3 @@
-import { createClient } from "@libsql/client/http"
 import { join, dirname } from "path"
 import { fileURLToPath } from "url"
 
@@ -15,10 +14,129 @@ console.log(`[DB] Token Length: ${authToken ? authToken.length : 0}`)
 console.log(`[DB] Token Start: ${authToken ? authToken.substring(0, 10) + "..." : "None"}`)
 console.log(`[DB] Token End: ${authToken ? "..." + authToken.substring(authToken.length - 10) : "None"}`)
 
-export const db = createClient({
+// Custom DB Client using Fetch for Turso HTTP API
+class CustomTursoClient {
+  constructor(config) {
+    this.url = config.url
+    this.authToken = config.authToken
+    this.isLocal = this.url.startsWith('file:')
+
+    if (this.isLocal) {
+      // Fallback to @libsql/client for local development if needed
+      // But for now, we assume this is mostly for Vercel
+      import("@libsql/client").then(mod => {
+        this.localClient = mod.createClient({ url: this.url })
+      })
+    }
+  }
+
+  async execute(stmt) {
+    if (this.isLocal) {
+      if (!this.localClient) throw new Error("Local client not initialized yet")
+      return this.localClient.execute(stmt)
+    }
+
+    // Prepare statement
+    let sql, args
+    if (typeof stmt === 'string') {
+      sql = stmt
+      args = []
+    } else {
+      sql = stmt.sql
+      args = stmt.args || []
+    }
+
+    // Convert named args to positional if needed, or handle them
+    // Turso HTTP API expects args in a specific format
+    // For simplicity, we'll assume basic args for now or implement basic conversion
+
+    // Construct the HTTP URL
+    const httpUrl = this.url.replace("libsql://", "https://") + "/v2/pipeline"
+
+    const requestBody = {
+      requests: [
+        {
+          type: "execute",
+          stmt: {
+            sql: sql,
+            args: this.formatArgs(args)
+          }
+        },
+        { type: "close" }
+      ]
+    }
+
+    const response = await fetch(httpUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(requestBody)
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Turso Error ${response.status}: ${text}`)
+    }
+
+    const data = await response.json()
+    const result = data.results[0] // First result is the execute
+
+    if (result.type === 'error') {
+      throw new Error(`Turso Query Error: ${result.error.message}`)
+    }
+
+    return {
+      rows: this.parseRows(result.response.result),
+      rowsAffected: result.response.result.affected_row_count,
+      lastInsertRowid: result.response.result.last_insert_rowid
+    }
+  }
+
+  // Helper to format args for Turso API
+  formatArgs(args) {
+    if (Array.isArray(args)) {
+      return args.map(val => this.formatValue(val))
+    } else if (typeof args === 'object' && args !== null) {
+      // Named arguments
+      const named = {}
+      for (const [key, val] of Object.entries(args)) {
+        named[key] = this.formatValue(val)
+      }
+      return named
+    }
+    return []
+  }
+
+  formatValue(val) {
+    if (val === null) return { type: "null" }
+    if (typeof val === 'number') return { type: "float", value: val } // or integer/float detection
+    if (typeof val === 'boolean') return { type: "integer", value: val ? "1" : "0" }
+    if (val instanceof Uint8Array) return { type: "blob", base64: Buffer.from(val).toString('base64') }
+    return { type: "text", value: String(val) }
+  }
+
+  // Helper to parse rows from Turso API format to standard objects
+  parseRows(result) {
+    if (!result.cols || !result.rows) return []
+
+    const cols = result.cols.map(c => c.name)
+    return result.rows.map(row => {
+      const obj = {}
+      row.forEach((cell, i) => {
+        let val = cell.value
+        if (cell.type === 'integer' || cell.type === 'float') val = Number(val)
+        obj[cols[i]] = val
+      })
+      return obj
+    })
+  }
+}
+
+export const db = new CustomTursoClient({
   url,
-  authToken,
-  fetch: fetch, // Explicitly use global fetch
+  authToken
 })
 
 // Initialize tables
