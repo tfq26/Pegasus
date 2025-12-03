@@ -161,6 +161,45 @@ app.get("/test-db", async (c) => {
   }
 })
 
+// Test Fetch Route (Bypass Client)
+app.get("/test-fetch", async (c) => {
+  const url = process.env.TURSO_DB_URL
+  const token = process.env.TURSO_AUTH_TOKEN ? process.env.TURSO_AUTH_TOKEN.trim() : ""
+
+  if (!url || !token) {
+    return c.json({ error: "Missing URL or Token" }, 400)
+  }
+
+  // Convert libsql:// or https:// to https:// and append /v2/pipeline
+  const httpUrl = url.replace("libsql://", "https://") + "/v2/pipeline"
+
+  try {
+    const response = await fetch(httpUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        requests: [
+          { type: "execute", stmt: { sql: "SELECT 1" } },
+          { type: "close" }
+        ]
+      })
+    })
+
+    const text = await response.text()
+    return c.json({
+      status: response.status,
+      statusText: response.statusText,
+      body: text,
+      url: httpUrl
+    })
+  } catch (e) {
+    return c.json({ error: e.message, stack: e.stack }, 500)
+  }
+})
+
 // Chat Routes
 app.get("/chats", async (c) => {
   const token = getCookie(c, "session")
