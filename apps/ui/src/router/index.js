@@ -9,6 +9,7 @@ import Profile from '../views/profile.vue'
 import Settings from '../views/settings/settings.vue'
 import Login from '../views/Login.vue'
 import SharedDashboard from '../views/SharedDashboard.vue'
+import Support from '../views/Support.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -21,6 +22,7 @@ const router = createRouter({
     { path: '/shared/dashboard/:token', component: SharedDashboard },
     { path: '/profile', component: Profile },
     { path: '/settings', component: Settings },
+    { path: '/support', component: Support },
     { path: '/login', component: Login },
   ],
 })

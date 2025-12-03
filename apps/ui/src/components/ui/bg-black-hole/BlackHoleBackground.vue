@@ -62,7 +62,7 @@ const currentStrokeColor = computed(() => {
   if (props.strokeColor) return props.strokeColor;
   // Check if we are in dark mode
   if (typeof window !== 'undefined' && document.documentElement.classList.contains('dark')) {
-    return "#737373"; // Original dark mode color
+    return "#a855f7"; // Purple for dark mode (matches primary color)
   }
   return "#a3a3a3"; // Lighter gray for light mode
 });

@@ -390,3 +390,28 @@ export async function fetchSharedDashboard(token: string) {
   const body = await response.json()
   return body.dashboard
 }
+
+export interface FeedbackData {
+  userEmail?: string
+  featureCategory: string
+  customFeature?: string
+  issueType: string
+  description: string
+  browserInfo?: string
+  isUrgent: boolean
+}
+
+export async function submitFeedback(feedback: FeedbackData) {
+  const response = await fetch(`${QUERY_API_URL}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(feedback)
+  })
+
+  if (!response.ok) {
+    throw new Error('Failed to submit feedback')
+  }
+
+  return await response.json()
+}

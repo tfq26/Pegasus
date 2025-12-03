@@ -3,9 +3,15 @@ import { cors } from "hono/cors"
 import { adapters } from "./adapters/index.js"
 
 const app = new Hono()
+
+// CORS configuration - supports both development and production
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ["http://localhost:5173", "http://127.0.0.1:5173"]
+
 app.use("*", cors({
-  origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
-  methods: ["GET", "POST", "OPTIONS"],
+  origin: allowedOrigins,
+  methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
   allowHeaders: ["Content-Type", "Authorization"]
 }))
@@ -17,6 +23,7 @@ import { sign, verify } from "hono/jwt"
 
 import { db } from "../db/index.ts"
 import { aiClient } from "./ai/AIClient.js"
+import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 
 const workos = new WorkOS(process.env.WORKOS_API_KEY)
 const clientId = process.env.WORKOS_CLIENT_ID
@@ -1293,6 +1300,53 @@ app.post("/queries", async (c) => {
     return c.json({ error: "Failed to save query" }, 500)
   }
 })
+
+// Feedback endpoint
+app.post("/feedback", async (c) => {
+  try {
+    const { createFeedback } = await import("./src/services/feedback.js")
+    const { sendCriticalFeedbackEmail } = await import("./src/services/email.js")
+
+    const body = await c.req.json()
+    const feedbackData = {
+      userEmail: body.userEmail,
+      featureCategory: body.featureCategory,
+      customFeature: body.customFeature,
+      issueType: body.issueType,
+      description: body.description,
+      browserInfo: body.browserInfo,
+      isUrgent: body.isUrgent || false
+    }
+
+    // Validate required fields
+    if (!feedbackData.featureCategory || !feedbackData.issueType || !feedbackData.description) {
+      return c.json({ error: "Missing required fields" }, 400)
+    }
+
+    const { feedback, priority } = await createFeedback(feedbackData)
+
+    // Send immediate email for critical feedback
+    if (priority === "critical") {
+      await sendCriticalFeedbackEmail(feedback)
+    }
+
+    return c.json({
+      success: true,
+      message: "Feedback submitted successfully",
+      priority
+    })
+  } catch (e) {
+    console.error("Error submitting feedback:", e)
+    return c.json({ error: "Failed to submit feedback" }, 500)
+  }
+})
+
+// Initialize weekly digest cron job only if Neon is configured
+if (process.env.NEON_DATABASE_URL) {
+  initializeWeeklyDigest()
+} else {
+  console.log('Skipping weekly digest cron job - NEON_DATABASE_URL not configured')
+}
 
 Bun.serve({
   port: 3000,

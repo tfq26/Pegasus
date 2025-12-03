@@ -200,6 +200,71 @@
         </div>
       </DialogContent>
     </Dialog>
+
+    <!-- Rename Modal -->
+    <Dialog v-model:open="showRenameModal">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rename Dashboard</DialogTitle>
+          <DialogDescription>
+            Enter a new name for your dashboard.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex flex-col gap-4 py-4">
+          <div class="space-y-2">
+            <label for="dashboard-name" class="text-sm font-medium">Dashboard Name</label>
+            <input
+              id="dashboard-name"
+              v-model="renameTitle"
+              @keyup.enter="confirmRename"
+              placeholder="Enter dashboard name"
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button 
+            @click="showRenameModal = false"
+            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
+          >
+            Cancel
+          </button>
+          <button 
+            @click="confirmRename"
+            :disabled="!renameTitle.trim()"
+            class="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md disabled:opacity-50"
+          >
+            Rename
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Delete Confirmation Modal -->
+    <Dialog v-model:open="showDeleteModal">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete Dashboard</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete "{{ dashboardToDelete?.title }}"? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex justify-end gap-2 pt-4">
+          <button 
+            @click="showDeleteModal = false"
+            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
+          >
+            Cancel
+          </button>
+          <button 
+            @click="confirmDelete"
+            class="px-3 py-2 text-sm font-medium bg-destructive text-white hover:bg-destructive/90 rounded-md"
+          >
+            Delete
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -252,6 +317,15 @@ const showShareModal = ref(false)
 const shareUrl = ref('')
 const copied = ref(false)
 
+// Rename Modal State
+const showRenameModal = ref(false)
+const renameTitle = ref('')
+const dashboardToRename = ref<any>(null)
+
+// Delete Modal State
+const showDeleteModal = ref(false)
+const dashboardToDelete = ref<any>(null)
+
 const filteredDashboards = computed(() => {
   let result = [...dashboards.value]
   
@@ -285,34 +359,40 @@ const openDashboard = (id: string) => {
   router.push(`/dashboard/${id}`)
 }
 
-const handleRename = async (dashboard: any) => {
-  const newTitle = prompt('Enter new title:', dashboard.title)
-  if (newTitle && newTitle !== dashboard.title) {
-    try {
-      // Temporarily set current dashboard to update it
-      // Ideally we should have a separate update action that takes ID
-      // For now we can use the store's updateDashboard if we expose it or add a specific action
-      // But store.saveCurrentDashboard uses currentDashboard.
-      // Let's assume we need to select it first or add a new store method.
-      // For simplicity/safety, let's just select it then update.
-      await store.selectDashboard(dashboard.id)
-      store.currentDashboard!.title = newTitle
-      await store.saveCurrentDashboard()
-      toast.success('Dashboard renamed')
-    } catch (e) {
-      toast.error('Failed to rename dashboard')
-    }
+const handleRename = (dashboard: any) => {
+  dashboardToRename.value = dashboard
+  renameTitle.value = dashboard.title
+  showRenameModal.value = true
+}
+
+const confirmRename = async () => {
+  if (!renameTitle.value.trim() || !dashboardToRename.value) return
+  
+  try {
+    await store.selectDashboard(dashboardToRename.value.id)
+    store.currentDashboard!.title = renameTitle.value.trim()
+    await store.saveCurrentDashboard()
+    toast.success('Dashboard renamed successfully')
+    showRenameModal.value = false
+  } catch (e) {
+    toast.error('Failed to rename dashboard')
   }
 }
 
-const handleDelete = async (dashboard: any) => {
-  if (confirm(`Are you sure you want to delete "${dashboard.title}"?`)) {
-    try {
-      await store.removeDashboard(dashboard.id)
-      toast.success('Dashboard deleted')
-    } catch (e) {
-      toast.error('Failed to delete dashboard')
-    }
+const handleDelete = (dashboard: any) => {
+  dashboardToDelete.value = dashboard
+  showDeleteModal.value = true
+}
+
+const confirmDelete = async () => {
+  if (!dashboardToDelete.value) return
+  
+  try {
+    await store.removeDashboard(dashboardToDelete.value.id)
+    toast.success('Dashboard deleted successfully')
+    showDeleteModal.value = false
+  } catch (e) {
+    toast.error('Failed to delete dashboard')
   }
 }
 
