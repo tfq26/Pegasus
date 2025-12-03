@@ -208,13 +208,36 @@ app.get("/test-fetch", async (c) => {
 app.get("/fix-user", async (c) => {
   try {
     const email = "batsteel209@gmail.com"
-    await db.execute({
-      sql: "DELETE FROM users WHERE email = ?",
+
+    // Get User ID
+    const userRs = await db.execute({
+      sql: "SELECT id FROM users WHERE email = ?",
       args: [email]
     })
-    return c.json({ success: true, message: `Deleted user ${email}` })
+
+    if (userRs.rows.length === 0) {
+      return c.json({ success: false, message: "User not found" })
+    }
+
+    const userId = userRs.rows[0].id
+
+    // Delete related data
+    await db.execute({ sql: "DELETE FROM dashboards WHERE user_id = ?", args: [userId] })
+    await db.execute({ sql: "DELETE FROM dashboards_v2 WHERE user_id = ?", args: [userId] })
+    await db.execute({ sql: "DELETE FROM connections WHERE user_id = ?", args: [userId] })
+    await db.execute({ sql: "DELETE FROM user_settings WHERE user_id = ?", args: [userId] })
+    await db.execute({ sql: "DELETE FROM dashboard_elements WHERE user_id = ?", args: [userId] })
+    await db.execute({ sql: "DELETE FROM queries WHERE user_id = ?", args: [userId] })
+
+    // Delete chats (messages should cascade)
+    await db.execute({ sql: "DELETE FROM chats WHERE user_id = ?", args: [userId] })
+
+    // Finally delete user
+    await db.execute({ sql: "DELETE FROM users WHERE id = ?", args: [userId] })
+
+    return c.json({ success: true, message: `Deleted user ${email} and all related data` })
   } catch (e) {
-    return c.json({ success: false, error: e.message }, 500)
+    return c.json({ success: false, error: e.message, stack: e.stack }, 500)
   }
 })
 
