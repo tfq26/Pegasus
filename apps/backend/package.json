@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@hono/node-server": "^1.19.6",
     "@libsql/client": "^0.15.15",
     "@neondatabase/serverless": "^1.0.2",
     "@workos-inc/node": "^7.74.2",

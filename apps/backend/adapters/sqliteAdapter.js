@@ -1,17 +1,19 @@
 import { DatabaseAdapter } from "./DatabaseAdapter.js"
-import { Database } from "bun:sqlite"
+import { createClient } from "@libsql/client"
 
 export class SQLiteAdapter extends DatabaseAdapter {
   async connect() {
     // Connection can be a file path or ':memory:' for in-memory database
     const dbPath = this.connection.database || this.connection.path || ':memory:'
-    console.log(`[SQLite] Connecting to database at: ${dbPath}`)
+    const url = dbPath === ':memory:' ? ':memory:' : `file:${dbPath}`
+
+    console.log(`[SQLite] Connecting to database at: ${url}`)
 
     try {
-      this.db = new Database(dbPath)
+      this.db = createClient({ url })
       console.log(`[SQLite] Successfully opened database connection`)
     } catch (e) {
-      console.error(`[SQLite] Failed to open database at ${dbPath}:`, e)
+      console.error(`[SQLite] Failed to open database at ${url}:`, e)
       throw e
     }
   }
@@ -19,25 +21,20 @@ export class SQLiteAdapter extends DatabaseAdapter {
   async query(query) {
     console.log(`[SQLite] Executing query: ${query}`)
     try {
+      const result = await this.db.execute(query)
+
       // Determine if this is a SELECT query or a mutation
       const trimmedQuery = query.trim().toUpperCase()
       const isSelect = trimmedQuery.startsWith('SELECT') || trimmedQuery.startsWith('PRAGMA')
-      const isMutation = trimmedQuery.startsWith('INSERT') || trimmedQuery.startsWith('UPDATE') || trimmedQuery.startsWith('DELETE')
-      const isDDL = trimmedQuery.startsWith('CREATE') || trimmedQuery.startsWith('DROP') || trimmedQuery.startsWith('ALTER')
 
       if (isSelect) {
-        return this.db.query(query).all()
-      } else if (isMutation || isDDL) {
-        const result = this.db.run(query)
-        // Return a meaningful result for mutations/DDL
-        return {
-          affectedRows: result.changes,
-          lastInsertRowid: result.lastInsertRowid,
-          message: isDDL ? 'Schema updated successfully' : `${result.changes} rows affected`
-        }
+        return result.rows
       } else {
-        // Fallback for other queries
-        return this.db.run(query)
+        return {
+          affectedRows: result.rowsAffected,
+          lastInsertRowid: result.lastInsertRowid,
+          message: `${result.rowsAffected} rows affected`
+        }
       }
     } catch (error) {
       console.error(`[SQLite] Query failed: ${query}`, error)
@@ -47,9 +44,10 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
   async listCollections() {
     try {
-      const tables = this.db.query(
+      const result = await this.db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-      ).all()
+      )
+      const tables = result.rows
 
       console.log('[SQLite] Raw tables found:', tables)
 
@@ -68,7 +66,8 @@ export class SQLiteAdapter extends DatabaseAdapter {
     const safeLimit = Math.max(1, Number(limit) || 5)
 
     try {
-      return this.db.query(`SELECT * FROM "${name}" LIMIT ${safeLimit}`).all()
+      const result = await this.db.execute(`SELECT * FROM "${name}" LIMIT ${safeLimit}`)
+      return result.rows
     } catch (error) {
       console.warn(`Failed to sample table ${name}:`, error.message)
       return []
@@ -77,15 +76,17 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
   async getSchema() {
     try {
-      const tables = this.db.query(
+      const result = await this.db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-      ).all()
+      )
+      const tables = result.rows
 
       const schema = {}
 
       for (const t of tables) {
         const tableName = t.name
-        const columns = this.db.query(`PRAGMA table_info("${tableName}")`).all()
+        const colResult = await this.db.execute(`PRAGMA table_info("${tableName}")`)
+        const columns = colResult.rows
 
         schema[tableName] = columns.map(col => ({
           name: col.name,

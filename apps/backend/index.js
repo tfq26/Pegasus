@@ -1348,9 +1348,12 @@ if (process.env.NEON_DATABASE_URL) {
   console.log('Skipping weekly digest cron job - NEON_DATABASE_URL not configured')
 }
 
-Bun.serve({
-  port: 3000,
-  fetch: app.fetch
-})
+import { serve } from '@hono/node-server'
 
-console.log("Pegasus query gateway running on http://localhost:3000")
+const port = 3000
+console.log(`Pegasus query gateway running on http://localhost:${port}`)
+
+serve({
+  fetch: app.fetch,
+  port
+})

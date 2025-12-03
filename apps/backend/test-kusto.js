@@ -1,5 +1,5 @@
 
-import { db } from "../db/index.ts"
+import { db } from "./db/index.js"
 import { KustoAdapter } from "./adapters/kustoAdapter.js"
 
 async function testKusto() {
