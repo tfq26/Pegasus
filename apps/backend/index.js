@@ -88,7 +88,26 @@ app.get("/auth/callback", async (c) => {
 
     console.log("WorkOS User Object:", JSON.stringify(user, null, 2))
 
-    // Upsert user into SQLite
+    // Upsert user logic
+    const existingUserRs = await db.execute({
+      sql: "SELECT id FROM users WHERE email = ?",
+      args: [user.email]
+    })
+
+    if (existingUserRs.rows.length > 0) {
+      const existingId = existingUserRs.rows[0].id
+      if (existingId !== user.id) {
+        console.log(`[Auth] Email ${user.email} exists with different ID (${existingId}). Cleaning up old user...`)
+        // Delete old user and related data to avoid UNIQUE constraint error
+        // (In a real app, you might want to merge data or prompt user)
+        const tables = ['dashboards', 'dashboards_v2', 'connections', 'user_settings', 'dashboard_elements', 'queries', 'chats']
+        for (const table of tables) {
+          await db.execute({ sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [existingId] })
+        }
+        await db.execute({ sql: "DELETE FROM users WHERE id = ?", args: [existingId] })
+      }
+    }
+
     await db.execute({
       sql: `
         INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
@@ -126,7 +145,7 @@ app.get("/auth/callback", async (c) => {
     setCookie(c, "session", token, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: "Lax",
+      sameSite: isProduction ? "None" : "Lax",
       path: "/",
       maxAge: 60 * 60 * 24,
     })
