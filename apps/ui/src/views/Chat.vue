@@ -229,7 +229,7 @@ const loadConnections = async () => {
   }
 
   try {
-    const res = await fetch('http://localhost:3000/connections', {
+    const res = await fetch(`${QUERY_API_URL}/connections`, {
       credentials: 'include'
     })
     
