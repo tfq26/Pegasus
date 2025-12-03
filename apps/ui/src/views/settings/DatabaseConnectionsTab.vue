@@ -522,22 +522,33 @@ const formatRow = (row: Record<string, unknown>) => {
             <!-- SQLite -->
             <div v-else-if="props.connectionForm.provider === 'sqlite'" class="space-y-4">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database File Path</label>
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database Path or URL</label>
                 <input 
                   v-model="props.connectionForm.sqlite.path" 
-                  placeholder="/path/to/database.db or :memory:" 
+                  placeholder="/path/to/db.sqlite or https://...turso.io" 
                   class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" 
                 />
-                <p class="text-[10px] text-muted-foreground">Absolute path to your SQLite database file, or ":memory:" for in-memory database</p>
+                <p class="text-[10px] text-muted-foreground">Absolute path to local file, ":memory:", or Turso Database URL</p>
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Auth Token (Optional)</label>
+                <input 
+                  v-model="props.connectionForm.sqlite.authToken" 
+                  type="password"
+                  placeholder="Turso Auth Token" 
+                  class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" 
+                />
+                <p class="text-[10px] text-muted-foreground">Required for remote Turso connections</p>
               </div>
 
               <!-- Helper Text -->
               <div class="rounded-md bg-muted/50 p-3 text-[11px] text-muted-foreground border border-border">
                 <p class="font-medium text-foreground mb-1">Example paths:</p>
                 <ul class="list-disc list-inside space-y-0.5">
-                  <li><code class="text-primary">/Users/taufeeqali/Projects/Pegasus/apps/backend/test-data.db</code></li>
-                  <li><code class="text-primary">./data/myapp.db</code> (relative to backend directory)</li>
-                  <li><code class="text-primary">:memory:</code> (temporary in-memory database)</li>
+                  <li><code class="text-primary">https://my-db-org.turso.io</code> (Turso)</li>
+                  <li><code class="text-primary">/Users/me/data.db</code> (Local file)</li>
+                  <li><code class="text-primary">:memory:</code> (In-memory)</li>
                 </ul>
               </div>
             </div>

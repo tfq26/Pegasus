@@ -35,6 +35,7 @@ export type KustoConfig = {
 export type SQLiteConfig = {
   path: string
   database?: string
+  authToken?: string
 }
 
 export type ConnectionEntry = {
