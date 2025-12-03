@@ -21,7 +21,7 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
 
 
-import { db } from "./db/index.ts"
+import { db } from "./db/index.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 

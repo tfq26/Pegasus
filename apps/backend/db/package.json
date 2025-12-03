@@ -1,9 +1,0 @@
-{
-    "name": "@pegasus/db",
-    "version": "0.0.0",
-    "main": "index.ts",
-    "types": "index.ts",
-    "dependencies": {
-        "@libsql/client": "^0.15.15"
-    }
-}
