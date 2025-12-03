@@ -207,13 +207,13 @@ const formatRow = (row: Record<string, unknown>) => {
     <!-- Header Section -->
     <div class="flex items-center justify-between">
       <div>
-        <h2 class="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-          <div class="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
-            <Database class="w-6 h-6 text-violet-400" />
+        <h2 class="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-primary/10 border border-primary/20">
+            <Database class="w-6 h-6 text-primary" />
           </div>
           Database Connections
         </h2>
-        <p class="text-stone-400 mt-2 text-sm max-w-lg">
+        <p class="text-muted-foreground mt-2 text-sm max-w-lg">
           Manage your database connections. Pegasus uses these connections to query data and generate insights.
         </p>
       </div>
@@ -221,20 +221,20 @@ const formatRow = (row: Record<string, unknown>) => {
       <Dialog v-model:open="open">
         <DialogTrigger>
           <button 
-            class="group flex items-center gap-2 px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-500 transition-all shadow-lg shadow-violet-900/20 hover:shadow-violet-900/40"
+            class="group flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40"
           >
             <Plus class="w-4 h-4 group-hover:scale-110 transition-transform" />
             Add Connection
           </button>
         </DialogTrigger>
 
-        <DialogContent class="max-w-2xl bg-stone-950 border border-stone-800 text-stone-100 sm:rounded-xl shadow-2xl shadow-black/50">
+        <DialogContent class="max-w-2xl bg-background border border-border text-foreground sm:rounded-xl shadow-2xl">
           <DialogHeader>
-            <DialogTitle class="text-xl font-semibold text-violet-400 flex items-center gap-2">
+            <DialogTitle class="text-xl font-semibold text-primary flex items-center gap-2">
               <Database class="w-5 h-5" />
               {{ props.isEditMode ? 'Edit Database Connection' : 'Add Database Connection' }}
             </DialogTitle>
-            <DialogDescription class="text-stone-500">
+            <DialogDescription class="text-muted-foreground">
               {{ props.isEditMode ? 'Update your database connection settings.' : 'Configure a new database source for Pegasus to access.' }}
             </DialogDescription>
           </DialogHeader>
@@ -245,21 +245,21 @@ const formatRow = (row: Record<string, unknown>) => {
           >
             <div class="grid gap-6 md:grid-cols-2">
               <div class="space-y-2">
-                <label class="text-xs font-semibold uppercase tracking-wider text-stone-500">Nickname</label>
+                <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nickname</label>
                 <input
                   v-model="props.connectionForm.nickname"
                   type="text"
                   placeholder="e.g. Production DB"
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2.5 text-sm text-stone-100 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-colors placeholder:text-stone-600"
+                  class="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder:text-muted-foreground"
                 />
               </div>
               <div class="space-y-2">
-                <label class="text-xs font-semibold uppercase tracking-wider text-stone-500">Provider</label>
+                <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Provider</label>
                 <Select v-model="props.connectionForm.provider">
-                  <SelectTrigger class="w-full rounded-lg border-stone-800 bg-stone-900/50 h-[42px]">
+                  <SelectTrigger class="w-full rounded-lg border-input bg-background h-[42px]">
                     <SelectValue placeholder="Select provider" />
                   </SelectTrigger>
-                  <SelectContent class="bg-stone-900 border-stone-800">
+                  <SelectContent class="bg-popover border-border">
                     <SelectItem value="mysql">MySQL</SelectItem>
                     <SelectItem value="postgres">PostgreSQL</SelectItem>
                     <SelectItem value="mongodb">MongoDB</SelectItem>
@@ -271,66 +271,66 @@ const formatRow = (row: Record<string, unknown>) => {
             </div>
 
             <div class="space-y-2">
-              <label class="text-xs font-semibold uppercase tracking-wider text-stone-500">Description</label>
+              <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description</label>
               <textarea
                 v-model="props.connectionForm.description"
                 rows="2"
                 placeholder="Optional description for this connection..."
-                class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2.5 text-sm text-stone-100 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-colors placeholder:text-stone-600 resize-none"
+                class="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder:text-muted-foreground resize-none"
               />
             </div>
 
-            <div class="h-px bg-stone-800/50 my-4"></div>
+            <div class="h-px bg-border my-4"></div>
 
             <!-- MySQL -->
             <div v-if="props.connectionForm.provider === 'mysql'" class="grid gap-4 md:grid-cols-3">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Host</label>
-                <input v-model="props.connectionForm.mysql.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
+                <input v-model="props.connectionForm.mysql.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Port</label>
-                <input v-model.number="props.connectionForm.mysql.port" type="number" placeholder="3306" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
+                <input v-model.number="props.connectionForm.mysql.port" type="number" placeholder="3306" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database</label>
-                <input v-model="props.connectionForm.mysql.database" placeholder="pegasus" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
+                <input v-model="props.connectionForm.mysql.database" placeholder="pegasus" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">User</label>
-                <input v-model="props.connectionForm.mysql.user" placeholder="root" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">User</label>
+                <input v-model="props.connectionForm.mysql.user" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5 md:col-span-2">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Password</label>
-                <input v-model="props.connectionForm.mysql.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
+                <input v-model="props.connectionForm.mysql.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
             </div>
 
             <!-- PostgreSQL -->
             <div v-else-if="props.connectionForm.provider === 'postgres'" class="grid gap-4 md:grid-cols-3">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Host</label>
-                <input v-model="props.connectionForm.postgres.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
+                <input v-model="props.connectionForm.postgres.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Port</label>
-                <input v-model.number="props.connectionForm.postgres.port" type="number" placeholder="5432" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
+                <input v-model.number="props.connectionForm.postgres.port" type="number" placeholder="5432" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database</label>
-                <input v-model="props.connectionForm.postgres.database" placeholder="postgres" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
+                <input v-model="props.connectionForm.postgres.database" placeholder="postgres" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">User</label>
-                <input v-model="props.connectionForm.postgres.user" placeholder="postgres" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">User</label>
+                <input v-model="props.connectionForm.postgres.user" placeholder="postgres" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5 md:col-span-2">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Password</label>
-                <input v-model="props.connectionForm.postgres.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" />
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
+                <input v-model="props.connectionForm.postgres.password" type="password" placeholder="(optional)" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
               </div>
               <div class="space-y-1.5 md:col-span-3">
-                 <label class="flex items-center gap-2 text-sm text-stone-400 cursor-pointer">
-                    <input type="checkbox" v-model="props.connectionForm.postgres.ssl" class="rounded border-stone-700 bg-stone-900/50 text-violet-600 focus:ring-violet-500" />
+                 <label class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                    <input type="checkbox" v-model="props.connectionForm.postgres.ssl" class="rounded border-input bg-background text-primary focus:ring-primary" />
                     Enable SSL (Required for most cloud databases)
                  </label>
               </div>
@@ -339,27 +339,27 @@ const formatRow = (row: Record<string, unknown>) => {
             <!-- MongoDB -->
             <div v-else-if="props.connectionForm.provider === 'mongodb'" class="space-y-4">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Connection String (URI)</label>
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Connection String (URI)</label>
                 <div class="relative">
                   <input 
                     v-model="props.connectionForm.mongodb.url" 
                     placeholder="mongodb://localhost:27017" 
-                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 pl-3 pr-10 py-2 text-sm focus:border-violet-500 transition-colors font-mono" 
+                    class="w-full rounded-lg border border-input bg-background pl-3 pr-10 py-2 text-sm focus:border-primary transition-colors font-mono" 
                   />
                   <div class="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Loader2 v-if="tempLoading" class="w-4 h-4 text-violet-500 animate-spin" />
-                    <Search v-else class="w-4 h-4 text-stone-600" />
+                    <Loader2 v-if="tempLoading" class="w-4 h-4 text-primary animate-spin" />
+                    <Search v-else class="w-4 h-4 text-muted-foreground" />
                   </div>
                 </div>
               </div>
 
               <!-- Live discovery -->
-              <div class="rounded-lg border border-stone-800 bg-stone-900/30 p-4">
+              <div class="rounded-lg border border-border bg-muted/30 p-4">
                 <div class="flex items-center justify-between mb-3">
-                  <p class="text-xs font-medium text-stone-400">
+                  <p class="text-xs font-medium text-muted-foreground">
                     {{ tempDatabases.length ? 'Discovered Databases' : 'Discovered Collections' }}
                   </p>
-                  <span v-if="tempLoading" class="text-[10px] text-violet-400 animate-pulse">Scanning...</span>
+                  <span v-if="tempLoading" class="text-[10px] text-primary animate-pulse">Scanning...</span>
                 </div>
 
                 <div v-if="tempError" class="rounded bg-rose-950/20 border border-rose-900/50 p-3">
@@ -374,11 +374,11 @@ const formatRow = (row: Record<string, unknown>) => {
 
                 <!-- Discovered Databases -->
                 <div v-else-if="tempDatabases.length" class="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                  <div v-for="db in tempDatabases" :key="db" class="group rounded-md border border-stone-800 bg-stone-900/50 px-3 py-2.5 hover:border-violet-500/50 transition-colors">
+                  <div v-for="db in tempDatabases" :key="db" class="group rounded-md border border-border bg-background px-3 py-2.5 hover:border-primary/50 transition-colors">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2">
-                        <Database class="w-3.5 h-3.5 text-stone-500 group-hover:text-violet-400 transition-colors" />
-                        <span class="text-sm text-stone-200 font-medium">{{ db }}</span>
+                        <Database class="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                        <span class="text-sm text-foreground font-medium">{{ db }}</span>
                       </div>
                       <button 
                         @click="() => { props.connectionForm.mongodb.database = db; }" 
@@ -392,15 +392,15 @@ const formatRow = (row: Record<string, unknown>) => {
 
                 <!-- Discovered Collections (when no databases) -->
                 <div v-else-if="!tempDatabases.length && displayedTables.length" class="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                  <div v-for="table in displayedTables" :key="table" class="group rounded-md border border-stone-800 bg-stone-900/50 px-3 py-2.5 hover:border-violet-500/50 transition-colors">
+                  <div v-for="table in displayedTables" :key="table" class="group rounded-md border border-border bg-background px-3 py-2.5 hover:border-primary/50 transition-colors">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2">
-                        <Database class="w-3.5 h-3.5 text-stone-500 group-hover:text-violet-400 transition-colors" />
-                        <span class="text-sm text-stone-200 font-medium">{{ table }}</span>
+                        <Database class="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                        <span class="text-sm text-foreground font-medium">{{ table }}</span>
                       </div>
                       <button 
                         @click="() => { const parts = table.split('.',2); if (parts.length === 2) { props.connectionForm.mongodb.database = parts[0]!; props.connectionForm.mongodb.collection = parts[1]!; } else { props.connectionForm.mongodb.collection = table } }" 
-                        class="opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-violet-600/20 text-violet-300 text-[10px] font-medium hover:bg-violet-600/30 transition-all"
+                        class="opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-primary/20 text-primary text-[10px] font-medium hover:bg-primary/30 transition-all"
                       >
                         Select
                       </button>
@@ -427,22 +427,22 @@ const formatRow = (row: Record<string, unknown>) => {
               <!-- Manual Database/Collection Input -->
               <div class="grid gap-4 md:grid-cols-2 mt-4">
                 <div class="space-y-1.5">
-                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Database (Optional)</label>
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database (Optional)</label>
                   <input 
                     v-model="props.connectionForm.mongodb.database" 
                     placeholder="e.g. myDatabase" 
-                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                   />
-                  <p class="text-[10px] text-stone-600">Leave empty to list all databases</p>
+                  <p class="text-[10px] text-muted-foreground">Leave empty to list all databases</p>
                 </div>
                 <div class="space-y-1.5">
-                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Collection (Optional)</label>
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Collection (Optional)</label>
                   <input 
                     v-model="props.connectionForm.mongodb.collection" 
                     placeholder="e.g. users" 
-                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                   />
-                  <p class="text-[10px] text-stone-600">Leave empty to list all collections</p>
+                  <p class="text-[10px] text-muted-foreground">Leave empty to list all collections</p>
                 </div>
               </div>
             </div>
@@ -451,19 +451,19 @@ const formatRow = (row: Record<string, unknown>) => {
             <!-- Kusto -->
             <div v-else-if="props.connectionForm.provider === 'kusto'" class="space-y-4">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Cluster URL</label>
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Cluster URL</label>
                 <input 
                   v-model="props.connectionForm.kusto.cluster" 
                   placeholder="https://<cluster>.<region>.kusto.windows.net" 
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                 />
               </div>
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database Name</label>
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database Name</label>
                 <input 
                   v-model="props.connectionForm.kusto.database" 
                   placeholder="e.g. MyDatabase" 
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                  class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                 />
               </div>
 
@@ -479,39 +479,39 @@ const formatRow = (row: Record<string, unknown>) => {
                 </button>
               </div>
 
-              <div v-if="showAdvancedKusto" class="space-y-4 pl-3 border-l-2 border-stone-800/50 ml-1.5 animate-in slide-in-from-top-2 fade-in duration-200">
+              <div v-if="showAdvancedKusto" class="space-y-4 pl-3 border-l-2 border-border ml-1.5 animate-in slide-in-from-top-2 fade-in duration-200">
                 <div class="space-y-1.5">
-                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Tenant ID</label>
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Tenant ID</label>
                   <input 
                     v-model="props.connectionForm.kusto.tenantId" 
                     placeholder="Azure Tenant ID" 
-                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                   />
                 </div>
                 <div class="space-y-1.5">
-                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Client ID</label>
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Client ID</label>
                   <input 
                     v-model="props.connectionForm.kusto.clientId" 
                     placeholder="Azure Client ID (App ID)" 
-                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                   />
                 </div>
                 <div class="space-y-1.5">
-                  <label class="text-[10px] uppercase tracking-wide text-stone-500">Client Secret</label>
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Client Secret</label>
                   <input 
                     v-model="props.connectionForm.kusto.clientSecret" 
                     type="password"
                     placeholder="Azure Client Secret" 
-                    class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors" 
+                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" 
                   />
                 </div>
               </div>
 
               <!-- Helper Text -->
-              <div class="rounded-md bg-stone-900/50 p-3 text-[11px] text-stone-400 border border-stone-800 mt-2">
-                <p class="font-medium text-stone-300 mb-1">How to get these credentials:</p>
+              <div class="rounded-md bg-muted/50 p-3 text-[11px] text-muted-foreground border border-border mt-2">
+                <p class="font-medium text-foreground mb-1">How to get these credentials:</p>
                 <ol class="list-decimal list-inside space-y-0.5">
-                  <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps" target="_blank" class="text-violet-400 hover:underline">Azure Portal > App registrations</a>.</li>
+                  <li>Go to <a href="https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps" target="_blank" class="text-primary hover:underline">Azure Portal > App registrations</a>.</li>
                   <li>Create a new registration. Copy <strong>Client ID</strong> & <strong>Tenant ID</strong> from Overview.</li>
                   <li>Go to <strong>Certificates & secrets</strong> to create a new <strong>Client Secret</strong>.</li>
                   <li>In Kusto, add this App as a user in the <strong>Permissions</strong> tab.</li>
@@ -522,31 +522,31 @@ const formatRow = (row: Record<string, unknown>) => {
             <!-- SQLite -->
             <div v-else-if="props.connectionForm.provider === 'sqlite'" class="space-y-4">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-stone-500">Database File Path</label>
+                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database File Path</label>
                 <input 
                   v-model="props.connectionForm.sqlite.path" 
                   placeholder="/path/to/database.db or :memory:" 
-                  class="w-full rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 text-sm focus:border-violet-500 transition-colors font-mono" 
+                  class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" 
                 />
-                <p class="text-[10px] text-stone-600">Absolute path to your SQLite database file, or ":memory:" for in-memory database</p>
+                <p class="text-[10px] text-muted-foreground">Absolute path to your SQLite database file, or ":memory:" for in-memory database</p>
               </div>
 
               <!-- Helper Text -->
-              <div class="rounded-md bg-stone-900/50 p-3 text-[11px] text-stone-400 border border-stone-800">
-                <p class="font-medium text-stone-300 mb-1">Example paths:</p>
+              <div class="rounded-md bg-muted/50 p-3 text-[11px] text-muted-foreground border border-border">
+                <p class="font-medium text-foreground mb-1">Example paths:</p>
                 <ul class="list-disc list-inside space-y-0.5">
-                  <li><code class="text-violet-400">/Users/taufeeqali/Projects/Pegasus/apps/backend/test-data.db</code></li>
-                  <li><code class="text-violet-400">./data/myapp.db</code> (relative to backend directory)</li>
-                  <li><code class="text-violet-400">:memory:</code> (temporary in-memory database)</li>
+                  <li><code class="text-primary">/Users/taufeeqali/Projects/Pegasus/apps/backend/test-data.db</code></li>
+                  <li><code class="text-primary">./data/myapp.db</code> (relative to backend directory)</li>
+                  <li><code class="text-primary">:memory:</code> (temporary in-memory database)</li>
                 </ul>
               </div>
             </div>
 
-            <DialogFooter class="flex justify-end gap-3 pt-4 border-t border-stone-800/50">
+            <DialogFooter class="flex justify-end gap-3 pt-4 border-t border-border">
               <button
                 type="button"
                 @click="closeModal"
-                class="px-4 py-2 rounded-lg border border-stone-700 text-stone-300 text-sm font-medium hover:bg-stone-800 transition-colors"
+                class="px-4 py-2 rounded-lg border border-input text-muted-foreground text-sm font-medium hover:bg-muted transition-colors"
               >
                 Cancel
               </button>
@@ -569,7 +569,7 @@ const formatRow = (row: Record<string, unknown>) => {
       <article
         v-for="conn in props.savedConnections"
         :key="conn.id"
-        class="group relative flex flex-col rounded-xl border border-stone-800 bg-stone-950/50 hover:bg-stone-900/40 hover:border-stone-700 transition-all duration-200 overflow-hidden"
+        class="group relative flex flex-col rounded-xl border border-border bg-card hover:bg-muted/50 hover:border-primary/50 transition-all duration-200 overflow-hidden"
       >
         <!-- Status Bar -->
         <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-stone-800 to-transparent group-hover:from-violet-500 transition-colors duration-300"></div>
@@ -577,14 +577,14 @@ const formatRow = (row: Record<string, unknown>) => {
         <div class="p-5 flex flex-col h-full">
           <div class="flex items-start justify-between mb-4">
             <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-stone-900 border border-stone-800 group-hover:border-violet-500/30 group-hover:bg-violet-500/10 transition-colors">
+              <div class="p-2 rounded-lg bg-muted border border-border group-hover:border-primary/30 group-hover:bg-primary/10 transition-colors">
                 <Database v-if="conn.provider === 'mysql'" class="w-5 h-5 text-blue-400" />
                 <Server v-else-if="conn.provider === 'mongodb'" class="w-5 h-5 text-green-400" />
                 <Activity v-else class="w-5 h-5 text-orange-400" />
               </div>
               <div>
-                <h3 class="font-semibold text-stone-100 text-base leading-tight">{{ conn.nickname }}</h3>
-                <p class="text-xs text-stone-500 mt-1 font-mono uppercase tracking-wider">{{ conn.provider }}</p>
+                <h3 class="font-semibold text-foreground text-base leading-tight">{{ conn.nickname }}</h3>
+                <p class="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider">{{ conn.provider }}</p>
               </div>
             </div>
 
@@ -614,11 +614,11 @@ const formatRow = (row: Record<string, unknown>) => {
             </div>
           </div>
 
-          <p v-if="conn.description" class="text-sm text-stone-400 mb-4 line-clamp-2">
+          <p v-if="conn.description" class="text-sm text-muted-foreground mb-4 line-clamp-2">
             {{ conn.description }}
           </p>
 
-          <div class="mt-auto pt-4 border-t border-stone-800/50">
+          <div class="mt-auto pt-4 border-t border-border">
             <div class="flex items-center justify-between text-xs">
               <div class="flex items-center gap-2">
                 <div class="relative flex h-2.5 w-2.5">
@@ -637,7 +637,7 @@ const formatRow = (row: Record<string, unknown>) => {
                   {{ props.statusLabel(props.connectionStatusFor(conn.id)) }}
                 </span>
               </div>
-              <span class="text-stone-500 font-mono">
+              <span class="text-muted-foreground font-mono">
                 {{ props.connectionStatusFor(conn.id)?.tables.length ?? 0 }} tables
               </span>
             </div>
@@ -652,7 +652,7 @@ const formatRow = (row: Record<string, unknown>) => {
 
             <!-- Connection Details Code Block -->
             <div class="mt-3 group/code relative">
-              <pre class="rounded-lg border border-stone-800 bg-black/40 px-3 py-2 text-[10px] text-stone-400 font-mono overflow-x-auto custom-scrollbar">{{ props.summaryFor(conn) }}</pre>
+              <pre class="rounded-lg border border-border bg-muted/50 px-3 py-2 text-[10px] text-muted-foreground font-mono overflow-x-auto custom-scrollbar">{{ props.summaryFor(conn) }}</pre>
             </div>
           </div>
         </div>
@@ -660,17 +660,17 @@ const formatRow = (row: Record<string, unknown>) => {
     </div>
 
     <!-- Empty State -->
-    <div v-else class="flex flex-col items-center justify-center py-24 px-4 text-center rounded-2xl border border-dashed border-stone-800 bg-stone-900/20">
-      <div class="p-4 rounded-full bg-stone-900/50 mb-4">
-        <Database class="w-8 h-8 text-stone-600" />
+    <div v-else class="flex flex-col items-center justify-center py-24 px-4 text-center rounded-2xl border border-dashed border-border bg-muted/20">
+      <div class="p-4 rounded-full bg-muted mb-4">
+        <Database class="w-8 h-8 text-muted-foreground" />
       </div>
-      <h3 class="text-lg font-semibold text-stone-200 mb-2">No connections yet</h3>
-      <p class="text-sm text-stone-500 max-w-sm mb-6">
+      <h3 class="text-lg font-semibold text-foreground mb-2">No connections yet</h3>
+      <p class="text-sm text-muted-foreground max-w-sm mb-6">
         Add a database connection to start querying your data. We support MySQL, PostgreSQL, MongoDB, and Kusto.
       </p>
       <button 
         @click="open = true"
-        class="flex items-center gap-2 px-4 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm font-medium hover:bg-stone-700 hover:text-white transition-colors"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80 transition-colors"
       >
         <Plus class="w-4 h-4" />
         Add your first connection

@@ -20,8 +20,8 @@
               <h1 class="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 drop-shadow-md">
                 Pegasus
               </h1>
-              <p class="text-lg md:text-xl text-muted-foreground font-medium max-w-xl mx-auto">
-                Intelligent Cloud Insight Platform
+              <p class="text-lg md:text-xl text-primary font-medium max-w-xl mx-auto">
+                Insight with Intelligence and Ease
               </p>
             </div>
           </BlackHoleBackground>
@@ -46,23 +46,30 @@
           </div>
 
           <!-- Features Grid -->
-          <div class="grid md:grid-cols-2 gap-6">
-            <div
-              v-for="(feature, index) in features"
-              :key="index"
-              class="group p-6 rounded-2xl bg-card hover:bg-accent/50 border border-border hover:border-primary/30 transition-all duration-300 shadow-sm hover:shadow-md"
-            >
-              <div class="flex items-start gap-4">
-                <div class="p-3 rounded-xl bg-primary/10 text-2xl shrink-0 group-hover:scale-110 transition-transform duration-300">
-                  {{ feature.icon }}
-                </div>
-                <div>
-                  <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
-                    {{ feature.title }}
-                  </h3>
-                  <p class="text-muted-foreground text-sm leading-relaxed">
-                    {{ feature.description }}
-                  </p>
+          <div>
+            <h2 class="text-2xl font-bold text-foreground mb-6 text-center">Key Features</h2>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div
+                v-for="(feature, index) in features"
+                :key="index"
+                @click="openFeatureModal(feature)"
+                class="group p-6 rounded-2xl bg-card hover:bg-accent/50 border border-border hover:border-primary/30 transition-all duration-300 shadow-sm hover:shadow-md cursor-pointer"
+              >
+                <div class="flex items-start gap-4">
+                  <div class="p-3 rounded-xl bg-primary/10 text-2xl shrink-0 group-hover:scale-110 transition-transform duration-300">
+                    {{ feature.icon }}
+                  </div>
+                  <div>
+                    <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
+                      {{ feature.title }}
+                    </h3>
+                    <p class="text-muted-foreground text-sm leading-relaxed">
+                      {{ feature.description }}
+                    </p>
+                    <p class="text-xs text-primary mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      Click to learn more →
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -89,37 +96,155 @@
         </div>
       </transition>
     </div>
+
+    <!-- Feature Detail Modal -->
+    <Dialog v-model:open="showFeatureModal">
+      <DialogContent class="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-3 text-2xl">
+            <span class="text-3xl">{{ selectedFeature?.icon }}</span>
+            {{ selectedFeature?.title }}
+          </DialogTitle>
+          <DialogDescription>
+            {{ selectedFeature?.description }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-4 py-4">
+          <div v-for="(detail, index) in selectedFeature?.details" :key="index" class="space-y-2">
+            <h4 class="font-semibold text-foreground flex items-center gap-2">
+              <span class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
+                {{ index + 1 }}
+              </span>
+              {{ detail.subtitle }}
+            </h4>
+            <p class="text-muted-foreground text-sm leading-relaxed pl-8">
+              {{ detail.content }}
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import BlackHoleBackground from '@/components/ui/bg-black-hole/BlackHoleBackground.vue'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+
+
 defineOptions({ name: 'AboutView' })
+
+const showFeatureModal = ref(false)
+const selectedFeature = ref<typeof features[0] | null>(null)
+
+const openFeatureModal = (feature: typeof features[0]) => {
+  selectedFeature.value = feature
+  showFeatureModal.value = true
+}
 
 const features = [
   {
-    icon: '⚡',
-    title: 'Unified Cloud Insight',
-    description:
-      'Connect, visualize, and control distributed systems from a single, intuitive interface.'
-  },
-  {
     icon: '🤖',
-    title: 'AI-Powered Assistance',
+    title: 'AI Query Automation',
     description:
-      'Context-aware suggestions and automation make debugging and optimization effortless.'
+      'Intelligent query generation and optimization powered by advanced AI models.',
+    details: [
+      {
+        subtitle: 'Natural Language to SQL',
+        content: 'Simply describe what data you need in plain English, and Pegasus will generate optimized SQL queries automatically. No need to remember complex syntax or table structures.'
+      },
+      {
+        subtitle: 'Context-Aware Suggestions',
+        content: 'The AI understands your database schema and query history to provide intelligent autocomplete suggestions and query improvements as you type.'
+      },
+      {
+        subtitle: 'Query Optimization',
+        content: 'Automatically analyzes and optimizes your queries for better performance, suggesting indexes and identifying potential bottlenecks before execution.'
+      },
+      {
+        subtitle: 'Multi-Table Intelligence',
+        content: 'When queries involve multiple tables, Pegasus prompts you for clarification to ensure accurate JOIN operations and data relationships.'
+      }
+    ]
   },
   {
-    icon: '🧩',
-    title: 'Modular Architecture',
+    icon: '📊',
+    title: 'Dashboard Generation',
     description:
-      'Each component of Pegasus—UI, API, and AI engine—is independently scalable and built for flexibility.'
+      'Automatically create beautiful, interactive dashboards from your query results.',
+    details: [
+      {
+        subtitle: 'Smart Visualization Selection',
+        content: 'Pegasus analyzes your data and automatically recommends the best chart types - whether it\'s bar charts, line graphs, pie charts, or stat cards.'
+      },
+      {
+        subtitle: 'Drag & Drop Layout',
+        content: 'Easily customize your dashboard layout with an intuitive drag-and-drop interface. Resize, reposition, and organize your visualizations exactly how you want them.'
+      },
+      {
+        subtitle: 'Real-Time Updates',
+        content: 'Dashboards can be configured to refresh automatically, keeping your insights current with live data from your databases.'
+      },
+      {
+        subtitle: 'Share & Collaborate',
+        content: 'Generate shareable links to your dashboards. Others can view them in read-only mode or import them to create their own customized versions.'
+      }
+    ]
+  },
+  {
+    icon: '🔗',
+    title: 'Universal Database Support',
+    description:
+      'Connect to any database provider with flexible, provider-agnostic architecture.',
+    details: [
+      {
+        subtitle: 'Multiple Database Types',
+        content: 'Seamlessly connect to MySQL, PostgreSQL, MongoDB, Azure Data Explorer (Kusto), SQLite, and more. Each connection is managed independently with full schema discovery.'
+      },
+      {
+        subtitle: 'Live Schema Discovery',
+        content: 'Automatically detect databases, tables, and collections when you connect. For MongoDB, Pegasus even previews sample documents to help you understand your data structure.'
+      },
+      {
+        subtitle: 'Secure Connections',
+        content: 'Support for SSL/TLS encryption, service principal authentication for Azure services, and secure credential storage to keep your data safe.'
+      },
+      {
+        subtitle: 'Connection Testing',
+        content: 'Test connections before saving them, with detailed error messages and troubleshooting guidance to help you get connected quickly.'
+      }
+    ]
   },
   {
     icon: '🛰️',
     title: 'Real-Time Monitoring',
     description:
-      'Observe live metrics, logs, and system health with dynamic visual feedback and intelligent alerting.'
+      'Observe live metrics, logs, and system health with dynamic visual feedback.',
+    details: [
+      {
+        subtitle: 'Live Query Execution',
+        content: 'Watch your queries execute in real-time with progress indicators and streaming results. Cancel long-running queries with a single click.'
+      },
+      {
+        subtitle: 'Performance Metrics',
+        content: 'Track query execution times, row counts, and resource usage to identify performance bottlenecks and optimize your database operations.'
+      },
+      {
+        subtitle: 'Connection Health',
+        content: 'Monitor the status of all your database connections at a glance, with automatic reconnection and detailed error reporting when issues arise.'
+      },
+      {
+        subtitle: 'Activity History',
+        content: 'Keep a complete history of all queries and operations, making it easy to revisit past work or debug issues by reviewing what happened.'
+      }
+    ]
   }
 ]
 </script>

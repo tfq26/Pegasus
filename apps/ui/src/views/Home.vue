@@ -1,34 +1,39 @@
 <template>
   <div
-    class="relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground"
+    class="relative flex h-full w-full flex-col items-center justify-center overflow-hidden text-foreground"
   >
-    <Ripple
-      class="bg-foreground/5 [mask-image:linear-gradient(to_bottom,white,transparent)] absolute inset-0"
-      circle-class="border-[hsl(var(--primary))] bg-foreground/5 dark:bg-foreground/10 rounded-md"
+    <StarsBackground
+      class="absolute inset-0"
+      :factor="0.05"
+      :speed="50"
+      star-color="#7c3aed"
     />
     <div class="z-10 w-full flex flex-col justify-between h-full">
       <div
         class="flex flex-col items-center justify-center grow text-center px-10 select-none"
       >
         <div
-          class="w-20 h-20 mb-6 flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg shadow-primary/20"
+          class="w-20 h-20 mb-6 flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg shadow-primary/20 animate-fadeInUp"
+          style="animation-delay: 0.1s"
         >
           <img src="/pegasus-white.svg" alt="Pegasus Logo" class="w-10 h-10 dark:invert-0 invert" />
         </div>
 
         <h1
-          class="text-5xl font-extrabold mb-4 text-primary tracking-wide drop-shadow-sm"
+          class="text-5xl font-extrabold mb-4 text-black dark:text-white tracking-wide drop-shadow-sm animate-fadeInUp"
+          style="animation-delay: 0.2s"
         >
           Data that reaches new heights
         </h1>
         <p
-          class="text-muted-foreground text-lg max-w-2xl mb-10 leading-relaxed animate-fadeIn"
+          class="text-primary text-lg max-w-2xl mb-10 leading-relaxed animate-fadeInUp"
+          style="animation-delay: 0.3s"
         >
-          The next generation of data management — where security, insight, and AI
+          Pegasus is the next generation of data management — where security, insight, and AI
           converge into one seamless, collaborative workspace.
         </p>
 
-        <div class="flex gap-4">
+        <div class="flex gap-4 animate-fadeInUp" style="animation-delay: 0.4s">
           <RouterLink
             to="/dashboard"
             class="px-6 py-3 bg-primary rounded-xl hover:bg-primary/90 text-primary-foreground font-medium text-sm tracking-wide shadow-md shadow-primary/20 transition"
@@ -45,12 +50,14 @@
       </div>
 
       <div
-        class="bg-background/80 backdrop-blur-md py-10 px-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-border"
+        class="bg-background/80 backdrop-blur-md py-10 px-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-border animate-fadeInUp"
+        style="animation-delay: 0.5s"
       >
         <div
-          v-for="action in quickActions"
+          v-for="(action, index) in quickActions"
           :key="action.title"
-          class="group flex flex-col items-center justify-center text-center p-6 rounded-2xl border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-all duration-300 cursor-pointer shadow-sm"
+          class="group flex flex-col items-center justify-center text-center p-6 rounded-2xl border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-all duration-300 cursor-pointer shadow-sm animate-fadeInUp"
+          :style="`animation-delay: ${0.6 + index * 0.1}s`"
         >
           <div
             class="text-3xl mb-3 text-primary group-hover:scale-110 transition-transform"
@@ -64,7 +71,7 @@
         </div>
       </div>
 
-      <footer class="py-4 text-center text-muted-foreground text-xs border-t border-border bg-background">
+      <footer class="py-4 text-center text-muted-foreground text-xs border-t border-border bg-background animate-fadeInUp" style="animation-delay: 1s">
         © {{ new Date().getFullYear() }} Pegasus — Intelligent Cloud Insight Platform
       </footer>
     </div>
@@ -72,8 +79,8 @@
 </template>
 
 <script setup lang="ts">
-// Ensure the Ripple component is correctly imported
-import { Ripple } from '@/components/ui/ripple' 
+// Ensure the StarsBackground component is correctly imported
+import StarsBackground from '@/components/ui/bg-stars/StarsBackground.vue' 
 defineOptions({ name: 'HomePage' })
 
 const quickActions = [
@@ -101,10 +108,10 @@ const quickActions = [
 </script>
 
 <style scoped>
-@keyframes fadeIn {
+@keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(30px);
   }
   to {
     opacity: 1;
@@ -112,7 +119,8 @@ const quickActions = [
   }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.8s ease-out forwards;
+.animate-fadeInUp {
+  opacity: 0;
+  animation: fadeInUp 0.8s ease-out forwards;
 }
 </style>

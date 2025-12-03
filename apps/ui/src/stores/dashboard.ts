@@ -201,7 +201,26 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const importDashboard = async (dashboardData: any) => {
         isLoading.value = true
         try {
-            const title = `${dashboardData.title} (Imported)`
+            // Generate unique title
+            let title = dashboardData.title
+            const existingTitles = new Set(dashboards.value.map(d => d.title))
+
+            if (existingTitles.has(title)) {
+                let baseTitle = title
+                let counter = 1
+
+                // Check if title already has a number suffix like " (1)"
+                const match = title.match(/^(.*) \((\d+)\)$/)
+                if (match) {
+                    baseTitle = match[1]
+                    counter = parseInt(match[2]) + 1
+                }
+
+                while (existingTitles.has(`${baseTitle} (${counter})`)) {
+                    counter++
+                }
+                title = `${baseTitle} (${counter})`
+            }
             // Create a new dashboard with the shared data
             // We need to regenerate IDs for elements to avoid conflicts if we ever merge or just to be clean
             const elements = dashboardData.data.elements.map((el: any) => ({

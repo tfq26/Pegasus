@@ -57,11 +57,11 @@ const sliderValue = computed({
 
 <template>
   <div class="space-y-4 max-w-3xl">
-    <h2 class="text-2xl font-semibold text-violet-400 mb-6">Pegasus AI</h2>
+    <h2 class="text-2xl font-semibold text-primary mb-6">Pegasus AI</h2>
     <div>
-      <h3 class="text-stone-300 font-medium mb-1">Response Detail</h3>
+      <h3 class="text-foreground font-medium mb-1">Response Detail</h3>
       <Slider v-model="sliderValue" :min="0" :max="2" class="w-full" />
-      <p class="text-stone-400 text-sm">Level: <strong>{{ ['Brief', 'Balanced', 'Detailed'][props.settings.aiDetail] }}</strong></p>
+      <p class="text-muted-foreground text-sm">Level: <strong>{{ ['Brief', 'Balanced', 'Detailed'][props.settings.aiDetail] }}</strong></p>
     </div>
 
     <label class="flex items-center gap-2 text-sm">
@@ -74,34 +74,34 @@ const sliderValue = computed({
       Enable AI code suggestions
     </label>
 
-    <div class="pt-6 border-t border-stone-800">
+    <div class="pt-6 border-t border-border">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-stone-300 font-medium">Available Models</h3>
+        <h3 class="text-foreground font-medium">Available Models</h3>
         <input 
           v-model="searchQuery"
           type="text"
           placeholder="Search models..."
-          class="px-3 py-1.5 text-xs bg-stone-900 border border-stone-800 rounded-md text-stone-200 focus:outline-none focus:border-violet-500 w-48"
+          class="px-3 py-1.5 text-xs bg-background border border-input rounded-md text-foreground focus:outline-none focus:border-primary w-48"
         />
       </div>
       
-      <div v-if="loading" class="text-stone-500 text-sm">Loading models...</div>
-      <div v-else-if="error" class="text-rose-400 text-sm">{{ error }}</div>
+      <div v-if="loading" class="text-muted-foreground text-sm">Loading models...</div>
+      <div v-else-if="error" class="text-destructive text-sm">{{ error }}</div>
       <div v-else class="space-y-3 max-h-[400px] overflow-y-auto pr-2">
         <div 
           v-for="model in filteredModels" 
           :key="model.id"
-          class="p-3 rounded-lg border border-stone-800 bg-stone-900/50 flex items-start justify-between group hover:border-stone-700 transition-colors"
+          class="p-3 rounded-lg border border-border bg-card flex items-start justify-between group hover:border-primary/50 transition-colors"
         >
           <div>
-            <div class="font-medium text-stone-200 text-sm flex items-center gap-2">
+            <div class="font-medium text-foreground text-sm flex items-center gap-2">
               {{ model.name }}
-              <span v-if="isModelEnabled(model.id)" class="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/20 text-violet-300 border border-violet-500/30">
+              <span v-if="isModelEnabled(model.id)" class="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary border border-primary/30">
                 Active
               </span>
             </div>
-            <div class="text-xs text-stone-500 mt-1">{{ model.description }}</div>
-            <div class="text-[10px] text-stone-600 mt-2 font-mono">
+            <div class="text-xs text-muted-foreground mt-1">{{ model.description }}</div>
+            <div class="text-[10px] text-muted-foreground mt-2 font-mono">
               Context: {{ model.contextWindow }} tokens
             </div>
           </div>
@@ -109,13 +109,13 @@ const sliderValue = computed({
             @click="toggleModel(model.id)"
             class="px-3 py-1.5 rounded text-xs font-medium transition-colors"
             :class="isModelEnabled(model.id) 
-              ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20' 
-              : 'bg-stone-800 text-stone-300 hover:bg-violet-600 hover:text-white border border-stone-700'"
+              ? 'bg-destructive/10 text-destructive hover:bg-destructive/20 border border-destructive/20' 
+              : 'bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground border border-border'"
           >
             {{ isModelEnabled(model.id) ? 'Remove' : 'Add' }}
           </button>
         </div>
-        <div v-if="filteredModels.length === 0" class="text-center py-8 text-stone-500 text-sm">
+        <div v-if="filteredModels.length === 0" class="text-center py-8 text-muted-foreground text-sm">
           No models found matching "{{ searchQuery }}"
         </div>
       </div>
