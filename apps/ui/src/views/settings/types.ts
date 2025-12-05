@@ -12,6 +12,17 @@ export type ConnectionFormState = {
   sqlite: SQLiteConfig
 }
 
+export const defaultConnectionForm: ConnectionFormState = {
+  nickname: '',
+  provider: 'mysql',
+  description: '',
+  mysql: { host: '', port: 3306, database: '', user: '', password: '' },
+  postgres: { host: '', port: 5432, database: '', user: '', password: '', ssl: false },
+  mongodb: { url: '', database: '', collection: '' },
+  kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '' },
+  sqlite: { path: '', authToken: '' }
+}
+
 export type ConnectionStatusState = {
   status: 'loading' | 'connected' | 'error'
   tables: string[]
@@ -38,4 +49,13 @@ export type SettingsModel = {
   slackConnected: boolean
   azureConnected: boolean
   enabledModels?: string[]
+  activeModel?: string
+  temperature?: number
+  maxTokens?: number
+  customInstructions?: string
+  defaultPageSize?: number
+  dateFormat?: 'iso' | 'local' | 'relative'
+  csvDelimiter?: ',' | ';' | '\t'
+  confirmDestructive?: boolean
+  notifications?: boolean
 }

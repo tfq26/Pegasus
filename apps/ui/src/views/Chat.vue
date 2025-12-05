@@ -75,6 +75,7 @@
         @resolve-ambiguity="handleResolveAmbiguity"
         @create-dashboard-element="handleCreateDashboardElement"
         :has-recommendation="hasRecommendation"
+        :settings="settings"
       />
 
       <AmbiguityDialog
@@ -298,6 +299,7 @@ const aiOptions = ref({
 const dashboardPreviewVisible = ref(false)
 const dashboardPreviewConfig = ref<any>(null)
 const hasRecommendation = ref(false)
+const settings = ref<any>(null)
 
 const handleCreateDashboardElement = async () => {
   if (hasRecommendation.value && dashboardPreviewConfig.value) {
@@ -334,6 +336,7 @@ const route = useRoute()
 
 onMounted(async () => {
   await loadConnections()
+  window.addEventListener('pegasus:connections-updated', loadConnections)
   await loadChats()
   await loadQueries()
   // Do not auto-select chat to avoid opening modal
@@ -354,21 +357,22 @@ onMounted(async () => {
         selectedConnectionId.value = connectionParam
       }
       await handleLoadQuery(queryParam)
-    }, 500)
+    }, 100)
   }
 
-  window.addEventListener('pegasus:connections-updated', loadConnections)
   encryptionKey.value = await generateKey()
-  
+
   // Load AI models and settings
   try {
-    const [models, settings] = await Promise.all([
+    const [models, fetchedSettings] = await Promise.all([
       getAIModels(),
       fetchSettings()
     ])
     
-    if (settings.enabledModels && settings.enabledModels.length > 0) {
-      availableModels.value = models.filter((m: any) => settings.enabledModels.includes(m.id))
+    settings.value = fetchedSettings
+
+    if (fetchedSettings.enabledModels && fetchedSettings.enabledModels.length > 0) {
+      availableModels.value = models.filter((m: any) => fetchedSettings.enabledModels!.includes(m.id))
     } else {
       availableModels.value = models
     }
@@ -601,7 +605,7 @@ const handleAIGenerate = async () => {
     // Pass chat history if available, otherwise empty array
     // @ts-ignore
     const history = typeof chatHistory !== 'undefined' ? chatHistory.value : []
-    const query = await generateAIQuery(userPrompt, selectedConnectionId.value, history)
+    const { query, usage } = await generateAIQuery(userPrompt, selectedConnectionId.value, history)
     
     // Check for ambiguity or parse errors
     let isAmbiguous = false
@@ -689,7 +693,8 @@ const handleAIGenerate = async () => {
           connection: buildConnectionPayload(selectedConnection.value),
           query: queryPayload,
           source: 'ai',
-          model: aiOptions.value.model
+          model: aiOptions.value.model,
+          tokens_used: usage ? (usage.promptTokens + usage.candidatesTokens) : 0
         }),
       })
 

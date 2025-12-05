@@ -34,7 +34,8 @@ export class GeminiProvider extends AIProvider {
         }
 
         const generationConfig = {
-            maxOutputTokens: 1000,
+            maxOutputTokens: options.maxTokens || 1000,
+            temperature: options.temperature ?? undefined
         }
         if (options.json) {
             generationConfig.responseMimeType = "application/json"
@@ -53,14 +54,41 @@ export class GeminiProvider extends AIProvider {
                     generationConfig,
                 })
                 const result = await chat.sendMessage(lastUserMessage)
-                return result.response.text()
+                const response = result.response
+                const text = response.text()
+                const usage = response.usageMetadata
+
+                return {
+                    text,
+                    usage: {
+                        promptTokens: usage?.promptTokenCount || 0,
+                        candidatesTokens: usage?.candidatesTokenCount || 0,
+                        totalTokens: usage?.totalTokenCount || 0
+                    }
+                }
             } else {
                 // Single turn (or just prompt without history)
                 const result = await model.generateContent({
                     contents: [{ role: 'user', parts: [{ text: lastUserMessage }] }],
                     generationConfig
                 })
-                return result.response.text()
+                const response = result.response
+                const text = response.text()
+                const usage = response.usageMetadata
+
+                // Return object with text and usage if available, or just text if legacy caller expects string
+                // For now, let's attach usage to the string object or change return type
+                // To avoid breaking changes, let's return an object but we need to update AIClient to handle it
+                // OR we can return a custom object that toString() returns text
+
+                return {
+                    text,
+                    usage: {
+                        promptTokens: usage?.promptTokenCount || 0,
+                        candidatesTokens: usage?.candidatesTokenCount || 0,
+                        totalTokens: usage?.totalTokenCount || 0
+                    }
+                }
             }
         } catch (e) {
             console.error("Gemini API Error:", e)
@@ -80,19 +108,33 @@ export class GeminiProvider extends AIProvider {
 
             const data = await response.json()
 
+            // Only show models relevant for SQL generation and data analysis
+            const relevantModels = [
+                'gemini-2.5-pro',
+                'gemini-2.5-flash',
+                'gemini-2.0-flash-exp',
+                'gemini-1.5-pro',
+                'gemini-1.5-flash'
+            ]
+
             if (data.models) {
                 return data.models
-                    .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+                    .filter(m => {
+                        const modelId = m.name.replace('models/', '')
+                        return m.supportedGenerationMethods?.includes('generateContent') &&
+                            relevantModels.includes(modelId)
+                    })
                     .map(m => ({
                         id: m.name.replace('models/', ''),
                         name: m.displayName,
                         description: m.description,
-                        contextWindow: m.inputTokenLimit
+                        contextWindow: m.inputTokenLimit,
+                        provider: 'gemini'
                     }))
             }
             return []
         } catch (error) {
-            console.error("Error listing models:", error)
+            console.error('Error listing models:', error)
             return []
         }
     }

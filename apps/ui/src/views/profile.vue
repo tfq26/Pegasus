@@ -1,55 +1,100 @@
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center bg-stone-950 text-stone-100 p-6">
+  <div class="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-6">
     <!-- Loading State -->
     <div v-if="isLoading" class="text-center">
-      <div class="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-violet-500 border-r-transparent mb-4"></div>
-      <p class="text-stone-400">Loading profile...</p>
+      <div class="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent mb-4"></div>
+      <p class="text-muted-foreground">Loading profile...</p>
     </div>
 
     <!-- Not Logged In -->
-    <div v-else-if="!user" class="max-w-md w-full bg-stone-900 border border-stone-800 rounded-2xl p-8 shadow-lg shadow-black/30 text-center">
+    <div v-else-if="!typedUser" class="max-w-md w-full bg-card border border-border rounded-2xl p-8 shadow-lg text-center">
       <div class="mb-6">
-        <svg class="inline-block h-16 w-16 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg class="inline-block h-16 w-16 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
       </div>
-      <h2 class="text-xl font-semibold text-stone-300 mb-2">Not Logged In</h2>
-      <p class="text-stone-400 mb-6">Please log in to view your profile</p>
+      <h2 class="text-xl font-semibold text-foreground mb-2">Not Logged In</h2>
+      <p class="text-muted-foreground mb-6">Please log in to view your profile</p>
       <button
         @click="goToLogin"
-        class="w-full px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition-all hover:scale-105 shadow-lg shadow-violet-600/20"
+        class="w-full px-4 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-medium transition-all hover:scale-105 shadow-lg shadow-primary/20"
       >
         Go to Login
       </button>
     </div>
 
     <!-- Profile Content -->
-    <div v-else class="max-w-md w-full bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-lg shadow-black/30">
+    <div v-else class="max-w-md w-full bg-card border border-border rounded-2xl p-6 shadow-lg">
       <div class="flex flex-col items-center mb-6">
         <img
-          :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
-          class="h-24 w-24 rounded-full border border-violet-500 mb-3 object-cover"
+          :src="typedUser.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${typedUser.email}`"
+          class="h-24 w-24 rounded-full border border-primary mb-3 object-cover"
           alt="User Avatar"
         />
-        <h2 class="text-xl font-semibold text-violet-400">{{ user.firstName }} {{ user.lastName }}</h2>
-        <p class="text-sm text-stone-400">{{ user.email }}</p>
+        <h2 class="text-xl font-semibold text-primary">{{ typedUser.firstName }} {{ typedUser.lastName }}</h2>
+        <p class="text-sm text-muted-foreground">{{ typedUser.email }}</p>
       </div>
 
-      <div class="space-y-3 text-sm text-stone-300 mb-6">
-        <p><span class="font-medium text-stone-400">User ID:</span> {{ user.sub }}</p>
-        <p><span class="font-medium text-stone-400">Status:</span> Active</p>
+      <div class="space-y-3 text-sm text-foreground mb-6">
+        <p><span class="font-medium text-muted-foreground">User ID:</span> {{ typedUser.sub }}</p>
+        <p><span class="font-medium text-muted-foreground">Status:</span> Active</p>
+        <div class="flex items-center justify-between pt-2 border-t border-border">
+          <p><span class="font-medium text-muted-foreground">Plan:</span> <span class="capitalize text-primary font-semibold">{{ subscriptionTier }}</span></p>
+          <button 
+            v-if="subscriptionTier === 'free'"
+            @click="handleUpgrade"
+            class="text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-full font-medium transition-all shadow-lg shadow-violet-900/20"
+          >
+            Upgrade to Pro
+          </button>
+          <button 
+            v-else
+            @click="handleManageSubscription"
+            class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground px-3 py-1.5 rounded-full font-medium transition-all"
+          >
+            Manage Subscription
+          </button>
+        </div>
+      </div>
+
+
+
+      <div class="space-y-4 text-sm text-foreground mb-6 border-t border-border pt-4">
+        <h3 class="font-semibold text-foreground">Resource Usage</h3>
+        
+        <div class="space-y-2">
+          <div class="flex justify-between text-xs">
+            <span class="text-muted-foreground">AI Tokens Used</span>
+            <span class="font-medium">{{ usageStats.tokens.toLocaleString() }}</span>
+          </div>
+          <div class="h-2 w-full bg-secondary rounded-full overflow-hidden">
+            <div class="h-full bg-primary" :style="{ width: Math.min((usageStats.tokens / 100000) * 100, 100) + '%' }"></div>
+          </div>
+          <p class="text-[10px] text-muted-foreground text-right">Target: 100k / month</p>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex justify-between text-xs">
+            <span class="text-muted-foreground">Storage Used</span>
+            <span class="font-medium">{{ usageStats.storageFormatted }}</span>
+          </div>
+          <div class="h-2 w-full bg-secondary rounded-full overflow-hidden">
+            <div class="h-full bg-blue-500" :style="{ width: Math.min((usageStats.storage / (500 * 1024 * 1024)) * 100, 100) + '%' }"></div>
+          </div>
+          <p class="text-[10px] text-muted-foreground text-right">Limit: 500 MB</p>
+        </div>
       </div>
 
       <div class="flex gap-3">
         <button
           @click="goToDashboard"
-          class="flex-1 px-4 py-2 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-sm font-medium transition"
+          class="flex-1 px-4 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border text-sm font-medium transition"
         >
           Dashboard
         </button>
         <button
           @click="logout"
-          class="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition"
+          class="flex-1 px-4 py-2 rounded-lg bg-destructive hover:bg-destructive/90 text-white text-sm font-medium transition"
         >
           Logout
         </button>
@@ -59,18 +104,58 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { createCheckoutSession, createPortalSession, getSubscriptionStatus, getUsageStats } from '@/lib/api'
+import { toast } from 'vue-sonner'
 
 defineOptions({ name: 'ProfilePage' })
 
 const router = useRouter()
 const { user, isLoading, fetchUser, logout } = useAuth()
+const typedUser = computed(() => user.value as any)
+const subscriptionTier = ref('free')
+const usageStats = ref({ tokens: 0, storage: 0, storageFormatted: '0 MB' })
 
-onMounted(() => {
-  fetchUser()
+onMounted(async () => {
+  await fetchUser()
+  if (typedUser.value) {
+    try {
+      const status = await getSubscriptionStatus()
+      subscriptionTier.value = status.tier
+    } catch (e) {
+      console.error('Failed to fetch subscription status', e)
+    }
+
+    try {
+      const usage = await getUsageStats()
+      usageStats.value = usage
+    } catch (e) {
+      console.error('Failed to fetch usage stats', e)
+    }
+  }
 })
+
+const handleUpgrade = async () => {
+  try {
+    // Replace with your actual Stripe Price ID
+    const priceId = 'price_1QchkPAnXkP3182s9QchkPAn' 
+    const { url } = await createCheckoutSession(priceId)
+    if (url) window.location.href = url
+  } catch (e) {
+    toast.error('Failed to start checkout')
+  }
+}
+
+const handleManageSubscription = async () => {
+  try {
+    const { url } = await createPortalSession()
+    if (url) window.location.href = url
+  } catch (e) {
+    toast.error('Failed to open subscription portal')
+  }
+}
 
 const goToLogin = () => {
   router.push('/login')

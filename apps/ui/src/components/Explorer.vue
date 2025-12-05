@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { toast } from 'vue-sonner'
-import { ChevronDown, Database, Eye, Edit, Trash } from 'lucide-vue-next'
+import {
+  Database,
+  Search,
+  Table,
+  MoreHorizontal,
+  ChevronRight,
+  ChevronDown,
+  RefreshCw,
+  Plus,
+  Eye,
+  Edit,
+  Trash
+} from 'lucide-vue-next'
 import Pagination from '@/components/ui/pagination/Pagination.vue'
 import JsonViewer from '@/components/JsonViewer.vue'
 import {
@@ -10,13 +22,16 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectSeparator
 } from '@/components/ui/select'
+import AddConnectionModal from '@/components/AddConnectionModal.vue'
+import { updateConnection as apiUpdateConnection } from '@/lib/api'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { fetchConnectionSchema, fetchTableEntries } from '@/lib/api'
@@ -36,6 +51,17 @@ const emit = defineEmits<{
   'select-chat': [id: string]
   'load-query': [query: string]
 }>()
+
+const isAddConnectionModalOpen = ref(false)
+
+const handleConnectionSelect = (value: string) => {
+  if (value === 'add-new') {
+    isAddConnectionModalOpen.value = true
+    // Don't change selection yet
+  } else {
+    emit('update:selectedConnectionId', value)
+  }
+}
 
 type ChatItem = {
   id: string
@@ -114,18 +140,18 @@ const toggleRowSelection = (index: number, event: MouseEvent) => {
 
 const copySelectedRows = async () => {
   if (selectedRows.value.size === 0) return
-  
+
   const indices = Array.from(selectedRows.value).sort((a, b) => a - b)
   const rowsToCopy = indices.map(i => viewer.value.entries[i]).filter(row => row !== undefined)
-  
+
   // Format as TSV (tab-separated values) for Excel compatibility
   const headers = viewerColumns.value.join('\t')
-  const rows = rowsToCopy.map(row => 
+  const rows = rowsToCopy.map(row =>
     viewerColumns.value.map(col => formatCellValue(row[col])).join('\t')
   ).join('\n')
-  
+
   const text = headers + '\n' + rows
-  
+
   try {
     await navigator.clipboard.writeText(text)
     toast.success(`Copied ${selectedRows.value.size} row${selectedRows.value.size > 1 ? 's' : ''}`)
@@ -136,12 +162,12 @@ const copySelectedRows = async () => {
 
 const copyAllRows = async () => {
   const headers = viewerColumns.value.join('\t')
-  const rows = viewer.value.entries.map(row => 
+  const rows = viewer.value.entries.map(row =>
     viewerColumns.value.map(col => formatCellValue(row[col])).join('\t')
   ).join('\n')
-  
+
   const text = headers + '\n' + rows
-  
+
   try {
     await navigator.clipboard.writeText(text)
     toast.success(`Copied ${viewer.value.entries.length} rows`)
@@ -158,7 +184,7 @@ const startRenameTable = (conn: ConnectionEntry, table: string) => {
     oldName: table,
     newName: table
   }
-  
+
   // Auto-focus and select the input on next tick
   nextTick(() => {
     const input = document.querySelector('input[type="text"]') as HTMLInputElement
@@ -175,25 +201,25 @@ const cancelRename = () => {
 
 const confirmRename = async () => {
   if (!renamingTable.value) return
-  
+
   const { conn, oldName, newName } = renamingTable.value
-  
+
   if (newName === oldName || !newName.trim()) {
     renamingTable.value = null
     return
   }
-  
+
   // TODO: Implement actual table rename via backend
   toast.info('Table rename', {
     description: `Renaming tables is not yet supported. Would rename "${oldName}" to "${newName}"`
   })
-  
+
   renamingTable.value = null
 }
 
 const copyAllTableData = async (conn: ConnectionEntry, table: string) => {
   toast.info('Fetching all data...')
-  
+
   try {
     // Fetch all data (up to a reasonable limit)
     const result = await fetchTableEntries({
@@ -202,27 +228,27 @@ const copyAllTableData = async (conn: ConnectionEntry, table: string) => {
       page: 1,
       limit: 1000, // Fetch up to 1000 rows
     })
-    
+
     if (result.rows.length === 0) {
       toast.warning('No data to copy')
       return
     }
-    
+
     // Get all columns
     const columns = new Set<string>()
     result.rows.forEach((row: any) => {
       Object.keys(row).forEach(key => columns.add(key))
     })
     const columnArray = Array.from(columns)
-    
+
     // Format as TSV
     const headers = columnArray.join('\t')
-    const rows = result.rows.map((row: any) => 
+    const rows = result.rows.map((row: any) =>
       columnArray.map(col => formatCellValue(row[col])).join('\t')
     ).join('\n')
-    
+
     const text = headers + '\n' + rows
-    
+
     await navigator.clipboard.writeText(text)
     toast.success(`Copied ${result.rows.length} rows from ${table}`)
   } catch (e) {
@@ -478,14 +504,18 @@ onBeforeUnmount(() => {
         <div class="space-y-3">
           <!-- Connection Selector -->
           <div class="px-1">
-            <Select 
-              :model-value="selectedConnectionId" 
-              @update:model-value="emit('update:selectedConnectionId', $event)"
-            >
+            <Select :model-value="selectedConnectionId" @update:model-value="handleConnectionSelect">
               <SelectTrigger class="w-full h-9 text-xs bg-background border-border text-foreground">
                 <SelectValue placeholder="Select a connection" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="add-new" class="text-primary font-medium cursor-pointer">
+                  <div class="flex items-center gap-2">
+                    <Plus class="w-3 h-3" />
+                    <span>Add New Connection</span>
+                  </div>
+                </SelectItem>
+                <SelectSeparator />
                 <SelectItem v-if="connections.length === 0" value="no-connections" disabled>
                   <span class="text-muted-foreground">No databases found</span>
                 </SelectItem>
@@ -746,64 +776,49 @@ onBeforeUnmount(() => {
                         }"
                       >
                         <td class="px-2 py-1 align-top">
-                          <button
+                          <button 
                             @click.stop="toggleRowExpansion(index)"
-                            class="p-1 hover:bg-muted rounded transition-colors"
+                            class="text-muted-foreground hover:text-foreground p-0.5 rounded"
                           >
-                            <ChevronDown
-                              class="w-4 h-4 text-muted-foreground transition-transform"
-                              :class="{ 'rotate-0': expandedRows.has(index), '-rotate-90': !expandedRows.has(index) }"
-                            />
+                            <component :is="expandedRows.has(index) ? ChevronDown : ChevronRight" class="w-3 h-3" />
                           </button>
                         </td>
                         <td
                           v-for="col in viewerColumns"
-                          :key="`cell-${index}-${col}`"
-                          class="px-2 py-1 align-top"
+                          :key="col"
+                          class="px-2 py-1 align-top max-w-[200px] truncate"
+                          :title="String(entry[col])"
                         >
-                          <JsonViewer v-if="isJsonValue(entry[col])" :data="entry[col]" :max-depth="1" />
-                          <span v-else class="text-foreground">{{ formatCellValue(entry[col]) }}</span>
+                          <span v-if="isJsonValue(entry[col])" class="font-mono text-[10px] text-blue-400">
+                            {{ formatCellValue(entry[col]) }}
+                          </span>
+                          <span v-else>
+                            {{ formatCellValue(entry[col]) }}
+                          </span>
                         </td>
                       </tr>
-                      
-                      <!-- Expanded row -->
-                      <tr v-if="expandedRows.has(index)" class="border-t border-border bg-muted/50">
-                        <td :colspan="viewerColumns.length + 1" class="px-4 py-3">
-                          <div class="rounded-lg border border-border bg-background p-4">
-                            <div class="flex items-center justify-between mb-3">
-                              <h4 class="text-sm font-semibold text-primary">Full Document</h4>
-                              <span class="text-[10px] text-muted-foreground">Row {{ index + 1 }}</span>
-                            </div>
-                            <JsonViewer :data="entry" :max-depth="10" />
-                          </div>
+                      <!-- Expanded row details -->
+                      <tr v-if="expandedRows.has(index)" class="bg-muted/10">
+                        <td :colspan="viewerColumns.length + 1" class="px-4 py-2">
+                          <JsonViewer :data="entry" class="text-xs" />
                         </td>
                       </tr>
                     </template>
                   </tbody>
                 </table>
               </ContextMenuTrigger>
-              
-              <ContextMenuContent class="w-64 bg-popover border-border">
-                <ContextMenuItem 
-                  v-if="selectedRows.size > 0"
-                  @select="copySelectedRows"
-                  class="text-foreground hover:bg-muted focus:bg-muted"
-                >
-                  Copy {{ selectedRows.size }} Selected Row{{ selectedRows.size > 1 ? 's' : '' }}
+              <ContextMenuContent class="w-56 bg-popover border-border">
+                <ContextMenuItem @select="copySelectedRows" class="text-foreground hover:bg-muted focus:bg-muted">
+                  Copy Selected Rows
                 </ContextMenuItem>
-                <ContextMenuItem 
-                  @select="copyAllRows"
-                  class="text-foreground hover:bg-muted focus:bg-muted"
-                >
-                  Copy All Rows ({{ viewer.entries.length }})
+                <ContextMenuItem @select="copyAllRows" class="text-foreground hover:bg-muted focus:bg-muted">
+                  Copy All Rows
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
           </div>
-          <p v-else class="text-xs text-muted-foreground">No rows were returned for {{ viewer.table }}.</p>
-        </div>
-
-        <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div v-else class="text-xs text-muted-foreground">No entries found.</div>
+          
           <Pagination
             :page="viewer.page"
             :has-prev="viewer.page > 1"
@@ -821,5 +836,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <AddConnectionModal
+      v-model:open="isAddConnectionModalOpen"
+    />
   </div>
 </template>

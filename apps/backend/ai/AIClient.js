@@ -1,62 +1,96 @@
 import { GeminiProvider } from "./providers/GeminiProvider.js"
+import { OpenAIProvider } from "./providers/OpenAIProvider.js"
 
 export class AIClient {
     constructor() {
-        const apiKey = process.env.GEMINI_API_KEY
+        this.providers = new Map()
 
-        // We can add logic here to switch providers based on config
-        // For now, we default to Gemini
-        this.provider = new GeminiProvider({ apiKey })
+        // Initialize Gemini
+        if (process.env.GEMINI_API_KEY) {
+            this.providers.set('gemini', new GeminiProvider({ apiKey: process.env.GEMINI_API_KEY }))
+        }
+
+        // Initialize OpenAI
+        if (process.env.OPENAI_API_KEY) {
+            this.providers.set('openai', new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY }))
+        }
     }
 
-    /**
-     * Generates a database query from natural language.
-     */
-    async generateQuery(prompt, context) {
-        this.ensureConfigured()
-        return this.provider.generateQuery(prompt, context)
+    getProviderForModel(modelId) {
+        if (!modelId) return this.getDefaultProvider()
+
+        // Check if model is OpenAI
+        if (modelId.startsWith('gpt') || modelId.startsWith('o1')) {
+            const provider = this.providers.get('openai')
+            if (provider) {
+                provider.config.model = modelId
+                return provider
+            }
+        }
+
+        // Default to Gemini for gemini-* models or fallback
+        const provider = this.providers.get('gemini')
+        if (provider) {
+            if (modelId.startsWith('gemini')) {
+                provider.config.model = modelId
+            }
+            return provider
+        }
+
+        throw new Error("No suitable AI provider configured")
     }
 
-    /**
-     * Analyzes query results.
-     */
-    async analyzeResults(question, results, query) {
-        this.ensureConfigured()
-        return this.provider.analyzeResults(question, results, query)
+    getDefaultProvider() {
+        const gemini = this.providers.get('gemini')
+        if (gemini) return gemini
+
+        const openai = this.providers.get('openai')
+        if (openai) return openai
+
+        throw new Error("No AI providers configured")
     }
 
-    /**
-     * Disambiguates vague terms.
-     */
-    async disambiguate(term, candidates) {
-        this.ensureConfigured()
-        return this.provider.disambiguate(term, candidates)
+    async generateQuery(prompt, context, settingsOrModelId) {
+        let settings = settingsOrModelId
+        if (typeof settingsOrModelId === 'string' || !settingsOrModelId) {
+            settings = { modelId: settingsOrModelId }
+        }
+        const provider = this.getProviderForModel(settings.modelId)
+        return provider.generateQuery(prompt, context, settings)
+    }
+
+    async analyzeResults(question, results, query, modelId) {
+        const provider = this.getProviderForModel(modelId)
+        return provider.analyzeResults(question, results, query)
+    }
+
+    async disambiguate(term, candidates, modelId) {
+        const provider = this.getProviderForModel(modelId)
+        return provider.disambiguate(term, candidates)
     }
 
     async listModels() {
-        this.ensureConfigured()
-        return this.provider.listModels()
-    }
-
-    /**
-     * Recommends a visualization type and config.
-     */
-    async recommendVisualization(query, results) {
-        this.ensureConfigured()
-        return this.provider.recommendVisualization(query, results)
-    }
-
-    async generateTitle(messages) {
-        this.ensureConfigured()
-        return this.provider.generateTitle(messages)
-    }
-
-    ensureConfigured() {
-        if (!this.provider.config.apiKey) {
-            throw new Error("AI is not configured. Please set GEMINI_API_KEY in your environment variables.")
+        const models = []
+        for (const provider of this.providers.values()) {
+            try {
+                const providerModels = await provider.listModels()
+                models.push(...providerModels)
+            } catch (e) {
+                console.error('Error fetching models from provider:', e)
+            }
         }
+        return models
+    }
+
+    async recommendVisualization(query, results, previousConfig, modelId) {
+        const provider = this.getProviderForModel(modelId)
+        return provider.recommendVisualization(query, results, previousConfig)
+    }
+
+    async generateTitle(messages, modelId) {
+        const provider = this.getProviderForModel(modelId)
+        return provider.generateTitle(messages)
     }
 }
 
-// Singleton instance
 export const aiClient = new AIClient()

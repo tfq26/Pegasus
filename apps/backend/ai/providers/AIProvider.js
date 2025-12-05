@@ -23,8 +23,8 @@ export class AIProvider {
     /**
      * Generates a database query from natural language.
      */
-    async generateQuery(prompt, context) {
-        const systemInstruction = PromptBuilder.buildQueryPrompt(context)
+    async generateQuery(prompt, context, settings = {}) {
+        const systemInstruction = PromptBuilder.buildQueryPrompt(context, settings)
 
         const history = (context.previousContext || [])
             .filter(msg => msg.content)
@@ -39,8 +39,14 @@ export class AIProvider {
             { role: 'user', content: prompt }
         ]
 
-        const response = await this.generateContent(messages)
-        return PromptBuilder.cleanResponse(response, context.dialect)
+        const response = await this.generateContent(messages, settings)
+        const text = typeof response === 'string' ? response : response.text
+        const usage = typeof response === 'string' ? null : response.usage
+
+        return {
+            text: PromptBuilder.cleanResponse(text, context.dialect),
+            usage
+        }
     }
 
     /**
@@ -51,7 +57,9 @@ export class AIProvider {
         const messages = [{ role: 'user', content: prompt }]
 
         const response = await this.generateContent(messages, { json: true })
-        return response
+        const text = typeof response === 'string' ? response : response.text
+        // Usage is lost here for now unless we change return type
+        return text
     }
 
     /**

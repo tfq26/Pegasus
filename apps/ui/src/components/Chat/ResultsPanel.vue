@@ -11,6 +11,8 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 
+import type { SettingsModel } from '@/views/settings/types'
+
 const props = defineProps<{
   visible: boolean
   position: 'bottom' | 'right'
@@ -23,6 +25,9 @@ const props = defineProps<{
   history?: any[]
   ambiguity?: { message: string; choices: string[]; reasoning?: string }
   hasRecommendation?: boolean
+  hasRecommendation?: boolean
+  settings?: SettingsModel
+  initialViewMode?: 'table' | 'json' | 'excel'
 }>()
 
 const emit = defineEmits<{
@@ -37,7 +42,14 @@ const size = ref(400) // Default size in pixels
 const isResizing = ref(false)
 const isMaximized = ref(false)
 const activeTab = ref<'results' | 'messages' | 'history'>('results')
-const viewMode = ref<'table' | 'json'>('table')
+import ExcelEditor from '@/components/Excel/ExcelEditor.vue'
+
+const viewMode = ref<'table' | 'json' | 'excel'>('table')
+
+watch(() => props.initialViewMode, (val) => {
+  if (val) viewMode.value = val
+}, { immediate: true })
+
 const showReasoningDialog = ref(false)
 
 const startResize = (e: MouseEvent) => {
@@ -169,6 +181,35 @@ const copyToClipboard = async (text: string) => {
           "
         >
           {{ tab }}
+        </button>
+      </div>
+
+      <!-- View Mode Toggle (Table/JSON/Excel) - Only visible in Results tab -->
+      <div v-if="activeTab === 'results' && Array.isArray(result)" class="flex items-center bg-muted/50 rounded-md p-0.5 ml-2 border border-border">
+        <button
+          @click="viewMode = 'table'"
+          class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors"
+          :class="viewMode === 'table' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          title="Table View"
+        >
+          Table
+        </button>
+        <button
+          @click="viewMode = 'json'"
+          class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors"
+          :class="viewMode === 'json' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          title="JSON View"
+        >
+          JSON
+        </button>
+        <button
+          @click="viewMode = 'excel'"
+          class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors flex items-center gap-1"
+          :class="viewMode === 'excel' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          title="Excel Editor"
+        >
+          <LayoutDashboard class="w-3 h-3" />
+          Excel
         </button>
       </div>
 
@@ -333,23 +374,8 @@ const copyToClipboard = async (text: string) => {
                   <span>Visualize</span>
                 </button>
 
-                <!-- View Toggle -->
-                <div class="flex items-center gap-1 bg-background rounded p-0.5 border border-border shrink-0" v-if="Array.isArray(result)">
-                  <button
-                    @click="viewMode = 'table'"
-                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-colors"
-                    :class="viewMode === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
-                  >
-                    Table
-                  </button>
-                  <button
-                    @click="viewMode = 'json'"
-                    class="px-2 py-0.5 text-[10px] font-medium rounded transition-colors"
-                    :class="viewMode === 'json' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
-                  >
-                    JSON
-                  </button>
-                </div>
+                <!-- View Toggle moved to header -->
+
               </div>
             </div>
             
@@ -359,6 +385,12 @@ const copyToClipboard = async (text: string) => {
                   <ResultsTable 
                     v-if="viewMode === 'table' && Array.isArray(result)" 
                     :data="result" 
+                    :settings="settings"
+                    class="h-full"
+                  />
+                  <ExcelEditor
+                    v-else-if="viewMode === 'excel' && Array.isArray(result)"
+                    :data="result"
                     class="h-full"
                   />
                   <JsonViewer 

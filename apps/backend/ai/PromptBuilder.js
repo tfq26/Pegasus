@@ -1,6 +1,7 @@
 export class PromptBuilder {
-    static buildQueryPrompt(context) {
+    static buildQueryPrompt(context, settings = {}) {
         const { dialect, schema } = context
+        const { customInstructions, aiDetail } = settings
 
         // Database-specific format instructions
         let formatInstructions = ''
@@ -189,6 +190,15 @@ EXAMPLES:
 `
         }
 
+        let detailInstruction = ''
+        if (aiDetail === 0) {
+            detailInstruction = 'Generate the most efficient and concise query possible. Avoid unnecessary columns.'
+        } else if (aiDetail === 2) {
+            detailInstruction = 'Ensure the query is comprehensive. Select all relevant columns to provide a complete picture.'
+        }
+
+        const languageInstruction = settings.language ? `Respond in ${settings.language}.` : ''
+
         return `
 You are an expert database engineer specializing in ${dialect} databases.
 Your task is to convert the user's natural language request into a valid ${dialect} query.
@@ -197,20 +207,12 @@ ${formatInstructions}
 ${schemaPresentation}
 
 Rules:
-1. Return ONLY the raw query code (or JSON for MongoDB/Ambiguous). No markdown formatting, no explanations, no comments.
-2. Use ONLY the collections/tables listed in the schema above. Do not hallucinate names.
-3. If the request is ambiguous (e.g. multiple tables could apply), return a JSON object with "ambiguous": true.
-4. Ensure the query format matches the database type exactly.
-5. When selecting specific columns, ALWAYS include the primary key or identifying columns (like id, name, _id) to make the results meaningful, even if not explicitly asked.
-6. For MongoDB, ALWAYS include a "reasoning" field explaining your thought process.
-7. For DDL (CREATE, DROP, ALTER) or mutations (INSERT, UPDATE, DELETE), generate the standard SQL command. Do NOT refuse to generate these queries.
-8. NEVER return an empty string. If you cannot generate a query, return a JSON object with "error": "Reason...".
-
-FUZZY MATCHING & AMBIGUITY RULES:
-1. If the user searches for a term (e.g. "New Mexico") that is not an exact match for a field name, check the "Sample Values" provided in the schema.
-2. If the term appears in the sample values of a specific field, query that field.
 3. If the term appears in the sample values of MULTIPLE fields (e.g. "team_name" and "location"), you MUST return an "ambiguous" response asking the user to clarify.
 4. Use partial matching (LIKE, $regex) for proper nouns or names unless the user asks for an exact match.
+
+${detailInstruction}
+
+${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
 `
     }
 

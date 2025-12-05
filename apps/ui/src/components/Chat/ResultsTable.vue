@@ -15,20 +15,27 @@ import {
 import JsonViewer from '@/components/JsonViewer.vue'
 import { Braces } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import type { SettingsModel } from '@/views/settings/types'
+import { useTimeAgo } from '@vueuse/core'
 
 const props = defineProps<{
   data: any[]
+  settings?: SettingsModel
 }>()
 
 const selectedData = ref<any>(null)
 const isDialogOpen = ref(false)
 const currentPage = ref(1)
-const pageSize = ref(50)
+const pageSize = ref(props.settings?.defaultPageSize || 50)
 const selectedRows = ref<Set<number>>(new Set())
 
 watch(() => props.data, () => {
   currentPage.value = 1
   selectedRows.value.clear()
+})
+
+watch(() => props.settings?.defaultPageSize, (newSize) => {
+  if (newSize) pageSize.value = newSize
 })
 
 const totalPages = computed(() => Math.ceil((props.data?.length || 0) / pageSize.value))
@@ -64,6 +71,19 @@ const columns = computed(() => {
 const formatValue = (val: any): string => {
   if (val === null || val === undefined) return ''
   if (typeof val === 'boolean') return val ? 'Yes' : 'No'
+  
+  // Date formatting
+  if (props.settings?.dateFormat && (val instanceof Date || (typeof val === 'string' && !isNaN(Date.parse(val)) && val.length > 10))) {
+    const date = new Date(val)
+    if (props.settings.dateFormat === 'local') {
+      return date.toLocaleString()
+    } else if (props.settings.dateFormat === 'relative') {
+      return useTimeAgo(date).value
+    }
+    // Default to ISO/Original for 'iso' or fallback
+    return val instanceof Date ? val.toISOString() : val
+  }
+
   return String(val)
 }
 
@@ -94,13 +114,13 @@ const toggleRowSelection = (index: number, event: MouseEvent) => {
 const copySelectedRows = async () => {
   if (selectedRows.value.size === 0) return
   
+  const delimiter = props.settings?.csvDelimiter || '\t'
   const indices = Array.from(selectedRows.value).sort((a, b) => a - b)
   const rowsToCopy = indices.map(i => paginatedData.value[i])
   
-  // Format as TSV (tab-separated values) for Excel compatibility
-  const headers = columns.value.join('\t')
+  const headers = columns.value.join(delimiter)
   const rows = rowsToCopy.map(row => 
-    columns.value.map(col => formatValue(row[col])).join('\t')
+    columns.value.map(col => formatValue(row[col])).join(delimiter)
   ).join('\n')
   
   const text = headers + '\n' + rows
@@ -114,9 +134,10 @@ const copySelectedRows = async () => {
 }
 
 const copyAllRows = async () => {
-  const headers = columns.value.join('\t')
+  const delimiter = props.settings?.csvDelimiter || '\t'
+  const headers = columns.value.join(delimiter)
   const rows = paginatedData.value.map(row => 
-    columns.value.map(col => formatValue(row[col])).join('\t')
+    columns.value.map(col => formatValue(row[col])).join(delimiter)
   ).join('\n')
   
   const text = headers + '\n' + rows
@@ -137,6 +158,7 @@ const copyCellValue = async (value: any) => {
     toast.error('Failed to copy')
   }
 }
+
 </script>
 
 <template>

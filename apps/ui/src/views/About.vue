@@ -7,7 +7,7 @@
         <div class="relative w-full h-[400px] rounded-3xl overflow-hidden shadow-2xl border border-border/50 bg-black/5 dark:bg-black/20">
           <BlackHoleBackground class="absolute inset-0">
             <div class="relative z-10 h-full flex flex-col items-center justify-center text-center p-6">
-              <div
+              <!-- <div
                 class="w-24 h-24 mb-6 flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg shadow-primary/20 backdrop-blur-sm ring-1 ring-primary/20"
               >
                 <img
@@ -15,13 +15,13 @@
                   alt="Pegasus Logo"
                   class="w-12 h-12 animate-float dark:invert-0 invert"
                 />
-              </div>
+              </div> -->
               
               <h1 class="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 drop-shadow-md">
                 Pegasus
               </h1>
-              <p class="text-lg md:text-xl text-primary font-medium max-w-xl mx-auto">
-                Insight with Intelligence and Ease
+              <p class="text-lg md:text-xl text-foreground font-medium max-w-xl mx-auto">
+                Insight with Intelligence and Ease, built to make your data soar.
               </p>
             </div>
           </BlackHoleBackground>
@@ -56,8 +56,8 @@
                 class="group p-6 rounded-2xl bg-card hover:bg-accent/50 border border-border hover:border-primary/30 transition-all duration-300 shadow-sm hover:shadow-md cursor-pointer"
               >
                 <div class="flex items-start gap-4">
-                  <div class="p-3 rounded-xl bg-primary/10 text-2xl shrink-0 group-hover:scale-110 transition-transform duration-300">
-                    {{ feature.icon }}
+                  <div class="p-3 rounded-xl bg-primary/10 text-primary shrink-0 group-hover:scale-110 transition-transform duration-300">
+                    <component :is="feature.icon" class="w-6 h-6" />
                   </div>
                   <div>
                     <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
@@ -102,7 +102,7 @@
       <DialogContent class="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-3 text-2xl">
-            <span class="text-3xl">{{ selectedFeature?.icon }}</span>
+            <component :is="selectedFeature?.icon" class="w-8 h-8 text-primary" />
             {{ selectedFeature?.title }}
           </DialogTitle>
           <DialogDescription>
@@ -137,6 +137,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { MessageSquare, LayoutDashboard, Database, Activity } from 'lucide-vue-next'
 
 
 defineOptions({ name: 'AboutView' })
@@ -151,7 +152,7 @@ const openFeatureModal = (feature: typeof features[0]) => {
 
 const features = [
   {
-    icon: '🤖',
+    icon: MessageSquare,
     title: 'AI Query Automation',
     description:
       'Intelligent query generation and optimization powered by advanced AI models.',
@@ -175,7 +176,7 @@ const features = [
     ]
   },
   {
-    icon: '📊',
+    icon: LayoutDashboard,
     title: 'Dashboard Generation',
     description:
       'Automatically create beautiful, interactive dashboards from your query results.',
@@ -199,7 +200,7 @@ const features = [
     ]
   },
   {
-    icon: '🔗',
+    icon: Database,
     title: 'Universal Database Support',
     description:
       'Connect to any database provider with flexible, provider-agnostic architecture.',
@@ -223,7 +224,7 @@ const features = [
     ]
   },
   {
-    icon: '🛰️',
+    icon: Activity,
     title: 'Real-Time Monitoring',
     description:
       'Observe live metrics, logs, and system health with dynamic visual feedback.',

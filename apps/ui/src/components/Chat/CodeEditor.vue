@@ -12,7 +12,12 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue'])
 const modelValue = ref(props.modelValue)
-const colorMode = useColorMode()
+const colorMode = useColorMode({
+  emitAuto: true,
+  selector: 'html',
+  attribute: 'class',
+  storageKey: 'pegasus-theme',
+})
 const editorMountKey = ref(0)
 const editorInstance = ref<any>(null)
 

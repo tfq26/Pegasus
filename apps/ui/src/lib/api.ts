@@ -127,7 +127,7 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
     throw new Error(body.error ?? 'AI generation failed')
   }
 
-  return body.query
+  return { query: body.query, usage: body.usage }
 }
 
 export async function analyzeResults(question: string, results: any[], query: string) {
@@ -184,7 +184,7 @@ export async function getAIModels() {
     throw new Error(body.error ?? 'Failed to list models')
   }
 
-  return body.models
+  return body // Now returns array directly
 }
 
 export async function fetchSettings() {
@@ -415,3 +415,93 @@ export async function submitFeedback(feedback: FeedbackData) {
 
   return await response.json()
 }
+
+export async function uploadFile(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${QUERY_API_URL}/upload`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  })
+
+  return await response.json()
+}
+
+export async function createCheckoutSession(priceId: string) {
+  const response = await fetch(`${QUERY_API_URL}/create-checkout-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ priceId })
+  })
+
+  return await response.json()
+}
+
+export async function createPortalSession() {
+  const response = await fetch(`${QUERY_API_URL}/create-portal-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include'
+  })
+
+  return await response.json()
+}
+export async function saveConnection(connection: any) {
+  // Convert 'file' provider to 'sqlite' for backend compatibility
+  const connectionToSave = { ...connection }
+  if (connectionToSave.provider === 'file') {
+    connectionToSave.provider = 'sqlite'
+  }
+
+  console.log('[API] Saving connection:', connectionToSave)
+
+  const response = await fetch(`${QUERY_API_URL}/connections`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(connectionToSave)
+  })
+  if (!response.ok) throw new Error('Failed to save connection')
+  return await response.json()
+}
+
+export async function updateConnection(connection: any) {
+  // Convert 'file' provider to 'sqlite' for backend compatibility
+  const connectionToSave = { ...connection }
+  if (connectionToSave.provider === 'file') {
+    connectionToSave.provider = 'sqlite'
+  }
+
+  const response = await fetch(`${QUERY_API_URL}/connections/${connection.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(connectionToSave)
+  })
+  if (!response.ok) throw new Error('Failed to update connection')
+  return await response.json()
+}
+
+export async function getSubscriptionStatus() {
+  const response = await fetch(`${QUERY_API_URL}/subscription-status`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch subscription status')
+  return await response.json()
+}
+
+export async function getUsageStats() {
+  const response = await fetch(`${QUERY_API_URL}/usage`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch usage stats')
+  return await response.json()
+}
+

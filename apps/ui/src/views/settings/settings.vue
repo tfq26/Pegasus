@@ -1,7 +1,7 @@
 <template>
-  <div class="min-h-screen bg-background text-foreground flex overflow-hidden transition-colors duration-300">
+  <div class="h-full bg-background text-foreground flex overflow-hidden transition-colors duration-300">
     <aside
-      class="w-64 border-r border-border bg-card/80 backdrop-blur-md p-6 flex flex-col sticky top-0 h-screen overflow-y-auto z-10"
+      class="w-64 border-r border-border bg-card/80 backdrop-blur-md p-6 flex flex-col sticky top-0 h-full overflow-y-auto z-10"
     >
       <h2 class="text-xl font-semibold text-primary mb-6">Settings</h2>
       <nav class="space-y-2">
@@ -21,8 +21,8 @@
       </nav>
     </aside>
 
-    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-background relative">
-      <div class="flex-1 overflow-y-auto p-10 pb-32">
+    <main class="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
+      <div class="flex-1 overflow-y-auto p-10 pb-24">
         <section v-if="activeTab === 'general'" class="fade-section">
           <GeneralTab :settings="settings" :is-dark="isDark" :toggle-theme="toggleTheme" />
         </section>
@@ -57,7 +57,6 @@
             :saved-connections="savedConnections"
             :can-add-connection="canAddConnection"
             :is-edit-mode="isEditMode"
-            :add-connection="addConnection"
             :edit-connection="editConnection"
             :update-connection="updateConnection"
             :delete-connection="deleteConnection"
@@ -66,19 +65,20 @@
             :status-label="statusLabel"
             :summary-for="summaryFor"
             :test-connection="testConnection"
+            :reset-connection-form="resetConnectionForm"
           />
         </section>
       </div>
 
       <!-- Sticky Footer Action Bar -->
-      <div class="absolute bottom-0 left-0 right-0 border-t border-border bg-background/90 backdrop-blur-md p-4 flex justify-between items-center z-20">
-        <div class="text-xs text-muted-foreground">
-          <span v-if="activeTab === 'database'">Database connections are saved automatically.</span>
-          <span v-else>Changes are saved locally.</span>
+      <div class="fixed bottom-8 right-8 flex items-center gap-4 z-50">
+        <div class="text-xs text-muted-foreground bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border/50 shadow-sm">
+          <span v-if="activeTab === 'database'">Autosaved</span>
+          <span v-else>Local changes</span>
         </div>
         <button
           v-if="activeTab !== 'database'"
-          class="px-6 py-2 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition shadow-lg shadow-primary/20"
+          class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-bold transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:scale-105 active:scale-95"
           @click="saveSettings"
         >
           Save Changes
@@ -90,7 +90,7 @@
 
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useColorMode } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import GeneralTab from './GeneralTab.vue'
@@ -110,8 +110,9 @@ defineOptions({ name: 'SettingsPage' })
 
 const tabs = [
   { id: 'general', label: 'General' },
-  { id: 'ai', label: 'Pegasus AI' },
-  { id: 'database', label: 'Database Connections' }
+  { id: 'ai', label: 'AI' },
+  { id: 'database', label: 'Database Connections' },
+  { id: 'integrations', label: 'Linked Accounts' },
 ]
 
 const activeTab = ref('general')
@@ -148,6 +149,7 @@ const settings = ref<SettingsModel>({
   githubConnected: false,
   slackConnected: false,
   azureConnected: true,
+  enabledModels: [],
 })
 
 const savedConnections = ref<ConnectionEntry[]>([])
@@ -335,53 +337,6 @@ const loadConnections = async () => {
   refreshConnectionStatuses()
 }
 
-const addConnection = async () => {
-  const payload: ConnectionEntry = {
-    id: crypto.randomUUID(),
-    nickname: connectionForm.nickname.trim(),
-    description: connectionForm.description.trim() || undefined,
-    provider: connectionForm.provider,
-  }
-
-  if (payload.provider === 'mysql') {
-    payload.mysql = { ...connectionForm.mysql }
-  }
-  if (payload.provider === 'mongodb') {
-    payload.mongodb = { ...connectionForm.mongodb }
-  }
-  if (payload.provider === 'kusto') {
-    payload.kusto = { ...connectionForm.kusto }
-  }
-  if (payload.provider === 'sqlite') {
-    payload.sqlite = { ...connectionForm.sqlite }
-  }
-  if (payload.provider === 'postgres') {
-    payload.postgres = { ...connectionForm.postgres }
-  }
-
-  try {
-    const res = await fetch(`${QUERY_API_URL}/connections`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify(payload)
-    })
-    
-    if (res.ok) {
-      savedConnections.value = [...savedConnections.value, payload]
-      refreshConnectionStatuses()
-      resetConnectionForm()
-      toast.success('Connection saved!')
-    } else {
-      const error = await res.text()
-      toast.error('Failed to save connection', { description: error })
-    }
-  } catch (e) {
-    toast.error('Failed to save connection', { description: e instanceof Error ? e.message : String(e) })
-  }
-}
 
 const editConnection = (conn: ConnectionEntry) => {
   editingConnectionId.value = conn.id
@@ -435,6 +390,10 @@ const updateConnection = async () => {
   }
   if (payload.provider === 'postgres') {
     payload.postgres = { ...connectionForm.postgres }
+  }
+  if (payload.provider === 'file') {
+    payload.provider = 'sqlite'
+    payload.sqlite = { ...connectionForm.sqlite }
   }
 
   try {
@@ -508,6 +467,8 @@ const saveSettings = async () => {
 
 onMounted(async () => {
   loadConnections()
+  window.addEventListener('pegasus:connections-updated', loadConnections)
+  
   try {
     const res = await fetch(`${QUERY_API_URL}/settings`, {
       credentials: 'include'
@@ -526,6 +487,10 @@ onMounted(async () => {
     const saved = localStorage.getItem('pegasusSettings')
     if (saved) settings.value = JSON.parse(saved)
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('pegasus:connections-updated', loadConnections)
 })
 </script>
 

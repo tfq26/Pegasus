@@ -182,6 +182,8 @@ const initDb = async () => {
         first_name TEXT,
         last_name TEXT,
         profile_picture_url TEXT,
+        subscription_tier TEXT DEFAULT 'free',
+        stripe_customer_id TEXT,
         created_at INTEGER DEFAULT (unixepoch())
       )
     `)
@@ -276,6 +278,7 @@ const initDb = async () => {
         model TEXT, -- e.g. 'gemini-pro', 'gpt-4'
         status TEXT, -- 'success' or 'error'
         connection_id TEXT,
+        tokens_used INTEGER DEFAULT 0,
         created_at INTEGER DEFAULT (unixepoch()),
         FOREIGN KEY(user_id) REFERENCES users(id)
       )
@@ -284,6 +287,13 @@ const initDb = async () => {
     // Migration: Add model column if it doesn't exist (for existing tables)
     try {
       await db.execute("ALTER TABLE queries ADD COLUMN model TEXT")
+    } catch (e) {
+      // Ignore error if column already exists
+    }
+
+    // Migration: Add tokens_used column if it doesn't exist
+    try {
+      await db.execute("ALTER TABLE queries ADD COLUMN tokens_used INTEGER DEFAULT 0")
     } catch (e) {
       // Ignore error if column already exists
     }

@@ -54,14 +54,12 @@ async function main() {
     const rootDir = process.cwd();
 
     // Start installs in parallel
+    // Install dependencies at root (workspace)
     console.log("Installing dependencies...");
+    await runCommand("bun", ["install"], rootDir, "Root Install");
+
     const backendDir = join(rootDir, "apps", "backend");
     const uiDir = join(rootDir, "apps", "ui");
-
-    await Promise.all([
-        runCommand("bun", ["install"], backendDir, "Backend Install"),
-        runCommand("bun", ["install"], uiDir, "UI Install")
-    ]);
 
     // Start backend in background with hot reload
     runCommand("bun", ["run", "--hot", "index.js"], backendDir, "Backend")

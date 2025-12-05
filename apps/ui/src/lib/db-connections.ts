@@ -1,4 +1,4 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file'
 
 export type MySQLConfig = {
   host: string

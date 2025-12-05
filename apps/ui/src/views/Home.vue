@@ -50,24 +50,26 @@
       </div>
 
       <div
-        class="bg-background/80 backdrop-blur-md py-10 px-20 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 border-t border-border animate-fadeInUp"
+        class="w-full max-w-5xl mx-auto px-6 pb-12 grid grid-cols-2 md:grid-cols-4 gap-8 animate-fadeInUp"
         style="animation-delay: 0.5s"
       >
         <div
           v-for="(action, index) in quickActions"
           :key="action.title"
-          class="group flex flex-col items-center justify-center text-center p-6 rounded-2xl border border-border bg-card hover:bg-accent/50 hover:border-primary/30 transition-all duration-300 cursor-pointer shadow-sm animate-fadeInUp"
+          class="group flex flex-col items-center text-center gap-3 p-4 rounded-xl hover:bg-white/5 transition-all duration-300 cursor-pointer"
           :style="`animation-delay: ${0.6 + index * 0.1}s`"
         >
           <div
-            class="text-3xl mb-3 text-primary group-hover:scale-110 transition-transform"
+            class="p-3 rounded-full bg-primary/10 text-primary group-hover:scale-110 group-hover:bg-primary/20 transition-all duration-300"
           >
-            {{ action.icon }}
+            <component :is="action.icon" class="w-5 h-5" />
           </div>
-          <h3 class="font-semibold text-foreground mb-2">{{ action.title }}</h3>
-          <p class="text-muted-foreground text-sm leading-relaxed">
-            {{ action.description }}
-          </p>
+          <div>
+            <h3 class="font-medium text-foreground text-sm">{{ action.title }}</h3>
+            <p class="text-muted-foreground text-xs mt-1">
+              {{ action.description }}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -88,26 +90,28 @@
 import StarsBackground from '@/components/ui/bg-stars/StarsBackground.vue' 
 defineOptions({ name: 'HomePage' })
 
+import { MessageSquare, Database, LayoutDashboard, Activity } from 'lucide-vue-next'
+
 const quickActions = [
   {
-    title: 'Chat with Pegasus',
-    description: 'Ask AI for insights, guidance, and system intelligence.',
-    icon: '💬'
+    title: 'Natural Language Querying',
+    description: 'Ask questions in plain English',
+    icon: MessageSquare
   },
   {
-    title: 'View Data',
-    description: 'Explore databases, schemas, and performance metrics.',
-    icon: '🗄️'
+    title: 'Visual Data Explorer',
+    description: 'Browse tables and schemas',
+    icon: Database
   },
   {
-    title: 'Run Queries',
-    description: 'Execute intelligent queries with AI-assisted suggestions.',
-    icon: '⚙️'
+    title: 'Interactive Dashboards',
+    description: 'Visualize data with drag-and-drop',
+    icon: LayoutDashboard
   },
   {
-    title: 'System Monitor',
-    description: 'Track resource utilization, health, and runtime logs.',
-    icon: '📊'
+    title: 'BYOD',
+    description: 'Bring your own data sources',
+    icon: Activity
   }
 ]
 </script>

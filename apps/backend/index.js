@@ -24,6 +24,14 @@ import { sign, verify } from "hono/jwt"
 import { db } from "./db/index.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
+import { parseExcel } from "./lib/excelParser.js"
+import { parseXML, flattenXML } from "./lib/xmlParser.js"
+import { Database } from "bun:sqlite"
+import Stripe from "stripe"
+import fs from "node:fs/promises"
+import path from "node:path"
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder")
 
 const workos = new WorkOS(process.env.WORKOS_API_KEY)
 const clientId = process.env.WORKOS_CLIENT_ID
@@ -55,6 +63,216 @@ const upsertUser = async (payload) => {
     console.error("Failed to upsert user:", e)
   }
 }
+
+// File Upload Endpoint
+app.post("/upload", async (c) => {
+  try {
+    const body = await c.req.parseBody()
+    const file = body['file']
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "No file uploaded" }, 400)
+    }
+
+    const fileName = file.name
+    const fileType = fileName.split('.').pop().toLowerCase()
+    const uuid = crypto.randomUUID()
+    const uploadDir = path.join(process.cwd(), "uploads")
+    const tempFilePath = path.join(uploadDir, `${uuid}_${fileName}`)
+    const dbPath = path.join(uploadDir, `${uuid}.db`)
+
+    // Ensure uploads dir exists
+    await fs.mkdir(uploadDir, { recursive: true })
+
+    // Save uploaded file temporarily
+    await fs.writeFile(tempFilePath, Buffer.from(await file.arrayBuffer()))
+
+    let data = {}
+
+    try {
+      if (fileType === 'xlsx') {
+        data = await parseExcel(tempFilePath)
+      } else if (fileType === 'xml') {
+        const xmlContent = await fs.readFile(tempFilePath, 'utf-8')
+        const parsed = parseXML(xmlContent)
+        // Flatten or structure for DB
+        // For simplicity, we'll try to find a list of items or just store the root object
+        const flat = flattenXML(parsed)
+        if (flat.length > 0) {
+          data = { "Data": flat }
+        } else {
+          data = { "Data": [parsed] }
+        }
+      } else if (fileType === 'json') {
+        const jsonContent = await fs.readFile(tempFilePath, 'utf-8')
+        const parsed = JSON.parse(jsonContent)
+        if (Array.isArray(parsed)) {
+          data = { "Data": parsed }
+        } else {
+          data = { "Data": [parsed] }
+        }
+      } else {
+        throw new Error("Unsupported file type")
+      }
+    } finally {
+      // Delete the original uploaded file
+      await fs.unlink(tempFilePath).catch(e => console.error("Failed to delete temp file:", e))
+    }
+
+    // Create SQLite DB
+    const sqlite = new Database(dbPath)
+
+    // Create tables and insert data
+    for (const [tableName, rows] of Object.entries(data)) {
+      if (!rows || rows.length === 0) continue
+
+      // Infer columns from first row
+      const columns = Object.keys(rows[0])
+      if (columns.length === 0) continue
+
+      const createTableSql = `CREATE TABLE "${tableName}" (${columns.map(col => `"${col}" TEXT`).join(', ')})`
+      sqlite.run(createTableSql)
+
+      const insertSql = `INSERT INTO "${tableName}" (${columns.map(col => `"${col}"`).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`
+      const insert = sqlite.prepare(insertSql)
+
+      const insertMany = sqlite.transaction((rows) => {
+        for (const row of rows) {
+          insert.run(columns.map(col => {
+            const val = row[col]
+            return typeof val === 'object' ? JSON.stringify(val) : String(val ?? '')
+          }))
+        }
+      })
+
+      insertMany(rows)
+    }
+
+    sqlite.close()
+
+    return c.json({
+      success: true,
+      dbPath: dbPath,
+      tables: Object.keys(data)
+    })
+
+  } catch (e) {
+    console.error("Upload failed:", e)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// Stripe Endpoints
+app.post("/create-checkout-session", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const { priceId } = await c.req.json()
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer_email: payload.email,
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      success_url: `${allowedOrigins[0]}/profile?success=true`,
+      cancel_url: `${allowedOrigins[0]}/profile?canceled=true`,
+    })
+
+    return c.json({ url: session.url })
+  } catch (e) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.post("/create-portal-session", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+
+    // Fetch customer ID from DB
+    const userRs = await db.execute({
+      sql: "SELECT stripe_customer_id FROM users WHERE id = ?",
+      args: [payload.sub]
+    })
+
+    const customerId = userRs.rows[0]?.stripe_customer_id
+
+    if (!customerId) {
+      return c.json({ error: "No subscription found" }, 400)
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${allowedOrigins[0]}/profile`,
+    })
+
+    return c.json({ url: session.url })
+  } catch (e) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.get("/subscription-status", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userRs = await db.execute({
+      sql: "SELECT subscription_tier FROM users WHERE id = ?",
+      args: [payload.sub]
+    })
+
+    const tier = userRs.rows[0]?.subscription_tier || 'free'
+    return c.json({ tier })
+  } catch (e) {
+    return c.json({ error: "Failed to fetch status" }, 500)
+  }
+})
+
+app.post("/webhook", async (c) => {
+  const sig = c.req.header('stripe-signature')
+  const body = await c.req.text()
+
+  let event
+
+  try {
+    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
+  } catch (err) {
+    return c.json({ error: `Webhook Error: ${err.message}` }, 400)
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'checkout.session.completed':
+      const session = event.data.object
+      // Update user subscription status
+      await db.execute({
+        sql: "UPDATE users SET stripe_customer_id = ?, subscription_tier = 'pro' WHERE email = ?",
+        args: [session.customer, session.customer_details.email]
+      })
+      break
+    case 'customer.subscription.deleted':
+      const subscription = event.data.object
+      await db.execute({
+        sql: "UPDATE users SET subscription_tier = 'free' WHERE stripe_customer_id = ?",
+        args: [subscription.customer]
+      })
+      break
+    default:
+      console.log(`Unhandled event type ${event.type}`)
+  }
+
+  return c.json({ received: true })
+})
 
 app.get("/auth/login", (c) => {
   const authorizationUrl = workos.userManagement.getAuthorizationUrl({
@@ -889,14 +1107,14 @@ app.put("/connections/:id", async (c) => {
       }
     })
 
-    if (result.changes === 0) {
-      return c.json({ error: 'Connection not found or unauthorized' }, 404)
+    if (result.rowsAffected === 0) {
+      return c.json({ error: "Connection not found or not authorized" }, 404)
     }
 
     return c.json({ ok: true })
   } catch (error) {
-    console.error('Error updating connection:', error)
-    return c.json({ error: 'Failed to update connection' }, 500)
+    console.error("Connection update error:", error)
+    return c.json({ error: "Failed to update connection" }, 500)
   }
 })
 
@@ -907,7 +1125,7 @@ app.delete("/connections/:id", async (c) => {
   try {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
-    const connectionId = c.req.param("id")
+    const connectionId = c.req.param('id')
 
     await db.execute({
       sql: "DELETE FROM connections WHERE id = $id AND user_id = $userId",
@@ -916,7 +1134,70 @@ app.delete("/connections/:id", async (c) => {
 
     return c.json({ ok: true })
   } catch (error) {
+    console.error("Connection delete error:", error)
     return c.json({ error: "Failed to delete connection" }, 500)
+  }
+})
+
+// Settings Routes
+app.get("/settings", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+
+    const rs = await db.execute({
+      sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
+      args: { userId }
+    })
+
+    if (rs.rows.length > 0) {
+      return c.json({ settings: JSON.parse(rs.rows[0].settings) })
+    }
+
+    return c.json({ settings: {} })
+  } catch (error) {
+    console.error("Fetch settings error:", error)
+    return c.json({ error: "Failed to fetch settings" }, 500)
+  }
+})
+
+app.post("/settings", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const settings = await c.req.json()
+
+    // Ensure user exists
+    await upsertUser(payload)
+
+    // Check if settings exist
+    const check = await db.execute({
+      sql: "SELECT 1 FROM user_settings WHERE user_id = $userId",
+      args: { userId }
+    })
+
+    if (check.rows.length > 0) {
+      await db.execute({
+        sql: "UPDATE user_settings SET settings = $settings, updated_at = unixepoch() WHERE user_id = $userId",
+        args: { userId, settings: JSON.stringify(settings) }
+      })
+    } else {
+      await db.execute({
+        sql: "INSERT INTO user_settings (user_id, settings) VALUES ($userId, $settings)",
+        args: { userId, settings: JSON.stringify(settings) }
+      })
+    }
+
+    return c.json({ ok: true })
+  } catch (error) {
+    console.error("Save settings error:", error)
+    return c.json({ error: "Failed to save settings" }, 500)
   }
 })
 
@@ -1246,9 +1527,35 @@ app.post("/ai/generate", async (c) => {
       previousContext: context
     }
 
-    const generatedQuery = await aiClient.generateQuery(prompt, aiContext)
+    // Fetch user settings to get active model and other preferences
+    let aiSettings = { modelId: null, temperature: 0.7, maxTokens: 2000, customInstructions: '', aiDetail: 1, language: 'English' }
+    try {
+      const settingsRes = await db.execute({
+        sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
+        args: { userId }
+      })
+      if (settingsRes.rows.length > 0) {
+        const settings = JSON.parse(settingsRes.rows[0].settings)
+        aiSettings = {
+          modelId: settings.activeModel,
+          temperature: settings.temperature ?? 0.7,
+          maxTokens: settings.maxTokens ?? 2000,
+          customInstructions: settings.customInstructions ?? '',
+          aiDetail: settings.aiDetail ?? 1,
+          language: settings.language ?? 'English'
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch user settings for AI model:", e)
+    }
 
-    return c.json({ query: generatedQuery })
+    const result = await aiClient.generateQuery(prompt, aiContext, aiSettings)
+
+    // Handle both string (legacy) and object response
+    const generatedQuery = typeof result === 'string' ? result : result.text
+    const usage = typeof result === 'string' ? null : result.usage
+
+    return c.json({ query: generatedQuery, usage })
   } catch (error) {
     console.error("AI Generation Error:", error)
     return c.json({ error: error.message }, 500)
@@ -1272,7 +1579,25 @@ app.post("/ai/recommend-visualization", async (c) => {
       return c.json({ error: "No results provided for analysis" }, 400)
     }
 
-    const recommendation = await aiClient.recommendVisualization(query, results, previousConfig)
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+
+    // Fetch user settings to get active model
+    let activeModel = null
+    try {
+      const settingsRes = await db.execute({
+        sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
+        args: { userId }
+      })
+      if (settingsRes.rows.length > 0) {
+        const settings = JSON.parse(settingsRes.rows[0].settings)
+        activeModel = settings.activeModel
+      }
+    } catch (e) {
+      console.warn("Failed to fetch user settings for AI model:", e)
+    }
+
+    const recommendation = await aiClient.recommendVisualization(query, results, previousConfig, activeModel)
 
     console.log("[AI Viz] Recommendation generated:", recommendation ? recommendation.type : 'null')
 
@@ -1293,9 +1618,25 @@ app.post("/ai/analyze", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
     const { question, results, query } = await c.req.json()
 
-    const analysis = await aiClient.analyzeResults(question, results, query)
+    // Fetch user settings to get active model
+    let activeModel = null
+    try {
+      const settingsRes = await db.execute({
+        sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
+        args: { userId }
+      })
+      if (settingsRes.rows.length > 0) {
+        const settings = JSON.parse(settingsRes.rows[0].settings)
+        activeModel = settings.activeModel
+      }
+    } catch (e) {
+      console.warn("Failed to fetch user settings for AI model:", e)
+    }
+
+    const analysis = await aiClient.analyzeResults(question, results, query, activeModel)
     return c.json({ analysis })
   } catch (error) {
     console.error("AI Analysis Error:", error)
@@ -1308,11 +1649,19 @@ app.get("/ai/models", async (c) => {
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
-    await verify(token, jwtSecret)
-    const models = await aiClient.listModels()
-    return c.json({ models })
+    const allModels = []
+
+    // Get models from AI Client (handles both Gemini and OpenAI)
+    try {
+      const models = await aiClient.listModels()
+      allModels.push(...models)
+    } catch (e) {
+      console.error('Failed to fetch AI models:', e)
+    }
+
+    return c.json(allModels)
   } catch (error) {
-    console.error("AI Models Error:", error)
+    console.error("Error fetching AI models:", error)
     return c.json({ error: error.message }, 500)
   }
 })
@@ -1422,11 +1771,11 @@ app.post("/queries", async (c) => {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
     await upsertUser(payload)
-    const { query, source, status, connection_id, model } = await c.req.json()
+    const { query, source, status, connection_id, model, tokens_used } = await c.req.json()
 
     const id = crypto.randomUUID()
     await db.execute({
-      sql: "INSERT INTO queries (id, user_id, query, source, model, status, connection_id) VALUES ($id, $userId, $query, $source, $model, $status, $connectionId)",
+      sql: "INSERT INTO queries (id, user_id, query, source, model, status, connection_id, tokens_used) VALUES ($id, $userId, $query, $source, $model, $status, $connectionId, $tokensUsed)",
       args: {
         id,
         userId,
@@ -1434,7 +1783,8 @@ app.post("/queries", async (c) => {
         source: source || 'user',
         model: model || null,
         status: status || 'success',
-        connectionId: connection_id
+        connectionId: connection_id || null,
+        tokensUsed: tokens_used || 0
       }
     })
 
@@ -1482,6 +1832,67 @@ app.post("/feedback", async (c) => {
   } catch (e) {
     console.error("Error submitting feedback:", e)
     return c.json({ error: "Failed to submit feedback" }, 500)
+  }
+})
+
+
+
+app.get("/usage", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+
+    // Get total tokens used
+    const tokenResult = await db.execute({
+      sql: "SELECT SUM(tokens_used) as total_tokens FROM queries WHERE user_id = $userId",
+      args: { userId }
+    })
+    const totalTokens = tokenResult.rows[0]?.total_tokens || 0
+
+    // Get storage used (approximate size of uploaded DBs)
+    // Get storage used (approximate size of uploaded DBs)
+    const connResult = await db.execute({
+      sql: "SELECT config FROM connections WHERE user_id = $userId AND provider = 'sqlite'",
+      args: { userId }
+    })
+
+    let totalStorage = 0
+
+    for (const row of connResult.rows) {
+      try {
+        const config = JSON.parse(row.config)
+        // Check for sqlite path in config
+        // Config structure is usually { sqlite: { path: '...' } } based on other endpoints
+        const sqliteConfig = config.sqlite
+
+        if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {
+          const filePath = sqliteConfig.path.replace('file:', '')
+          try {
+            // Check if file is in our uploads directory to avoid reading system files
+            if (filePath.includes('/uploads/')) {
+              const file = Bun.file(filePath)
+              totalStorage += await file.size()
+            }
+          } catch (e) {
+            // Ignore missing files
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+
+    return c.json({
+      tokens: totalTokens,
+      storage: totalStorage, // in bytes
+      storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB'
+    })
+  } catch (e) {
+    console.error("Fetch usage error:", e)
+    return c.json({ error: "Failed to fetch usage stats" }, 500)
   }
 })
 
