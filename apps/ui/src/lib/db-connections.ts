@@ -36,6 +36,7 @@ export type SQLiteConfig = {
   path: string
   database?: string
   authToken?: string
+  tables?: string[]
 }
 
 export type ConnectionEntry = {

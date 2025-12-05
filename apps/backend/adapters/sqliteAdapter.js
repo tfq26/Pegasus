@@ -63,7 +63,14 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
       console.log('[SQLite] Raw tables found:', tables)
 
-      const tableNames = tables.map(t => t.name)
+      let tableNames = tables.map(t => t.name)
+
+      // Filter tables if allowedTables is set
+      if (this.connection.tables && Array.isArray(this.connection.tables) && this.connection.tables.length > 0) {
+        console.log('[SQLite] Filtering tables:', this.connection.tables)
+        tableNames = tableNames.filter(t => this.connection.tables.includes(t))
+      }
+
       console.log('[SQLite] Formatted table names:', tableNames)
 
       return tableNames
@@ -75,6 +82,15 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
   async sampleCollection(name, limit = 5) {
     if (!name) return []
+
+    // Security check: ensure table is allowed
+    if (this.connection.tables && Array.isArray(this.connection.tables) && this.connection.tables.length > 0) {
+      if (!this.connection.tables.includes(name)) {
+        console.warn(`[SQLite] Access denied to table ${name}`)
+        return []
+      }
+    }
+
     const safeLimit = Math.max(1, Number(limit) || 5)
 
     try {
@@ -97,6 +113,12 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
       for (const t of tables) {
         const tableName = t.name
+
+        // Filter tables if allowedTables is set
+        if (this.connection.tables && Array.isArray(this.connection.tables) && this.connection.tables.length > 0) {
+          if (!this.connection.tables.includes(tableName)) continue
+        }
+
         const colResult = await this.db.execute(`PRAGMA table_info("${tableName}")`)
         const columns = colResult.rows
 

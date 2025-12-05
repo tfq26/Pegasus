@@ -31,34 +31,64 @@
       <section class="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <!-- Toolbar -->
         <ChatToolbar 
-          :mode="mode" 
+          :mode="mode"
           :connections="connections"
           :selected-connection-id="selectedConnectionId"
           :is-executing="isExecuting"
           :ai-options="aiOptions"
           :query-options="queryOptions"
           :available-models="availableModels"
+          :save-status="saveStatus"
+          :ai-mode="aiMode"
           @update:mode="mode = $event"
           @update:selected-connection-id="selectedConnectionId = $event"
           @update:ai-options="aiOptions = $event"
           @update:query-options="queryOptions = $event"
           @run="run"
           @stop="stopExecution"
-          @clear="clear"
           @ai-generate="handleAIGenerate"
+          @clear="clear"
+          @format="handleFormat"
+          @toggle-ai-mode="handleToggleAIMode"
+          @visualize="handleVisualize"
         />
 
         <!-- Editor -->
         <ChatEditor 
+          v-if="mode !== 'spreadsheet'"
           :mode="mode" 
           :input="currentInput" 
           @update:input="currentInput = $event" 
           @submit="run"
         />
+
+        <!-- Excel Editor -->
+        <div v-if="mode === 'spreadsheet'" class="flex-1 overflow-hidden bg-muted/10">
+          <div v-if="excelDataLoading" class="flex items-center justify-center h-full text-muted-foreground">
+            <div class="text-center">
+              <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p>Loading Excel data...</p>
+            </div>
+          </div>
+          <ExcelEditor 
+            v-else-if="excelData.length > 0"
+            ref="excelEditorRef"
+            :data="excelData" 
+            class="h-full bg-background"
+            @save="handleSaveExcel"
+          />
+          <div v-else class="flex items-center justify-center h-full text-muted-foreground">
+            <div class="text-center">
+              <p>No data loaded.</p>
+              <p class="text-xs mt-1">Select an Excel connection and try again.</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Results Panel -->
       <ResultsPanel
+        v-if="mode !== 'spreadsheet'"
         :visible="resultsPanelVisible"
         :position="resultsPanelPosition"
         :result="queryResult"
@@ -114,6 +144,7 @@ import ResultsPanel from '../components/Chat/ResultsPanel.vue'
 import AmbiguityDialog from '../components/Chat/AmbiguityDialog.vue'
 import DashboardElementPreview from '../components/Dashboard/DashboardElementPreview.vue'
 import ChatHistoryModal from '../components/Chat/ChatHistoryModal.vue'
+import ExcelEditor from '../components/Excel/ExcelEditor.vue'
 import {
   Select,
   SelectContent,
@@ -138,6 +169,142 @@ import { generateKey, encryptData, decryptData } from '@/lib/crypto'
 const queryApiUrl = QUERY_API_URL
 const connections = ref<ConnectionEntry[]>([])
 const selectedConnectionId = ref('')
+
+// Excel Editor State
+const excelData = ref<any[]>([])
+const excelDataLoading = ref(false)
+const excelEditorRef = ref<any>(null)
+const saveStatus = ref<'saved' | 'saving' | 'error'>('saved')
+const aiMode = ref(false)
+
+const handleToggleAIMode = () => {
+  if (excelEditorRef.value) {
+    excelEditorRef.value.toggleAIMode()
+    aiMode.value = excelEditorRef.value.aiMode
+  }
+}
+
+const handleVisualize = async () => {
+  if (!excelEditorRef.value) return
+  
+  const selectedData = excelEditorRef.value.getSelectedData()
+  if (!selectedData || selectedData.length === 0) {
+    toast.warning('Please select some data to visualize')
+    return
+  }
+  
+  toast.info('Generating visualization...')
+  try {
+    const config = await recommendVisualization("Visualize the selected data", selectedData)
+    dashboardPreviewConfig.value = config
+    dashboardPreviewVisible.value = true
+  } catch (e) {
+    console.error('Visualization failed:', e)
+    toast.error('Failed to generate visualization')
+  }
+}
+
+const loadExcelData = async () => {
+  console.log('[loadExcelData] Starting...')
+  console.log('[loadExcelData] selectedConnection:', selectedConnection.value)
+  
+  if (!selectedConnection.value) {
+    console.warn('[loadExcelData] No connection selected')
+    return
+  }
+  
+  const conn = selectedConnection.value
+  console.log('[loadExcelData] Connection provider:', conn.provider)
+  console.log('[loadExcelData] SQLite tables:', conn.sqlite?.tables)
+  
+  if (conn.provider !== 'sqlite' || !conn.sqlite?.tables?.length) {
+    console.warn('[loadExcelData] Not a SQLite connection or no tables')
+    return
+  }
+
+  const tableName = conn.sqlite.tables[0] // Default to first table
+  console.log('[loadExcelData] Loading table:', tableName)
+  
+  excelDataLoading.value = true
+  
+  try {
+    toast.info('Loading Excel data...')
+    
+    const response = await fetch(`${queryApiUrl}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        provider: conn.provider,
+        connection: buildConnectionPayload(conn),
+        query: `SELECT * FROM "${tableName}" LIMIT 50000`, // Load more data for editor
+        source: 'user',
+        model: null
+      }),
+    })
+
+    const body = await response.json()
+    console.log('[loadExcelData] Response body:', body)
+    console.log('[loadExcelData] Result is array?', Array.isArray(body.result))
+    console.log('[loadExcelData] Result length:', body.result?.length)
+
+    if (!response.ok || body.error) {
+      throw new Error(body.error ?? 'Unable to fetch data')
+    }
+
+    if (Array.isArray(body.result)) {
+      excelData.value = body.result
+      console.log('[loadExcelData] Set excelData.value, length:', excelData.value.length)
+      toast.success(`Loaded ${body.result.length} rows`)
+    } else {
+      toast.warning('No data found in table')
+    }
+  } catch (e) {
+    console.error('Failed to load Excel data', e)
+    toast.error('Failed to load Excel data')
+  } finally {
+    excelDataLoading.value = false
+  }
+}
+
+const handleFormat = (type: string, value?: any) => {
+  if (excelEditorRef.value) {
+    excelEditorRef.value.handleFormat(type, value)
+  }
+}
+
+const handleSaveExcel = async (data: any[]) => {
+  if (!selectedConnection.value) return
+  
+  const conn = selectedConnection.value
+  const tableName = conn.sqlite?.tables?.[0]
+  if (!tableName) return
+
+  saveStatus.value = 'saving'
+  
+  try {
+    const response = await fetch(`${queryApiUrl}/update-table`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        connection: buildConnectionPayload(conn),
+        tableName,
+        data
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to save data')
+    }
+
+    saveStatus.value = 'saved'
+  } catch (e) {
+    console.error('Failed to save Excel data', e)
+    saveStatus.value = 'error'
+    toast.error('Failed to save changes')
+  }
+}
 
 // Chat State
 const chats = ref<any[]>([])
@@ -260,6 +427,9 @@ const loadConnections = async () => {
 watch(selectedConnectionId, (newId) => {
   if (newId) {
     localStorage.setItem('pegasus-selected-connection', newId)
+    if (mode.value === 'spreadsheet') {
+      loadExcelData()
+    }
   }
 })
 
@@ -267,7 +437,13 @@ const queryResult = ref<unknown>(null)
 const queryError = ref('')
 const lastQuery = ref('')
 const isExecuting = ref(false)
-const mode = ref<'chat' | 'write'>('chat')
+const mode = ref<'chat' | 'write' | 'spreadsheet'>('chat')
+
+watch(mode, (newMode) => {
+  if (newMode === 'spreadsheet') {
+    loadExcelData()
+  }
+})
 const chatInput = ref('')
 const writeInput = ref('')
 

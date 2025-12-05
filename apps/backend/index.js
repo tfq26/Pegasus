@@ -65,8 +65,20 @@ const upsertUser = async (payload) => {
 }
 
 // File Upload Endpoint
+import { uploadsDb } from "./db/uploads.js"
+
+// File Upload Endpoint
 app.post("/upload", async (c) => {
   try {
+    const token = getCookie(c, "session")
+    let userId = null
+    if (token) {
+      try {
+        const payload = await verify(token, jwtSecret)
+        userId = payload.sub
+      } catch (e) { }
+    }
+
     const body = await c.req.parseBody()
     const file = body['file']
 
@@ -75,11 +87,13 @@ app.post("/upload", async (c) => {
     }
 
     const fileName = file.name
+    const fileSize = file.size
     const fileType = fileName.split('.').pop().toLowerCase()
-    const uuid = crypto.randomUUID()
+    const uuid = crypto.randomUUID().replace(/-/g, '_') // Remove dashes for cleaner table names
+    const uploadId = crypto.randomUUID() // Standard UUID for metadata record
+
     const uploadDir = path.join(process.cwd(), "uploads")
     const tempFilePath = path.join(uploadDir, `${uuid}_${fileName}`)
-    const dbPath = path.join(uploadDir, `${uuid}.db`)
 
     // Ensure uploads dir exists
     await fs.mkdir(uploadDir, { recursive: true })
@@ -95,8 +109,6 @@ app.post("/upload", async (c) => {
       } else if (fileType === 'xml') {
         const xmlContent = await fs.readFile(tempFilePath, 'utf-8')
         const parsed = parseXML(xmlContent)
-        // Flatten or structure for DB
-        // For simplicity, we'll try to find a list of items or just store the root object
         const flat = flattenXML(parsed)
         if (flat.length > 0) {
           data = { "Data": flat }
@@ -119,41 +131,61 @@ app.post("/upload", async (c) => {
       await fs.unlink(tempFilePath).catch(e => console.error("Failed to delete temp file:", e))
     }
 
-    // Create SQLite DB
-    const sqlite = new Database(dbPath)
+    const createdTables = []
 
-    // Create tables and insert data
-    for (const [tableName, rows] of Object.entries(data)) {
+    // 1. Insert Metadata into Uploads DB
+    await uploadsDb.execute({
+      sql: `INSERT INTO uploads (id, user_id, filename, size, format, visibility) VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [uploadId, userId, fileName, fileSize, fileType, 'private']
+    })
+
+    // 2. Create tables and insert data into Uploads DB
+    for (const [rawTableName, rows] of Object.entries(data)) {
       if (!rows || rows.length === 0) continue
 
       // Infer columns from first row
       const columns = Object.keys(rows[0])
       if (columns.length === 0) continue
 
-      const createTableSql = `CREATE TABLE "${tableName}" (${columns.map(col => `"${col}" TEXT`).join(', ')})`
-      sqlite.run(createTableSql)
+      // Sanitize table name
+      const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_')
+      const uniqueTableName = `data_${uploadId}_${safeTableName}`.replace(/-/g, '_')
 
-      const insertSql = `INSERT INTO "${tableName}" (${columns.map(col => `"${col}"`).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`
-      const insert = sqlite.prepare(insertSql)
+      const createTableSql = `CREATE TABLE "${uniqueTableName}" (${columns.map(col => `"${col}" TEXT`).join(', ')})`
+      await uploadsDb.execute(createTableSql)
+      createdTables.push(uniqueTableName)
 
-      const insertMany = sqlite.transaction((rows) => {
-        for (const row of rows) {
-          insert.run(columns.map(col => {
+      // Batch Insert
+      const chunkSize = 50
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize)
+
+        const values = []
+        const args = []
+
+        for (const row of chunk) {
+          const rowValues = columns.map(col => {
             const val = row[col]
-            return typeof val === 'object' ? JSON.stringify(val) : String(val ?? '')
-          }))
+            args.push(typeof val === 'object' ? JSON.stringify(val) : String(val ?? ''))
+            return '?'
+          })
+          values.push(`(${rowValues.join(', ')})`)
         }
-      })
 
-      insertMany(rows)
+        const insertSql = `INSERT INTO "${uniqueTableName}" (${columns.map(col => `"${col}"`).join(', ')}) VALUES ${values.join(', ')}`
+
+        await uploadsDb.execute({
+          sql: insertSql,
+          args: args
+        })
+      }
     }
-
-    sqlite.close()
 
     return c.json({
       success: true,
-      dbPath: dbPath,
-      tables: Object.keys(data)
+      dbPath: uploadsDb.url,
+      authToken: uploadsDb.authToken,
+      tables: createdTables
     })
 
   } catch (e) {

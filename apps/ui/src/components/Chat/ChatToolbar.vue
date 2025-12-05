@@ -10,7 +10,17 @@ import {
   Settings,
   Zap,
   Eraser,
-  Send
+  Send,
+  Table,
+  Bold, 
+  Italic, 
+  Underline, 
+  AlignLeft, 
+  AlignCenter, 
+  AlignRight,
+  Save,
+  FunctionSquare,
+  BarChart
 } from 'lucide-vue-next'
 import {
   Select,
@@ -19,20 +29,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import type { ConnectionEntry } from '@/lib/db-connections'
 
 const props = defineProps<{
-  mode: 'chat' | 'write'
-  connections: ConnectionEntry[]
+  mode: 'chat' | 'write' | 'spreadsheet'
+  connections: any[]
   selectedConnectionId: string
   isExecuting: boolean
   aiOptions: { model: string; temperature: number }
   queryOptions: { timeout: number; limit: number; autoCommit: boolean }
   availableModels?: any[]
+  saveStatus?: 'saved' | 'saving' | 'error'
+  aiMode?: boolean
 }>()
 
 const emit = defineEmits<{
-  'update:mode': [value: 'chat' | 'write']
+  'update:mode': [value: 'chat' | 'write' | 'spreadsheet']
   'update:selectedConnectionId': [value: string]
   'update:aiOptions': [value: { model: string; temperature: number }]
   'update:queryOptions': [value: { timeout: number; limit: number; autoCommit: boolean }]
@@ -40,6 +53,10 @@ const emit = defineEmits<{
   'stop': []
   'ai-generate': []
   'clear': []
+  'open-excel-editor': []
+  'format': [type: string, value?: any]
+  'toggle-ai-mode': []
+  'visualize': []
 }>()
 
 const expanded = ref(false)
@@ -111,6 +128,17 @@ watchEffect(() => {
           >
             <Zap class="w-3.5 h-3.5 inline mr-1" />
             Write
+          </button>
+          <button
+            v-if="selectedConnection?.provider === 'sqlite' && selectedConnection?.sqlite?.tables?.length"
+            @click="emit('update:mode', 'spreadsheet')"
+            class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+            :class="mode === 'spreadsheet'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'"
+          >
+            <Table class="w-3.5 h-3.5 inline mr-1" />
+            Sheet
           </button>
         </div>
 
@@ -258,6 +286,101 @@ watchEffect(() => {
              </div>
           </div>
         </div>
+
+        <!-- Spreadsheet Mode Controls -->
+        <div v-if="mode === 'spreadsheet'" class="flex items-center gap-3">
+          <!-- AI Mode Toggle -->
+          <div class="flex items-center gap-1 border-r border-border pr-3 mr-1">
+            <button
+              @click="emit('toggle-ai-mode')"
+              class="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-all"
+              :class="props.aiMode 
+                ? 'bg-purple-500/10 text-purple-600 hover:bg-purple-500/20' 
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+              :title="props.aiMode ? 'Switch to Formula Mode' : 'Switch to AI Mode'"
+            >
+              <Sparkles v-if="props.aiMode" class="w-3.5 h-3.5" />
+              <FunctionSquare v-else class="w-3.5 h-3.5" />
+              <span v-if="props.aiMode">AI Mode</span>
+              <span v-else>Formula</span>
+            </button>
+          </div>
+
+          <!-- Formatting Tools -->
+          <div class="flex items-center gap-0.5 border-r border-border pr-3 mr-1">
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('format', 'bold')"
+              title="Bold (Ctrl+B)"
+            >
+              <Bold class="w-3.5 h-3.5" />
+            </button>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('format', 'italic')"
+              title="Italic (Ctrl+I)"
+            >
+              <Italic class="w-3.5 h-3.5" />
+            </button>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('format', 'underline')"
+              title="Underline (Ctrl+U)"
+            >
+              <Underline class="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div class="flex items-center gap-0.5 border-r border-border pr-3 mr-1">
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('format', 'align', 'left')"
+              title="Align Left"
+            >
+              <AlignLeft class="w-3.5 h-3.5" />
+            </button>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('format', 'align', 'center')"
+              title="Align Center"
+            >
+              <AlignCenter class="w-3.5 h-3.5" />
+            </button>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('format', 'align', 'right')"
+              title="Align Right"
+            >
+              <AlignRight class="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <!-- Visualize Button -->
+          <button
+            @click="emit('visualize')"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all mr-2"
+            title="Create Visualization"
+          >
+            <BarChart class="w-3.5 h-3.5" />
+            <span>Visualize</span>
+          </button>
+
+          <!-- Save Status Indicator -->
+          <div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30 text-xs font-medium">
+            <template v-if="saveStatus === 'saving'">
+              <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+              <span class="text-muted-foreground">Saving...</span>
+            </template>
+            <template v-else-if="saveStatus === 'error'">
+              <span class="w-2 h-2 rounded-full bg-destructive"></span>
+              <span class="text-destructive">Error</span>
+            </template>
+            <template v-else>
+              <span class="w-2 h-2 rounded-full bg-green-500"></span>
+              <span class="text-muted-foreground">Saved</span>
+            </template>
+          </div>
+          </div>
       </div>
 
       <!-- Right: Expand Button -->
@@ -273,10 +396,10 @@ watchEffect(() => {
       </div>
     </div>
 
-    <!-- Expanded Toolbar Options (Future Use) -->
+    <!-- Expanded Toolbar Options -->
     <div
       v-if="expanded"
-      class="border-t border-border px-4 py-3 bg-muted/50"
+      class="border-t border-border px-4 py-3 bg-muted/50 flex flex-col gap-3"
     >
       <div class="text-xs text-muted-foreground italic">
         More advanced options will appear here...

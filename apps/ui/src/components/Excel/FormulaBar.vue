@@ -1,59 +1,55 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { FunctionSquare } from 'lucide-vue-next'
 
 const props = defineProps<{
-  selectedCell: string // e.g. "A1"
+  selectedCell: string
   value: string
+  aiMode?: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:value', val: string): void
+  (e: 'update:value', value: string): void
   (e: 'submit'): void
 }>()
 
-const localValue = ref(props.value)
+const inputRef = ref<HTMLInputElement | null>(null)
 
-watch(() => props.value, (newVal) => {
-  localValue.value = newVal
+// Focus input when selected cell changes
+watch(() => props.selectedCell, () => {
+  // Optional: focus input? Maybe not, might steal focus from grid.
 })
-
-const onInput = (e: Event) => {
-  const val = (e.target as HTMLInputElement).value
-  localValue.value = val
-  emit('update:value', val)
-}
 
 const onKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Enter') {
     emit('submit')
-    ;(e.target as HTMLInputElement).blur()
   }
 }
 </script>
 
 <template>
-  <div class="flex items-center gap-2 p-1.5 border-b border-border bg-background">
-    <!-- Cell Address -->
-    <div class="w-10 h-7 flex items-center justify-center bg-muted/30 border border-border rounded text-xs font-mono font-medium text-muted-foreground">
-      {{ selectedCell || '' }}
+  <div class="h-10 border-b border-border flex items-center px-2 gap-2 bg-background">
+    <!-- Name Box -->
+    <div class="w-24 h-7 border border-input rounded px-2 flex items-center text-sm font-medium text-muted-foreground bg-muted/20">
+      {{ selectedCell }}
     </div>
 
-    <div class="h-4 w-px bg-border mx-1"></div>
+    <!-- Divider -->
+    <div class="w-px h-6 bg-border mx-1"></div>
 
     <!-- Function Icon -->
-    <div class="text-muted-foreground">
-      <FunctionSquare class="w-4 h-4" />
+    <div class="text-muted-foreground font-serif italic font-bold text-lg px-1 select-none">
+      fx
     </div>
 
     <!-- Formula Input -->
     <input
-      type="text"
-      :value="localValue"
-      @input="onInput"
+      ref="inputRef"
+      :value="value"
+      @input="emit('update:value', ($event.target as HTMLInputElement).value)"
       @keydown="onKeydown"
-      class="flex-1 h-7 px-2 text-sm bg-transparent border-none outline-none focus:bg-muted/20 rounded transition-colors font-mono"
-      placeholder="Enter value or formula (e.g. =SUM(A1:A5))"
+      class="flex-1 h-7 border border-input rounded px-2 text-sm outline-none focus:border-primary bg-background text-foreground"
+      :placeholder="aiMode ? 'Ask AI to edit...' : 'Enter value or formula'"
+      :class="{ 'border-purple-500 ring-1 ring-purple-500': aiMode }"
     />
   </div>
 </template>

@@ -165,7 +165,10 @@ const handleFileUpload = async (event: Event) => {
   try {
     const result = await uploadFile(file)
     if (result.success) {
-      props.connectionForm.sqlite.path = result.dbPath
+      props.connectionForm.sqlite.path = result.dbPath || ''
+      props.connectionForm.sqlite.authToken = result.authToken
+      props.connectionForm.sqlite.tables = result.tables
+      
       // Auto-set nickname if empty
       if (!props.connectionForm.nickname) {
         props.connectionForm.nickname = file.name.split('.')[0]
