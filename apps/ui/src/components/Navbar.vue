@@ -43,6 +43,9 @@
           </svg>
         </button>
 
+        <!-- Global Progress Bar -->
+        <GlobalProgressBar />
+
         <!-- Profile -->
         <div ref="dropdownRef" class="relative">
           <!-- Loading State -->
@@ -171,6 +174,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import ThemeToggle from './ThemeToggle.vue'
+import GlobalProgressBar from './GlobalProgressBar.vue'
 
 defineOptions({ name: 'AppNavbar' })
 

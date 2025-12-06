@@ -12,7 +12,8 @@ import {
   Plus,
   Eye,
   Edit,
-  Trash
+  Trash,
+  Minus,
 } from 'lucide-vue-next'
 import Pagination from '@/components/ui/pagination/Pagination.vue'
 import JsonViewer from '@/components/JsonViewer.vue'
@@ -34,7 +35,7 @@ import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import { updateConnection as apiUpdateConnection } from '@/lib/api'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema, fetchTableEntries } from '@/lib/api'
+import { fetchConnectionSchema, fetchTableEntries, fetchTableCount } from '@/lib/api'
 
 const props = defineProps<{
   connections: ConnectionEntry[]
@@ -50,6 +51,7 @@ const emit = defineEmits<{
   'create-chat': []
   'select-chat': [id: string]
   'load-query': [query: string]
+  'sanitize-table': [connection: ConnectionEntry, table: string]
 }>()
 
 const isAddConnectionModalOpen = ref(false)
@@ -93,6 +95,7 @@ type ViewerState = {
   limit: number
   hasMore: boolean
   error: string
+  total?: number
 }
 
 const sidebarTabs = ['data', 'chats', 'queries'] as const
@@ -106,10 +109,25 @@ const viewer = ref<ViewerState>({
   entries: [],
   loading: false,
   page: 1,
-  limit: 6,
+  limit: 50,
   hasMore: false,
   error: '',
+  total: 0,
 })
+
+import { useStorage } from '@vueuse/core'
+
+const viewerZoomLevel = useStorage('pegasus-viewer-zoom', 0) // 0=xs, 1=sm, 2=base, 3=lg, 4=xl
+const viewerZoomClasses = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl']
+const viewerTextSizeClass = computed(() => viewerZoomClasses[viewerZoomLevel.value])
+
+const increaseViewerZoom = () => {
+  if (viewerZoomLevel.value < viewerZoomClasses.length - 1) viewerZoomLevel.value++
+}
+
+const decreaseViewerZoom = () => {
+  if (viewerZoomLevel.value > 0) viewerZoomLevel.value--
+}
 
 const expandedRows = ref<Set<number>>(new Set())
 const selectedRows = ref<Set<number>>(new Set())
@@ -318,6 +336,31 @@ onMounted(() => {
 
 
 
+const loadViewerPage = async (page: number) => {
+  if (!viewer.value.connection || !viewer.value.table) return
+  viewer.value.loading = true
+  viewer.value.error = ''
+  expandedRows.value = new Set() // Reset expanded rows when changing pages
+  selectedRows.value = new Set() // Reset selected rows when changing pages
+
+  try {
+    const result = await fetchTableEntries({
+      entry: viewer.value.connection,
+      table: viewer.value.table,
+      page,
+      limit: viewer.value.limit,
+    })
+
+    viewer.value.entries = result.rows
+    viewer.value.page = result.page
+    viewer.value.hasMore = result.hasNext
+  } catch (error) {
+    viewer.value.error = error instanceof Error ? error.message : 'Failed to load entries.'
+  } finally {
+    viewer.value.loading = false
+  }
+}
+
 const openViewer = (connection: ConnectionEntry, table: string) => {
   viewer.value = {
     open: true,
@@ -326,15 +369,25 @@ const openViewer = (connection: ConnectionEntry, table: string) => {
     entries: [],
     loading: false,
     page: 1,
-    limit: 6,
+    limit: 50,
     hasMore: false,
     error: '',
+    total: 0,
   }
   expandedRows.value = new Set()
   selectedRows.value = new Set()
+  
+  // Load count and first page in parallel
   loadViewerPage(1)
+  
+  fetchTableCount({ entry: connection, table }).then(count => {
+    if (viewer.value.open && viewer.value.table === table) {
+      viewer.value.total = count
+    }
+  }).catch(err => {
+    console.error('Failed to fetch count:', err)
+  })
 }
-
 const toggleRowExpansion = (index: number) => {
   if (expandedRows.value.has(index)) {
     expandedRows.value.delete(index)
@@ -406,30 +459,7 @@ const loadTablesForDatabase = async (conn: ConnectionEntry, db: string) => {
   }
 }
 
-const loadViewerPage = async (page: number) => {
-  if (!viewer.value.connection || !viewer.value.table) return
-  viewer.value.loading = true
-  viewer.value.error = ''
-  expandedRows.value = new Set() // Reset expanded rows when changing pages
-  selectedRows.value = new Set() // Reset selected rows when changing pages
 
-  try {
-    const result = await fetchTableEntries({
-      entry: viewer.value.connection,
-      table: viewer.value.table,
-      page,
-      limit: viewer.value.limit,
-    })
-
-    viewer.value.entries = result.rows
-    viewer.value.page = result.page
-    viewer.value.hasMore = result.hasNext
-  } catch (error) {
-    viewer.value.error = error instanceof Error ? error.message : 'Failed to load entries.'
-  } finally {
-    viewer.value.loading = false
-  }
-}
 
 const closeViewer = () => {
   viewer.value.open = false
@@ -651,6 +681,12 @@ onBeforeUnmount(() => {
                       >
                         Rename Table
                       </ContextMenuItem>
+                      <ContextMenuItem 
+                        @select="$emit('sanitize-table', conn, table)"
+                        class="text-foreground hover:bg-muted focus:bg-muted"
+                      >
+                        Sanitize Table
+                      </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
                 </li>
@@ -724,29 +760,48 @@ onBeforeUnmount(() => {
       class="fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4 py-6"
       @click.self="closeViewer"
     >
-      <div class="relative max-w-4xl w-full rounded-2xl border border-border bg-background p-6 shadow-2xl">
-        <div class="flex items-center justify-between">
+      <div class="relative max-w-[95vw] w-full max-h-[90vh] h-[90vh] overflow-hidden flex flex-col rounded-lg border border-border bg-background p-6 shadow-2xl">
+        <div class="flex items-center justify-between flex-shrink-0 mb-4">
           <div>
             <p class="text-lg font-semibold text-foreground">Entries in {{ viewer.table }}</p>
             <p class="text-xs text-muted-foreground">{{ viewer.connection?.nickname }}</p>
           </div>
-          <button
-            @click="closeViewer"
-            class="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Close
-          </button>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-muted-foreground">Text Size:</span>
+              <button 
+                @click="decreaseViewerZoom" 
+                class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
+                :disabled="viewerZoomLevel === 0"
+              >
+                <Minus class="w-4 h-4" />
+              </button>
+              <button 
+                @click="increaseViewerZoom" 
+                class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
+                :disabled="viewerZoomLevel === viewerZoomClasses.length - 1"
+              >
+                <Plus class="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              @click="closeViewer"
+              class="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
-        <div class="mt-4 space-y-3">
+        <div class="flex-1 flex flex-col min-h-0 space-y-3">
           <div v-if="viewer.loading" class="text-xs text-muted-foreground">Loading rows…</div>
           <div v-else-if="viewer.error" class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {{ viewer.error }}
           </div>
-          <div v-else-if="viewer.entries.length" class="max-h-96 overflow-auto rounded-md border border-border bg-muted/30">
+          <div v-else-if="viewer.entries.length" class="flex-1 overflow-auto rounded-md border border-border bg-muted/30">
             <ContextMenu>
               <ContextMenuTrigger class="w-full">
-                <table class="w-full table-auto text-xs text-foreground">
+                <table :class="['w-full table-auto text-foreground', viewerTextSizeClass]">
                   <thead class="text-left text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th class="px-2 py-1 sticky top-0 bg-muted w-8"></th>
@@ -800,7 +855,7 @@ onBeforeUnmount(() => {
                       <!-- Expanded row details -->
                       <tr v-if="expandedRows.has(index)" class="bg-muted/10">
                         <td :colspan="viewerColumns.length + 1" class="px-4 py-2">
-                          <JsonViewer :data="entry" class="text-xs" />
+                          <JsonViewer :data="entry" :text-size="viewerTextSizeClass" />
                         </td>
                       </tr>
                     </template>
@@ -823,6 +878,7 @@ onBeforeUnmount(() => {
             :page="viewer.page"
             :has-prev="viewer.page > 1"
             :has-next="viewer.hasMore"
+            :total-pages="viewer.total ? Math.ceil(viewer.total / viewer.limit) : undefined"
             @page-change="loadViewerPage"
           />
           <div class="flex items-center gap-4 text-xs text-muted-foreground">

@@ -91,6 +91,12 @@ export class AIClient {
         const provider = this.getProviderForModel(modelId)
         return provider.generateTitle(messages)
     }
+
+    async generateText(prompt, modelId) {
+        const provider = this.getProviderForModel(modelId)
+        const result = await provider.generateContent([{ role: 'user', content: prompt }])
+        return result.text
+    }
 }
 
 export const aiClient = new AIClient()

@@ -57,6 +57,7 @@ const emit = defineEmits<{
   'format': [type: string, value?: any]
   'toggle-ai-mode': []
   'visualize': []
+  'sanitize': []
 }>()
 
 const expanded = ref(false)
@@ -363,6 +364,16 @@ watchEffect(() => {
           >
             <BarChart class="w-3.5 h-3.5" />
             <span>Visualize</span>
+          </button>
+
+          <!-- Sanitize Button -->
+          <button
+            @click="emit('sanitize')"
+            class="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 transition-all mr-2"
+            title="Sanitize Data"
+          >
+            <Sparkles class="w-3.5 h-3.5" />
+            <span>Sanitize</span>
           </button>
 
           <!-- Save Status Indicator -->

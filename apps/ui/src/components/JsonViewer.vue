@@ -6,6 +6,7 @@ const props = defineProps<{
   data: unknown
   depth?: number
   maxDepth?: number
+  textSize?: string
 }>()
 
 const depth = props.depth ?? 0
@@ -78,7 +79,7 @@ const itemCount = computed(() => {
 </script>
 
 <template>
-  <div class="json-viewer font-mono text-xs">
+  <div :class="['json-viewer font-mono', props.textSize ?? 'text-xs']">
     <div v-if="!isExpandable" class="inline-flex items-center gap-2">
       <span :class="getValueColor(data)">{{ formatPrimitive(data) }}</span>
     </div>
@@ -125,7 +126,7 @@ const itemCount = computed(() => {
           class="flex items-start gap-2"
         >
           <span class="text-primary shrink-0">{{ key }}:</span>
-          <JsonViewer :data="value" :depth="depth + 1" :max-depth="maxDepth" />
+          <JsonViewer :data="value" :depth="depth + 1" :max-depth="maxDepth" :text-size="props.textSize" />
         </div>
       </div>
 

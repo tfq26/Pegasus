@@ -30,6 +30,7 @@ import { Database } from "bun:sqlite"
 import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { analyzeForSanitization } from "./ai/sanitizer.js"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder")
 
@@ -1672,6 +1673,64 @@ app.post("/ai/analyze", async (c) => {
     return c.json({ analysis })
   } catch (error) {
     console.error("AI Analysis Error:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+app.post("/ai/sanitize/analyze", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const { table, connectionId } = await c.req.json()
+
+    // 1. Fetch connection details
+    const rs = await db.execute({
+      sql: "SELECT * FROM connections WHERE id = $id AND user_id = $userId",
+      args: { id: connectionId, userId }
+    })
+    const connRow = rs.rows[0]
+    if (!connRow) return c.json({ error: "Connection not found" }, 404)
+
+    const config = JSON.parse(connRow.config)
+    const provider = connRow.provider
+    const Adapter = adapters[provider]
+    if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+    const adapter = new Adapter(config[provider])
+    await adapter.connect()
+
+    // 2. Fetch all data (or sample) from the table
+    // For now we fetch all, limiting to 2000 rows for safety
+    // TODO: Improve this for large tables
+    const rows = await adapter.executeQuery(`SELECT * FROM ${table} LIMIT 2000`)
+    await adapter.disconnect()
+
+    if (rows.length === 0) {
+      return c.json({ issues: [], message: "No data found in table" })
+    }
+
+    // 3. Analyze
+    // Fetch user settings to get active model
+    let activeModel = null
+    try {
+      const settingsRes = await db.execute({
+        sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
+        args: { userId }
+      })
+      if (settingsRes.rows.length > 0) {
+        const settings = JSON.parse(settingsRes.rows[0].settings)
+        activeModel = settings.activeModel
+      }
+    } catch (e) { }
+
+    const result = await analyzeForSanitization(table, rows, activeModel)
+    return c.json(result)
+
+  } catch (error) {
+    console.error("Sanitization Analysis Error:", error)
     return c.json({ error: error.message }, 500)
   }
 })

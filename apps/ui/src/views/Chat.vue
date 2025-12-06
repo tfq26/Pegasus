@@ -51,6 +51,7 @@
           @format="handleFormat"
           @toggle-ai-mode="handleToggleAIMode"
           @visualize="handleVisualize"
+          @sanitize="handleSanitize"
         />
 
         <!-- Editor -->
@@ -104,6 +105,7 @@
         @analyze="handleAnalyze"
         @resolve-ambiguity="handleResolveAmbiguity"
         @create-dashboard-element="handleCreateDashboardElement"
+        @sanitize="handleSanitize"
         :has-recommendation="hasRecommendation"
         :settings="settings"
       />
@@ -128,6 +130,14 @@
         :results="Array.isArray(queryResult) ? queryResult : []"
         @saved="toast.success('Added to dashboard')"
       />
+
+      <SanitizePreviewDialog 
+        v-model:open="sanitizeDialogVisible"
+        :issues="sanitizeIssues"
+        :table="sanitizeTable"
+        :connection-id="selectedConnectionId"
+        @execute-fix="handleExecuteSanitization"
+      />
     </div>
   </div>
 </template>
@@ -142,6 +152,7 @@ import ChatToolbar from '../components/Chat/ChatToolbar.vue'
 import ChatEditor from '../components/Chat/ChatEditor.vue'
 import ResultsPanel from '../components/Chat/ResultsPanel.vue'
 import AmbiguityDialog from '../components/Chat/AmbiguityDialog.vue'
+import SanitizePreviewDialog from '../components/Chat/SanitizePreviewDialog.vue'
 import DashboardElementPreview from '../components/Dashboard/DashboardElementPreview.vue'
 import ChatHistoryModal from '../components/Chat/ChatHistoryModal.vue'
 import ExcelEditor from '../components/Excel/ExcelEditor.vue'
@@ -161,8 +172,10 @@ import { QUERY_API_URL, generateAIQuery, analyzeResults, getAIModels, fetchSetti
   fetchDashboardElements,
   recommendVisualization,
   fetchQueries,
-  saveQuery
+  saveQuery,
+  analyzeTableSanitization
 } from '@/lib/api'
+import { useProgress } from '@/lib/progress'
 import { db } from '@/lib/local-db'
 import { generateKey, encryptData, decryptData } from '@/lib/crypto'
 
@@ -193,13 +206,19 @@ const handleVisualize = async () => {
     return
   }
   
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `viz-gen-${Date.now()}`
+  startOperation(opId, 'Generating Visualization')
+  
   toast.info('Generating visualization...')
   try {
     const config = await recommendVisualization("Visualize the selected data", selectedData)
+    finishOperation(opId)
     dashboardPreviewConfig.value = config
     dashboardPreviewVisible.value = true
-  } catch (e) {
+  } catch (e: any) {
     console.error('Visualization failed:', e)
+    failOperation(opId, e.message || 'Visualization failed')
     toast.error('Failed to generate visualization')
   }
 }
@@ -226,6 +245,10 @@ const loadExcelData = async () => {
   console.log('[loadExcelData] Loading table:', tableName)
   
   excelDataLoading.value = true
+  
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `excel-load-${Date.now()}`
+  startOperation(opId, `Loading ${tableName}`)
   
   try {
     toast.info('Loading Excel data...')
@@ -255,12 +278,15 @@ const loadExcelData = async () => {
     if (Array.isArray(body.result)) {
       excelData.value = body.result
       console.log('[loadExcelData] Set excelData.value, length:', excelData.value.length)
+      finishOperation(opId)
       toast.success(`Loaded ${body.result.length} rows`)
     } else {
+      finishOperation(opId)
       toast.warning('No data found in table')
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to load Excel data', e)
+    failOperation(opId, e.message || 'Failed to load')
     toast.error('Failed to load Excel data')
   } finally {
     excelDataLoading.value = false
@@ -281,6 +307,9 @@ const handleSaveExcel = async (data: any[]) => {
   if (!tableName) return
 
   saveStatus.value = 'saving'
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `excel-save-${Date.now()}`
+  startOperation(opId, `Saving ${tableName}`)
   
   try {
     const response = await fetch(`${queryApiUrl}/update-table`, {
@@ -298,9 +327,11 @@ const handleSaveExcel = async (data: any[]) => {
       throw new Error('Failed to save data')
     }
 
+    finishOperation(opId)
     saveStatus.value = 'saved'
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to save Excel data', e)
+    failOperation(opId, e.message || 'Failed to save')
     saveStatus.value = 'error'
     toast.error('Failed to save changes')
   }
@@ -324,12 +355,20 @@ const loadChats = async () => {
 }
 
 const handleSelectChat = async (id: string) => {
-  // Instead of loading immediately, open the modal
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `load-chat-${id}`
+  startOperation(opId, 'Loading chat history...')
+
   try {
     const chat = chats.value.find(c => c.id === id)
-    if (!chat) return
+    if (!chat) {
+        finishOperation(opId)
+        return
+    }
 
     const data = await fetchChatHistory(id)
+    finishOperation(opId)
+    
     const messages = data.messages.map((m: any) => ({
       role: m.role === 'ai' ? 'assistant' : m.role,
       content: m.content,
@@ -339,8 +378,9 @@ const handleSelectChat = async (id: string) => {
     previewChat.value = chat
     previewMessages.value = messages
     previewVisible.value = true
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to load chat history for preview', e)
+    failOperation(opId, e.message || 'Failed to load chat')
     toast.error('Failed to load chat history')
   }
 }
@@ -485,13 +525,19 @@ const handleCreateDashboardElement = async () => {
 
   if (!queryResult.value || !lastQuery.value) return
   
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `chart-gen-${Date.now()}`
+  startOperation(opId, 'Generating Chart')
+  
   toast.info('Generating chart recommendation...')
   try {
     const config = await recommendVisualization(lastQuery.value, Array.isArray(queryResult.value) ? queryResult.value : [queryResult.value])
+    finishOperation(opId)
     dashboardPreviewConfig.value = config
     dashboardPreviewVisible.value = true
-  } catch (e) {
+  } catch (e: any) {
     console.error('Visualization recommendation failed:', e)
+    failOperation(opId, e.message || 'Failed to generate')
     toast.error('Failed to generate recommendation', {
       description: e instanceof Error ? e.message : String(e)
     })
@@ -655,6 +701,10 @@ const run = async () => {
     queryResult.value = null
     lastQuery.value = payload
 
+    const { startOperation, finishOperation, failOperation } = useProgress()
+    const opId = `query-exec-${Date.now()}`
+    startOperation(opId, `Executing Query (User)`)
+
     try {
       const response = await fetch(`${queryApiUrl}/query`, {
         method: 'POST',
@@ -676,6 +726,8 @@ const run = async () => {
       }
 
       queryResult.value = body.result ?? null
+      finishOperation(opId)
+      
       toast.success('Query executed', {
         description: selectedConnection.value
           ? `${selectedConnection.value.nickname}: ${Array.isArray(body.result)
@@ -718,6 +770,7 @@ const run = async () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       queryError.value = message
+      failOperation(opId, message)
       toast.error('Query failed', { description: message, position: 'top-right' })
     } finally {
       isExecuting.value = false
@@ -774,9 +827,15 @@ const handleAIGenerate = async () => {
   
   isExecuting.value = true
   
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `ai-gen-${Date.now()}`
+  startOperation(opId, `Asking AI...`)
+  
   try {
     // Check if user is explicitly asking for the query itself
     const wantsQueryOnly = /show\s+(me\s+)?(the\s+)?query|what\s+(is\s+)?the\s+query|generate\s+query/i.test(userPrompt)
+    // Check if user explicitly wants a visualization
+    const wantsVisualization = /visualize|chart|graph|plot|dashboard|histogram|pie/i.test(userPrompt)
     
     // Pass chat history if available, otherwise empty array
     // @ts-ignore
@@ -910,68 +969,29 @@ const handleAIGenerate = async () => {
       // Clear input and show results
       chatInput.value = ''
       resultsPanelVisible.value = true
+      
+      finishOperation(opId)
+      
       toast.success('Query executed', {
         description: `${Array.isArray(body.result) ? body.result.length : 1} result${Array.isArray(body.result) && body.result.length !== 1 ? 's' : ''} returned`,
         position: 'top-right',
       })
       
       // Trigger post-query actions
-      handlePostQueryActions(query, body.result)
+      handlePostQueryActions(query, body.result, wantsVisualization)
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
     queryError.value = message
+    failOperation(opId, message)
     toast.error('Failed to execute', { description: message })
   } finally {
     isExecuting.value = false
   }
 }
 
-const handleEditTable = (conn: ConnectionEntry, table: string) => {
-  mode.value = 'write'
-  selectedConnectionId.value = conn.id
-  
-  if (conn.provider === 'kusto') {
-    writeInput.value = `.set-or-append ['${table}'] <|
-datatable(Column1:string, Column2:int) [
-  "Value1", 1,
-  "Value2", 2
-]`
-  } else if (conn.provider === 'mysql') {
-    writeInput.value = `INSERT INTO ${table} (col1, col2) VALUES (val1, val2);`
-  } else if (conn.provider === 'mongodb') {
-    writeInput.value = `db.${table}.insertOne({ field: "value" })`
-  }
-}
-
-const analysisResult = ref<any>(null)
-const isAnalyzing = ref(false)
-
-const handleAnalyze = async () => {
-  if (!queryResult.value || !lastQuery.value) return
-  
-  isAnalyzing.value = true
-  try {
-    const analysis = await analyzeResults(
-      'Analyze these results', 
-      Array.isArray(queryResult.value) ? queryResult.value : [queryResult.value], 
-      lastQuery.value
-    )
-    
-    try {
-      analysisResult.value = JSON.parse(analysis)
-    } catch {
-      // Fallback for non-JSON response
-      analysisResult.value = { summary: analysis }
-    }
-  } catch (e) {
-    toast.error('Analysis failed', { description: e instanceof Error ? e.message : String(e) })
-  } finally {
-    isAnalyzing.value = false
-  }
-}
-
-const handlePostQueryActions = async (query: string, results: any) => {
+// Update the function signature
+const handlePostQueryActions = async (query: string, results: any, autoPreview = false) => {
   // 1. Auto-analyze
   handleAnalyze()
   
@@ -1002,13 +1022,18 @@ const handlePostQueryActions = async (query: string, results: any) => {
         
         dashboardPreviewConfig.value = config
         hasRecommendation.value = true
-        toast.success("Visualization available!", {
-          description: `Auto-detected Stat Card for ${keys[0]}`,
-          action: {
-            label: "Preview",
-            onClick: () => dashboardPreviewVisible.value = true
-          }
-        })
+        
+        if (autoPreview) {
+             dashboardPreviewVisible.value = true
+        } else {
+            toast.success("Visualization available!", {
+              description: `Auto-detected Stat Card for ${keys[0]}`,
+              action: {
+                label: "Preview",
+                onClick: () => dashboardPreviewVisible.value = true
+              }
+            })
+        }
         return // Skip AI
       }
     }
@@ -1021,39 +1046,56 @@ const handlePostQueryActions = async (query: string, results: any) => {
     console.log('[Dashboard] Heuristic detected:', heuristicConfig.type)
     dashboardPreviewConfig.value = heuristicConfig
     hasRecommendation.value = true
-    toast.success("Visualization available!", {
-      description: `Detected ${heuristicConfig.type} chart`,
-      action: {
-        label: "Preview",
-        onClick: () => dashboardPreviewVisible.value = true
-      }
-    })
+    
+    if (autoPreview) {
+        dashboardPreviewVisible.value = true
+    } else {
+        toast.success("Visualization available!", {
+          description: `Detected ${heuristicConfig.type} chart`,
+          action: {
+            label: "Preview",
+            onClick: () => dashboardPreviewVisible.value = true
+          }
+        })
+    }
     return
   }
 
   // If heuristics fail, ask AI
   try {
+      const { startOperation, finishOperation, failOperation } = useProgress()
+      const opId = `viz-recommend-${Date.now()}`
+      startOperation(opId, 'Generating Visualization')
+      
       console.log('[Dashboard] Requesting AI recommendation for:', query)
       const config = await recommendVisualization(query, results)
       console.log('[Dashboard] Recommendation received:', config)
       
+      finishOperation(opId)
+      
       if (config) {
           dashboardPreviewConfig.value = config
           hasRecommendation.value = true
-          toast.success("Visualization available!", {
-            description: `AI suggested a ${config.type} chart`,
-            action: {
-              label: "Preview",
-              onClick: () => dashboardPreviewVisible.value = true
-            }
-          })
+          
+          if (autoPreview) {
+               dashboardPreviewVisible.value = true
+          } else {
+              toast.success("Visualization available!", {
+                description: `AI suggested a ${config.type} chart`,
+                action: {
+                  label: "Preview",
+                  onClick: () => dashboardPreviewVisible.value = true
+                }
+              })
+          }
       } else {
         console.log('[Dashboard] No visualization recommended by AI')
         // Don't show toast - heuristics should have already handled common cases
       }
   } catch (e) {
-      console.error("[Dashboard] AI recommendation failed (this is OK if heuristics worked):", e)
-      // Don't show error toast - heuristics should have already provided a visualization
+      console.error("[Dashboard] AI recommendation failed:", e)
+      // Don't fail the operation visibly since this is a background enhancement
+      // failOperation(opId, "Visualization failed") 
   }
 }
 
@@ -1163,5 +1205,176 @@ const detectVisualizationType = (results: any[]) => {
 watch(lastQuery, () => {
   analysisResult.value = ''
 })
+const sanitizeDialogVisible = ref(false)
+const analysisResult = ref<any>(null)
+const isAnalyzing = ref(false)
+
+const handleAnalyze = () => {
+    // Placeholder for future implementation
+    console.log('Analyze triggered')
+}
+
+const handleEditTable = (conn: ConnectionEntry, table: string) => {
+    console.log('Edit table', conn, table)
+}
+
+const sanitizeIssues = ref<any[]>([])
+const sanitizeTable = ref<string>('')
+
+
+
+const handleSanitizeFixed = async (conn: ConnectionEntry, table: string) => {
+  if (!conn || !table) return
+
+  // Update selected connection to match the context menu source
+  selectedConnectionId.value = conn.id
+
+  sanitizeTable.value = table
+  
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `sanitize-analyze-${Date.now()}`
+  startOperation(opId, `Analyzing ${table}`)
+  
+  toast.info(`Analyzing table '${table}'...`)
+
+  try {
+    const issues = await analyzeTableSanitization(conn.id, table)
+    finishOperation(opId)
+
+    if (!issues || issues.length === 0) {
+      toast.success('No issues found by AI.')
+      return
+    }
+    sanitizeIssues.value = issues
+    sanitizeDialogVisible.value = true
+  } catch (e: any) {
+    failOperation(opId, e.message)
+    toast.error('Failed to analyze table for sanitization', {
+      description: e.message
+    })
+  }
+}
+
+const handleSanitize = async () => {
+    if (!selectedConnection.value) return
+    
+    // 1. Identify Table
+    // Try to find table in the last query
+    let table = ''
+    if (lastQuery.value) {
+        // Simple regex to find FROM table
+        const match = lastQuery.value.match(/FROM\s+["`]?([a-zA-Z0-9_]+)["`]?/i)
+        if (match && match[1]) {
+            table = match[1]
+        }
+    } else if (mode.value === 'spreadsheet' && selectedConnection.value?.sqlite?.tables?.length) {
+        // Fallback for spreadsheet mode
+        table = selectedConnection.value.sqlite.tables[0]
+    }
+    
+    if (!table) {
+        toast.error("Could not identify source table from query.")
+        return
+    }
+    
+    sanitizeTable.value = table
+    
+    const { startOperation, finishOperation, failOperation } = useProgress()
+    const opId = `sanitize-analyze-${Date.now()}`
+    startOperation(opId, `Analyzing ${table}`)
+    
+    toast.info(`Analyzing table '${table}'...`)
+    
+    try {
+        const result = await analyzeTableSanitization(selectedConnectionId.value || '', table)
+        finishOperation(opId)
+        
+        // Handle both raw array or object wrapper
+        const issues = Array.isArray(result) ? result : (result?.issues || [])
+        
+        if (!issues || issues.length === 0) {
+             toast.success("No issues found! Data looks clean.")
+             return
+        }
+        
+        sanitizeIssues.value = issues
+        sanitizeDialogVisible.value = true
+        
+    } catch (e: any) {
+        console.error(e)
+        failOperation(opId, e.message)
+        toast.error("Failed to analyze table")
+    }
+}
+
+const handleExecuteSanitization = async (sqls: string[]) => {
+    if (!selectedConnection.value) return
+    
+    // Execute all SQLs
+    // Reuse existing fetch logic or extract it.
+    // Since we are in Chat.vue, we can call the fetch directly or reuse `run` if adapted, 
+    // but `run` relies on `chatInput`.
+    // We will copy the execution logic here for safety and simplicity.
+    
+    const { startOperation, updateOperation, finishOperation } = useProgress()
+    const opId = `sanitize-exec-${Date.now()}`
+    startOperation(opId, `Applying ${sqls.length} Fixes`)
+    
+    toast.loading("Applying fixes...")
+    let successCount = 0
+    let errors = 0
+    
+    for (let i = 0; i < sqls.length; i++) {
+        const query = sqls[i]
+        // Update progress
+        const percent = Math.round(((i) / sqls.length) * 100)
+        updateOperation(opId, percent, `Running fix ${i+1}/${sqls.length}`)
+        
+        try {
+             const response = await fetch(`${queryApiUrl}/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                  provider: selectedConnection.value.provider,
+                  connection: buildConnectionPayload(selectedConnection.value),
+                  query: query,
+                  source: 'sanitize_fix',
+                  model: aiOptions.value.model,
+                }),
+              })
+              if (!response.ok) throw new Error('Failed')
+              successCount++
+        } catch (e) {
+            errors++
+        }
+    }
+    
+    finishOperation(opId)
+    toast.success(`Applied ${successCount} fixes. ${errors > 0 ? `${errors} failed.` : ''}`)
+    
+    // Re-run the original query to show updated data
+    if (lastQuery.value) {
+        // Trigger a re-run
+        // We can just set input and call run? Or manually refetch.
+        // Let's manually refetch to avoid messing with chat history.
+         const response = await fetch(`${queryApiUrl}/query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              provider: selectedConnection.value.provider,
+              connection: buildConnectionPayload(selectedConnection.value),
+              query: lastQuery.value,
+              source: 'user', // Treat as user re-run
+              model: aiOptions.value.model,
+            }),
+          })
+          const body = await response.json()
+          if (response.ok) {
+              queryResult.value = body.result
+          }
+    }
+}
 </script>
 

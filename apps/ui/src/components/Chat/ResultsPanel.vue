@@ -25,7 +25,6 @@ const props = defineProps<{
   history?: any[]
   ambiguity?: { message: string; choices: string[]; reasoning?: string }
   hasRecommendation?: boolean
-  hasRecommendation?: boolean
   settings?: SettingsModel
   initialViewMode?: 'table' | 'json' | 'excel'
 }>()
@@ -36,6 +35,7 @@ const emit = defineEmits<{
   'analyze': []
   'resolve-ambiguity': [choice: string]
   'create-dashboard-element': []
+  'sanitize': []
 }>()
 
 const size = ref(400) // Default size in pixels
@@ -372,6 +372,19 @@ const copyToClipboard = async (text: string) => {
                 >
                   <LayoutDashboard class="w-3 h-3" />
                   <span>Visualize</span>
+                </button>
+
+                <!-- Sanitize Button -->
+                <button
+                  v-if="Array.isArray(result) && result.length > 0"
+                  @click="emit('sanitize')"
+                  class="flex items-center gap-2 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors whitespace-nowrap"
+                  title="Clean up data quality issues"
+                >
+                  <div class="flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles w-3 h-3 mr-1"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                    <span>Sanitize</span>
+                  </div>
                 </button>
 
                 <!-- View Toggle moved to header -->

@@ -17,6 +17,7 @@
           @create-chat="$emit('create-chat')"
           @select-chat="$emit('select-chat', $event)"
           @load-query="(q) => { console.log('ChatSidebar: emitting load-query', q); $emit('load-query', q) }"
+          @sanitize-table="(conn, table) => $emit('sanitize-table', conn, table)"
         />
       </div>
 
@@ -58,6 +59,7 @@ defineEmits<{
   'create-chat': []
   'select-chat': [id: string]
   'load-query': [query: string]
+  'sanitize-table': [connection: ConnectionEntry, table: string]
 }>()
 
 // Resizing Logic

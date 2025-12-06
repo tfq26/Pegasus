@@ -3,6 +3,7 @@ const props = defineProps<{
   page: number
   hasPrev: boolean
   hasNext: boolean
+  totalPages?: number
 }>()
 const emit = defineEmits<{ (event: 'page-change', page: number): void }>()
 
@@ -22,7 +23,7 @@ const goToPage = (nextPage: number) => {
     </button>
 
     <span class="rounded-md border border-stone-800 bg-stone-900 px-3 py-1">
-      Page {{ props.page }}
+      Page {{ props.page }}<span v-if="props.totalPages"> of {{ props.totalPages }}</span>
     </span>
 
     <button

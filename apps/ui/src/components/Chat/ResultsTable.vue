@@ -13,10 +13,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
 import JsonViewer from '@/components/JsonViewer.vue'
-import { Braces } from 'lucide-vue-next'
+import { Braces, Minus, Plus } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { SettingsModel } from '@/views/settings/types'
-import { useTimeAgo } from '@vueuse/core'
+import { useTimeAgo, useStorage } from '@vueuse/core'
 
 const props = defineProps<{
   data: any[]
@@ -28,6 +28,18 @@ const isDialogOpen = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(props.settings?.defaultPageSize || 50)
 const selectedRows = ref<Set<number>>(new Set())
+const zoomLevel = useStorage('pegasus-results-zoom', 0) // 0=xs, 1=sm, 2=base, 3=lg, 4=xl
+const zoomClasses = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl']
+
+const zoomClass = computed(() => zoomClasses[zoomLevel.value])
+
+const increaseZoom = () => {
+  if (zoomLevel.value < zoomClasses.length - 1) zoomLevel.value++
+}
+
+const decreaseZoom = () => {
+  if (zoomLevel.value > 0) zoomLevel.value--
+}
 
 watch(() => props.data, () => {
   currentPage.value = 1
@@ -238,12 +250,29 @@ const copyCellValue = async (value: any) => {
     </div>
 
     <Dialog v-model:open="isDialogOpen">
-      <DialogContent class="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col bg-background border-border text-foreground">
-        <DialogHeader>
+      <DialogContent class="max-w-[95vw] w-full max-h-[90vh] h-[90vh] overflow-hidden flex flex-col bg-background border-border text-foreground">
+        <DialogHeader class="flex flex-row items-center justify-between border-b border-border/50 pb-2">
           <DialogTitle>JSON View</DialogTitle>
+          <div class="flex items-center gap-2 mr-8">
+            <span class="text-xs text-muted-foreground">Text Size:</span>
+            <button 
+              @click="decreaseZoom" 
+              class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
+              :disabled="zoomLevel === 0"
+            >
+              <Minus class="w-4 h-4" />
+            </button>
+            <button 
+              @click="increaseZoom" 
+              class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
+              :disabled="zoomLevel === zoomClasses.length - 1"
+            >
+              <Plus class="w-4 h-4" />
+            </button>
+          </div>
         </DialogHeader>
         <div class="flex-1 overflow-auto p-4 bg-muted/30 rounded-md">
-          <JsonViewer :data="selectedData" :max-depth="5" />
+          <JsonViewer :data="selectedData" :max-depth="5" :text-size="zoomClass" />
         </div>
       </DialogContent>
     </Dialog>

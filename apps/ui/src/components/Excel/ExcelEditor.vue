@@ -4,7 +4,7 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { HyperFormula } from 'hyperformula'
 import { HotTable } from '@handsontable/vue3'
 import { registerAllModules } from 'handsontable/registry'
-import 'handsontable/dist/handsontable.full.css'
+import 'handsontable/dist/handsontable.full.min.css'
 import FormulaBar from './FormulaBar.vue'
 
 // Register Handsontable modules
@@ -237,16 +237,24 @@ onUnmounted(() => {
 <template>
   <div class="flex flex-col h-full bg-background overflow-hidden">
     <FormulaBar 
-      :selected-cell="selectedCellAddress"
+      :selected-cell="selectedCellAddress || ''"
       v-model:value="currentFormula"
       :ai-mode="aiMode"
       @submit="aiMode ? onAISubmit() : onFormulaSubmit()"
     />
     
-    <div class="flex-1 overflow-hidden relative">
+    <div class="flex-1 overflow-hidden relative w-full h-full">
+      <div v-if="!hfInstance && data.length > 0" class="flex items-center justify-center h-full text-muted-foreground">
+        <div class="flex flex-col items-center gap-2">
+            <span class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+             <span>Initializing spreadsheet engine...</span>
+        </div>
+      </div>
       <HotTable
+        v-if="hfInstance"
         ref="hotRef"
         :settings="hotSettings"
+        style="width: 100%; height: 100%; overflow: hidden;"
       />
     </div>
   </div>

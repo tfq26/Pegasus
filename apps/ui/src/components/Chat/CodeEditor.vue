@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
-import { useColorMode } from '@vueuse/core' // Optional if your app tracks dark/light
+import { useColorMode, usePreferredDark } from '@vueuse/core' // Optional if your app tracks dark/light
 import MonacoEditor from 'monaco-editor-vue3'
 import * as monaco from 'monaco-editor'
 
@@ -18,6 +18,9 @@ const colorMode = useColorMode({
   attribute: 'class',
   storageKey: 'pegasus-theme',
 })
+const preferredDark = usePreferredDark()
+const isDark = computed(() => colorMode.value === 'dark' || (colorMode.value === 'auto' && preferredDark.value))
+
 const editorMountKey = ref(0)
 const editorInstance = ref<any>(null)
 
@@ -32,7 +35,7 @@ const editorOptions = ref({
   wordWrap: 'on',
   scrollBeyondLastLine: false,
   automaticLayout: true,
-  theme: colorMode.value === 'dark' ? 'pegasus-sql-dark' : 'pegasus-sql-light',
+  theme: isDark.value ? 'pegasus-sql-dark' : 'pegasus-sql-light',
 })
 
 // Handle editor mount
@@ -88,8 +91,9 @@ watch(modelValue, val => {
 })
 
 // Reactively update theme when user toggles light/dark mode
-watch(colorMode, newMode => {
-  const theme = newMode === 'dark' ? 'pegasus-sql-dark' : 'pegasus-sql-light'
+watch(isDark, newIsDark => {
+  const theme = newIsDark ? 'pegasus-sql-dark' : 'pegasus-sql-light'
+  editorOptions.value.theme = theme
   monaco.editor.setTheme(theme)
 })
 
@@ -153,7 +157,7 @@ onMounted(() => {
   })
 
   // Set the initial theme
-  const theme = colorMode.value === 'dark' ? 'pegasus-sql-dark' : 'pegasus-sql-light'
+  const theme = isDark.value ? 'pegasus-sql-dark' : 'pegasus-sql-light'
   monaco.editor.setTheme(theme)
 })
 </script>
