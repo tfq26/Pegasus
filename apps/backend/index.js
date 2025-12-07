@@ -29,6 +29,7 @@ import { parseXML, flattenXML } from "./lib/xmlParser.js"
 import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
+import os from "node:os"
 import { analyzeForSanitization } from "./ai/sanitizer.js"
 import {
   EXPERIMENTAL_FEATURES,
@@ -101,7 +102,7 @@ app.post("/upload", async (c) => {
     const uuid = crypto.randomUUID().replace(/-/g, '_') // Remove dashes for cleaner table names
     const uploadId = crypto.randomUUID() // Standard UUID for metadata record
 
-    const uploadDir = path.join(process.cwd(), "uploads")
+    const uploadDir = path.join(os.tmpdir(), "uploads")
     const tempFilePath = path.join(uploadDir, `${uuid}_${fileName}`)
 
     // Ensure uploads dir exists
