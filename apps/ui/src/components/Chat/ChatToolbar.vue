@@ -11,7 +11,6 @@ import {
   Zap,
   Eraser,
   Send,
-  Table,
   Bold, 
   Italic, 
   Underline, 
@@ -42,6 +41,7 @@ const props = defineProps<{
   availableModels?: any[]
   saveStatus?: 'saved' | 'saving' | 'error'
   aiMode?: boolean
+  autoExecute?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -49,6 +49,7 @@ const emit = defineEmits<{
   'update:selectedConnectionId': [value: string]
   'update:aiOptions': [value: { model: string; temperature: number }]
   'update:queryOptions': [value: { timeout: number; limit: number; autoCommit: boolean }]
+  'update:auto-execute': [value: boolean]
   'run': []
   'stop': []
   'ai-generate': []
@@ -58,6 +59,7 @@ const emit = defineEmits<{
   'toggle-ai-mode': []
   'visualize': []
   'sanitize': []
+  'load-table-to-sheet': []
 }>()
 
 const expanded = ref(false)
@@ -108,42 +110,9 @@ watchEffect(() => {
     <div class="flex items-center justify-between px-4 py-2 gap-4">
       <!-- Left: Mode Toggle & Primary Actions -->
       <div class="flex items-center gap-3 shrink-0">
-        <!-- Mode Toggle -->
-        <div class="flex items-center gap-1 bg-muted/50 border border-border rounded-lg p-1">
-          <button
-            @click="emit('update:mode', 'chat')"
-            class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-            :class="mode === 'chat'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'"
-          >
-            <Sparkles class="w-3.5 h-3.5 inline mr-1" />
-            Chat
-          </button>
-          <button
-            @click="emit('update:mode', 'write')"
-            class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-            :class="mode === 'write'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'"
-          >
-            <Zap class="w-3.5 h-3.5 inline mr-1" />
-            Write
-          </button>
-          <button
-            v-if="selectedConnection?.provider === 'sqlite' && selectedConnection?.sqlite?.tables?.length"
-            @click="emit('update:mode', 'spreadsheet')"
-            class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-            :class="mode === 'spreadsheet'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-primary hover:bg-primary/10'"
-          >
-            <Table class="w-3.5 h-3.5 inline mr-1" />
-            Sheet
-          </button>
-        </div>
 
-        <div class="h-6 w-px bg-border"></div>
+
+
 
         <!-- Chat Mode Controls -->
         <div v-if="mode === 'chat'" class="flex items-center gap-3">
@@ -376,7 +345,12 @@ watchEffect(() => {
             <span>Sanitize</span>
           </button>
 
-          <!-- Save Status Indicator -->
+          </div>
+      </div>
+
+      <!-- Right: Expand Button -->
+      <div class="flex items-center gap-2">
+         <!-- Save Status Indicator -->
           <div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30 text-xs font-medium">
             <template v-if="saveStatus === 'saving'">
               <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
@@ -391,11 +365,7 @@ watchEffect(() => {
               <span class="text-muted-foreground">Saved</span>
             </template>
           </div>
-          </div>
-      </div>
 
-      <!-- Right: Expand Button -->
-      <div class="flex items-center gap-2">
         <button
           @click="expanded = !expanded"
           class="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
@@ -412,8 +382,18 @@ watchEffect(() => {
       v-if="expanded"
       class="border-t border-border px-4 py-3 bg-muted/50 flex flex-col gap-3"
     >
-      <div class="text-xs text-muted-foreground italic">
-        More advanced options will appear here...
+      <div v-if="mode === 'spreadsheet' && aiMode" class="flex items-center gap-2">
+        <Switch
+          :checked="autoExecute"
+          @update:checked="emit('update:auto-execute', $event)"
+          id="auto-exec-mode"
+        />
+        <label for="auto-exec-mode" class="text-sm font-medium text-foreground cursor-pointer select-none">
+          Auto-Execute (AI Formuas)
+        </label>
+      </div>
+      <div v-else class="text-xs text-muted-foreground italic">
+        More advanced options will appear here depending on context...
       </div>
     </div>
 

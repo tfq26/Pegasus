@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-6">
+  <div class="flex flex-col items-center justify-center bg-background text-foreground p-6">
     <!-- Loading State -->
     <div v-if="isLoading" class="text-center">
       <div class="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent mb-4"></div>
@@ -36,9 +36,14 @@
       </div>
 
       <div class="space-y-3 text-sm text-foreground mb-6">
-        <p><span class="font-medium text-muted-foreground">User ID:</span> {{ typedUser.sub }}</p>
-        <p><span class="font-medium text-muted-foreground">Status:</span> Active</p>
-        <div class="flex items-center justify-between pt-2 border-t border-border">
+        <!-- User ID hidden for security -->
+        <!-- <p><span class="font-medium text-muted-foreground">User ID:</span> {{ typedUser.sub }}</p> -->
+        <p>
+          <span class="font-medium text-muted-foreground">Organization: </span> 
+          <span class="text-foreground font-medium">{{ typedUser.organizationName || 'None' }}</span>
+        </p>
+        <!-- Stripe subscription features commented out until implemented -->
+        <!-- <div class="flex items-center justify-between pt-2 border-t border-border">
           <p><span class="font-medium text-muted-foreground">Plan:</span> <span class="capitalize text-primary font-semibold">{{ subscriptionTier }}</span></p>
           <button 
             v-if="subscriptionTier === 'free'"
@@ -54,12 +59,13 @@
           >
             Manage Subscription
           </button>
-        </div>
+        </div> -->
       </div>
 
 
 
-      <div class="space-y-4 text-sm text-foreground mb-6 border-t border-border pt-4">
+      <!-- Resource usage commented out until Stripe is implemented -->
+      <!-- <div class="space-y-4 text-sm text-foreground mb-6 border-t border-border pt-4">
         <h3 class="font-semibold text-foreground">Resource Usage</h3>
         
         <div class="space-y-2">
@@ -83,15 +89,9 @@
           </div>
           <p class="text-[10px] text-muted-foreground text-right">Limit: 500 MB</p>
         </div>
-      </div>
+      </div> -->
 
       <div class="flex gap-3">
-        <button
-          @click="goToDashboard"
-          class="flex-1 px-4 py-2 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground border border-border text-sm font-medium transition"
-        >
-          Dashboard
-        </button>
         <button
           @click="logout"
           class="flex-1 px-4 py-2 rounded-lg bg-destructive hover:bg-destructive/90 text-white text-sm font-medium transition"

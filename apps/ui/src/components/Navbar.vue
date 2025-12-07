@@ -104,6 +104,13 @@
               >
                 Settings
               </RouterLink>
+              <RouterLink
+                to="/support"
+                class="block w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                @click="showDropdown = false"
+              >
+                Support
+              </RouterLink>
               <button
                 @click="handleLogout"
                 class="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition"
@@ -154,9 +161,17 @@
         <div class="mt-auto border-t border-border pt-4">
           <RouterLink
             to="/settings"
-            class="block text-sm text-muted-foreground hover:text-foreground transition"
+            class="block text-sm text-muted-foreground hover:text-foreground transition mb-2"
+            @click="mobileOpen = false"
           >
             Settings
+          </RouterLink>
+          <RouterLink
+            to="/support"
+            class="block text-sm text-muted-foreground hover:text-foreground transition mb-2"
+            @click="mobileOpen = false"
+          >
+            Support
           </RouterLink>
           <button
             @click="handleLogout"

@@ -36,6 +36,7 @@ const emit = defineEmits<{
   'resolve-ambiguity': [choice: string]
   'create-dashboard-element': []
   'sanitize': []
+  'cancel': []
 }>()
 
 const size = ref(400) // Default size in pixels
@@ -202,7 +203,7 @@ const copyToClipboard = async (text: string) => {
         >
           JSON
         </button>
-        <button
+        <!-- <button
           @click="viewMode = 'excel'"
           class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors flex items-center gap-1"
           :class="viewMode === 'excel' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
@@ -210,7 +211,7 @@ const copyToClipboard = async (text: string) => {
         >
           <LayoutDashboard class="w-3 h-3" />
           Excel
-        </button>
+        </button> -->
       </div>
 
       <div class="flex items-center gap-1 shrink-0 ml-auto">
@@ -257,11 +258,17 @@ const copyToClipboard = async (text: string) => {
     <div class="flex-1 overflow-auto p-4 min-h-0">
       <!-- Results Tab -->
       <div v-if="activeTab === 'results'" class="flex flex-col space-y-3">
-        <div v-if="loading" class="flex items-center justify-center py-8 text-muted-foreground">
+        <div v-if="loading" class="flex flex-col items-center justify-center py-8 text-muted-foreground gap-3">
           <div class="flex items-center gap-2">
             <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
             <span class="text-sm">Executing query...</span>
           </div>
+          <button 
+            @click="emit('cancel')" 
+            class="px-3 py-1 rounded bg-destructive/10 text-destructive text-xs hover:bg-destructive/20 transition-colors"
+          >
+            Cancel Operation
+          </button>
         </div>
 
         <div v-else-if="error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 space-y-3 relative group">

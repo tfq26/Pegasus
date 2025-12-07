@@ -68,6 +68,10 @@
             :reset-connection-form="resetConnectionForm"
           />
         </section>
+
+        <section v-if="activeTab === 'experimental'" class="fade-section">
+          <ExperimentalSettings />
+        </section>
       </div>
 
       <!-- Sticky Footer Action Bar -->
@@ -101,6 +105,7 @@ import CloudTab from './CloudTab.vue'
 import ViewTab from './ViewTab.vue'
 import IntegrationsTab from './IntegrationsTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
+import ExperimentalSettings from './ExperimentalSettings.vue'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { fetchConnectionSchema, QUERY_API_URL } from '@/lib/api'
@@ -113,6 +118,7 @@ const tabs = [
   { id: 'ai', label: 'AI' },
   { id: 'database', label: 'Database Connections' },
   { id: 'integrations', label: 'Linked Accounts' },
+  { id: 'experimental', label: 'Experimental' },
 ]
 
 const activeTab = ref('general')

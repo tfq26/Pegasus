@@ -31,6 +31,15 @@ import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { analyzeForSanitization } from "./ai/sanitizer.js"
+import {
+  EXPERIMENTAL_FEATURES,
+  initExperimentalTables,
+  getExperimentalStatus,
+  getUserFeatureFlags,
+  createExperimentalRequest,
+  grantExperimentalAccess,
+  toggleUserFeature
+} from "./experimental-features.js"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder")
 
@@ -157,7 +166,7 @@ app.post("/upload", async (c) => {
       createdTables.push(uniqueTableName)
 
       // Batch Insert
-      const chunkSize = 50
+      const chunkSize = 500
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize)
 
@@ -384,6 +393,7 @@ app.get("/auth/callback", async (c) => {
       firstName: user.firstName,
       lastName: user.lastName,
       profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null,
+      organizationName: user.organizationName || user.organization?.name || null,
       exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
     }
 
@@ -419,9 +429,129 @@ app.get("/auth/me", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
-    return c.json({ user: payload })
+
+    // Get user's feature flags
+    const featureFlags = await getUserFeatureFlags(db, payload.sub)
+
+    return c.json({
+      user: {
+        ...payload,
+        featureFlags // WorkOS-style feature flags array
+      }
+    })
   } catch (error) {
     return c.json({ error: "Invalid token" }, 401)
+  }
+})
+
+// ==================== EXPERIMENTAL FEATURES API ====================
+
+// Get experimental status for current user
+app.get("/api/experimental/status", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const status = await getExperimentalStatus(db, payload.sub)
+    return c.json(status)
+  } catch (error) {
+    console.error("Error getting experimental status:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Request experimental access
+app.post("/api/experimental/request", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const { reason, email } = await c.req.json()
+
+    if (!reason || reason.trim().length < 20) {
+      return c.json({ error: "Reason must be at least 20 characters" }, 400)
+    }
+
+    const result = await createExperimentalRequest(db, payload.sub, reason, email)
+    return c.json(result)
+  } catch (error) {
+    console.error("Error creating experimental request:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Get available experimental features
+app.get("/api/experimental/features", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const status = await getExperimentalStatus(db, payload.sub)
+
+    if (!status.hasAccess) {
+      return c.json({ error: "No experimental access" }, 403)
+    }
+
+    const enabledFeatures = await getUserFeatureFlags(db, payload.sub)
+    const features = Object.values(EXPERIMENTAL_FEATURES).map(feature => ({
+      ...feature,
+      enabled: enabledFeatures.includes(feature.id)
+    }))
+
+    return c.json({ features })
+  } catch (error) {
+    console.error("Error getting experimental features:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Toggle a feature flag
+app.post("/api/experimental/features/:featureId/toggle", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const status = await getExperimentalStatus(db, payload.sub)
+
+    if (!status.hasAccess) {
+      return c.json({ error: "No experimental access" }, 403)
+    }
+
+    const { featureId } = c.req.param()
+    const { enabled } = await c.req.json()
+
+    const featureExists = Object.values(EXPERIMENTAL_FEATURES).some(f => f.id === featureId)
+    if (!featureExists) {
+      return c.json({ error: "Invalid feature ID" }, 400)
+    }
+
+    const result = await toggleUserFeature(db, payload.sub, featureId, enabled)
+    return c.json(result)
+  } catch (error) {
+    console.error("Error toggling feature:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Admin: Grant experimental access
+app.post("/api/experimental/admin/grant", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const adminPayload = await verify(token, jwtSecret)
+    // TODO: Add admin role check here
+
+    const { userId } = await c.req.json()
+    const result = await grantExperimentalAccess(db, userId, adminPayload.sub)
+    return c.json(result)
+  } catch (error) {
+    console.error("Error granting experimental access:", error)
+    return c.json({ error: error.message }, 500)
   }
 })
 
@@ -429,7 +559,6 @@ app.get("/auth/me", async (c) => {
 app.get("/test-db", async (c) => {
   try {
     const rs = await db.execute("SELECT 1 as val")
-    return c.json({ success: true, val: rs.rows[0], url: process.env.TURSO_DB_URL })
   } catch (e) {
     return c.json({ success: false, error: e.message, stack: e.stack, url: process.env.TURSO_DB_URL }, 500)
   }
@@ -706,6 +835,186 @@ app.post("/chats/:id/messages", async (c) => {
     return c.json({ id: newMessage.id })
   } catch (e) {
     return c.json({ error: "Failed to save message" }, 500)
+  }
+})
+
+// --- AI Formula Endpoints ---
+
+const colIndexToLabel = (index) => {
+  let label = '';
+  index++;
+  while (index > 0) {
+    let remainder = (index - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    index = Math.floor((index - 1) / 26);
+  }
+  return label;
+};
+
+// Helper to build formula generation prompt
+const buildFormulaPrompt = (request, spreadsheetData, autoExecute) => {
+  const { headers, sampleData } = spreadsheetData;
+  const headerStr = headers.map((h, i) => `${colIndexToLabel(i)}: ${h}`).join(', ');
+  const dataStr = sampleData.map((row, i) =>
+    `Row ${i + 2}: ${row.join(' | ')}`
+  ).join('\n');
+
+  return `
+You are an expert Excel/Spreadsheet formula generator.
+User Request: "${request}"
+
+Spreadsheet Context:
+Headers: ${headerStr}
+Sample Data:
+${dataStr}
+
+Task: Generate a valid Excel formula to fulfill the request.
+Return a JSON object.
+
+Format:
+{
+  "ambiguous": false,
+  "formula": "=AVERAGEIF($A:$A, A2, $B:$B)",
+  "targetColumn": 3,
+  "columnHeader": "Average Price",
+  "reasoning": "Explanation...",
+  "exampleResult": "45.67",
+  "isOverwrite": false
+}
+
+If ambiguous, return:
+{
+  "ambiguous": true,
+  "clarificationNeeded": "Question...",
+  "options": ["Option 1", "Option 2"]
+}
+
+Rules:
+1. Use standard Excel functions including:
+   - Math: SUM, AVERAGE, COUNT, MAX, MIN, ROUND, ROUNDUP, ROUNDDOWN, CEILING, FLOOR, ABS, POWER, SQRT
+   - Logical: IF, AND, OR, NOT, IFERROR, IFNA
+   - Text: CONCATENATE, LEFT, RIGHT, MID, LEN, TRIM, UPPER, LOWER, PROPER
+   - Lookup: VLOOKUP, HLOOKUP, INDEX, MATCH, XLOOKUP
+   - Date: TODAY, NOW, DATE, YEAR, MONTH, DAY, DATEDIF
+   - Statistical: AVERAGEIF, SUMIF, COUNTIF, MEDIAN, MODE
+   - And any other valid Excel function as needed
+2. Use absolute references ($A$1) where appropriate, relative (A1) for row-by-row.
+3. targetColumn is 0-based index. If creating a new column, use the next available index.
+4. columnHeader should be a concise, descriptive name for the new column (e.g., "Total Price", "Profit Margin").
+5. If the request implies filling a column, provide the formula for the *first data row* (Row 2).
+6. Calculate exampleResult based on Row 2 data provided.
+7. Set isOverwrite=true if targetColumn has data in sample.
+`;
+};
+
+app.post("/ai/generate-formula", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const { request, spreadsheetData, model, autoExecute } = await c.req.json()
+
+    // Build Prompt
+    const prompt = buildFormulaPrompt(request, spreadsheetData, autoExecute)
+
+    // Call AI
+    const response = await aiClient.generateContent([
+      { role: 'user', content: prompt }
+    ], { json: true, model })
+
+    console.log('AI Raw Response:', response)
+
+    let result
+    try {
+      result = JSON.parse(response)
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', response)
+      return c.json({
+        error: 'AI returned invalid response format',
+        details: response?.substring(0, 200)
+      }, 500)
+    }
+
+    // Check for ambiguity
+    if (result.ambiguous) {
+      return c.json({
+        ambiguous: true,
+        clarificationNeeded: result.clarificationNeeded,
+        options: result.options
+      })
+    }
+
+    // Check if will modify existing data
+    const willModifyExistingData = checkIfModifiesData(
+      result.targetColumn,
+      spreadsheetData,
+      result.isOverwrite
+    )
+
+    return c.json({
+      formula: result.formula,
+      targetColumn: result.targetColumn,
+      columnHeader: result.columnHeader || 'New Column',
+      reasoning: result.reasoning,
+      exampleResult: result.exampleResult,
+      willModifyExistingData,
+      affectedCells: willModifyExistingData ?
+        `Column ${colIndexToLabel(result.targetColumn)}` :
+        null
+    })
+  } catch (e) {
+    console.error("AI Generation Error:", e)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// Helper to check if operation will modify existing data
+function checkIfModifiesData(targetColumn, spreadsheetData, isOverwrite) {
+  // Check if target column has any existing data in the sample
+  // sampleData is array of arrays
+  if (!spreadsheetData.sampleData) return false;
+
+  for (const row of spreadsheetData.sampleData) {
+    // Check if index exists and has content
+    if (row[targetColumn] !== undefined && row[targetColumn] !== '' && row[targetColumn] !== null) {
+      return true;
+    }
+  }
+  return isOverwrite === true;
+}
+
+app.post("/ai/analyze-formula-error", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const { context, model } = await c.req.json()
+
+    const prompt = `
+You are an expert Excel formula debugger.
+Context:
+Formula: ${context.formula}
+Result: ${context.result}
+Cell: ${context.cellPosition}
+Row Data: ${JSON.stringify(context.rowData)}
+Headers: ${JSON.stringify(context.headers)}
+
+Task: Analyze why this formula is producing an error or unexpected result.
+Return JSON:
+{
+  "explanation": "Brief explanation of the error...",
+  "suggestedFix": "=CORRECTED_FORMULA(...)"
+}
+`;
+
+    const response = await aiClient.generateContent([
+      { role: 'user', content: prompt }
+    ], { json: true, model })
+
+    return c.json(JSON.parse(response))
+
+  } catch (e) {
+    return c.json({ error: "Analysis failed" }, 500)
   }
 })
 
@@ -1677,6 +1986,75 @@ app.post("/ai/analyze", async (c) => {
   }
 })
 
+app.post("/ai/spreadsheet-command", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const userId = payload.sub
+    const { command, data, headers } = await c.req.json()
+
+    // Fetch user settings to get active model
+    let activeModel = null
+    try {
+      const settingsRes = await db.execute({
+        sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
+        args: { userId }
+      })
+      if (settingsRes.rows.length > 0) {
+        const settings = JSON.parse(settingsRes.rows[0].settings)
+        activeModel = settings.activeModel
+      }
+    } catch (e) {
+      console.warn("Failed to fetch user settings for AI model:", e)
+    }
+
+    // Generate prompt for AI
+    const prompt = `You are a spreadsheet assistant. The user has a spreadsheet with the following structure:
+
+Headers: ${JSON.stringify(headers)}
+Sample Data (first 5 rows): ${JSON.stringify(data.slice(0, 5), null, 2)}
+
+The user wants to: "${command}"
+
+Generate a JSON array of modifications to apply. Each modification should have:
+- row: the row number (0 = headers, 1+ = data rows)
+- col: the column index (0-based)
+- value: the new value for that cell
+
+Return ONLY a valid JSON object with this structure:
+{
+  "modifications": [
+    { "row": 1, "col": 2, "value": "new value" }
+  ]
+}
+
+Be precise and only modify the cells that need to change based on the command.`
+
+    const response = await aiClient.chat(prompt, [], activeModel)
+
+    // Parse the AI response
+    let modifications = []
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = response.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0])
+        modifications = parsed.modifications || []
+      }
+    } catch (e) {
+      console.error("Failed to parse AI response:", e)
+      return c.json({ error: "AI returned invalid response" }, 500)
+    }
+
+    return c.json({ modifications })
+  } catch (error) {
+    console.error("AI Spreadsheet Command Error:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 app.post("/ai/sanitize/analyze", async (c) => {
   const token = getCookie(c, "session")
   if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -1986,6 +2364,13 @@ app.get("/usage", async (c) => {
     return c.json({ error: "Failed to fetch usage stats" }, 500)
   }
 })
+
+// Initialize experimental features tables
+try {
+  await initExperimentalTables(db)
+} catch (error) {
+  console.error('Failed to initialize experimental tables:', error)
+}
 
 // Initialize weekly digest cron job only if Neon is configured
 if (process.env.NEON_DATABASE_URL) {

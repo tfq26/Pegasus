@@ -174,33 +174,33 @@ const copyCellValue = async (value: any) => {
 </script>
 
 <template>
-  <div class="border border-border rounded-lg bg-muted/50 flex flex-col">
+  <div class="flex flex-col h-full bg-transparent">
     <ContextMenu>
-      <ContextMenuTrigger class="w-full">
-        <div class="overflow-x-auto">
+      <ContextMenuTrigger class="w-full flex-1 flex flex-col min-h-0">
+        <div class="flex-1 overflow-auto">
           <table class="w-full text-left text-xs border-collapse">
-            <thead class="bg-muted sticky top-0 z-10">
+            <thead class="bg-background sticky top-0 z-10 ring-1 ring-border/20">
             <tr>
               <th
                 v-for="col in columns"
                 :key="col"
-                class="px-4 py-2 font-medium text-muted-foreground border-b border-border whitespace-nowrap"
+                class="px-4 py-2 font-medium text-muted-foreground border-b border-border/50 whitespace-nowrap bg-background/95 backdrop-blur-sm"
               >
                 {{ col }}
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-border/50">
+          <tbody class="divide-y divide-border/20">
             <tr
-              v-for="(row, i) in data"
+              v-for="(row, i) in paginatedData"
               :key="i"
               :class="[
                 'transition-colors cursor-pointer',
-                selectedRows.has(i) 
-                  ? 'bg-primary/20 hover:bg-primary/30' 
-                  : 'hover:bg-muted/50'
+                selectedRows.has((currentPage - 1) * pageSize + i) 
+                  ? 'bg-primary/10' 
+                  : 'hover:bg-muted/30'
               ]"
-              @click="toggleRowSelection(i, $event)"
+              @click="toggleRowSelection((currentPage - 1) * pageSize + i, $event)"
             >
               <td
                 v-for="col in columns"
@@ -240,12 +240,49 @@ const copyCellValue = async (value: any) => {
       </ContextMenuContent>
     </ContextMenu>
 
-    <div class="flex items-center justify-between px-4 py-2 border-t border-border bg-muted text-xs text-muted-foreground sticky bottom-0 z-10">
+    <div class="flex items-center justify-between px-4 py-2 border-t border-border/30 text-xs text-muted-foreground bg-transparent mt-auto shrink-0">
       <div class="flex items-center gap-4">
-        <span v-if="selectedRows.size > 0" class="text-primary">
+        <span v-if="selectedRows.size > 0" class="text-primary font-medium">
           {{ selectedRows.size }} selected
         </span>
         <span>{{ data.length }} total rows</span>
+      </div>
+
+      <!-- Pagination Controls -->
+      <div class="flex items-center gap-2" v-if="totalPages > 1">
+        <button 
+          @click="currentPage--" 
+          :disabled="currentPage === 1"
+          class="p-1 rounded hover:bg-muted disabled:opacity-30"
+          title="Previous Page"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <div class="flex items-center gap-1 mx-2">
+          <span class="font-medium text-foreground">{{ currentPage }}</span>
+          <span class="text-muted-foreground/50">/</span>
+          <span>{{ totalPages }}</span>
+        </div>
+        <button 
+          @click="currentPage++" 
+          :disabled="currentPage === totalPages"
+          class="p-1 rounded hover:bg-muted disabled:opacity-30"
+          title="Next Page"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+        
+        <div class="w-px h-3 bg-border mx-2"></div>
+        
+        <select 
+          v-model="pageSize" 
+          class="bg-transparent border-none text-xs text-muted-foreground focus:ring-0 cursor-pointer hover:text-foreground"
+        >
+          <option :value="10">10 / page</option>
+          <option :value="50">50 / page</option>
+          <option :value="100">100 / page</option>
+          <option :value="500">500 / page</option>
+        </select>
       </div>
     </div>
 

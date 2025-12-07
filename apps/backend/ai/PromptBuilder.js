@@ -262,10 +262,17 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
         const recentMessages = messages.slice(-4);
         const conversationText = recentMessages.map(m => `${m.role}: ${m.content}`).join('\n');
 
+        // Check if this looks like a query conversation
+        const hasQueryKeywords = conversationText.toLowerCase().match(/select|from|where|sum|count|average|group by|join|table|database|query/);
+
+        const additionalGuidance = hasQueryKeywords
+            ? '\nThis appears to be a database query conversation. Focus the title on what data was being analyzed or retrieved (e.g., "Sales Summary", "User Activity Report", "Product Inventory Query").'
+            : '';
+
         return `
         Generate a short, concise title (3-6 words) for this chat session based on the conversation below.
         The title should reflect the user's intent or the topic being discussed.
-        Do not use quotes. Do not use "Title:". Just return the text.
+        Do not use quotes. Do not use "Title:". Just return the text.${additionalGuidance}
         
         Conversation:
         ${conversationText}

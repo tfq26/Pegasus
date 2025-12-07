@@ -4,9 +4,9 @@
       
       <!-- Header -->
       <div class="text-center space-y-4">
-        <h1 class="text-4xl font-bold text-foreground">Support & Feedback</h1>
+        <h1 class="text-4xl font-bold text-foreground">Release Notes</h1>
         <p class="text-muted-foreground text-lg">
-          Check out what's new and let us know how we can improve
+          Stay up to date with the latest features and improvements
         </p>
       </div>
 
@@ -14,7 +14,7 @@
       <section class="space-y-6">
         <h2 class="text-2xl font-bold text-foreground flex items-center gap-2">
           <Sparkles class="w-6 h-6 text-primary" />
-          Release Notes
+          Latest Releases
         </h2>
         
         <div class="space-y-4">
@@ -88,8 +88,8 @@
         </div>
       </section>
 
-      <!-- Experimental Features Section -->
-      <section class="space-y-6">
+      <!-- Experimental Features Section (Only for authorized users) -->
+      <section v-if="experimentalStatus" class="space-y-6">
         <h2 class="text-2xl font-bold text-foreground flex items-center gap-2">
           <Beaker class="w-6 h-6 text-amber-500" />
           Experimental Features
@@ -97,7 +97,7 @@
 
         <div class="p-8 rounded-xl border border-border bg-card space-y-6">
           <!-- Current Status -->
-          <div v-if="experimentalStatus" class="p-4 rounded-lg" :class="experimentalStatus.hasAccess ? 'bg-green-500/10 border border-green-500/20' : 'bg-muted/50 border border-border'">
+          <div class="p-4 rounded-lg" :class="experimentalStatus.hasAccess ? 'bg-green-500/10 border border-green-500/20' : 'bg-muted/50 border border-border'">
             <div class="flex items-start gap-3">
               <component :is="experimentalStatus.hasAccess ? Check : Clock" class="w-5 h-5 mt-0.5" :class="experimentalStatus.hasAccess ? 'text-green-500' : 'text-muted-foreground'" />
               <div class="flex-1">
@@ -176,184 +176,68 @@
         </div>
       </section>
 
-      <!-- Feedback Form Section -->
-      <section class="space-y-6">
-        <h2 class="text-2xl font-bold text-foreground flex items-center gap-2">
-          <MessageSquare class="w-6 h-6 text-primary" />
-          Send Feedback
-        </h2>
-
-        <div class="p-8 rounded-xl border border-border bg-card">
-          <form @submit.prevent="handleSubmit" class="space-y-6">
-            
-            <!-- Feature Category -->
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Feature Category *</label>
-              <Select v-model="form.featureCategory">
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a feature" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Dashboard">Dashboard</SelectItem>
-                  <SelectItem value="Query">Query</SelectItem>
-                  <SelectItem value="AI">AI</SelectItem>
-                  <SelectItem value="Database Connections">Database Connections</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <!-- Custom Feature (shown when Other is selected) -->
-            <div v-if="form.featureCategory === 'Other'" class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Specify Feature</label>
-              <input
-                v-model="form.customFeature"
-                placeholder="Enter feature name"
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
-
-            <!-- Issue Type -->
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Issue Type *</label>
-              <Select v-model="form.issueType">
-                <SelectTrigger>
-                  <SelectValue placeholder="Select issue type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Bug">Bug</SelectItem>
-                  <SelectItem value="Feature Request">Feature Request</SelectItem>
-                  <SelectItem value="Improvement">Improvement</SelectItem>
-                  <SelectItem value="Question">Question</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <!-- Description -->
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Description *</label>
-              <textarea
-                v-model="form.description"
-                placeholder="Please describe your feedback in detail..."
-                rows="6"
-                class="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
-              ></textarea>
-              <p class="text-xs text-muted-foreground">{{ form.description.length }} / 1000 characters</p>
-            </div>
-
-            <!-- Email (optional) -->
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Email (optional)</label>
-              <input
-                v-model="form.userEmail"
-                type="email"
-                placeholder="your@email.com"
-                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <p class="text-xs text-muted-foreground">We'll use this to follow up if needed</p>
-            </div>
-
-            <!-- Mark as Urgent -->
-            <div class="flex items-center gap-2">
-              <input
-                id="urgent"
-                v-model="form.isUrgent"
-                type="checkbox"
-                class="w-4 h-4 rounded border-input text-primary focus:ring-primary"
-              />
-              <label for="urgent" class="text-sm font-medium text-foreground cursor-pointer">
-                Mark as urgent (critical issues only)
-              </label>
-            </div>
-
-            <!-- Submit Button -->
-            <div class="flex justify-end gap-3 pt-4">
-              <button
-                type="button"
-                @click="resetForm"
-                class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition"
-              >
-                Clear
-              </button>
-              <button
-                type="submit"
-                :disabled="!isFormValid || isSubmitting"
-                class="px-6 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <Send class="w-4 h-4" />
-                {{ isSubmitting ? 'Sending...' : 'Send Feedback' }}
-              </button>
-            </div>
-          </form>
-        </div>
-      </section>
-
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { submitFeedback } from '@/lib/api'
+import { Sparkles, Check, Plus, Wrench, Bug, Beaker, Clock } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
-import { Sparkles, MessageSquare, Check, Send, Beaker, Clock, Plus, Wrench, Bug } from 'lucide-vue-next'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { useAuth } from '@/composables/useAuth'
 
-defineOptions({ name: 'SupportView' })
+defineOptions({ name: 'ReleasesPage' })
+
+const { user } = useAuth()
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const releases = ref<any[]>([])
 const releaseDetails = ref<Record<string, any>>({})
 const expandedItems = ref(new Set<number>())
-
-// Experimental Features State
-const experimentalStatus = ref<{
-  hasAccess: boolean
-  requested: boolean
-  requestedAt?: string
-} | null>(null)
-
+const experimentalStatus = ref<any>(null)
 const experimentalForm = ref({
   reason: '',
   email: '',
   agreedToTerms: false
 })
-
 const isSubmittingExperimental = ref(false)
 
 const isExperimentalFormValid = computed(() => {
-  return experimentalForm.value.reason.trim().length > 20 &&
-         experimentalForm.value.agreedToTerms
+  return experimentalForm.value.reason.trim().length >= 20 && experimentalForm.value.agreedToTerms
 })
 
-// Load experimental status
-const loadExperimentalStatus = async () => {
-  try {
-    const response = await fetch('/api/experimental/status', {
-      credentials: 'include'
-    })
-    if (response.ok) {
-      experimentalStatus.value = await response.json()
-    }
-  } catch (error) {
-    console.error('Failed to load experimental status:', error)
-    // Default to no access if API fails
-    experimentalStatus.value = { hasAccess: false, requested: false }
+const toggleExpanded = (index: number) => {
+  if (expandedItems.value.has(index)) {
+    expandedItems.value.delete(index)
+  } else {
+    expandedItems.value.add(index)
   }
 }
 
-// Handle experimental access request
+const getCategoryIcon = (category: string) => {
+  switch (category) {
+    case 'New Features': return Plus
+    case 'Improvements': return Wrench
+    case 'Bug Fixes': return Bug
+    default: return Check
+  }
+}
+
+const getCategoryColor = (category: string) => {
+  switch (category) {
+    case 'New Features': return 'text-green-500'
+    case 'Improvements': return 'text-blue-500'
+    case 'Bug Fixes': return 'text-orange-500'
+    default: return 'text-muted-foreground'
+  }
+}
+
 const handleExperimentalRequest = async () => {
   if (!isExperimentalFormValid.value) return
 
   isSubmittingExperimental.value = true
   try {
-    const response = await fetch('/api/experimental/request', {
+    const response = await fetch(`${API_URL}/experimental/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -363,139 +247,56 @@ const handleExperimentalRequest = async () => {
       })
     })
 
-    if (!response.ok) throw new Error('Failed to submit request')
-
-    toast.success('Request submitted!', {
-      description: 'We\'ll review your request and notify you once approved.'
-    })
-
-    // Reload status
-    await loadExperimentalStatus()
-
-    // Reset form
-    experimentalForm.value = {
-      reason: '',
-      email: '',
-      agreedToTerms: false
+    if (response.ok) {
+      toast.success('Request submitted successfully!')
+      experimentalForm.value = { reason: '', email: '', agreedToTerms: false }
+      await fetchExperimentalStatus()
+    } else {
+      const error = await response.json()
+      toast.error(error.error || 'Failed to submit request')
     }
   } catch (error) {
-    console.error('Failed to submit experimental request:', error)
-    toast.error('Failed to submit request', {
-      description: 'Please try again later.'
-    })
+    console.error('Error submitting experimental request:', error)
+    toast.error('Failed to submit request')
   } finally {
     isSubmittingExperimental.value = false
   }
 }
 
-// Load releases and changelog details
-onMounted(async () => {
-  await loadExperimentalStatus()
+const fetchExperimentalStatus = async () => {
+  if (!user.value) return
   
   try {
-    // Load releases index
-    const releasesResponse = await fetch('/releases.json')
-    releases.value = (await releasesResponse.json()).releases
-    
-    // Load details for each release
-    for (const release of releases.value) {
-      try {
-        const detailResponse = await fetch(`/changelogs/${release.changelogFile}`)
-        releaseDetails.value[release.version] = await detailResponse.json()
-      } catch (error) {
-        console.error(`Failed to load changelog for ${release.version}:`, error)
-      }
+    const response = await fetch(`${API_URL}/experimental/status`, {
+      credentials: 'include'
+    })
+    if (response.ok) {
+      experimentalStatus.value = await response.json()
     }
   } catch (error) {
-    console.error('Failed to load releases:', error)
-    releases.value = []
-  }
-})
-
-const toggleExpanded = (index: number) => {
-  if (expandedItems.value.has(index)) {
-    expandedItems.value.delete(index)
-  } else {
-    expandedItems.value.add(index)
-  }
-  // Trigger reactivity
-  expandedItems.value = new Set(expandedItems.value)
-}
-
-// Helper functions for category styling
-const getCategoryIcon = (category: string) => {
-  const icons: Record<string, any> = {
-    'New Features': Plus,
-    'Improvements': Wrench,
-    'Bug Fixes': Bug
-  }
-  return icons[category] || Plus
-}
-
-const getCategoryColor = (category: string) => {
-  const colors: Record<string, string> = {
-    'New Features': 'text-primary',
-    'Improvements': 'text-blue-500',
-    'Bug Fixes': 'text-green-500'
-  }
-  return colors[category] || 'text-primary'
-}
-
-const form = ref({
-  featureCategory: '',
-  customFeature: '',
-  issueType: '',
-  description: '',
-  userEmail: '',
-  isUrgent: false
-})
-
-const isSubmitting = ref(false)
-
-const isFormValid = computed(() => {
-  return form.value.featureCategory && 
-         form.value.issueType && 
-         form.value.description.trim().length > 0 &&
-         form.value.description.length <= 1000
-})
-
-const resetForm = () => {
-  form.value = {
-    featureCategory: '',
-    customFeature: '',
-    issueType: '',
-    description: '',
-    userEmail: '',
-    isUrgent: false
+    console.error('Error fetching experimental status:', error)
   }
 }
 
-const handleSubmit = async () => {
-  if (!isFormValid.value) return
-
-  isSubmitting.value = true
+onMounted(async () => {
   try {
-    const browserInfo = navigator.userAgent
-    
-    await submitFeedback({
-      ...form.value,
-      browserInfo
-    })
+    // Fetch releases index
+    const releasesResponse = await fetch('/releases.json')
+    const releasesData = await releasesResponse.json()
+    releases.value = releasesData.releases || []
 
-    toast.success('Feedback submitted successfully!', {
-      description: form.value.isUrgent 
-        ? 'We\'ll review this urgent feedback immediately.' 
-        : 'Thank you for helping us improve Pegasus.'
-    })
+    // Fetch details for each release
+    for (const release of releases.value) {
+      const detailResponse = await fetch(`/changelogs/${release.changelogFile}`)
+      const details = await detailResponse.json()
+      releaseDetails.value[release.version] = details
+    }
 
-    resetForm()
+    // Fetch experimental status if user is logged in
+    await fetchExperimentalStatus()
   } catch (error) {
-    console.error('Failed to submit feedback:', error)
-    toast.error('Failed to submit feedback', {
-      description: 'Please try again later or contact support directly.'
-    })
-  } finally {
-    isSubmitting.value = false
+    console.error('Error loading releases:', error)
+    toast.error('Failed to load release notes')
   }
-}
+})
 </script>

@@ -1,0 +1,28 @@
+{
+    "releases": [
+        {
+            "version": "0.3.0",
+            "releaseDate": "December 7, 2025",
+            "title": "Excel Engine & Experimental Features",
+            "description": "Major release introducing a custom-built Excel-like spreadsheet engine with AI-powered formula generation and a comprehensive experimental features system.",
+            "changelogFile": "v0.3.0.json",
+            "isLatest": true
+        },
+        {
+            "version": "0.2.0",
+            "releaseDate": "December 6, 2025",
+            "title": "Query Tab Isolation & Bug Fixes",
+            "description": "Improved query tab management with SSMS-style isolation and critical bug fixes for formula handling.",
+            "changelogFile": "v0.2.0.json",
+            "isLatest": false
+        },
+        {
+            "version": "0.1.0",
+            "releaseDate": "December 3, 2025",
+            "title": "Support System & Dashboard Sharing",
+            "description": "Initial release with support page, feedback system, and dashboard sharing capabilities.",
+            "changelogFile": "v0.1.0.json",
+            "isLatest": false
+        }
+    ]
+}

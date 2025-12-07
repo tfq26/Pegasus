@@ -9,13 +9,15 @@ export interface Operation {
     status: OperationStatus
     details?: string
     error?: string
+    cancellable?: boolean
+    onCancel?: () => void
 }
 
 const operations = ref<Operation[]>([])
 
 export function useProgress() {
 
-    const startOperation = (id: string, label: string) => {
+    const startOperation = (id: string, label: string, options?: { cancellable?: boolean, onCancel?: () => void }) => {
         // Remove existing if any
         const idx = operations.value.findIndex(op => op.id === id)
         if (idx >= 0) operations.value.splice(idx, 1)
@@ -24,7 +26,9 @@ export function useProgress() {
             id,
             label,
             progress: 0,
-            status: 'pending'
+            status: 'pending',
+            cancellable: options?.cancellable,
+            onCancel: options?.onCancel
         })
     }
 
@@ -64,6 +68,22 @@ export function useProgress() {
         }
     }
 
+    const cancelOperation = (id: string) => {
+        const op = operations.value.find(o => o.id === id)
+        if (op) {
+            if (op.onCancel) {
+                op.onCancel()
+            }
+            op.status = 'error'
+            op.error = 'Cancelled'
+            // Remove faster than normal error
+            setTimeout(() => {
+                const idx = operations.value.findIndex(o => o.id === id)
+                if (idx >= 0) operations.value.splice(idx, 1)
+            }, 1000)
+        }
+    }
+
     const activeOperations = computed(() =>
         operations.value.filter(op => op.status !== 'completed' || op.progress < 100)
     )
@@ -77,6 +97,7 @@ export function useProgress() {
         startOperation,
         updateOperation,
         finishOperation,
-        failOperation
+        failOperation,
+        cancelOperation
     }
 }

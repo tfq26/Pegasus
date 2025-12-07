@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { useFeatureFlags } from './useFeatureFlags'
 
 const user = ref(null)
 const isLoading = ref(true)
@@ -6,6 +7,8 @@ const isLoading = ref(true)
 const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
 
 export function useAuth() {
+    const { setUser } = useFeatureFlags()
+
     const fetchUser = async () => {
         isLoading.value = true
         try {
@@ -14,8 +17,11 @@ export function useAuth() {
             })
             const data = await res.json()
             user.value = data.user
+            // Sync with feature flags composable
+            setUser(data.user)
         } catch (e) {
             user.value = null
+            setUser(null)
         } finally {
             isLoading.value = false
         }

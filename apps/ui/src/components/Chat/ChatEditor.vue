@@ -1,11 +1,11 @@
 <template>
-  <div class="flex-1 overflow-hidden relative bg-background">
+  <div class="flex-1 overflow-hidden relative bg-background min-h-[300px]">
     <CodeEditor
       v-if="props.mode === 'write'"
       :key="'write-mode'"
       v-model="localInput"
       language="sql"
-      class="w-full h-full"
+      class="w-full h-full bg-transparent text-foreground p-4 resize-none focus:outline-none font-sans text-base placeholder:text-muted-foreground"
     />
     <textarea
       v-else

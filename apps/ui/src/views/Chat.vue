@@ -40,10 +40,12 @@
           :available-models="availableModels"
           :save-status="saveStatus"
           :ai-mode="aiMode"
+          :auto-execute="autoExecute"
           @update:mode="mode = $event"
           @update:selected-connection-id="selectedConnectionId = $event"
           @update:ai-options="aiOptions = $event"
           @update:query-options="queryOptions = $event"
+          @update:auto-execute="autoExecute = $event"
           @run="run"
           @stop="stopExecution"
           @ai-generate="handleAIGenerate"
@@ -52,39 +54,22 @@
           @toggle-ai-mode="handleToggleAIMode"
           @visualize="handleVisualize"
           @sanitize="handleSanitize"
+          @load-table-to-sheet="handleLoadTableToSheet"
         />
 
         <!-- Editor -->
-        <ChatEditor 
-          v-if="mode !== 'spreadsheet'"
-          :mode="mode" 
-          :input="currentInput" 
-          @update:input="currentInput = $event" 
+        <Workspace
+          ref="workspaceRef"
+          class="flex-1 min-h-0"
+          :mode="mode"
+          :input="currentInput"
+          :ai-mode="aiMode"
+          :auto-execute="autoExecute"
+          @update:mode="mode = $event"
+          @update:input="currentInput = $event"
           @submit="run"
+          @save-query="handleSaveFormulaQuery"
         />
-
-        <!-- Excel Editor -->
-        <div v-if="mode === 'spreadsheet'" class="flex-1 overflow-hidden bg-muted/10">
-          <div v-if="excelDataLoading" class="flex items-center justify-center h-full text-muted-foreground">
-            <div class="text-center">
-              <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p>Loading Excel data...</p>
-            </div>
-          </div>
-          <ExcelEditor 
-            v-else-if="excelData.length > 0"
-            ref="excelEditorRef"
-            :data="excelData" 
-            class="h-full bg-background"
-            @save="handleSaveExcel"
-          />
-          <div v-else class="flex items-center justify-center h-full text-muted-foreground">
-            <div class="text-center">
-              <p>No data loaded.</p>
-              <p class="text-xs mt-1">Select an Excel connection and try again.</p>
-            </div>
-          </div>
-        </div>
       </section>
 
       <!-- Results Panel -->
@@ -102,6 +87,7 @@
         :ambiguity="ambiguity"
         @update:position="resultsPanelPosition = $event"
         @close="resultsPanelVisible = false"
+        @cancel="handleCancelQuery"
         @analyze="handleAnalyze"
         @resolve-ambiguity="handleResolveAmbiguity"
         @create-dashboard-element="handleCreateDashboardElement"
@@ -149,13 +135,12 @@ import { useRoute } from 'vue-router'
 import { toast } from 'vue-sonner'
 import ChatSidebar from '../components/Chat/ChatSidebar.vue'
 import ChatToolbar from '../components/Chat/ChatToolbar.vue'
-import ChatEditor from '../components/Chat/ChatEditor.vue'
+import Workspace from '../components/Workspace/Workspace.vue'
 import ResultsPanel from '../components/Chat/ResultsPanel.vue'
 import AmbiguityDialog from '../components/Chat/AmbiguityDialog.vue'
 import SanitizePreviewDialog from '../components/Chat/SanitizePreviewDialog.vue'
 import DashboardElementPreview from '../components/Dashboard/DashboardElementPreview.vue'
 import ChatHistoryModal from '../components/Chat/ChatHistoryModal.vue'
-import ExcelEditor from '../components/Excel/ExcelEditor.vue'
 import {
   Select,
   SelectContent,
@@ -189,13 +174,27 @@ const excelDataLoading = ref(false)
 const excelEditorRef = ref<any>(null)
 const saveStatus = ref<'saved' | 'saving' | 'error'>('saved')
 const aiMode = ref(false)
+const autoExecute = ref(false)
 
 const handleToggleAIMode = () => {
-  if (excelEditorRef.value) {
-    excelEditorRef.value.toggleAIMode()
-    aiMode.value = excelEditorRef.value.aiMode
+    aiMode.value = !aiMode.value 
+}
+
+const handleSaveFormulaQuery = async (query: string, type: 'formula') => {
+  if (!selectedConnection.value) return
+  
+  try {
+    await saveQuery(
+      query,
+      'user',
+      'success',
+      selectedConnection.value.id
+    )
+  } catch (e) {
+    console.error('Failed to save formula query:', e)
   }
 }
+
 
 const handleVisualize = async () => {
   if (!excelEditorRef.value) return
@@ -224,73 +223,9 @@ const handleVisualize = async () => {
 }
 
 const loadExcelData = async () => {
-  console.log('[loadExcelData] Starting...')
-  console.log('[loadExcelData] selectedConnection:', selectedConnection.value)
-  
-  if (!selectedConnection.value) {
-    console.warn('[loadExcelData] No connection selected')
-    return
-  }
-  
-  const conn = selectedConnection.value
-  console.log('[loadExcelData] Connection provider:', conn.provider)
-  console.log('[loadExcelData] SQLite tables:', conn.sqlite?.tables)
-  
-  if (conn.provider !== 'sqlite' || !conn.sqlite?.tables?.length) {
-    console.warn('[loadExcelData] Not a SQLite connection or no tables')
-    return
-  }
-
-  const tableName = conn.sqlite.tables[0] // Default to first table
-  console.log('[loadExcelData] Loading table:', tableName)
-  
-  excelDataLoading.value = true
-  
-  const { startOperation, finishOperation, failOperation } = useProgress()
-  const opId = `excel-load-${Date.now()}`
-  startOperation(opId, `Loading ${tableName}`)
-  
-  try {
-    toast.info('Loading Excel data...')
-    
-    const response = await fetch(`${queryApiUrl}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        provider: conn.provider,
-        connection: buildConnectionPayload(conn),
-        query: `SELECT * FROM "${tableName}" LIMIT 50000`, // Load more data for editor
-        source: 'user',
-        model: null
-      }),
-    })
-
-    const body = await response.json()
-    console.log('[loadExcelData] Response body:', body)
-    console.log('[loadExcelData] Result is array?', Array.isArray(body.result))
-    console.log('[loadExcelData] Result length:', body.result?.length)
-
-    if (!response.ok || body.error) {
-      throw new Error(body.error ?? 'Unable to fetch data')
-    }
-
-    if (Array.isArray(body.result)) {
-      excelData.value = body.result
-      console.log('[loadExcelData] Set excelData.value, length:', excelData.value.length)
-      finishOperation(opId)
-      toast.success(`Loaded ${body.result.length} rows`)
-    } else {
-      finishOperation(opId)
-      toast.warning('No data found in table')
-    }
-  } catch (e: any) {
-    console.error('Failed to load Excel data', e)
-    failOperation(opId, e.message || 'Failed to load')
-    toast.error('Failed to load Excel data')
-  } finally {
-    excelDataLoading.value = false
-  }
+  // DEPRECATED: This function is no longer needed since we use Workspace tabs
+  // Data is now loaded via handleLoadTableToSheet and cached in the Engine
+  return;
 }
 
 const handleFormat = (type: string, value?: any) => {
@@ -467,9 +402,11 @@ const loadConnections = async () => {
 watch(selectedConnectionId, (newId) => {
   if (newId) {
     localStorage.setItem('pegasus-selected-connection', newId)
-    if (mode.value === 'spreadsheet') {
-      loadExcelData()
-    }
+    // DEPRECATED: No longer need to load Excel data on connection change
+    // Data is loaded on-demand via the Sheet button
+    // if (mode.value === 'spreadsheet') {
+    //   loadExcelData()
+    // }
   }
 })
 
@@ -479,13 +416,33 @@ const lastQuery = ref('')
 const isExecuting = ref(false)
 const mode = ref<'chat' | 'write' | 'spreadsheet'>('chat')
 
-watch(mode, (newMode) => {
-  if (newMode === 'spreadsheet') {
-    loadExcelData()
-  }
-})
+// DEPRECATED: No longer need to watch mode changes for Excel loading
+// watch(mode, (newMode) => {
+//   if (newMode === 'spreadsheet') {
+//     loadExcelData()
+//   }
+// })
 const chatInput = ref('')
 const writeInput = ref('')
+
+// Cancellation state
+const abortController = ref<AbortController | null>(null)
+const currentOpId = ref('')
+const { startOperation, finishOperation, failOperation, cancelOperation } = useProgress()
+
+const handleCancelQuery = () => {
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
+  }
+  if (currentOpId.value) {
+    cancelOperation(currentOpId.value)
+    currentOpId.value = ''
+  }
+  isExecuting.value = false
+  // loading.value = false // if loading ref exists? no, isExecuting covers it
+  toast.info('Query cancelled')
+}
 
 // Computed property to get the current active input
 const currentInput = computed({
@@ -500,7 +457,7 @@ const chatHistory = ref<any[]>([])
 const encryptionKey = ref<CryptoKey | null>(null)
 const sidebarOpen = ref(true)
 const sidebarSide = ref<'left' | 'right'>('left')
-const resultsPanelVisible = ref(true)
+const resultsPanelVisible = ref(false)
 const resultsPanelPosition = ref<'bottom' | 'right'>('bottom')
 const availableModels = ref<any[]>([])
 const queryHistory = ref<any[]>([])
@@ -667,21 +624,70 @@ function toggleSidebar() {
 }
 
 const handleLoadQuery = async (query: string) => {
-  // Switch to write mode first
-  mode.value = 'write'
+  // Check if this is a formula query
+  // Formulas either:
+  // 1. Start with "ColumnName: =" (our saved format)
+  // 2. Start with "=" (direct formula)
+  // 3. Don't start with SQL keywords
+  const sqlKeywords = /^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)/i
+  const isFormulaFormat = /^[^:]+:\s*=/.test(query) || query.trim().startsWith('=')
+  const isFormula = isFormulaFormat || !sqlKeywords.test(query)
   
-  // Wait for mode switch to complete and CodeEditor to mount
-  await nextTick()
-  
-  // Now set the write input
-  writeInput.value = query
-  
-  toast.success('Query loaded into editor')
+  if (isFormula) {
+    // Handle formula query - switch to spreadsheet mode
+    mode.value = 'spreadsheet'
+    aiMode.value = true
+    
+    await nextTick()
+    
+    // Extract just the formula part if it's in "ColumnName: =FORMULA" format
+    let formulaToLoad = query
+    const match = query.match(/^[^:]+:\s*(.+)$/)
+    if (match) {
+      formulaToLoad = match[1]
+    }
+    
+    // Set the formula bar value through the workspace
+    if (workspaceRef.value && typeof workspaceRef.value.setFormulaBarValue === 'function') {
+      workspaceRef.value.setFormulaBarValue(formulaToLoad)
+    }
+    
+    toast.success('Formula loaded')
+  } else {
+    // Handle SQL query - create a new query tab with the content
+    if (workspaceRef.value && typeof workspaceRef.value.createQueryTab === 'function') {
+      workspaceRef.value.createQueryTab(query)
+    } else {
+      mode.value = 'write'
+    }
+    
+    // Small delay to let the tab render
+    await nextTick()
+    
+    // Now set the query content
+    writeInput.value = query
+    
+    toast.success('Query loaded in new tab')
+  }
 }
 
 
 const run = async () => {
-  const activeInput = mode.value === 'chat' ? chatInput.value : writeInput.value
+  let activeInput = ''
+  
+  if (mode.value === 'chat') {
+    activeInput = chatInput.value
+  } else if (mode.value === 'write') {
+    // Get content from the active query tab in workspace
+    if (workspaceRef.value && typeof workspaceRef.value.getActiveQueryContent === 'function') {
+      activeInput = workspaceRef.value.getActiveQueryContent()
+    } else {
+      activeInput = writeInput.value
+    }
+  } else {
+    // Spreadsheet mode - ignore for now as it handles its own execution
+    return
+  }
   
   if (!activeInput.trim()) return
   if (!selectedConnection.value) {
@@ -701,12 +707,17 @@ const run = async () => {
     queryResult.value = null
     lastQuery.value = payload
 
-    const { startOperation, finishOperation, failOperation } = useProgress()
+    // Cancel previous execution if any
+    if (abortController.value) abortController.value.abort()
+    abortController.value = new AbortController()
+
     const opId = `query-exec-${Date.now()}`
-    startOperation(opId, `Executing Query (User)`)
+    currentOpId.value = opId
+    startOperation(opId, `Executing Query (User)`, { cancellable: true, onCancel: handleCancelQuery })
 
     try {
       const response = await fetch(`${queryApiUrl}/query`, {
+        signal: abortController.value.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -767,13 +778,21 @@ const run = async () => {
         // Trigger post-query actions (Analysis & Dashboard)
         handlePostQueryActions(payload, body.result)
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Handle cancellation
+      if (error.name === 'AbortError') {
+        // Query was cancelled - handleCancelQuery already handled UI updates
+        return
+      }
+      
       const message = error instanceof Error ? error.message : String(error)
       queryError.value = message
       failOperation(opId, message)
       toast.error('Query failed', { description: message, position: 'top-right' })
     } finally {
       isExecuting.value = false
+      abortController.value = null
+      currentOpId.value = ''
     }
   } else {
     // Chat mode -> AI Generation
@@ -793,9 +812,7 @@ const clear = () => {
 }
 
 const stopExecution = () => {
-  // TODO: Implement query cancellation logic
-  isExecuting.value = false
-  toast.info('Query execution stopped')
+  handleCancelQuery()
 }
 
 const handleAIGenerate = async () => {
@@ -955,6 +972,16 @@ const handleAIGenerate = async () => {
       if (selectedChatId.value) {
         await saveMessage(selectedChatId.value, 'user', userPrompt)
         await saveMessage(selectedChatId.value, 'ai', aiContent)
+        
+        // Refresh chat list after a delay to show AI-generated title
+        // The backend generates the title asynchronously after the 2nd message
+        setTimeout(async () => {
+          try {
+            await loadChats()
+          } catch (e) {
+            console.error('Failed to refresh chat list:', e)
+          }
+        }, 2000) // 2 second delay to allow backend title generation
       }
       
       // Add to query history
@@ -1214,8 +1241,69 @@ const handleAnalyze = () => {
     console.log('Analyze triggered')
 }
 
-const handleEditTable = (conn: ConnectionEntry, table: string) => {
-    console.log('Edit table', conn, table)
+const handleEditTable = async (conn: ConnectionEntry, table: string) => {
+  // Set the connection
+  selectedConnectionId.value = conn.id
+  
+  // Check if a sheet tab for this table already exists
+  await nextTick()
+  if (workspaceRef.value && typeof workspaceRef.value.findOrCreateSheetTab === 'function') {
+    const existed = workspaceRef.value.findOrCreateSheetTab(table)
+    if (existed) {
+      // Tab already exists, just switched to it
+      return
+    }
+  }
+  
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `load-sheet-${Date.now()}`
+  startOperation(opId, `Loading ${table}`)
+  
+  try {
+    toast.info('Loading table data...')
+    
+    const response = await fetch(`${queryApiUrl}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        provider: conn.provider,
+        connection: buildConnectionPayload(conn),
+        query: `SELECT * FROM "${table}" LIMIT 10000`,
+        source: 'user',
+        model: null
+      }),
+    })
+
+    const body = await response.json()
+
+    if (!response.ok || body.error) {
+      throw new Error(body.error ?? 'Unable to fetch data')
+    }
+
+    if (Array.isArray(body.result) && body.result.length > 0) {
+      // Wait for workspace to be ready
+      await nextTick()
+      
+      // Call workspace to create a new spreadsheet tab with this data
+      if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
+        workspaceRef.value.loadTableData(table, body.result)
+      } else {
+        console.error('Workspace ref not ready or loadTableData not available')
+        throw new Error('Workspace not ready')
+      }
+      
+      finishOperation(opId)
+      toast.success(`Loaded ${body.result.length} rows into spreadsheet`)
+    } else {
+      finishOperation(opId)
+      toast.warning('No data found in table')
+    }
+  } catch (e: any) {
+    console.error('Failed to load table data', e)
+    failOperation(opId, e.message || 'Failed to load')
+    toast.error('Failed to load table data')
+  }
 }
 
 const sanitizeIssues = ref<any[]>([])
@@ -1302,9 +1390,86 @@ const handleSanitize = async () => {
         
     } catch (e: any) {
         console.error(e)
-        failOperation(opId, e.message)
+        failOperation(opId, e.message || 'Unknown error')
         toast.error("Failed to analyze table")
     }
+}
+
+const workspaceRef = ref<any>(null)
+
+const handleLoadTableToSheet = async () => {
+  if (!selectedConnection.value) {
+    toast.error('No connection selected')
+    return
+  }
+  
+  const conn = selectedConnection.value
+  if (conn.provider !== 'sqlite' || !conn.sqlite?.tables?.length) {
+    toast.error('Only SQLite tables can be loaded into spreadsheet')
+    return
+  }
+  
+  const tableName = conn.sqlite.tables[0] || 'Untitled'
+  
+  // Check if a sheet tab for this table already exists
+  await nextTick()
+  if (workspaceRef.value && typeof workspaceRef.value.findOrCreateSheetTab === 'function') {
+    const existed = workspaceRef.value.findOrCreateSheetTab(tableName)
+    if (existed) {
+      // Tab already exists, just switched to it
+      return
+    }
+  }
+  
+  const { startOperation, finishOperation, failOperation } = useProgress()
+  const opId = `load-sheet-${Date.now()}`
+  startOperation(opId, `Loading ${tableName}`)
+  
+  try {
+    toast.info('Loading table data...')
+    
+    const response = await fetch(`${queryApiUrl}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        provider: conn.provider,
+        connection: buildConnectionPayload(conn),
+        query: `SELECT * FROM "${tableName}" LIMIT 10000`,
+        source: 'user',
+        model: null
+      }),
+    })
+
+    const body = await response.json()
+
+    if (!response.ok || body.error) {
+      throw new Error(body.error ?? 'Unable to fetch data')
+    }
+
+    if (Array.isArray(body.result) && body.result.length > 0) {
+      // Wait for workspace to be ready
+      await nextTick()
+      
+      // Call workspace to create a new spreadsheet tab with this data
+      if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
+        workspaceRef.value.loadTableData(tableName, body.result)
+      } else {
+        console.error('Workspace ref not ready or loadTableData not available')
+        throw new Error('Workspace not ready')
+      }
+      
+      finishOperation(opId)
+      toast.success(`Loaded ${body.result.length} rows into spreadsheet`)
+    } else {
+      finishOperation(opId)
+      toast.warning('No data found in table')
+    }
+  } catch (e: any) {
+    console.error('Failed to load table data', e)
+    failOperation(opId, e.message || 'Failed to load')
+    toast.error('Failed to load table data')
+  }
 }
 
 const handleExecuteSanitization = async (sqls: string[]) => {

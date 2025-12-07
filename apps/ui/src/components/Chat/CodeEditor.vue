@@ -36,6 +36,11 @@ const editorOptions = ref({
   scrollBeyondLastLine: false,
   automaticLayout: true,
   theme: isDark.value ? 'pegasus-sql-dark' : 'pegasus-sql-light',
+  padding: { top: 10, bottom: 10 },
+  scrollbar: {
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10,
+  },
 })
 
 // Handle editor mount
@@ -48,6 +53,11 @@ const handleEditorMount = (editor: any) => {
     console.log('CodeEditor: Setting initial value on mount:', modelValue.value?.substring(0, 50))
     editor.setValue(modelValue.value)
   }
+  
+  // Force layout after a short delay to ensure container is sized
+  setTimeout(() => {
+    editor.layout()
+  }, 100)
   
   // Listen for changes
   editor.onDidChangeModelContent(() => {
@@ -163,14 +173,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full relative">
+  <div class="w-full h-full relative flex flex-col">
     <MonacoEditor
       :key="editorKey"
       v-model="modelValue"
       language="sql"
       :options="editorOptions"
       @editorDidMount="handleEditorMount"
-      class="border border-border overflow-hidden w-full h-full"
+      class="flex-1 w-full"
     />
   </div>
 </template>

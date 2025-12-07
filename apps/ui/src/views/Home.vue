@@ -12,12 +12,6 @@
       <div
         class="flex flex-col items-center justify-center grow text-center px-10 select-none"
       >
-        <div
-          class="w-20 h-20 mb-6 flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg shadow-primary/20 animate-fadeInUp"
-          style="animation-delay: 0.1s"
-        >
-          <img src="/pegasus-white.svg" alt="Pegasus Logo" class="w-10 h-10 dark:invert-0 invert" />
-        </div>
 
         <h1
           class="text-5xl font-extrabold mb-4 text-black dark:text-white tracking-wide drop-shadow-sm animate-fadeInUp"
