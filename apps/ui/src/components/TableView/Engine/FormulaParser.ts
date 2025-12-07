@@ -134,18 +134,73 @@ export class FormulaParser {
 
     /**
      * Evaluate built-in functions like SUM, AVERAGE, ROUNDUP, etc.
+     * Supports nested functions by recursively evaluating from innermost to outermost
      */
     private evaluateFunctions(expr: string, getValue: (pos: CellPosition) => any): string {
-        // Match function calls like SUM(A1:B10) or ROUNDUP(A1, 0)
-        // Updated regex to support more functions
-        const funcRegex = /(SUM|AVERAGE|COUNT|MIN|MAX|ROUND|ROUNDUP|ROUNDDOWN|CEILING|FLOOR|ABS|POWER|SQRT)\(([^)]+)\)/g;
+        // Keep evaluating functions until no more function calls are found
+        let previousExpr = '';
+        let currentExpr = expr;
+        let iterations = 0;
+        const maxIterations = 10; // Prevent infinite loops
 
-        return expr.replace(funcRegex, (match, funcName, args) => {
-            const values = this.extractFunctionArgs(args, getValue);
-            const result = this.executeFunction(funcName, values);
-            return String(result);
-        });
+        while (currentExpr !== previousExpr && iterations < maxIterations) {
+            previousExpr = currentExpr;
+
+            // Find function calls with proper parenthesis matching
+            currentExpr = this.replaceFunctionCalls(currentExpr, getValue);
+
+            iterations++;
+        }
+
+        return currentExpr;
     }
+
+    /**
+     * Replace one level of function calls, handling nested parentheses correctly
+     */
+    private replaceFunctionCalls(expr: string, getValue: (pos: CellPosition) => any): string {
+        const funcNames = 'SUM|AVERAGE|COUNT|MIN|MAX|ROUND|ROUNDUP|ROUNDDOWN|CEILING|FLOOR|ABS|POWER|SQRT';
+        const funcPattern = new RegExp(`(${funcNames})\\(`, 'g');
+
+        let result = expr;
+        let match;
+
+        // Find all function starts
+        while ((match = funcPattern.exec(expr)) !== null) {
+            const funcName = match[1];
+            if (!funcName) continue;
+
+            const startPos = match.index;
+            const argsStartPos = startPos + funcName.length + 1; // After "FUNCNAME("
+
+            // Find matching closing parenthesis
+            let parenDepth = 1;
+            let endPos = argsStartPos;
+
+            while (endPos < expr.length && parenDepth > 0) {
+                if (expr[endPos] === '(') parenDepth++;
+                if (expr[endPos] === ')') parenDepth--;
+                endPos++;
+            }
+
+            if (parenDepth === 0) {
+                // Found matching parenthesis
+                const args = expr.substring(argsStartPos, endPos - 1);
+                const values = this.extractFunctionArgs(args, getValue);
+                const resultValue = this.executeFunction(funcName, values);
+
+                // Replace this function call with its result
+                result = expr.substring(0, startPos) + String(resultValue) + expr.substring(endPos);
+
+                // Reset regex to search from beginning of modified string
+                expr = result;
+                funcPattern.lastIndex = 0;
+            }
+        }
+
+        return result;
+    }
+
 
     /**
      * Extract and evaluate function arguments
