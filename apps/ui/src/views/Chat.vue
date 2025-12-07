@@ -1465,7 +1465,9 @@ const handleLoadTableToSheet = async () => {
       
       // Call workspace to create a new spreadsheet tab with this data
       if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
-        workspaceRef.value.loadTableData(tableName, body.result)
+        const connection = selectedConnection.value
+        const provider = connection?.provider || 'sqlite'
+        workspaceRef.value.loadTableData(tableName, body.result, connection, provider)
       } else {
         console.error('Workspace ref not ready or loadTableData not available')
         throw new Error('Workspace not ready')

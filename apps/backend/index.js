@@ -2365,6 +2365,77 @@ app.get("/usage", async (c) => {
   }
 })
 
+app.post("/api/save-table-data", async (c) => {
+  try {
+    const { tableName, updates, connection, provider } = await c.req.json()
+    console.log(`[Backend] Saving ${updates.length} changes to table ${tableName} (${provider})`)
+
+    // Verify user session
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    const Adapter = adapters[provider]
+    if (!Adapter) {
+      return c.json({ error: `Provider '${provider}' not supported` }, 400)
+    }
+
+    const adapter = new Adapter(connection)
+
+    try {
+      await adapter.connect()
+
+      let successCount = 0
+
+      for (const update of updates) {
+        const rowData = update.data
+        if (!rowData) continue
+
+        // Strategy: Look for an 'id' column (case-insensitive) to use as Primary Key
+        const idKey = Object.keys(rowData).find(k => k.toLowerCase() === 'id' || k.toLowerCase() === '_id' || k.toLowerCase().endsWith('_id'))
+
+        if (idKey && rowData[idKey] !== undefined && rowData[idKey] !== null) {
+          // Construct UPDATE query
+          // Note: This needs robust escaping. For now using basic replacement.
+          const setClause = Object.keys(rowData)
+            .filter(k => k !== idKey) // Don't update the ID itself
+            .map(k => {
+              const val = rowData[k]
+              if (val === null) return `"${k}" = NULL`
+              // Escape single quotes by doubling them
+              const escapedVal = String(val).replace(/'/g, "''")
+              return `"${k}" = '${escapedVal}'`
+            })
+            .join(', ')
+
+          if (setClause.length > 0) {
+            const escapedId = String(rowData[idKey]).replace(/'/g, "''")
+            // Quote table name and ID matching
+            const sql = `UPDATE "${tableName}" SET ${setClause} WHERE "${idKey}" = '${escapedId}'`
+
+            await adapter.query(sql)
+            successCount++
+          }
+        } else {
+          console.warn(`[Save] Skipping update for row in ${tableName} - no ID column found in data:`, Object.keys(rowData))
+        }
+      }
+
+      console.log(`[Backend] Successfully saved ${successCount}/${updates.length} rows to ${tableName}`)
+      return c.json({ ok: true, saved: successCount })
+
+    } catch (err) {
+      console.error("Save table data error:", err)
+      return c.json({ error: err.message }, 500)
+    } finally {
+      await adapter.disconnect()
+    }
+  } catch (e) {
+    console.error("API Error:", e)
+    return c.json({ error: "Internal Server Error" }, 500)
+  }
+})
+
+
 // Initialize experimental features tables
 try {
   await initExperimentalTables(db)

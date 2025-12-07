@@ -64,12 +64,63 @@ watch([tabs, activeTabId], () => {
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
 
+// Auto-save logic
+const saveChanges = async (engine: Engine) => {
+   const modified = engine.getModifiedRows();
+   if (modified.size === 0 || !engine.sourceTable) return;
+   
+   // Convert Map to clear array for JSON serialization
+   // modified maps row index -> object with all column values
+   // We also need the ORIGINAL values to identify the row if we don't have a PK.
+   // But Engine only gives us the current values.
+   // For now, let's just send the current values of the modified rows. 
+   // WARN: This implies the backend needs to figure out WHAT to update. 
+   // Without PKs, this is tricky. We'll send the row index too if that helps?
+   // Actually, let's just send the data.
+   
+   const updates = Array.from(modified.entries()).map(([row, data]) => ({
+      row,
+      data
+   }));
+   
+   try {
+      const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/save-table-data`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           tableName: engine.sourceTable,
+           updates,
+           connection: engine.sourceConnection,
+           provider: engine.sourceProvider
+         })
+      });
+      
+      if (!response.ok) throw new Error('Save failed');
+      
+      engine.clearModifiedTracking();
+      // Console log for debug, maybe add small indicator later
+      console.log('Auto-saved changes to', engine.sourceTable);
+   } catch (e) {
+      console.error('Auto-save failed:', e);
+   }
+};
+
 const getEngineForTab = (tabId: string) => {
   if (!engineCache.has(tabId)) {
     const engine = new Engine(
       { rowCount: 1000, colCount: 26 },
       `spreadsheet-tab-${tabId}`
     );
+    
+    // Auto-save listener
+    let saveTimeout: ReturnType<typeof setTimeout>;
+    engine.onChange(() => {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+            saveChanges(engine);
+        }, 2000);
+    });
+    
     engineCache.set(tabId, engine);
   }
   return engineCache.get(tabId)!;
@@ -126,7 +177,7 @@ watch(activeTabId, () => {
 }, { immediate: true });
 
 // Method to load table data into a new spreadsheet tab
-const loadTableData = (tableName: string, data: any[]) => {
+const loadTableData = (tableName: string, data: any[], connection: any = null, provider: string = 'sqlite') => {
   const newId = String(Date.now());
   const newTab = {
     id: newId,
@@ -147,6 +198,9 @@ const loadTableData = (tableName: string, data: any[]) => {
   if (!hasData && data.length > 0) {
     const headers = Object.keys(data[0]);
     
+    // Initialize database persistence
+    engine.setSource(tableName, connection, headers, provider);
+    
     // Batch all updates to avoid multiple notifications
     engine.beginBatch();
     
@@ -165,6 +219,9 @@ const loadTableData = (tableName: string, data: any[]) => {
     
     // End batch - this will trigger a single notification
     engine.endBatch();
+    
+    // RESET modification tracking so initial load is not saved
+    engine.clearModifiedTracking();
   }
   
   emit('update:mode', 'spreadsheet');

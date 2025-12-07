@@ -13,6 +13,14 @@ export class Engine {
     private storageKey: string;
     private isBatching = false;
 
+    // Database persistence tracking
+    public sourceTable: string | null = null;
+    public sourceConnection: any | null = null; // Full connection config
+    public sourceProvider: string | null = null;
+    public columnNames: string[] = [];
+    private originalData: Map<string, CellData> = new Map(); // Snapshot of loaded data
+    private modifiedCells: Set<string> = new Set(); // Track which cells changed
+
     // Transient view state (preserved in memory for tab switching)
     public viewState = {
         scrollTop: 0,
@@ -26,6 +34,58 @@ export class Engine {
         this.storageKey = storageKey;
         this.loadFromStorage();
     }
+
+    /**
+     * Set the source table for database persistence
+     */
+    public setSource(tableName: string, connection: any, columns: string[], provider?: string) {
+        this.sourceTable = tableName;
+        this.sourceConnection = connection;
+        this.sourceProvider = provider || 'sqlite'; // Default if missing
+        this.columnNames = columns;
+        // Take snapshot of current data as "original"
+        this.originalData = new Map(this.cells);
+        this.modifiedCells.clear();
+    }
+
+    /**
+     * Get all modified rows for saving to database
+     */
+    public getModifiedRows(): Map<number, Record<string, any>> {
+        const modifiedRows = new Map<number, Record<string, any>>();
+
+        for (const cellKey of this.modifiedCells) {
+            const parts = cellKey.split(',');
+            const rowStr = parts[0];
+            if (!rowStr) continue;
+
+            const row = parseInt(rowStr);
+
+            if (!modifiedRows.has(row)) {
+                // Build the entire row data
+                const rowData: Record<string, any> = {};
+                for (let col = 0; col < this.columnNames.length; col++) {
+                    const colName = this.columnNames[col];
+                    if (!colName) continue;
+
+                    const cell = this.getCell({ row, col });
+                    rowData[colName] = cell?.value ?? null;
+                }
+                modifiedRows.set(row, rowData);
+            }
+        }
+
+        return modifiedRows;
+    }
+
+    /**
+     * Clear modified tracking after successful save
+     */
+    public clearModifiedTracking() {
+        this.modifiedCells.clear();
+        this.originalData = new Map(this.cells);
+    }
+
 
     /**
      * Begin batch mode - notifications will be deferred until endBatch()
@@ -111,6 +171,7 @@ export class Engine {
 
         // 3. Store
         this.cells.set(key, cellData);
+        this.modifiedCells.add(key);
 
         // 4. Recalculate Dependents
         const dependents = this.graph.getDependents(pos);
@@ -149,7 +210,9 @@ export class Engine {
         const parsed = this.parser.parse(cell.rawInput);
         cell.value = this.evaluateParsed(parsed);
         this.cells.set(key, { ...cell });
+        this.modifiedCells.add(key);
     }
+
 
     private evaluateParsed(parsed: any): any {
         return parsed.evaluate((ref: CellPosition) => {
