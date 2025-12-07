@@ -69,6 +69,7 @@
           @update:input="currentInput = $event"
           @submit="run"
           @save-query="handleSaveFormulaQuery"
+          @save-status="saveStatus = $event"
         />
       </section>
 

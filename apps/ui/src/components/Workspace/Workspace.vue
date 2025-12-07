@@ -19,6 +19,7 @@ const emit = defineEmits<{
   (e: 'update:input', input: string): void;
   (e: 'submit'): void;
   (e: 'save-query', query: string, type: 'formula'): void;
+  (e: 'save-status', status: 'saved' | 'saving' | 'error'): void;
 }>();
 
 // --- State ---
@@ -83,6 +84,7 @@ const saveChanges = async (engine: Engine) => {
       data
    }));
    
+   // Network Request
    try {
       const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/save-table-data`, {
          method: 'POST',
@@ -98,10 +100,15 @@ const saveChanges = async (engine: Engine) => {
       if (!response.ok) throw new Error('Save failed');
       
       engine.clearModifiedTracking();
+      engine.saveStatus = 'saved';
+      emit('save-status', 'saved');
+      
       // Console log for debug, maybe add small indicator later
       console.log('Auto-saved changes to', engine.sourceTable);
    } catch (e) {
       console.error('Auto-save failed:', e);
+      engine.saveStatus = 'error';
+      emit('save-status', 'error');
    }
 };
 
@@ -115,6 +122,12 @@ const getEngineForTab = (tabId: string) => {
     // Auto-save listener
     let saveTimeout: ReturnType<typeof setTimeout>;
     engine.onChange(() => {
+        // Set saving status immediately when change happens
+        if (engine.saveStatus !== 'saving') {
+             engine.saveStatus = 'saving';
+             emit('save-status', 'saving');
+        }
+        
         if (saveTimeout) clearTimeout(saveTimeout);
         saveTimeout = setTimeout(() => {
             saveChanges(engine);

@@ -20,6 +20,8 @@ export class Engine {
     public columnNames: string[] = [];
     private originalData: Map<string, CellData> = new Map(); // Snapshot of loaded data
     private modifiedCells: Set<string> = new Set(); // Track which cells changed
+    public saveStatus: 'saved' | 'saving' | 'error' = 'saved';
+
 
     // Transient view state (preserved in memory for tab switching)
     public viewState = {
