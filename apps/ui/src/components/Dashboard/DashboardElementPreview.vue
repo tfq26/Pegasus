@@ -22,6 +22,23 @@
       </div>
 
       <div class="flex gap-2 items-center">
+        <!-- Chart Type Selector -->
+        <div class="w-40">
+           <Select :model-value="config?.type" @update:model-value="(val: string) => applyChartType(val)">
+            <SelectTrigger class="w-full h-10">
+              <SelectValue placeholder="Chart Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bar">Bar Chart</SelectItem>
+              <SelectItem value="line">Line Chart</SelectItem>
+              <SelectItem value="area">Area Chart</SelectItem>
+              <SelectItem value="pie">Pie Chart</SelectItem>
+              <SelectItem value="doughnut">Doughnut</SelectItem>
+              <SelectItem value="stat">Statistic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <!-- Dashboard Selector -->
         <div class="flex-1">
              <Select v-model="selectedDashboardId">
@@ -184,25 +201,105 @@ const refineChart = async () => {
   }
 }
 
+const applyChartType = (newType: string) => {
+  if (!config.value) return
+
+  // Special handling for Stat <-> Chart conversion
+  if (config.value.type === 'stat' && newType !== 'stat') {
+      // Trying to convert Stat to Chart
+       toast.error("Cannot convert simple stat to chart directly yet.")
+       return
+  }
+  
+  if (newType === 'stat' && config.value.type !== 'stat') {
+      // Trying to convert Chart to Stat - simplistic approach: take first value
+      const firstDataset = config.value.config.data?.datasets?.[0]
+      if (firstDataset && firstDataset.data?.length > 0) {
+          const val = firstDataset.data[0]
+          const label = firstDataset.label || "Value"
+          
+          config.value = {
+              type: 'stat',
+              title: config.value.title,
+              config: {
+                  value: val,
+                  label: label
+              }
+          }
+          return
+      }
+  }
+
+  const newConfig = convertToChartType(newType)
+  if (newConfig) {
+    config.value = newConfig
+  }
+}
+
 const convertToChartType = (newType: string) => {
   if (!config.value || config.value.type === 'stat') return null
   
   const newConfig = JSON.parse(JSON.stringify(config.value))
   newConfig.type = newType
   
+  // Clean up area/fill property if moving away from area
+  if (newType !== 'area') {
+      if (newConfig.config.data?.datasets) {
+          newConfig.config.data.datasets.forEach((ds: any) => {
+              delete ds.fill
+          })
+      }
+  }
+
   // Adjust config based on chart type
-  if (newType === 'pie' || newType === 'doughnut') {
-    // Pie/doughnut charts need single dataset
-    if (newConfig.config.datasets && newConfig.config.datasets.length > 0) {
-      const dataset = newConfig.config.datasets[0]
-      dataset.backgroundColor = newConfig.config.labels?.map((_: any, i: number) => 
-        `hsl(${i * 40}, 70%, 50%)`
+  if (newType === 'area') {
+      // Area is just line with fill: true
+      newConfig.type = 'line'
+      if (newConfig.config.data?.datasets) {
+          newConfig.config.data.datasets.forEach((ds: any) => {
+              ds.fill = true
+              ds.tension = 0.4 // Smooth curves usually look better for area
+          })
+      }
+  } else if (newType === 'pie' || newType === 'doughnut') {
+    // Pie/doughnut charts need single dataset usually, and specific colors
+    if (newConfig.config.data?.datasets && newConfig.config.data.datasets.length > 0) {
+      // Take only the first dataset for simplicity for now
+      const dataset = newConfig.config.data.datasets[0] // Use reference or clone? Already cloned deep above.
+      
+      // Generate colors for each segment (label)
+      const labelsCount = newConfig.config.data.labels?.length || 0
+      dataset.backgroundColor = Array.from({ length: labelsCount }).map((_, i) => 
+        `hsl(${i * (360 / labelsCount)}, 70%, 50%)`
       )
+      
+      // Pie charts shouldn't have border color matching line charts usually
+      delete dataset.borderColor
+      delete dataset.tension
+      delete dataset.fill
     }
+  } else if (newType === 'bar') {
+      if (newConfig.config.data?.datasets) {
+          newConfig.config.data.datasets.forEach((ds: any, i: number) => {
+              ds.backgroundColor = `hsl(${i * 60}, 70%, 50%)`
+              delete ds.fill
+              delete ds.tension
+          })
+      }
+  } else if (newType === 'line') {
+       if (newConfig.config.data?.datasets) {
+          newConfig.config.data.datasets.forEach((ds: any, i: number) => {
+              ds.borderColor = `hsl(${i * 60}, 70%, 50%)`
+              ds.backgroundColor = `hsl(${i * 60}, 70%, 50%, 0.1)` // Transparent fill
+              ds.tension = 0.4
+              delete ds.fill
+          })
+      }
   }
   
   return newConfig
 }
+
 
 const updateChartColumns = (columns: string[]) => {
   if (!config.value || !props.results || props.results.length === 0) return null

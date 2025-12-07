@@ -1,18 +1,16 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import { parseXML } from './xmlParser.js';
-
-const execAsync = promisify(exec);
+import AdmZip from 'adm-zip';
 
 export async function parseExcel(filePath) {
     const tempDir = path.join(path.dirname(filePath), 'temp_' + path.basename(filePath, '.xlsx'));
 
     try {
-        // 1. Unzip the xlsx file
+        // 1. Unzip the xlsx file using adm-zip (pure Node.js, no shell commands)
         await fs.mkdir(tempDir, { recursive: true });
-        await execAsync(`unzip -o "${filePath}" -d "${tempDir}"`);
+        const zip = new AdmZip(filePath);
+        zip.extractAllTo(tempDir, true);
 
         // 2. Read Shared Strings
         const sharedStringsPath = path.join(tempDir, 'xl', 'sharedStrings.xml');
@@ -132,9 +130,9 @@ export async function parseExcel(filePath) {
         return result;
 
     } finally {
-        // Cleanup
+        // Cleanup using Node.js fs.rm (recursive removal)
         try {
-            await execAsync(`rm -rf "${tempDir}"`);
+            await fs.rm(tempDir, { recursive: true, force: true });
         } catch (e) {
             console.error('Failed to cleanup temp dir', e);
         }

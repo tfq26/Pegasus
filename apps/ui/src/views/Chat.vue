@@ -1005,7 +1005,7 @@ const handleAIGenerate = async () => {
       })
       
       // Trigger post-query actions
-      handlePostQueryActions(query, body.result, wantsVisualization)
+      handlePostQueryActions(query, body.result, wantsVisualization, userPrompt)
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
@@ -1018,7 +1018,7 @@ const handleAIGenerate = async () => {
 }
 
 // Update the function signature
-const handlePostQueryActions = async (query: string, results: any, autoPreview = false) => {
+const handlePostQueryActions = async (query: string, results: any, autoPreview = false, userPrompt = '') => {
   // 1. Auto-analyze
   handleAnalyze()
   
@@ -1067,7 +1067,19 @@ const handlePostQueryActions = async (query: string, results: any, autoPreview =
   }
 
   // If not a simple stat, try heuristic detection first
-  const heuristicConfig = detectVisualizationType(results)
+  let heuristicConfig = null
+  
+  // If user requested specific type not supported by heuristics well (e.g. Pie), skip heuristic
+  const skipHeuristics = userPrompt && (
+      userPrompt.toLowerCase().includes('pie') || 
+      userPrompt.toLowerCase().includes('doughnut') || 
+      userPrompt.toLowerCase().includes('scatter') ||
+      userPrompt.toLowerCase().includes('area')
+  )
+  
+  if (!skipHeuristics) {
+      heuristicConfig = detectVisualizationType(results)
+  }
   
   if (heuristicConfig) {
     console.log('[Dashboard] Heuristic detected:', heuristicConfig.type)
