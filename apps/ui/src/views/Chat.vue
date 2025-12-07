@@ -1300,7 +1300,9 @@ const handleEditTable = async (conn: ConnectionEntry, table: string) => {
       
       // Call workspace to create a new spreadsheet tab with this data
       if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
-        workspaceRef.value.loadTableData(table, body.result)
+        const connection = buildConnectionPayload(conn)
+        const provider = conn.provider
+        workspaceRef.value.loadTableData(table, body.result, connection, provider)
       } else {
         console.error('Workspace ref not ready or loadTableData not available')
         throw new Error('Workspace not ready')
