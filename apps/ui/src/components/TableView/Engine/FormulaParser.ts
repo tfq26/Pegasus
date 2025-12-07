@@ -133,11 +133,12 @@ export class FormulaParser {
     }
 
     /**
-     * Evaluate built-in functions like SUM, AVERAGE, etc.
+     * Evaluate built-in functions like SUM, AVERAGE, ROUNDUP, etc.
      */
     private evaluateFunctions(expr: string, getValue: (pos: CellPosition) => any): string {
-        // Match function calls like SUM(A1:B10) or AVERAGE(A1,B2,C3)
-        const funcRegex = /(SUM|AVERAGE|COUNT|MIN|MAX)\(([^)]+)\)/g;
+        // Match function calls like SUM(A1:B10) or ROUNDUP(A1, 0)
+        // Updated regex to support more functions
+        const funcRegex = /(SUM|AVERAGE|COUNT|MIN|MAX|ROUND|ROUNDUP|ROUNDDOWN|CEILING|FLOOR|ABS|POWER|SQRT)\(([^)]+)\)/g;
 
         return expr.replace(funcRegex, (match, funcName, args) => {
             const values = this.extractFunctionArgs(args, getValue);
@@ -204,10 +205,60 @@ export class FormulaParser {
                 return Math.min(...values);
             case 'MAX':
                 return Math.max(...values);
+
+            // Rounding functions
+            case 'ROUND':
+                // ROUND(value, decimals)
+                if (values.length < 1 || values[0] === undefined) return 0;
+                const decimals = values[1] ?? 0;
+                const multiplier = Math.pow(10, decimals);
+                return Math.round(values[0] * multiplier) / multiplier;
+
+            case 'ROUNDUP':
+                // ROUNDUP(value, decimals) - always rounds away from zero
+                if (values.length < 1 || values[0] === undefined) return 0;
+                const decimalsUp = values[1] ?? 0;
+                const multiplierUp = Math.pow(10, decimalsUp);
+                return Math.ceil(values[0] * multiplierUp) / multiplierUp;
+
+            case 'ROUNDDOWN':
+                // ROUNDDOWN(value, decimals) - always rounds toward zero
+                if (values.length < 1 || values[0] === undefined) return 0;
+                const decimalsDown = values[1] ?? 0;
+                const multiplierDown = Math.pow(10, decimalsDown);
+                return Math.floor(values[0] * multiplierDown) / multiplierDown;
+
+            case 'CEILING':
+                // CEILING(value, significance) - rounds up to nearest multiple
+                if (values.length < 1 || values[0] === undefined) return 0;
+                const significance = values[1] ?? 1;
+                return Math.ceil(values[0] / significance) * significance;
+
+            case 'FLOOR':
+                // FLOOR(value, significance) - rounds down to nearest multiple
+                if (values.length < 1 || values[0] === undefined) return 0;
+                const floorSig = values[1] ?? 1;
+                return Math.floor(values[0] / floorSig) * floorSig;
+
+            // Mathematical functions
+            case 'ABS':
+                if (values[0] === undefined) return 0;
+                return Math.abs(values[0]);
+
+            case 'POWER':
+                // POWER(base, exponent)
+                if (values.length < 2 || values[0] === undefined || values[1] === undefined) return 0;
+                return Math.pow(values[0], values[1]);
+
+            case 'SQRT':
+                if (values[0] === undefined) return 0;
+                return Math.sqrt(values[0]);
+
             default:
                 return 0;
         }
     }
+
 
     /**
      * Simple expression parser with proper operator precedence
