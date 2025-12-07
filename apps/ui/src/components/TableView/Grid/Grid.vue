@@ -115,6 +115,86 @@ const isFillDragging = ref(false);
 const fillStart = ref<CellPosition | null>(null);
 const fillRange = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 
+// Column/Row selection state
+const selectedColumn = ref<number | null>(null);
+const selectedRow = ref<number | null>(null);
+
+const selectColumn = (col: number) => {
+  selectedColumn.value = col;
+  selectedRow.value = null;
+  selection.value = null;
+  rangeSelection.value = null;
+};
+
+const selectRow = (row: number) => {
+  selectedRow.value = row;
+  selectedColumn.value = null;
+  selection.value = null;
+  rangeSelection.value = null;
+};
+
+const clearColumnRowSelection = () => {
+  selectedColumn.value = null;
+  selectedRow.value = null;
+};
+
+const deleteSelectedColumn = () => {
+  if (selectedColumn.value === null) return;
+  
+  // Clear all cells in the column
+  for (let row = 0; row < rowCount; row++) {
+    props.engine.setValue({ row, col: selectedColumn.value }, '');
+  }
+  
+  toast.success(`Cleared column ${colIndexToLabel(selectedColumn.value)}`);
+  renderKey.value++;
+};
+
+const deleteSelectedRow = () => {
+  if (selectedRow.value === null) return;
+  
+  // Clear all cells in the row
+  for (let col = 0; col < colCount; col++) {
+    props.engine.setValue({ row: selectedRow.value, col }, '');
+  }
+  
+  toast.success(`Cleared row ${selectedRow.value + 1}`);
+  renderKey.value++;
+};
+
+const fillSelectedColumn = (value: string) => {
+  if (selectedColumn.value === null) return;
+  
+  // Fill all cells in the column with the value
+  for (let row = 0; row < rowCount; row++) {
+    props.engine.setValue({ row, col: selectedColumn.value }, value);
+  }
+  
+  toast.success(`Filled column ${colIndexToLabel(selectedColumn.value)}`);
+  renderKey.value++;
+};
+
+const fillSelectedRow = (value: string) => {
+  if (selectedRow.value === null) return;
+  
+  // Fill all cells in the row with the value
+  for (let col = 0; col < colCount; col++) {
+    props.engine.setValue({ row: selectedRow.value, col }, value);
+  }
+  
+  toast.success(`Filled row ${selectedRow.value + 1}`);
+  renderKey.value++;
+};
+
+const isColumnSelected = (col: number) => {
+  return selectedColumn.value === col;
+};
+
+const isRowSelected = (row: number) => {
+  return selectedRow.value === row;
+};
+
+
 // --- AI Feature State ---
 // isAIMode and autoExecuteMode are now props
 const selectedAIModel = ref('gemini-2.0-flash-exp');
@@ -326,14 +406,6 @@ const startFillDrag = (e: MouseEvent) => {
   
   document.addEventListener('mousemove', onFillHandleMouseMove);
   document.addEventListener('mouseup', onGlobalMouseUp);
-};
-
-// Missing helpers
-const isColumnSelected = (col: number) => {
-  // Placeholder logic or simplified check if full column implementation is pending
-  // Currently checking if column matches range selection that spans all rows?
-  // For now return false as full column selection logic might need more state
-  return false;
 };
 
 const onMouseEnter = (e: MouseEvent) => {
@@ -1127,9 +1199,10 @@ onUnmounted(() => {
             <th
               v-for="col in colCount"
               :key="col"
-              class="border-r border-border px-1 select-none relative group transition-colors hover:bg-muted/80"
-              :class="{ 'bg-primary/10 text-primary': selection?.col === col - 1 }"
+              class="border-r border-border px-1 select-none relative group transition-colors hover:bg-muted/80 cursor-pointer"
+              :class="{ 'bg-primary/20 text-primary font-bold': isColumnSelected(col - 1) }"
               :style="{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }"
+              @click="selectColumn(col - 1)"
             >
               {{ colIndexToLabel(col - 1) }}
               <div class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -1165,8 +1238,9 @@ onUnmounted(() => {
           >
             <!-- Row Header -->
             <td 
-              class="w-10 border-r border-b border-border bg-muted text-[10px] text-center text-muted-foreground select-none sticky left-0 z-10"
-              :class="{ 'bg-primary/10 text-primary': selection?.row === (virtualState.startRow + rowOffset) }"
+              class="w-10 border-r border-b border-border bg-muted text-[10px] text-center text-muted-foreground select-none sticky left-0 z-10 cursor-pointer hover:bg-muted/80"
+              :class="{ 'bg-primary/20 text-primary font-bold': isRowSelected(virtualState.startRow + rowOffset) }"
+              @click="selectRow(virtualState.startRow + rowOffset)"
             >
               {{ virtualState.startRow + rowOffset + 1 }}
             </td>
