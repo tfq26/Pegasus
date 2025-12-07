@@ -2,8 +2,8 @@
   <div class="w-full min-h-screen bg-background pb-10">
     <!-- Hero Image Area -->
     <div class="relative w-full h-64 overflow-hidden">
-      <!-- Simple Gradient Background instead of heavy BlackHole -->
-      <div class="absolute inset-0 bg-gradient-to-br from-black via-slate-900 to-primary/20"></div>
+      <!-- Black Hole Background -->
+      <BlackHoleBackground class="absolute inset-0" />
       
       <div class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 z-10">
         <h1 class="text-3xl font-bold text-white tracking-tight mb-2 drop-shadow-md">
@@ -73,6 +73,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { MessageSquare, LayoutDashboard, Database, Activity } from 'lucide-vue-next'
+import BlackHoleBackground from '@/components/ui/bg-black-hole/BlackHoleBackground.vue'
+
 
 defineOptions({ name: 'MobileAbout' })
 
