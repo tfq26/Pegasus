@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Navbar from './components/Navbar.vue'
 import MobileShowcase from './components/MobileShowcase.vue'
@@ -9,10 +9,18 @@ import MobileHeader from './components/mobile/MobileHeader.vue'
 import MobileFooter from './components/mobile/MobileFooter.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { useMobileDetection } from '@/composables/useMobileDetection'
+import { useAuth } from '@/composables/useAuth'
 import 'vue-sonner/style.css'
 
 const { isMobile } = useMobileDetection()
+const { fetchUser } = useAuth()
 const route = useRoute()
+
+// Fetch user on app mount to check authentication status
+onMounted(() => {
+  fetchUser()
+})
+
 
 // Routes that allow the standard mobile layout (Header + Content)
 const allowedMobileRoutes = [
