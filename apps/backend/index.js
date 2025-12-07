@@ -2385,6 +2385,7 @@ app.post("/api/save-table-data", async (c) => {
       await adapter.connect()
 
       let successCount = 0
+      const queries = []
 
       for (const update of updates) {
         const rowData = update.data
@@ -2395,7 +2396,6 @@ app.post("/api/save-table-data", async (c) => {
 
         if (idKey && rowData[idKey] !== undefined && rowData[idKey] !== null) {
           // Construct UPDATE query
-          // Note: This needs robust escaping. For now using basic replacement.
           const setClause = Object.keys(rowData)
             .filter(k => k !== idKey) // Don't update the ID itself
             .map(k => {
@@ -2411,12 +2411,25 @@ app.post("/api/save-table-data", async (c) => {
             const escapedId = String(rowData[idKey]).replace(/'/g, "''")
             // Quote table name and ID matching
             const sql = `UPDATE "${tableName}" SET ${setClause} WHERE "${idKey}" = '${escapedId}'`
-
-            await adapter.query(sql)
-            successCount++
+            queries.push(sql)
           }
         } else {
           console.warn(`[Save] Skipping update for row in ${tableName} - no ID column found in data:`, Object.keys(rowData))
+        }
+      }
+
+      if (queries.length > 0) {
+        if (adapter.batch) {
+          console.log(`[Backend] Using batch execution for ${queries.length} updates`)
+          await adapter.batch(queries)
+          successCount = queries.length
+        } else {
+          console.log(`[Backend] Using serial execution for ${queries.length} updates`)
+          // Fallback to serial execution
+          for (const sql of queries) {
+            await adapter.query(sql)
+            successCount++
+          }
         }
       }
 

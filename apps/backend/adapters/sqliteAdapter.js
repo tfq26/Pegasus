@@ -142,6 +142,22 @@ export class SQLiteAdapter extends DatabaseAdapter {
       this.db.close()
     }
   }
+
+  async batch(queries) {
+    console.log(`[SQLite] Executing batch of ${queries.length} queries`)
+    try {
+      if (this.db.executeBatch) {
+        // CustomFetchClient
+        return await this.db.executeBatch(queries)
+      } else {
+        // Local libSQL client supports batch
+        return await this.db.batch(queries, 'write')
+      }
+    } catch (e) {
+      console.error('[SQLite] Batch failed:', e)
+      throw e
+    }
+  }
 }
 
 // Minimal Fetch Client for Turso (Same as in db/index.js)
@@ -149,6 +165,44 @@ class CustomFetchClient {
   constructor(url, authToken) {
     this.url = url
     this.authToken = authToken
+  }
+
+  async executeBatch(sqls) {
+    const requests = sqls.map(stmt => {
+      let sql, args
+      if (typeof stmt === 'string') {
+        sql = stmt
+        args = []
+      } else {
+        sql = stmt.sql
+        args = stmt.args || []
+      }
+      return { type: "execute", stmt: { sql, args: this.formatArgs(args) } }
+    })
+    requests.push({ type: "close" })
+
+    const httpUrl = this.url.replace("libsql://", "https://") + "/v2/pipeline"
+
+    const response = await fetch(httpUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${this.authToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ requests })
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`Turso Batch Error ${response.status}: ${text}`)
+    }
+
+    const data = await response.json()
+    // Check for errors in results
+    for (const res of data.results) {
+      if (res.type === 'error') throw new Error(res.error.message)
+    }
+    return { count: data.results.length - 1 } // Return success info
   }
 
   async execute(stmt) {

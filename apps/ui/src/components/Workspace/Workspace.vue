@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 import TabsManager from './TabsManager.vue';
 import type { Tab } from './TabsManager.vue';
 import { Engine } from '../TableView/Engine/Engine';
 import Grid from '../TableView/Grid/Grid.vue'; 
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
+import { toast } from 'vue-sonner';
 
 // Props from parent (Chat.vue)
 const props = defineProps<{
@@ -97,7 +98,11 @@ const saveChanges = async (engine: Engine) => {
          })
       });
       
-      if (!response.ok) throw new Error('Save failed');
+      const resData = await response.json().catch(() => ({}));
+      
+      if (!response.ok) {
+          throw new Error(resData.error || 'Save failed');
+      }
       
       engine.clearModifiedTracking();
       engine.saveStatus = 'saved';
@@ -105,10 +110,11 @@ const saveChanges = async (engine: Engine) => {
       
       // Console log for debug, maybe add small indicator later
       console.log('Auto-saved changes to', engine.sourceTable);
-   } catch (e) {
+   } catch (e: any) {
       console.error('Auto-save failed:', e);
       engine.saveStatus = 'error';
       emit('save-status', 'error');
+      toast.error(`Auto-save failed: ${e.message || 'Unknown error'}`);
    }
 };
 
