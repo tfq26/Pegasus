@@ -1064,9 +1064,17 @@ const onKeyDown = async (e: KeyboardEvent) => {
   } else if (e.key === 'F2' && selection.value) {
     e.preventDefault();
     startEditing(selection.value.row, selection.value.col);
-  } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.value) {
+  } else if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
-    await handleDelete();
+    // Check if column or row is selected first
+    if (selectedColumn.value !== null) {
+      deleteSelectedColumn();
+    } else if (selectedRow.value !== null) {
+      deleteSelectedRow();
+    } else if (selection.value) {
+      await handleDelete();
+    }
+
   } else if (!cmdOrCtrl && !e.altKey && e.key.length === 1 && selection.value) {
     // Start typing - begin editing with the typed character
     e.preventDefault();
