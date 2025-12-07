@@ -52,9 +52,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@handsontable/vue3": "^16.2.0",
-        "@rollup/rollup-darwin-x64": "^4.28.1",
-        "@rollup/rollup-linux-x64-gnu": "^4.28.1",
-        "@rollup/rollup-win32-x64-msvc": "^4.28.1",
         "@tailwindcss/vite": "^4.1.17",
         "@types/markdown-it": "^14.1.2",
         "@vueuse/core": "^14.1.0",
@@ -98,6 +95,15 @@
         "vite": "^6.0.0",
         "vite-plugin-vue-devtools": "^8.0.3",
         "vitest": "^3.2.4",
+      },
+      "optionalDependencies": {
+        "@esbuild/linux-x64": "^0.25.0",
+        "@rollup/rollup-darwin-x64": "^4.28.1",
+        "@rollup/rollup-linux-x64-gnu": "^4.28.1",
+        "@rollup/rollup-win32-x64-msvc": "^4.28.1",
+        "@tailwindcss/oxide-linux-x64-gnu": "^4.0.0-alpha.31",
+        "lightningcss": "^1.28.2",
+        "lightningcss-linux-x64-gnu": "^1.28.2",
       },
     },
   },
@@ -758,7 +764,7 @@
 
     "denque": ["denque@2.1.0", "", {}, "sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw=="],
 
-    "detect-libc": ["detect-libc@2.0.2", "", {}, "sha512-UX6sGumvvqSaXgdKGUsgZWqcUyIXZ/vZTrlRT/iobiKhGL0zL4d3osHj3uqllWJK+i+sixDS/3COVEOFbupFyw=="],
+    "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
 
     "dexie": ["dexie@4.2.1", "", {}, "sha512-Ckej0NS6jxQ4Po3OrSQBFddayRhTCic2DoCAG5zacOfOVB9P2Q5Xc5uL/nVa7ZVs+HdMnvUPzLFCB/JwpB6Csg=="],
 
@@ -1512,7 +1518,7 @@
 
     "jsdom/xml-name-validator": ["xml-name-validator@5.0.0", "", {}, "sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg=="],
 
-    "lightningcss/detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
+    "libsql/detect-libc": ["detect-libc@2.0.2", "", {}, "sha512-UX6sGumvvqSaXgdKGUsgZWqcUyIXZ/vZTrlRT/iobiKhGL0zL4d3osHj3uqllWJK+i+sixDS/3COVEOFbupFyw=="],
 
     "mongodb-connection-string-url/whatwg-url": ["whatwg-url@11.0.0", "", { "dependencies": { "tr46": "^3.0.0", "webidl-conversions": "^7.0.0" } }, "sha512-RKT8HExMpoYx4igMiVMY83lN6UeITKJlBQ+vR/8ZJ8OCdSiN3RwCq+9gH0+Xzj0+5IrM6i4j/6LuvzbZIQgEcQ=="],
 
