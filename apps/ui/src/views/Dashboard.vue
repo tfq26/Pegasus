@@ -196,6 +196,11 @@
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+              <ContextMenuItem @select="handleEditElement(getElement(item.i)!)">
+                <Settings class="w-4 h-4 mr-2" />
+                Edit Element
+              </ContextMenuItem>
+              <ContextMenuSeparator class="bg-border" />
               <ContextMenuItem @select="handleEditQuery(getElement(item.i)!)">
                 <Pencil class="w-4 h-4 mr-2" />
                 Edit Query
@@ -362,6 +367,13 @@
         </div>
       </DialogContent>
     </Dialog>
+
+    <!-- Element Editor Modal -->
+    <DashboardElementEditor
+      v-model:open="showEditModal"
+      :element="editingElementForModal"
+      @save="handleSaveElement"
+    />
   </div>
 </template>
 
@@ -373,6 +385,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
 import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import CodeEditor from '@/components/Chat/CodeEditor.vue'
+import DashboardElementEditor from '@/components/Dashboard/DashboardElementEditor.vue'
 import { toast } from 'vue-sonner'
 import {
   ContextMenu,
@@ -397,7 +410,7 @@ import {
   SelectValue,
   SelectSeparator,
 } from '@/components/ui/select'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft } from 'lucide-vue-next'
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings } from 'lucide-vue-next'
 
 defineOptions({ name: 'DashboardPage' })
 
@@ -422,6 +435,10 @@ watch(isShared, (shared) => {
 const showQueryModal = ref(false)
 const editingElement = ref<any>(null)
 const editingQuery = ref('')
+
+// Element Editor Modal State
+const showEditModal = ref(false)
+const editingElementForModal = ref<any>(null)
 
 // Share Modal State
 const showShareModal = ref(false)
@@ -594,6 +611,28 @@ const saveQueryChanges = () => {
     toast.success('Query updated locally. Remember to Save Dashboard.')
   }
 }
+
+// Element Editor Handlers
+const handleEditElement = (element: any) => {
+  editingElementForModal.value = element
+  showEditModal.value = true
+}
+
+const handleSaveElement = (updatedElement: any) => {
+  if (!currentDashboard.value) return
+  
+  const elementIndex = currentDashboard.value.data.elements.findIndex(
+    (el: any) => el.id === updatedElement.id
+  )
+  
+  if (elementIndex !== -1) {
+    currentDashboard.value.data.elements[elementIndex] = updatedElement
+    toast.success('Element updated. Remember to Save Dashboard.')
+  }
+  
+  showEditModal.value = false
+}
+
 
 // Initialization
 onMounted(async () => {
