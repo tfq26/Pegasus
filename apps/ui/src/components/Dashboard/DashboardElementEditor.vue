@@ -17,7 +17,7 @@
               <Settings class="w-4 h-4 mr-2" />
               General
             </TabsTrigger>
-            <TabsTrigger value="colors" disabled>
+            <TabsTrigger value="colors">
               <Palette class="w-4 h-4 mr-2" />
               Colors
             </TabsTrigger>
@@ -34,7 +34,7 @@
             </TabsContent>
 
             <TabsContent value="colors" class="mt-0 h-full">
-              <div class="text-muted-foreground text-sm">Coming in Phase 2...</div>
+              <ColorCustomization v-if="elementConfig" v-model="elementConfig" />
             </TabsContent>
 
             <TabsContent value="labels" class="mt-0 h-full">
@@ -143,6 +143,7 @@ import {
 import { Settings, Palette, Tag } from 'lucide-vue-next'
 import ChartRenderer from './ChartRenderer.vue'
 import GeneralSettings from './Editor/GeneralSettings.vue'
+import ColorCustomization from './Editor/ColorCustomization.vue'
 
 interface DashboardElement {
   id: string
@@ -155,6 +156,7 @@ interface DashboardElement {
   }
   customization?: {
     description?: string
+    colorPalette?: any
     [key: string]: any
   }
 }
@@ -203,7 +205,17 @@ const previewData = computed(() => {
   }
   
   // For charts, return the data object
-  return elementConfig.value.config.data
+  const data = JSON.parse(JSON.stringify(elementConfig.value.config.data))
+  
+  // Apply custom colors if present
+  if (elementConfig.value.customization?.colorPalette?.shades && data.datasets?.[0]) {
+    const shades = elementConfig.value.customization.colorPalette.shades
+    data.datasets[0].backgroundColor = shades
+    // Also set border color to same or slightly darker? For now use same
+    data.datasets[0].borderColor = shades
+  }
+  
+  return data
 })
 
 // Preview options (reactive to changes)

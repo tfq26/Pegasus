@@ -4,7 +4,7 @@
       <div class="text-4xl font-bold text-primary mb-2">{{ formatStatValue(data) }}</div>
       <div class="text-sm text-muted-foreground uppercase tracking-wider">{{ options?.label || '' }}</div>
     </div>
-    <component v-else :is="chartComponent" :data="data" :options="options" />
+    <component v-else :is="chartComponent" :data="computedData" :options="computedOptions" />
   </div>
 </template>
 
@@ -32,19 +32,34 @@ const props = defineProps<{
   type: string
   data: any
   options: any
+  customization?: any
 }>()
 
 const formatStatValue = (val: any) => {
   if (typeof val === 'object' && val !== null) {
-      // If data is passed as { datasets: [{ data: [value] }] } which is common for charts
       if (val.datasets && val.datasets[0] && val.datasets[0].data) {
           return val.datasets[0].data[0]
       }
-      // If passed as { value: ... }
       if (val.value !== undefined) return val.value
   }
   return val
 }
+
+const computedData = computed(() => {
+  const data = JSON.parse(JSON.stringify(props.data))
+  
+  if (props.customization?.colorPalette?.shades && data.datasets?.[0]) {
+    const shades = props.customization.colorPalette.shades
+    data.datasets[0].backgroundColor = shades
+    data.datasets[0].borderColor = shades
+  }
+  
+  return data
+})
+
+const computedOptions = computed(() => {
+  return props.options
+})
 
 const chartComponent = computed(() => {
   switch (props.type) {

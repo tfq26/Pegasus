@@ -185,10 +185,19 @@
 
                   <div class="card-body relative overflow-hidden">
                     <ChartRenderer 
-                      v-if="getElement(item.i)"
-                      :type="getElement(item.i)!.type"
-                      :data="getElement(item.i)!.type === 'stat' ? getElement(item.i)!.config : getElement(item.i)!.config.data"
-                      :options="getElement(item.i)!.type === 'stat' ? getElement(item.i)!.config : { ...getElement(item.i)!.config.options, maintainAspectRatio: false, responsive: true }"
+                      v-if="getElement(item.i) && getElement(item.i)!.type !== 'stat' && getElement(item.i)!.config" 
+                      :type="getElement(item.i)!.type" 
+                      :data="getElement(item.i)!.config.data" 
+                      :options="{ ...getElement(item.i)!.config.options, maintainAspectRatio: false, responsive: true }"
+                      :customization="getElement(item.i)!.customization"
+                      class="w-full h-full"
+                    />
+                    <ChartRenderer 
+                      v-else-if="getElement(item.i) && getElement(item.i)!.type === 'stat' && getElement(item.i)!.config" 
+                      :type="getElement(item.i)!.type" 
+                      :data="getElement(item.i)!.config" 
+                      :options="{ label: getElement(item.i)!.title }"
+                      :customization="getElement(item.i)!.customization"
                       class="w-full h-full"
                     />
                   </div>
