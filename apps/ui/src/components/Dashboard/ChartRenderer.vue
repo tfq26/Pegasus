@@ -3,6 +3,9 @@
     <div v-if="type === 'stat'" class="flex flex-col items-center justify-center h-full p-4 text-center">
       <div class="text-4xl font-bold text-primary mb-2">{{ formatStatValue(data) }}</div>
       <div class="text-sm text-muted-foreground uppercase tracking-wider">{{ options?.label || '' }}</div>
+      <div v-if="customization?.description" class="text-xs text-muted-foreground mt-2 max-w-[80%]">
+        {{ customization.description }}
+      </div>
     </div>
     <component v-else :is="chartComponent" :data="computedData" :options="computedOptions" />
   </div>
@@ -48,6 +51,13 @@ const formatStatValue = (val: any) => {
 const computedData = computed(() => {
   const data = JSON.parse(JSON.stringify(props.data))
   
+  // Apply custom labels (overrides axis/category labels)
+  if (props.customization?.labels && data.labels) {
+    data.labels = data.labels.map((label: string, index: number) => {
+      return props.customization.labels?.[index] || label
+    })
+  }
+  
   if (props.customization?.colorPalette?.shades && data.datasets?.[0]) {
     const shades = props.customization.colorPalette.shades
     data.datasets[0].backgroundColor = shades
@@ -58,7 +68,26 @@ const computedData = computed(() => {
 })
 
 const computedOptions = computed(() => {
-  return props.options
+  const options = JSON.parse(JSON.stringify(props.options || {}))
+  
+  // Add hover notes to tooltip
+  if (props.customization?.notes) {
+    if (!options.plugins) options.plugins = {}
+    if (!options.plugins.tooltip) options.plugins.tooltip = {}
+    if (!options.plugins.tooltip.callbacks) options.plugins.tooltip.callbacks = {}
+    
+    options.plugins.tooltip.callbacks.footer = (tooltipItems: any[]) => {
+      const notes: string[] = []
+      tooltipItems.forEach((item) => {
+        const index = item.dataIndex
+        const note = props.customization.notes?.[index]
+        if (note) notes.push(`Note: ${note}`)
+      })
+      return notes.join('\n')
+    }
+  }
+  
+  return options
 })
 
 const chartComponent = computed(() => {

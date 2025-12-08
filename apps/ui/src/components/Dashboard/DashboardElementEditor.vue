@@ -21,7 +21,7 @@
               <Palette class="w-4 h-4 mr-2" />
               Colors
             </TabsTrigger>
-            <TabsTrigger value="labels" disabled>
+            <TabsTrigger value="labels">
               <Tag class="w-4 h-4 mr-2" />
               Labels
             </TabsTrigger>
@@ -38,7 +38,7 @@
             </TabsContent>
 
             <TabsContent value="labels" class="mt-0 h-full">
-              <div class="text-muted-foreground text-sm">Coming in Phase 3...</div>
+              <LabelEditor v-if="elementConfig" v-model="elementConfig" />
             </TabsContent>
           </div>
         </Tabs>
@@ -106,6 +106,7 @@
               :type="elementConfig.type"
               :data="previewData"
               :options="previewOptions"
+              :customization="elementConfig.customization"
               :key="previewKey"
             />
           </div>
@@ -144,6 +145,7 @@ import { Settings, Palette, Tag } from 'lucide-vue-next'
 import ChartRenderer from './ChartRenderer.vue'
 import GeneralSettings from './Editor/GeneralSettings.vue'
 import ColorCustomization from './Editor/ColorCustomization.vue'
+import LabelEditor from './Editor/LabelEditor.vue'
 
 interface DashboardElement {
   id: string
