@@ -15,6 +15,15 @@ export interface CellPosition {
     sheetId?: SheetId; // Optional for multi-sheet support later
 }
 
+// Basic styling properties
+export interface CellStyle {
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    color?: string;
+    background?: string;
+}
+
 // Represent the raw data stored in a cell
 export interface CellData {
     rawInput: string; // What the user typed (e.g., "=A1+1")
@@ -22,6 +31,7 @@ export interface CellData {
     type: CellType;
     format?: string; // e.g., "currency", "percentage"
     error?: string; // If evaluation failed
+    style?: CellStyle;
 }
 
 // Interface for anything that can provide data to the grid

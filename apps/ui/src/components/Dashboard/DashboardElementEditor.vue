@@ -1,8 +1,8 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="max-w-[90vw] h-[90vh] flex gap-4 p-6">
-      <!-- Left Side: Editor (50%) -->
-      <div class="flex-1 flex flex-col min-w-0">
+    <DialogContent class="!w-[95vw] !max-w-[95vw] h-[90vh] flex gap-6 lg:gap-8 p-6">
+      <!-- Left Side: Editor (60%) -->
+      <div class="w-[60%] flex flex-col min-w-0">
         <DialogHeader class="mb-4">
           <DialogTitle>Edit Dashboard Element</DialogTitle>
           <DialogDescription>
@@ -69,11 +69,11 @@
         </div>
       </div>
 
-      <!-- Right Side: Live Preview (50%) -->
-      <div class="flex-1 flex flex-col min-w-0 border-l border-border pl-6">
+      <!-- Right Side: Live Preview (40%) -->
+      <div class="w-[40%] flex flex-col min-w-0 border-l border-border pl-6">
         <div class="mb-4 flex items-center justify-between">
           <h3 class="font-semibold text-lg">Live Preview</h3>
-          <div class="flex gap-1 bg-muted rounded-md p-1">
+          <div v-if="elementConfig?.type === 'stat'" class="flex gap-1 bg-muted rounded-md p-1 mr-6">
             <button 
               @click="previewSize = 'small'"
               :class="{ 'bg-background shadow-sm': previewSize === 'small' }"
@@ -249,6 +249,12 @@ watch(
   },
   { deep: true }
 )
+
+// Watch for preview size changes
+watch(previewSize, () => {
+  previewKey.value++
+  lastPreviewUpdate.value = new Date().toLocaleTimeString()
+})
 
 // Reset to defaults
 const resetToDefaults = () => {

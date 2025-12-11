@@ -1273,51 +1273,23 @@ const handleEditTable = async (conn: ConnectionEntry, table: string) => {
   startOperation(opId, `Loading ${table}`)
   
   try {
-    toast.info('Loading table data...')
-    
-    const response = await fetch(`${queryApiUrl}/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        provider: conn.provider,
-        connection: buildConnectionPayload(conn),
-        query: `SELECT * FROM "${table}" LIMIT 10000`,
-        source: 'user',
-        model: null
-      }),
-    })
-
-    const body = await response.json()
-
-    if (!response.ok || body.error) {
-      throw new Error(body.error ?? 'Unable to fetch data')
-    }
-
-    if (Array.isArray(body.result) && body.result.length > 0) {
-      // Wait for workspace to be ready
-      await nextTick()
-      
-      // Call workspace to create a new spreadsheet tab with this data
-      if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
-        const connection = buildConnectionPayload(conn)
-        const provider = conn.provider
-        workspaceRef.value.loadTableData(table, body.result, connection, provider)
-      } else {
-        console.error('Workspace ref not ready or loadTableData not available')
-        throw new Error('Workspace not ready')
-      }
-      
+    await nextTick()
+    if (workspaceRef.value && (workspaceRef.value.openTable || typeof workspaceRef.value.openTable === 'function')) {
+      const connectionPayload = buildConnectionPayload(conn)
+      await workspaceRef.value.openTable(table, connectionPayload, conn.provider)
       finishOperation(opId)
-      toast.success(`Loaded ${body.result.length} rows into spreadsheet`)
+    } else if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
+       // Legacy Fallback just in case
+       console.warn('Using legacy loadTableData')
+       // ... existing manual fetch logic would be needed here but simpler to just error out if openTable missing
+       throw new Error('New table loading (openTable) not available on Workspace')
     } else {
-      finishOperation(opId)
-      toast.warning('No data found in table')
+       throw new Error('Workspace not ready')
     }
   } catch (e: any) {
-    console.error('Failed to load table data', e)
+    console.error('Failed to open table', e)
     failOperation(opId, e.message || 'Failed to load')
-    toast.error('Failed to load table data')
+    toast.error(e.message || 'Failed to open table')
   }
 }
 
@@ -1404,9 +1376,14 @@ const handleSanitize = async () => {
         sanitizeDialogVisible.value = true
         
     } catch (e: any) {
-        console.error(e)
+        console.error('[Sanitize] Frontend error:', e)
+        console.error('[Sanitize] Error details:', {
+            message: e.message,
+            response: e.response,
+            stack: e.stack
+        })
         failOperation(opId, e.message || 'Unknown error')
-        toast.error("Failed to analyze table")
+        toast.error(`Failed to analyze table: ${e.message || 'Unknown error'}`)
     }
 }
 
@@ -1450,7 +1427,7 @@ const handleLoadTableToSheet = async () => {
       body: JSON.stringify({
         provider: conn.provider,
         connection: buildConnectionPayload(conn),
-        query: `SELECT * FROM "${tableName}" LIMIT 10000`,
+        query: `SELECT rowid as _rowid_, * FROM "${tableName}" LIMIT 10000`,
         source: 'user',
         model: null
       }),

@@ -8,7 +8,7 @@
         <img
           src="/pegasus-purple.svg"
           alt="Pegasus Logo"
-          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110 dark:invert-0 invert"
+          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
         />
       </RouterLink>
 

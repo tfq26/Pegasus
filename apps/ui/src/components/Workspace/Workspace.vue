@@ -66,55 +66,168 @@ watch([tabs, activeTabId], () => {
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
 
-// Auto-save logic
-const saveChanges = async (engine: Engine) => {
-   const modified = engine.getModifiedRows();
-   if (modified.size === 0 || !engine.sourceTable) return;
-   
-   // Convert Map to clear array for JSON serialization
-   // modified maps row index -> object with all column values
-   // We also need the ORIGINAL values to identify the row if we don't have a PK.
-   // But Engine only gives us the current values.
-   // For now, let's just send the current values of the modified rows. 
-   // WARN: This implies the backend needs to figure out WHAT to update. 
-   // Without PKs, this is tricky. We'll send the row index too if that helps?
-   // Actually, let's just send the data.
-   
-   const updates = Array.from(modified.entries()).map(([row, data]) => ({
-      row,
-      data
-   }));
-   
-   // Network Request
-   try {
-      const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/save-table-data`, {
+// Helper to fetch schema + data
+const fetchTableData = async (tableName: string, connection: any, provider: string) => {
+    const baseUrl = import.meta.env.VITE_QUERY_API_URL;
+    // 1. Schema
+    const schemaRes = await fetch(`${baseUrl}/api/table/${tableName}/schema`, { 
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-           tableName: engine.sourceTable,
-           updates,
-           connection: engine.sourceConnection,
-           provider: engine.sourceProvider
-         })
+         credentials: 'include',
+         body: JSON.stringify({ connection, provider })
+    });
+    const schemaBody = await schemaRes.json();
+    if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
+    
+    // 2. Data
+    const queryRes = await fetch(`${baseUrl}/api/table/${tableName}/query`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         credentials: 'include',
+         body: JSON.stringify({ connection, provider, limit: 2000 })
+    });
+    const queryBody = await queryRes.json();
+    if (!queryRes.ok) throw new Error(queryBody.error || 'Failed to load data');
+    
+    const rows = queryBody.rows || [];
+    // Filter out internal columns
+    const headers = (schemaBody.columns || [])
+       .map((c: any) => c.name)
+       .filter((n: string) => n !== '__id' && n !== '_rowid_');
+       
+    return { headers, rows };
+};
+
+// Refresh table data from database
+const isRefreshing = ref(false);
+
+const refreshTableData = async (engine: Engine) => {
+  if (!engine.sourceTable || !engine.sourceConnection || !engine.sourceProvider) {
+    console.warn('[Refresh] Cannot refresh - missing source info');
+    return;
+  }
+  
+  try {
+    isRefreshing.value = true; // Prevent save during refresh
+    console.log('[Refresh] Reloading with new API...');
+    const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider);
+    
+    // Reload into Engine
+    engine.beginBatch();
+    engine.clear(); // Clear grid
+    
+    // Reload headers
+    headers.forEach((header: any, colIndex: any) => {
+      engine.setValue({ row: 0, col: colIndex }, header, true); // silent=true
+    });
+    
+    // Reload data
+    rows.forEach((row: any, rowIndex: number) => {
+      headers.forEach((header: any, colIndex: any) => {
+        const value = row[header];
+        engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''), true); // silent=true
       });
-      
-      const resData = await response.json().catch(() => ({}));
-      
-      if (!response.ok) {
-          throw new Error(resData.error || 'Save failed');
-      }
-      
-      engine.clearModifiedTracking();
-      engine.saveStatus = 'saved';
-      emit('save-status', 'saved');
-      
-      // Console log for debug, maybe add small indicator later
-      console.log('Auto-saved changes to', engine.sourceTable);
+    });
+    
+    engine.endBatch();
+    
+    // Update persistence
+    engine.setSource(engine.sourceTable, engine.sourceConnection, headers, engine.sourceProvider);
+    engine.setOriginalData(rows);
+    
+    console.log('[Refresh] Table data reloaded successfully');
+  } catch (e) {
+    console.error('[Refresh] Failed to refresh table data:', e);
+    toast.error('Failed to refresh table data');
+  } finally {
+    isRefreshing.value = false;
+  }
+};
+
+// Auto-save logic (Hybrid Strategy: Full Replacement or Delta Operations)
+const saveChanges = async (engine: Engine) => {
+   // Prevent save during refresh to avoid infinite loop
+   if (isRefreshing.value) {
+     console.log('[Save] Skipping save during refresh');
+     return;
+   }
+   
+   try {
+     // 1. Determine Save Strategy
+     const strategy = engine.getSaveStrategy();
+     console.log(`[Save] Using strategy: ${strategy}`);
+     
+     let ops: any[] = [];
+     
+     if (strategy === 'full_replacement') {
+       // Full Replacement: Get all current data and replace table
+       const allRows = engine.getAllNonEmptyRows();
+       console.log(`[Save] Full replacement with ${allRows.length} rows`);
+       
+       if (allRows.length === 0) {
+         // Empty table - just delete all
+         ops.push({ type: 'full_replacement', rows: [] });
+       } else {
+         ops.push({ type: 'full_replacement', rows: allRows });
+       }
+     } else {
+       // Delta Operations: Only send what changed
+       ops = engine.getPendingOperations();
+       const deletedCols = engine.getDeletedColumns();
+       
+       deletedCols.forEach(col => {
+         ops.push({ type: 'drop_column', column: col });
+       });
+       
+       console.log(`[Save] Delta operations: ${ops.length} changes`);
+     }
+     
+     if (ops.length === 0) {
+         engine.saveStatus = 'saved';
+         emit('save-status', 'saved');
+         return;
+     }
+     
+     console.log('[Save] Operations:', ops);
+     engine.saveStatus = 'saving';
+     emit('save-status', 'saving');
+     
+     // 2. Send Request
+     const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/table/${engine.sourceTable}/operations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            connection: engine.sourceConnection,
+            provider: engine.sourceProvider,
+            operations: ops
+          })
+     });
+     
+     const body = await response.json();
+     
+     if (!response.ok) throw new Error(body.error || 'Save failed');
+     
+     // 3. Cleanup
+     engine.clearModifiedTracking();
+     engine.saveStatus = 'saved';
+     emit('save-status', 'saved');
+     
+     // 4. Refresh only if using delta operations
+     // For full replacement, data is already in sync (we just sent everything)
+     if (strategy === 'delta_operations') {
+       console.log('[Save] Refreshing after delta operations');
+       await refreshTableData(engine);
+     } else {
+       console.log('[Save] Skipping refresh after full replacement (already in sync)');
+     }
+     
+     console.log('[Save] Success');
    } catch (e: any) {
-      console.error('Auto-save failed:', e);
-      engine.saveStatus = 'error';
-      emit('save-status', 'error');
-      toast.error(`Auto-save failed: ${e.message || 'Unknown error'}`);
+     console.error('[Save] Failed:', e);
+     engine.saveStatus = 'error';
+     emit('save-status', 'error');
+     toast.error(`Save failed: ${e.message}`);
    }
 };
 
@@ -195,60 +308,131 @@ watch(activeTabId, () => {
   }
 }, { immediate: true });
 
-// Method to load table data into a new spreadsheet tab
+
+// Format table names to hide internal UUIDs
+// Converts "data_60643368_3269_4be6_921e_dff7c585cd3c_Sheet1" to "Sheet1"
+const formatTableName = (tableName: string): string => {
+  // UUID format: 8-4-4-4-12 hex digits with underscores replacing hyphens
+  const match = tableName.match(/^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/i);
+  return match && match[1] ? match[1] : tableName;
+};
+
+// Method to load table data into a new spreadsheet tab (Legacy)
 const loadTableData = (tableName: string, data: any[], connection: any = null, provider: string = 'sqlite') => {
   const newId = String(Date.now());
   const newTab = {
     id: newId,
-    label: `${tableName} - Sheet View`,
+    label: formatTableName(tableName),
     type: 'table' as const
   };
   
   tabs.value.push(newTab);
   activeTabId.value = newId;
   
-  // Get the engine for this tab
   const engine = getEngineForTab(newId);
-  
-  // Check if engine already has data (cell at 0,0 exists)
   const hasData = engine.getCell({ row: 0, col: 0 }) !== null;
   
-  // Only populate if no data exists
   if (!hasData && data.length > 0) {
-    const headers = Object.keys(data[0]);
+    const headers = Object.keys(data[0]).filter(h => h !== '_rowid_' && h !== '__id');
     
-    // Initialize database persistence
-    engine.setSource(tableName, connection, headers, provider);
-    
-    // Batch all updates to avoid multiple notifications
     engine.beginBatch();
-    
-    // Set headers in row 0
     headers.forEach((header, colIndex) => {
       engine.setValue({ row: 0, col: colIndex }, header);
     });
     
-    // Set data starting from row 1
     data.forEach((row, rowIndex) => {
       headers.forEach((header, colIndex) => {
         const value = row[header];
         engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''));
       });
     });
-    
-    // End batch - this will trigger a single notification
     engine.endBatch();
     
-    // RESET modification tracking so initial load is not saved
-    engine.clearModifiedTracking();
+    engine.setSource(tableName, connection, headers, provider);
+    engine.setOriginalData(data);
   }
   
   emit('update:mode', 'spreadsheet');
 };
 
+// Robust Table Loading (New)
+const openTable = async (tableName: string, connection: any, provider: string) => {
+    // Check if exists
+    if (findOrCreateSheetTab(tableName)) return;
+
+    try {
+        const loadingId = toast.loading(`Loading ${formatTableName(tableName)}...`);
+        const baseUrl = import.meta.env.VITE_QUERY_API_URL;
+
+        // 1. Fetch Schema
+        const schemaRes = await fetch(`${baseUrl}/api/table/${tableName}/schema`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             credentials: 'include',
+             body: JSON.stringify({ connection, provider })
+        });
+        const schemaBody = await schemaRes.json();
+        if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
+
+        // 2. Fetch Data
+        const queryRes = await fetch(`${baseUrl}/api/table/${tableName}/query`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             credentials: 'include',
+             body: JSON.stringify({ connection, provider, limit: 2000 })
+        });
+        const queryBody = await queryRes.json();
+        if (!queryRes.ok) throw new Error(queryBody.error || 'Failed to load data');
+        
+        const rows = queryBody.rows || [];
+        // Use schema for strict column order/visibility
+        // Filter out _rowid_ from visible columns
+        const headers = (schemaBody.columns || [])
+           .map((c: any) => c.name)
+           .filter((n: string) => n !== '_rowid_' && n !== '__id');
+
+        // Create Tab
+        const newId = String(Date.now());
+        const newTab = {
+            id: newId,
+            label: formatTableName(tableName),
+            type: 'table' as const
+        };
+        tabs.value.push(newTab);
+        activeTabId.value = newId;
+
+        const engine = getEngineForTab(newId);
+        
+        // Populate
+        engine.beginBatch();
+        // Sets Headers
+        headers.forEach((header: string, colIndex: number) => {
+             engine.setValue({ row: 0, col: colIndex }, header);
+        });
+        // Sets Data
+        rows.forEach((row: any, rowIndex: number) => {
+             headers.forEach((header: string, colIndex: number) => {
+                 const value = row[header];
+                 engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''));
+             });
+        });
+        engine.endBatch();
+
+        // Init Persistence
+        engine.setSource(tableName, connection, headers, provider);
+        engine.setOriginalData(rows);
+
+        toast.dismiss(loadingId);
+        emit('update:mode', 'spreadsheet');
+    } catch (e: any) {
+        toast.error(`Failed to open table: ${e.message}`);
+        console.error(e);
+    }
+};
+
 // Method to find or create sheet tab (returns true if already exists)
 const findOrCreateSheetTab = (tableName: string): boolean => {
-  const sheetLabel = `${tableName} - Sheet View`;
+  const sheetLabel = formatTableName(tableName);
   const existingTab = tabs.value.find(t => t.label === sheetLabel && t.type === 'table');
   
   if (existingTab) {
@@ -304,13 +488,25 @@ const getActiveQueryContent = () => {
   return '';
 };
 
+// Method to manually refresh the current table
+const refreshCurrentTable = async () => {
+  const activeTab = tabs.value.find(t => t.id === activeTabId.value);
+  if (activeTab && activeTab.type === 'table') {
+    const engine = getEngineForTab(activeTabId.value);
+    await refreshTableData(engine);
+    toast.success('Table data refreshed');
+  }
+};
+
 // Expose method for parent component
 defineExpose({
   loadTableData,
+  openTable,
   findOrCreateSheetTab,
   setFormulaBarValue,
   createQueryTab,
   getActiveQueryContent,
+  refreshCurrentTable,
 });
 
 </script>

@@ -2064,27 +2064,42 @@ app.post("/ai/sanitize/analyze", async (c) => {
     const userId = payload.sub
     const { table, connectionId } = await c.req.json()
 
+    console.log("[Sanitize] Starting analysis for:", { table, connectionId, userId })
+
     // 1. Fetch connection details
     const rs = await db.execute({
       sql: "SELECT * FROM connections WHERE id = $id AND user_id = $userId",
       args: { id: connectionId, userId }
     })
     const connRow = rs.rows[0]
-    if (!connRow) return c.json({ error: "Connection not found" }, 404)
+    if (!connRow) {
+      console.error("[Sanitize] Connection not found:", { connectionId, userId })
+      return c.json({ error: "Connection not found" }, 404)
+    }
 
     const config = JSON.parse(connRow.config)
     const provider = connRow.provider
+    console.log("[Sanitize] Using provider:", provider)
+
     const Adapter = adapters[provider]
-    if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+    if (!Adapter) {
+      console.error("[Sanitize] Provider not supported:", provider)
+      return c.json({ error: "Provider not supported" }, 400)
+    }
 
     const adapter = new Adapter(config[provider])
+    console.log("[Sanitize] Connecting to database...")
     await adapter.connect()
 
     // 2. Fetch all data (or sample) from the table
     // For now we fetch all, limiting to 2000 rows for safety
-    // TODO: Improve this for large tables
-    const rows = await adapter.executeQuery(`SELECT * FROM ${table} LIMIT 2000`)
+    // Properly quote table name for SQLite (handles spaces and special chars)
+    const quotedTable = provider === 'sqlite' ? `"${table}"` : table
+    console.log("[Sanitize] Executing query for table:", quotedTable)
+    const rows = await adapter.query(`SELECT * FROM ${quotedTable} LIMIT 2000`)
     await adapter.disconnect()
+
+    console.log("[Sanitize] Fetched rows:", rows.length)
 
     if (rows.length === 0) {
       return c.json({ issues: [], message: "No data found in table" })
@@ -2102,14 +2117,24 @@ app.post("/ai/sanitize/analyze", async (c) => {
         const settings = JSON.parse(settingsRes.rows[0].settings)
         activeModel = settings.activeModel
       }
-    } catch (e) { }
+    } catch (e) {
+      console.warn("[Sanitize] Could not fetch user settings:", e.message)
+    }
 
+    console.log("[Sanitize] Analyzing with model:", activeModel || "default")
     const result = await analyzeForSanitization(table, rows, activeModel)
+    console.log("[Sanitize] Analysis complete, found issues:", result.issues?.length || 0)
     return c.json(result)
 
   } catch (error) {
-    console.error("Sanitization Analysis Error:", error)
-    return c.json({ error: error.message }, 500)
+    console.error("[Sanitize] Analysis Error:", error)
+    console.error("[Sanitize] Error stack:", error.stack)
+    console.error("[Sanitize] Error details:", {
+      message: error.message,
+      name: error.name,
+      cause: error.cause
+    })
+    return c.json({ error: error.message || "Failed to analyze table" }, 500)
   }
 })
 
@@ -2365,37 +2390,432 @@ app.get("/usage", async (c) => {
   }
 })
 
-app.post("/api/save-table-data", async (c) => {
+app.post("/api/rename-table", async (c) => {
   try {
-    const { tableName, updates, connection, provider } = await c.req.json()
-    console.log(`[Backend] Saving ${updates.length} changes to table ${tableName} (${provider})`)
+    const { connection, oldTableName, newTableName, provider } = await c.req.json()
 
-    // Verify user session
+    console.log(`[Rename] Received rename request:`, {
+      oldTableName,
+      newTableName,
+      provider
+    })
+    console.log('[Rename] Connection object:', JSON.stringify(connection, null, 2))
+
+    // Verify user session with JWT
     const token = getCookie(c, "session")
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    if (!token) {
+      return c.json({ error: "Unauthorized" }, 401)
+    }
+
+    let userId = null
+    try {
+      const payload = await verify(token, jwtSecret)
+      userId = payload.sub
+    } catch (e) {
+      return c.json({ error: "Invalid session" }, 401)
+    }
+
+    console.log('[Rename] Verified user:', userId)
+
+    // For SQLite/Turso uploads, verify ownership and get correct connection
+    let actualConnection = connection
+    let extractedUploadId = null
+    const tursoPath = connection?.sqlite?.path || connection?.sqlite?.url
+    if (provider === 'sqlite' && tursoPath?.includes('turso.io')) {
+      // UUID in table name uses underscores, but in DB it uses hyphens
+      // Match UUID with underscores: 8-4-4-4-12 hex chars separated by underscores
+      const uuidMatch = oldTableName.match(/data_([a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/);
+      const uuidWithUnderscores = uuidMatch ? uuidMatch[1] : null;
+
+      const uploadId = uuidWithUnderscores ? uuidWithUnderscores.replace(/_/g, '-') : null;
+      extractedUploadId = uploadId
+
+      console.log('[Rename] Extracted Upload ID:', uploadId);
+
+      if (uploadId) {
+        // Query uploads table directly using SQL
+        const result = await uploadsDb.execute({
+          sql: "SELECT * FROM uploads WHERE id = ?",
+          args: [uploadId]
+        })
+        const upload = result.rows[0]
+
+        if (!upload || upload.user_id !== userId) {
+          // Debugging: List all uploads for this user to see what exists
+          const allUploads = await uploadsDb.execute({
+            sql: "SELECT id, filename, created_at FROM uploads WHERE user_id = ?",
+            args: [userId]
+          });
+
+          console.log('[Rename] Upload check failed details:', {
+            targetID: uploadId,
+            foundUpload: upload,
+            currentUserId: userId,
+            userUploads: allUploads.rows.map(u => ({ id: u.id, filename: u.filename }))
+          });
+
+          console.error('[Rename] Upload not found or unauthorized')
+          return c.json({ error: 'Unauthorized to rename this table' }, 403)
+        }
+
+        // Reconstruct the Turso connection from environment
+        // SQLiteAdapter expects the config object directly, so we flatten it
+        actualConnection = {
+          path: process.env.TURSO_UPLOAD_DB_URL,
+          authToken: process.env.TURSO_UPLOAD_TOKEN
+        }
+        console.log('[Rename] Using Turso uploads connection:', JSON.stringify(actualConnection, null, 2))
+      }
+    }
 
     const Adapter = adapters[provider]
     if (!Adapter) {
       return c.json({ error: `Provider '${provider}' not supported` }, 400)
     }
 
+    const adapter = new Adapter(actualConnection)
+
+    try {
+      await adapter.connect()
+      console.log('[Rename] Adapter connected successfully')
+
+      // Execute ALTER TABLE RENAME TO
+      const sql = `ALTER TABLE "${oldTableName}" RENAME TO "${newTableName}"`
+      console.log('[Rename] Executing SQL:', sql)
+
+      await adapter.query(sql)
+
+      console.log('[Rename] Table renamed successfully')
+
+      // Update persistently saved connection if exists
+      if (connection.id) {
+        try {
+          const connRows = await db.execute({ sql: "SELECT * FROM connections WHERE id = ?", args: [connection.id] })
+          const connRow = connRows.rows[0]
+
+          if (connRow) {
+            const config = JSON.parse(connRow.config)
+
+            // Upgrade to robust 'uploadId' linking if available
+            if (extractedUploadId) {
+              config.sqlite.uploadId = extractedUploadId
+              // We can remove the static tables list since we now search dynamically
+              if (config.sqlite.tables) delete config.sqlite.tables
+
+              console.log('[Rename] Upgrading connection to use uploadId:', extractedUploadId)
+
+              await db.execute({
+                sql: "UPDATE connections SET config = ? WHERE id = ?",
+                args: [JSON.stringify(config), connection.id]
+              })
+              console.log('[Rename] Updated persistent connection config with uploadId')
+            }
+            // Fallback for legacy connections without uploadId (shouldn't happen for Turso uploads ideally)
+            else if (config.sqlite && Array.isArray(config.sqlite.tables)) {
+              // Update tables list
+              const idx = config.sqlite.tables.indexOf(oldTableName)
+              if (idx !== -1) {
+                config.sqlite.tables[idx] = newTableName
+                // Save back
+                await db.execute({
+                  sql: "UPDATE connections SET config = ? WHERE id = ?",
+                  args: [JSON.stringify(config), connection.id]
+                })
+                console.log('[Rename] Updated persistent connection config (legacy list)')
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[Rename] Failed to update persistent connection:', e)
+          // Don't fail the request, just log it
+        }
+      }
+
+      await adapter.disconnect()
+
+      return c.json({ ok: true })
+    } catch (error) {
+      console.error('[Rename] Error:', error)
+      await adapter.disconnect().catch(() => { })
+
+      // Provide more helpful error messages
+      let errorMessage = error.message || 'Failed to rename table'
+      if (errorMessage.includes('no such table')) {
+        errorMessage = 'Table not found. It may have already been renamed or deleted.'
+      }
+
+      return c.json({ error: errorMessage }, 500)
+    }
+  } catch (error) {
+    console.error('[Rename] Request error:', error)
+    return c.json({ error: error.message || 'Internal server error' }, 500)
+  }
+})
+
+app.post("/api/delete-table", async (c) => {
+  try {
+    const { connection, tableName, provider } = await c.req.json()
+
+    console.log(`[Delete] Received delete request:`, {
+      tableName,
+      provider
+    })
+
+    // Verify user session with JWT
+    const token = getCookie(c, "session")
+    if (!token) {
+      return c.json({ error: "Unauthorized" }, 401)
+    }
+
+    let userId = null
+    try {
+      const payload = await verify(token, jwtSecret)
+      userId = payload.sub
+    } catch (e) {
+      return c.json({ error: "Invalid session" }, 401)
+    }
+
+    console.log('[Delete] Verified user:', userId)
+
+    // For SQLite/Turso uploads, verify ownership and get correct connection
+    let actualConnection = connection
+    const tursoPath = connection?.sqlite?.path || connection?.sqlite?.url
+    if (provider === 'sqlite' && tursoPath?.includes('turso.io')) {
+      // UUID in table name uses underscores, but in DB it uses hyphens
+      const uuidMatch = tableName.match(/data_([a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/);
+      const uuidWithUnderscores = uuidMatch ? uuidMatch[1] : null;
+
+      const uploadId = uuidWithUnderscores ? uuidWithUnderscores.replace(/_/g, '-') : null;
+
+      if (uploadId) {
+        // Query uploads table directly using SQL
+        const result = await uploadsDb.execute({
+          sql: "SELECT * FROM uploads WHERE id = ?",
+          args: [uploadId]
+        })
+        const upload = result.rows[0]
+
+        if (!upload || upload.user_id !== userId) {
+          console.error('[Delete] Upload not found or unauthorized')
+          return c.json({ error: 'Unauthorized to delete this table' }, 403)
+        }
+
+        // Delete the upload record from the database
+        await uploadsDb.execute({
+          sql: "DELETE FROM uploads WHERE id = ?",
+          args: [uploadId]
+        })
+        console.log('[Delete] Deleted upload record:', uploadId)
+
+        // Reconstruct the Turso connection from environment
+        // SQLiteAdapter expects the config object directly, so we flatten it
+        actualConnection = {
+          path: process.env.TURSO_UPLOAD_DB_URL,
+          authToken: process.env.TURSO_UPLOAD_TOKEN
+        }
+        console.log('[Delete] Using Turso uploads connection')
+      }
+    }
+
+    const Adapter = adapters[provider]
+    if (!Adapter) {
+      return c.json({ error: `Provider '${provider}' not supported` }, 400)
+    }
+
+    const adapter = new Adapter(actualConnection)
+
+    try {
+      await adapter.connect()
+      console.log('[Delete] Adapter connected successfully')
+
+      // Execute DROP TABLE
+      const sql = `DROP TABLE "${tableName}"`
+      console.log('[Delete] Executing SQL:', sql)
+
+      await adapter.query(sql)
+
+      console.log('[Delete] Table deleted successfully')
+
+      // Update persistently saved connection if exists
+      if (connection.id) {
+        try {
+          const connRows = await db.execute({ sql: "SELECT * FROM connections WHERE id = ?", args: [connection.id] })
+          const connRow = connRows.rows[0]
+
+          if (connRow) {
+            const config = JSON.parse(connRow.config)
+            if (config.sqlite && Array.isArray(config.sqlite.tables)) {
+              // Remove table from list
+              const idx = config.sqlite.tables.indexOf(tableName)
+              if (idx !== -1) {
+                config.sqlite.tables.splice(idx, 1)
+                // Save back
+                await db.execute({
+                  sql: "UPDATE connections SET config = ? WHERE id = ?",
+                  args: [JSON.stringify(config), connection.id]
+                })
+                console.log('[Delete] Updated persistent connection config')
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[Delete] Failed to update persistent connection:', e)
+        }
+      }
+
+      await adapter.disconnect()
+
+      return c.json({ ok: true })
+    } catch (error) {
+      console.error('[Delete] Error:', error)
+      await adapter.disconnect().catch(() => { })
+
+      // Provide more helpful error messages
+      let errorMessage = error.message || 'Failed to delete table'
+      if (errorMessage.includes('no such table')) {
+        errorMessage = 'Table not found. It may have already been deleted.'
+      }
+
+      return c.json({ error: errorMessage }, 500)
+    }
+  } catch (error) {
+    console.error('[Delete] Request error:', error)
+    return c.json({ error: error.message || 'Internal server error' }, 500)
+  }
+})
+
+app.post("/api/save-table-data", async (c) => {
+  try {
+    const { tableName, updates, deletedRowIds = [], deletedColumns = [], connection, provider } = await c.req.json()
+    console.log(`[Save] Received save request:`, {
+      tableName,
+      updateCount: updates?.length,
+      deleteCount: deletedRowIds?.length,
+      deletedColumnsCount: deletedColumns?.length,
+      provider,
+      hasConnection: !!connection
+    })
+
+    // Verify user session with JWT
+    const token = getCookie(c, "session")
+    if (!token) {
+      console.error("[Save] No session token found")
+      return c.json({ error: "Unauthorized - No session" }, 401)
+    }
+
+    let userId
+    try {
+      const payload = await verify(token, jwtSecret)
+      userId = payload.sub
+      console.log(`[Save] Verified user: ${userId}`)
+    } catch (e) {
+      console.error("[Save] Invalid session token:", e.message)
+      return c.json({ error: "Unauthorized - Invalid session" }, 401)
+    }
+
+    // For uploaded files (SQLite provider with Turso), verify user owns the upload
+    if (provider === 'sqlite' && connection?.url?.includes('turso')) {
+      console.log('[Save] Verifying upload ownership...')
+
+      // Extract upload ID from table name (format: data_{uploadId}_{sheetName})
+      const uploadIdMatch = tableName.match(/^data_([a-f0-9-]+)_/)
+      if (uploadIdMatch) {
+        const uploadId = uploadIdMatch[1]
+        console.log(`[Save] Extracted upload ID: ${uploadId}`)
+
+        try {
+          // Verify this upload belongs to the user
+          const uploadCheck = await uploadsDb.execute({
+            sql: 'SELECT user_id FROM uploads WHERE id = ?',
+            args: [uploadId]
+          })
+
+          if (uploadCheck.rows.length === 0) {
+            console.error(`[Save] Upload ${uploadId} not found`)
+            return c.json({ error: "Upload not found" }, 404)
+          }
+
+          const uploadUserId = uploadCheck.rows[0].user_id
+          if (uploadUserId !== userId) {
+            console.error(`[Save] User ${userId} does not own upload ${uploadId} (owner: ${uploadUserId})`)
+            return c.json({ error: "Unauthorized - Not your upload" }, 403)
+          }
+
+          console.log(`[Save] Upload ownership verified for user ${userId}`)
+        } catch (err) {
+          console.error('[Save] Error verifying upload ownership:', err)
+          return c.json({ error: "Failed to verify upload ownership" }, 500)
+        }
+      }
+    }
+
+    const Adapter = adapters[provider]
+    if (!Adapter) {
+      console.error(`[Save] Provider '${provider}' not supported`)
+      return c.json({ error: `Provider '${provider}' not supported` }, 400)
+    }
+
+    console.log('[Save] Creating adapter and connecting...')
     const adapter = new Adapter(connection)
 
     try {
       await adapter.connect()
+      console.log('[Save] Adapter connected successfully')
 
       let successCount = 0
       const queries = []
 
+      // Process deletions first
+      console.log(`[Save] Processing ${deletedRowIds.length} deletions...`)
+      console.log(`[Save] Deleted row IDs:`, deletedRowIds)
+
+      const deletedRowIdSet = new Set(deletedRowIds)
+
+      for (const rowid of deletedRowIds) {
+        if (rowid !== null && rowid !== undefined && rowid !== '') {
+          const sql = `DELETE FROM "${tableName}" WHERE rowid = ${Number(rowid)}`
+          queries.push(sql)
+          console.log(`[Save] Generated DELETE:`, sql)
+        } else {
+          console.warn(`[Save] Skipping invalid rowid:`, rowid)
+        }
+      }
+
+      // Process column deletions
+      console.log(`[Save] Processing ${deletedColumns.length} column deletions...`)
+      console.log(`[Save] Deleted columns:`, deletedColumns)
+
+      for (const columnName of deletedColumns) {
+        if (columnName && columnName !== '_rowid_') {
+          const sql = `ALTER TABLE "${tableName}" DROP COLUMN "${columnName}"`
+          queries.push(sql)
+          console.log(`[Save] Generated ALTER TABLE DROP COLUMN:`, sql)
+        } else {
+          console.warn(`[Save] Skipping invalid column name:`, columnName)
+        }
+      }
+
+      console.log(`[Save] Processing ${updates.length} updates...`)
       for (const update of updates) {
         const rowData = update.data
-        if (!rowData) continue
+        const originalData = update.original // We need to send this from frontend
 
-        // Strategy: Look for an 'id' column (case-insensitive) to use as Primary Key
-        const idKey = Object.keys(rowData).find(k => k.toLowerCase() === 'id' || k.toLowerCase() === '_id' || k.toLowerCase().endsWith('_id'))
+        if (!rowData) {
+          console.warn('[Save] Skipping update with no data')
+          continue
+        }
+
+        // Strategy 1: Look for an 'id' column (case-insensitive) to use as Primary Key.
+        // Also support SQLite's implicit `_rowid_` if explicitly fetched.
+        const idKey = Object.keys(rowData).find(k =>
+          k.toLowerCase() === 'id' ||
+          k.toLowerCase() === '_id' ||
+          k.toLowerCase().endsWith('_id') ||
+          k === '_rowid_'
+        )
 
         if (idKey && rowData[idKey] !== undefined && rowData[idKey] !== null) {
-          // Construct UPDATE query
+          // ... (existing ID logic) ...
           const setClause = Object.keys(rowData)
             .filter(k => k !== idKey) // Don't update the ID itself
             .map(k => {
@@ -2412,39 +2832,306 @@ app.post("/api/save-table-data", async (c) => {
             // Quote table name and ID matching
             const sql = `UPDATE "${tableName}" SET ${setClause} WHERE "${idKey}" = '${escapedId}'`
             queries.push(sql)
+            console.log(`[Save] Generated UPDATE (ID-based) for ${idKey}=${rowData[idKey]}`)
           }
-        } else {
-          console.warn(`[Save] Skipping update for row in ${tableName} - no ID column found in data:`, Object.keys(rowData))
+        }
+        // Strategy 2: If no ID, use original data to match the row
+        else if (originalData) {
+          const setClause = Object.keys(rowData)
+            .filter(k => k !== 'undefined' && k !== '_rowid_')
+            .map(k => {
+              const val = rowData[k]
+              if (val === null) return `"${k}" = NULL`
+              const escapedVal = String(val).replace(/'/g, "''")
+              return `"${k}" = '${escapedVal}'`
+            })
+            .join(', ')
+
+          const whereClause = Object.keys(originalData)
+            .filter(k => {
+              // Exclude undefined columns
+              if (k === 'undefined') return false
+              // Exclude _rowid_ if it's null (row was just inserted and not reloaded)
+              if (k === '_rowid_' && originalData[k] === null) return false
+              return true
+            })
+            .map(k => {
+              const val = originalData[k]
+              if (val === null) return `"${k}" IS NULL`
+              const escapedVal = String(val).replace(/'/g, "''")
+              return `"${k}" = '${escapedVal}'`
+            })
+            .join(' AND ')
+
+          if (setClause.length > 0 && whereClause.length > 0) {
+            const sql = `UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause}`
+            queries.push(sql)
+            console.log(`[Save] Generated UPDATE (Content-based):`, sql)
+          }
+        }
+        else {
+          // Strategy 3: New Row (INSERT)
+          // If we have no ID and no original data, this is likely a new row.
+          const insertCols = Object.keys(rowData).filter(k =>
+            k !== 'undefined' &&
+            k !== '_rowid_' &&
+            // Exclude IDs if they are null/empty (assume auto-increment)
+            !((k.toLowerCase() === 'id' || k.toLowerCase() === '_id') && (rowData[k] === null || rowData[k] === ''))
+          )
+
+          if (insertCols.length > 0) {
+            const cols = insertCols.map(k => `"${k}"`).join(', ')
+            const values = insertCols.map(k => {
+              const val = rowData[k]
+              if (val === null) return 'NULL'
+              return `'${String(val).replace(/'/g, "''")}'`
+            }).join(', ')
+
+            const sql = `INSERT INTO "${tableName}" (${cols}) VALUES (${values})`
+            queries.push(sql)
+            console.log(`[Save] Generated INSERT:`, sql)
+          } else {
+            console.warn(`[Save] Verified empty/invalid row ignored`)
+          }
         }
       }
 
       if (queries.length > 0) {
+        console.log(`[Save] Executing ${queries.length} SQL queries...`)
         if (adapter.batch) {
-          console.log(`[Backend] Using batch execution for ${queries.length} updates`)
-          await adapter.batch(queries)
-          successCount = queries.length
+          console.log(`[Save] Using batch execution`)
+          const batchResult = await adapter.batch(queries)
+
+          if (Array.isArray(batchResult)) {
+            // Local libSQL returns array of results
+            successCount = batchResult.reduce((sum, res) => sum + (res.rowsAffected || 0), 0)
+          } else {
+            // Remote/Custom returns object with count
+            successCount = batchResult.count || batchResult.affectedRows || 0
+          }
         } else {
-          console.log(`[Backend] Using serial execution for ${queries.length} updates`)
+          console.log(`[Save] Using serial execution`)
           // Fallback to serial execution
           for (const sql of queries) {
             await adapter.query(sql)
             successCount++
           }
         }
+      } else {
+        console.warn('[Save] No queries generated - nothing to save')
       }
 
-      console.log(`[Backend] Successfully saved ${successCount}/${updates.length} rows to ${tableName}`)
+      console.log(`[Save] Successfully saved ${successCount}/${updates.length} rows to ${tableName}`)
       return c.json({ ok: true, saved: successCount })
 
     } catch (err) {
-      console.error("Save table data error:", err)
+      console.error("[Save] Database error:", err)
       return c.json({ error: err.message }, 500)
     } finally {
       await adapter.disconnect()
+      console.log('[Save] Adapter disconnected')
     }
   } catch (e) {
-    console.error("API Error:", e)
+    console.error("[Save] API Error:", e)
     return c.json({ error: "Internal Server Error" }, 500)
+  }
+})
+
+// === New Table API Routes ===
+
+// 1. Fetch Table Schema
+app.post("/api/table/:tableName/schema", async (c) => {
+  try {
+    const tableName = c.req.param("tableName")
+    const { connection, provider } = await c.req.json()
+
+    // Verify Auth
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+    const Adapter = adapters[provider]
+    if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+    const adapter = new Adapter(connection)
+    try {
+      await adapter.connect()
+      const fullSchema = await adapter.getSchema()
+      await adapter.disconnect()
+
+      const columns = fullSchema[tableName] || []
+      return c.json({ columns })
+    } catch (e) {
+      return c.json({ error: e.message }, 500)
+    }
+  } catch (e) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// 2. Fetch Table Data (with hidden ID)
+app.post("/api/table/:tableName/query", async (c) => {
+  try {
+    const tableName = c.req.param("tableName")
+    const { connection, provider, limit = 100, offset = 0 } = await c.req.json()
+
+    // Verify Auth
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+    const Adapter = adapters[provider]
+    if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+    const adapter = new Adapter(connection)
+    try {
+      await adapter.connect()
+      // Select rowid as __id. Quote tableName.
+      const sql = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+      const rows = await adapter.query(sql)
+      await adapter.disconnect()
+
+      return c.json({ rows: Array.isArray(rows) ? rows : [] })
+    } catch (e) {
+      return c.json({ error: e.message }, 500)
+    }
+  } catch (e) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// 3. Atomic Operations
+app.post("/api/table/:tableName/operations", async (c) => {
+  try {
+    const tableName = c.req.param("tableName")
+    const { connection, provider, operations } = await c.req.json()
+
+    // Verify Auth
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    let userId;
+    try {
+      const payload = await verify(token, jwtSecret)
+      userId = payload.sub
+    } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+    // Verify Upload Ownership (for Turso)
+    if (provider === 'sqlite' && connection?.url?.includes('turso')) {
+      const uploadIdMatch = tableName.match(/^data_([a-f0-9-]+)_/) || tableName.match(/^data_([a-f0-9_]+)_/)
+      if (uploadIdMatch) {
+        const uploadId = uploadIdMatch[1].replace(/_/g, '-')
+        try {
+          const uploadCheck = await uploadsDb.execute({
+            sql: 'SELECT user_id FROM uploads WHERE id = ?',
+            args: [uploadId]
+          })
+          if (uploadCheck.rows.length === 0 || uploadCheck.rows[0].user_id !== userId) {
+            return c.json({ error: "Unauthorized - Not your upload" }, 403)
+          }
+        } catch (e) { console.error('Upload verify failed', e) }
+      }
+    }
+
+    const Adapter = adapters[provider]
+    if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+    const adapter = new Adapter(connection)
+    try {
+      await adapter.connect()
+      const queries = []
+
+      for (const op of operations) {
+        if (op.type === 'update') {
+          // op.id is the rowid (__id)
+          const setClause = Object.keys(op.changes).map(k => {
+            const val = op.changes[k]
+            if (val === null) return `"${k}" = NULL`
+            return `"${k}" = '${String(val).replace(/'/g, "''")}'`
+          }).join(', ')
+
+          if (setClause) {
+            queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE rowid = ${Number(op.id)}`)
+          }
+        }
+        else if (op.type === 'delete') {
+          queries.push(`DELETE FROM "${tableName}" WHERE rowid = ${Number(op.id)}`)
+        }
+        else if (op.type === 'create') {
+          const keys = Object.keys(op.data)
+          const cols = keys.map(k => `"${k}"`).join(', ')
+          const vals = keys.map(k => {
+            const val = op.data[k]
+            if (val === null) return 'NULL'
+            return `'${String(val).replace(/'/g, "''")}'`
+          }).join(', ')
+          queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+        }
+        else if (op.type === 'drop_column') {
+          queries.push(`ALTER TABLE "${tableName}" DROP COLUMN "${op.column}"`)
+        }
+        else if (op.type === 'add_column') {
+          queries.push(`ALTER TABLE "${tableName}" ADD COLUMN "${op.column}" TEXT`)
+        }
+        else if (op.type === 'full_replacement') {
+          // Full table replacement: DELETE all rows, then INSERT new data in batches
+          console.log(`[Operations] Full replacement for ${tableName}, ${op.rows?.length || 0} rows`)
+
+          // Step 1: Delete all existing data
+          queries.push(`DELETE FROM "${tableName}"`)
+
+          // Step 2: Insert new data in batches of 1000 rows
+          const rows = op.rows || []
+          const batchSize = 1000
+
+          for (let i = 0; i < rows.length; i += batchSize) {
+            const batch = rows.slice(i, i + batchSize)
+
+            for (const row of batch) {
+              const keys = Object.keys(row)
+              if (keys.length === 0) continue
+
+              const cols = keys.map(k => `"${k}"`).join(', ')
+              const vals = keys.map(k => {
+                const val = row[k]
+                if (val === null || val === undefined) return 'NULL'
+                return `'${String(val).replace(/'/g, "''")}'`
+              }).join(', ')
+
+              queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+            }
+          }
+
+          console.log(`[Operations] Generated ${queries.length} queries for full replacement`)
+        }
+        else if (op.type === 'cleanup_empty') {
+          // Delete rows where all non-rowid columns are NULL or empty
+          // Get column names first (excluding rowid)
+          const schemaResult = await adapter.query(`PRAGMA table_info("${tableName}")`)
+          const columns = schemaResult.map(col => col.name).filter(name => name !== 'rowid')
+
+          if (columns.length > 0) {
+            // Build WHERE clause: all columns must be NULL or empty
+            const conditions = columns.map(col => `("${col}" IS NULL OR "${col}" = '')`).join(' AND ')
+            queries.push(`DELETE FROM "${tableName}" WHERE ${conditions}`)
+          }
+        }
+      }
+
+      if (queries.length > 0) {
+        if (adapter.batch) {
+          await adapter.batch(queries)
+        } else {
+          for (const q of queries) await adapter.query(q)
+        }
+      }
+
+      await adapter.disconnect()
+      return c.json({ success: true, count: queries.length })
+    } catch (e) {
+      return c.json({ error: e.message }, 500)
+    }
+  } catch (e) {
+    return c.json({ error: e.message }, 500)
   }
 })
 

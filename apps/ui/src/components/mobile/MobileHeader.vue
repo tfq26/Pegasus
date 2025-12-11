@@ -3,7 +3,7 @@
     <div class="flex h-14 items-center justify-between px-4">
       <!-- Logo & Title -->
       <RouterLink to="/" class="flex items-center gap-2">
-        <img src="/pegasus-purple.svg" alt="Pegasus" class="h-8 w-8 dark:invert-0 invert" />
+        <img src="/pegasus-purple.svg" alt="Pegasus" class="h-8 w-8" />
       </RouterLink>
 
       <!-- Hamburger Menu Button -->

@@ -65,8 +65,21 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
       let tableNames = tables.map(t => t.name)
 
-      // Filter tables if allowedTables is set
-      if (this.connection.tables && Array.isArray(this.connection.tables) && this.connection.tables.length > 0) {
+      // Filter tables by uploadId if present (Robust Dynamic Linking)
+      if (this.connection.uploadId) {
+        // Pattern: data_<uploadId>_<anything>
+        // Note: Upload IDs in table names use underscores, but internally they might be hyphens.
+        // We handle both just in case, or assume the table name format.
+        // Table name format: data_<uuid_with_underscores>_Name
+
+        // Convert hyphenated ID to underscores for matching
+        const idPattern = this.connection.uploadId.replace(/-/g, '_')
+        console.log(`[SQLite] Filtering by uploadId: ${this.connection.uploadId} (pattern: ${idPattern})`)
+
+        tableNames = tableNames.filter(t => t.startsWith(`data_${idPattern}_`))
+      }
+      // Fallback: Filter tables if allowedTables is set (Legacy Static Linking)
+      else if (this.connection.tables && Array.isArray(this.connection.tables) && this.connection.tables.length > 0) {
         console.log('[SQLite] Filtering tables:', this.connection.tables)
         tableNames = tableNames.filter(t => this.connection.tables.includes(t))
       }
@@ -198,11 +211,20 @@ class CustomFetchClient {
     }
 
     const data = await response.json()
-    // Check for errors in results
+    console.log('[SQLite/Turso] Batch response:', JSON.stringify(data, null, 2))
+
+    // Check for errors in results and count affected rows
+    let totalAffected = 0
     for (const res of data.results) {
       if (res.type === 'error') throw new Error(res.error.message)
+      if (res.type === 'ok' && res.response && res.response.result) {
+        const affected = res.response.result.affected_row_count || 0
+        console.log('[SQLite/Turso] Statement affected rows:', affected)
+        totalAffected += affected
+      }
     }
-    return { count: data.results.length - 1 } // Return success info
+    console.log('[SQLite/Turso] Total affected rows:', totalAffected)
+    return { count: totalAffected } // Return actual update count
   }
 
   async execute(stmt) {

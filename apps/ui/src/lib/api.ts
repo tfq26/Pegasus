@@ -200,6 +200,7 @@ export async function analyzeTableSanitization(connectionId: string, table: stri
   const response = await fetch(`${QUERY_API_URL}/ai/sanitize/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include', // Include cookies for authentication
     body: JSON.stringify({ connectionId, table }),
   })
   if (!response.ok) {

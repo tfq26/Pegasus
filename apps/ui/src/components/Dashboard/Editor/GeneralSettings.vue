@@ -31,7 +31,7 @@
       <label class="text-sm font-medium">Chart Type</label>
       <select
         v-model="localConfig.type"
-        @change="updateConfig"
+        @change="handleTypeChange"
         class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
         <option value="bar">Bar Chart</option>
@@ -87,6 +87,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { toast } from 'vue-sonner'
 
 interface DashboardElement {
   id: string
@@ -146,6 +147,29 @@ const dataPointCount = computed(() => {
 watch(() => props.modelValue, (newValue) => {
   localConfig.value = { ...newValue }
 }, { deep: true })
+
+// Store previous type for validation
+const previousType = ref(localConfig.value.type)
+
+// Handle chart type changes with validation
+const handleTypeChange = () => {
+  const newType = localConfig.value.type
+  const oldType = previousType.value
+  
+  // Prevent converting charts to stats (not supported)
+  if (oldType !== 'stat' && newType === 'stat') {
+    toast.error('Cannot convert chart to statistic', {
+      description: 'Stats can only display single values. Create a new stat element instead.'
+    })
+    // Revert the change
+    localConfig.value.type = oldType
+    return
+  }
+  
+  // Update previous type and emit changes
+  previousType.value = newType
+  updateConfig()
+}
 
 // Update parent
 const updateConfig = () => {

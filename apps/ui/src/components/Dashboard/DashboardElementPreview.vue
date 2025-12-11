@@ -46,6 +46,9 @@
               <SelectValue placeholder="Select Dashboard" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="create_new" class="font-medium text-primary border-b border-border mb-1">
+                + Create New Dashboard...
+              </SelectItem>
               <SelectItem v-for="d in dashboards" :key="d.id" :value="d.id">
                 {{ d.title }}
               </SelectItem>
@@ -80,6 +83,46 @@
       </div>
     </DialogContent>
   </Dialog>
+
+  <!-- Create Dashboard Modal -->
+  <Dialog :open="showCreateDashboardModal" @update:open="(val: boolean) => !val && cancelCreateDashboard()">
+    <DialogContent class="sm:max-w-[425px]">
+      <DialogHeader>
+        <DialogTitle>Create New Dashboard</DialogTitle>
+        <DialogDescription>
+          Enter a name for your new dashboard. The current visualization will be added to it automatically.
+        </DialogDescription>
+      </DialogHeader>
+      <div class="grid gap-4 py-4">
+        <div class="grid gap-2">
+          <label for="name" class="text-sm font-medium">Name</label>
+          <input 
+            id="name" 
+            v-model="newDashboardName" 
+            placeholder="e.g. Sales Overview"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            @keydown.enter="handleCreateDashboard"
+            autofocus
+          />
+        </div>
+      </div>
+      <div class="flex justify-end gap-3">
+        <button 
+          @click="cancelCreateDashboard"
+          class="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded text-sm font-medium transition-colors"
+        >
+          Cancel
+        </button>
+        <button 
+          @click="handleCreateDashboard"
+          :disabled="isCreatingDashboard || !newDashboardName"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          {{ isCreatingDashboard ? 'Creating...' : 'Create & Add' }}
+        </button>
+      </div>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
@@ -103,11 +146,17 @@ const emit = defineEmits(['update:open', 'saved'])
 
 const store = useDashboardStore()
 const { dashboards, currentDashboard } = storeToRefs(store)
-const selectedDashboardId = ref('')
+const selectedDashboardId = ref<string>('')
+const isSaving = ref(false)
 
 const config = ref<any>(null)
 const input = ref('')
 const isRefining = ref(false)
+
+// Create Dashboard State
+const showCreateDashboardModal = ref(false)
+const newDashboardName = ref('')
+const isCreatingDashboard = ref(false)
 
 watch(() => props.initialConfig, (newConfig) => {
   if (newConfig) {
@@ -115,9 +164,10 @@ watch(() => props.initialConfig, (newConfig) => {
   }
 }, { immediate: true })
 
-// Initialize selected dashboard
+// Initialize selected dashboard and config when dialog opens
 watch(() => props.open, async (isOpen) => {
     if (isOpen) {
+        // Load dashboards
         if (dashboards.value.length === 0) {
             await store.loadDashboards()
         }
@@ -129,6 +179,39 @@ watch(() => props.open, async (isOpen) => {
         }
     }
 })
+
+watch(selectedDashboardId, (val) => {
+  if (val === 'create_new') {
+    newDashboardName.value = `New Dashboard ${dashboards.value.length + 1}`
+    showCreateDashboardModal.value = true
+  }
+})
+
+const handleCreateDashboard = async () => {
+  if (!newDashboardName.value.trim()) return
+  
+  isCreatingDashboard.value = true
+  try {
+    const newId = await store.createNewDashboard(newDashboardName.value)
+    selectedDashboardId.value = newId
+    showCreateDashboardModal.value = false
+    toast.success('Dashboard created')
+    
+    // Automatically save element to new dashboard
+    await saveToDashboard()
+  } catch (error) {
+    console.error('Failed to create dashboard:', error)
+    toast.error('Failed to create dashboard')
+    selectedDashboardId.value = '' 
+  } finally {
+    isCreatingDashboard.value = false
+  }
+}
+
+const cancelCreateDashboard = () => {
+  showCreateDashboardModal.value = false
+  selectedDashboardId.value = ''
+}
 
 const refineChart = async () => {
   if (!input.value) return

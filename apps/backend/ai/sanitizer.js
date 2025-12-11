@@ -47,6 +47,12 @@ export function profileData(rows) {
  * Analyzes the table profile and sample data using AI to detect semantic issues and propose fixes.
  */
 export async function analyzeForSanitization(tableName, rows, model = 'gpt-4') {
+    // Handle empty tables
+    if (!rows || rows.length === 0) {
+        console.log('[Sanitizer] No data to analyze')
+        return { issues: [], message: 'No data found in table' }
+    }
+
     const profile = profileData(rows);
     const sampleRows = rows.slice(0, 20); // Send first 20 rows for context
 
@@ -66,7 +72,7 @@ ${JSON.stringify(profile, null, 2)}
 ${JSON.stringify(sampleRows, null, 2)}
 
 ## Output Format:
-Propvide a JSON response (strictly valid JSON) with a list of "issues".
+Provide a JSON response (strictly valid JSON) with a list of "issues".
 Each issue should have:
 - "column": string
 - "type": "null" | "inconsistency" | "outlier" | "other"
@@ -92,15 +98,25 @@ Example Output:
 
     try {
         const response = await aiClient.generateText(prompt, model);
+        console.log('[Sanitizer] Raw AI response:', response.substring(0, 500) + '...')
+
         // Attempt to parse JSON
         let cleanJson = response.trim();
         // Remove markdown code blocks if present
         if (cleanJson.startsWith('```json')) cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
         else if (cleanJson.startsWith('```')) cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
 
-        return JSON.parse(cleanJson);
+        const parsed = JSON.parse(cleanJson);
+        console.log('[Sanitizer] Successfully parsed response, issues found:', parsed.issues?.length || 0)
+        return parsed;
     } catch (e) {
-        console.error("AI Sanitization failed:", e);
-        throw new Error("Failed to analyze data for sanitization");
+        console.error("[Sanitizer] AI response parsing failed:", e);
+        console.error("[Sanitizer] Raw response that failed:", response?.substring(0, 1000));
+
+        // Return empty issues instead of throwing
+        return {
+            issues: [],
+            message: 'AI analysis failed - could not parse response. Please try again.'
+        };
     }
 }

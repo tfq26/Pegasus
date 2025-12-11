@@ -1,6 +1,6 @@
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onUnmounted, onMounted, nextTick } from 'vue';
 import { Engine } from '../Engine/Engine';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
 import type { CellPosition } from '../Engine/types';
@@ -118,47 +118,85 @@ const fillRange = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 // Column/Row selection state
 const selectedColumn = ref<number | null>(null);
 const selectedRow = ref<number | null>(null);
+const lastSelectedColumn = ref<number | null>(null);
+const lastSelectedRow = ref<number | null>(null);
 
-const selectColumn = (col: number) => {
-  selectedColumn.value = col;
+const selectColumn = (col: number, e?: MouseEvent) => {
+  if (e?.shiftKey && lastSelectedColumn.value !== null) {
+      // Range selection
+      const start = Math.min(lastSelectedColumn.value, col);
+      const end = Math.max(lastSelectedColumn.value, col);
+      
+      rangeSelection.value = {
+          start: { row: 0, col: start },
+          end: { row: rowCount - 1, col: end }
+      };
+      // Keep selectedColumn as the anchor? Or null?
+      selectedColumn.value = col; 
+  } else {
+      lastSelectedColumn.value = col;
+      selectedColumn.value = col;
+      rangeSelection.value = {
+        start: { row: 0, col },
+        end: { row: rowCount - 1, col }
+      };
+  }
+  
   selectedRow.value = null;
-  selection.value = null;
-  rangeSelection.value = null;
+  selection.value = { row: 0, col };
+  focusGrid();
 };
 
-const selectRow = (row: number) => {
-  selectedRow.value = row;
+const selectRow = (row: number, e?: MouseEvent) => {
+  if (e?.shiftKey && lastSelectedRow.value !== null) {
+      const start = Math.min(lastSelectedRow.value, row);
+      const end = Math.max(lastSelectedRow.value, row);
+      
+      rangeSelection.value = {
+          start: { row: start, col: 0 },
+          end: { row: end, col: colCount - 1 }
+      };
+      selectedRow.value = row;
+  } else {
+      lastSelectedRow.value = row;
+      selectedRow.value = row;
+      rangeSelection.value = {
+        start: { row, col: 0 },
+        end: { row, col: colCount - 1 }
+      };
+  }
+  
   selectedColumn.value = null;
-  selection.value = null;
-  rangeSelection.value = null;
+  selection.value = { row, col: 0 };
+  focusGrid();
 };
 
 const clearColumnRowSelection = () => {
   selectedColumn.value = null;
   selectedRow.value = null;
+  lastSelectedColumn.value = null;
+  lastSelectedRow.value = null;
 };
 
 const deleteSelectedColumn = () => {
   if (selectedColumn.value === null) return;
   
-  // Clear all cells in the column
-  for (let row = 0; row < rowCount; row++) {
-    props.engine.setValue({ row, col: selectedColumn.value }, '');
-  }
+  // Use Engine's deleteColumn method which tracks deletion for database
+  props.engine.deleteColumn(selectedColumn.value);
   
-  toast.success(`Cleared column ${colIndexToLabel(selectedColumn.value)}`);
+  toast.success(`Deleted column ${colIndexToLabel(selectedColumn.value)}`);
+  selectedColumn.value = null; // Clear selection
   renderKey.value++;
 };
 
 const deleteSelectedRow = () => {
   if (selectedRow.value === null) return;
   
-  // Clear all cells in the row
-  for (let col = 0; col < colCount; col++) {
-    props.engine.setValue({ row: selectedRow.value, col }, '');
-  }
+  // Use Engine's deleteRow method which tracks deletion for database
+  props.engine.deleteRow(selectedRow.value);
   
-  toast.success(`Cleared row ${selectedRow.value + 1}`);
+  toast.success(`Deleted row ${selectedRow.value + 1}`);
+  selectedRow.value = null; // Clear selection
   renderKey.value++;
 };
 
@@ -482,6 +520,40 @@ const adjustFormulaReferences = (formula: string, rowOffset: number, colOffset: 
   });
 };
 
+// --- Styling ---
+const getCellStyle = (row: number, col: number) => {
+    const cell = props.engine.getCell({ row, col });
+    if (!cell?.style) return {};
+    return {
+        fontWeight: cell.style.bold ? 'bold' : 'normal',
+        fontStyle: cell.style.italic ? 'italic' : 'normal',
+        textDecoration: cell.style.underline ? 'underline' : 'none',
+        color: cell.style.color || 'inherit',
+        backgroundColor: cell.style.background || 'inherit',
+    };
+};
+
+const toggleStyle = async (styleKey: string, value?: any) => {
+    if (!selection.value && !rangeSelection.value) return;
+    const range = getSelectedRange();
+    if (!range) return;
+
+    let newValue = value;
+    if (newValue === undefined) {
+         const first = props.engine.getCell({ row: range.minRow, col: range.minCol });
+         const current = !!(first?.style as any)?.[styleKey];
+         newValue = !current;
+    }
+
+    props.engine.beginBatch();
+    for (let r = range.minRow; r <= range.maxRow; r++) {
+        for (let c = range.minCol; c <= range.maxCol; c++) {
+             props.engine.setCellStyle({ row: r, col: c }, { [styleKey]: newValue });
+        }
+    }
+    props.engine.endBatch();
+};
+
 // --- Editing ---
 const startEditing = async (row: number, col: number, initialValue?: string) => {
   // First, commit any pending edit
@@ -500,7 +572,9 @@ const startEditing = async (row: number, col: number, initialValue?: string) => 
   }
   
   await nextTick();
-  const input = document.querySelector(`input[data-row="${row}"][data-col="${col}"]`) as HTMLInputElement;
+  await nextTick();
+  const td = document.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
+  const input = td?.querySelector('input') as HTMLInputElement;
   if (input) {
     input.focus();
     // If we have an initial value, put cursor at end
@@ -517,14 +591,28 @@ const onCellInputChange = (e: Event) => {
 };
 
 const commitEdit = async () => {
+  console.log('[Grid] commitEdit called', { editingCell: editingCell.value });
   if (!editingCell.value) return;
   
-  // Save the value
+  console.log('[Grid] Committing edit:', {
+    cell: editingCell.value,
+    oldValue: currentCellRawValue.value,
+    newValue: formulaBarValue.value
+  });
+  
+  // Save the value silently (don't trigger auto-save yet)
   if (formulaBarValue.value !== currentCellRawValue.value) {
-    await props.engine.setValue(editingCell.value, formulaBarValue.value);
+    console.log('[Grid] Value changed, calling setValue...');
+    await props.engine.setValue(editingCell.value, formulaBarValue.value, true); // silent = true
+  } else {
+    console.log('[Grid] Value unchanged, skipping setValue');
   }
   
   editingCell.value = null;
+  
+  // Now trigger onChange to save
+  console.log('[Grid] Triggering notifyChange...');
+  props.engine.notifyChange();
 };
 
 const onCellBlur = async () => {
@@ -956,15 +1044,24 @@ const handleCut = async () => {
   await handleDelete();
 };
 
+
 const handleDelete = async () => {
   const range = getSelectedRange();
   if (!range) return;
   
+  // Delete key ALWAYS clears cell values (data), never deletes structure
+  // This allows users to freely clear all data in a table
+  props.engine.beginBatch();
   for (let row = range.minRow; row <= range.maxRow; row++) {
     for (let col = range.minCol; col <= range.maxCol; col++) {
-      await props.engine.setValue({ row, col }, '');
+      await props.engine.setValue({ row, col }, '', true);
     }
   }
+  props.engine.endBatch();
+  props.engine.notifyChange();
+  
+  const cellCount = (range.maxRow - range.minRow + 1) * (range.maxCol - range.minCol + 1);
+  toast.success(`Cleared ${cellCount} cell(s)`);
 };
 
 const handlePaste = async () => {
@@ -1066,8 +1163,10 @@ const onKeyDown = async (e: KeyboardEvent) => {
     startEditing(selection.value.row, selection.value.col);
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
-    // Check if column or row is selected first
-    if (selectedColumn.value !== null) {
+    // Prioritize range selection (multi-select) over single column/row
+    if (rangeSelection.value) {
+      await handleDelete();
+    } else if (selectedColumn.value !== null) {
       deleteSelectedColumn();
     } else if (selectedRow.value !== null) {
       deleteSelectedRow();
@@ -1085,11 +1184,9 @@ const onKeyDown = async (e: KeyboardEvent) => {
 
 
 // Ensure grid container gets focus on mount and click
-import { onMounted } from 'vue';
-
-const focusGrid = () => {
+function focusGrid() {
   gridContainer.value?.focus();
-};
+}
 
 onMounted(() => {
   if (gridContainer.value && props.engine.viewState.scrollTop > 0) {
@@ -1195,6 +1292,22 @@ onUnmounted(() => {
       </div>
     </div>
     
+    <!-- Toolbar -->
+    <div class="flex items-center gap-1 px-3 py-1 border-b border-border bg-muted/30">
+        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent font-bold text-foreground" @click="toggleStyle('bold')" title="Bold">B</button>
+        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent italic text-foreground" @click="toggleStyle('italic')" title="Italic">I</button>
+        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent underline text-foreground" @click="toggleStyle('underline')" title="Underline">U</button>
+        <div class="w-px h-4 bg-border mx-2"></div>
+        <div class="flex items-center gap-1" title="Text Color">
+            <span class="text-xs text-muted-foreground">A</span>
+            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('color', (e.target as HTMLInputElement).value)" />
+        </div>
+        <div class="flex items-center gap-1" title="Background Color">
+            <span class="text-xs text-muted-foreground bg-accent px-1 rounded">Bg</span>
+            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('background', (e.target as HTMLInputElement).value)" />
+        </div>
+    </div>
+
     <!-- Header Container (Static vertical, syncs horizontal) -->
     <div 
       ref="headerContainer"
@@ -1210,7 +1323,7 @@ onUnmounted(() => {
               class="border-r border-border px-1 select-none relative group transition-colors hover:bg-muted/80 cursor-pointer"
               :class="{ 'bg-primary/20 text-primary font-bold': isColumnSelected(col - 1) }"
               :style="{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }"
-              @click="selectColumn(col - 1)"
+              @click="selectColumn(col - 1, $event)"
             >
               {{ colIndexToLabel(col - 1) }}
               <div class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -1248,7 +1361,7 @@ onUnmounted(() => {
             <td 
               class="w-10 border-r border-b border-border bg-muted text-[10px] text-center text-muted-foreground select-none sticky left-0 z-10 cursor-pointer hover:bg-muted/80"
               :class="{ 'bg-primary/20 text-primary font-bold': isRowSelected(virtualState.startRow + rowOffset) }"
-              @click="selectRow(virtualState.startRow + rowOffset)"
+              @click="selectRow(virtualState.startRow + rowOffset, $event)"
             >
               {{ virtualState.startRow + rowOffset + 1 }}
             </td>
@@ -1258,7 +1371,12 @@ onUnmounted(() => {
               v-for="col in colCount"
               :key="col"
               class="border-r border-b border-border px-1 text-xs relative cursor-cell whitespace-nowrap overflow-hidden"
-              :style="{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }"
+              :style="{ 
+                width: `${colWidth}px`, 
+                minWidth: `${colWidth}px`, 
+                maxWidth: `${colWidth}px`,
+                ...getCellStyle(virtualState.startRow + rowOffset, col - 1)
+              }"
               :data-row="virtualState.startRow + rowOffset"
               :data-col="col - 1"
               :class="{

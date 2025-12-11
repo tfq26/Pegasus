@@ -1,6 +1,21 @@
 [
     {
         "type": "New Feature",
+        "date": "December 11, 2025",
+        "title": "v0.4.1 - Intelligent Data Management & Stability",
+        "description": "Major stability improvements for Excel/Table operations, robust data handling, and infinite loop prevention.",
+        "items": [
+            "Implemented 'Smart Table Cleanup' - automatically removes empty rows to keep databases clean",
+            "Added 'Hybrid Save Strategy' - intelligently switches between delta updates and full replacements for 100% data sync reliability",
+            "Fixed 'Analyze Table' feature - simplified credentials handling and improved error logging",
+            "Refined Delete behavior - Delete key now clears content (like Excel) instead of dropping columns, preventing DB errors",
+            "Fixed infinite save/refresh loops with intelligent state tracking",
+            "Resolved Light Mode issues - Pegasus logo now maintains brand color in all themes",
+            "Enhanced support for multi-column and multi-row data clearing"
+        ]
+    },
+    {
+        "type": "New Feature",
         "date": "December 7, 2025",
         "title": "Custom Excel-like Spreadsheet Engine",
         "description": "Built from scratch: a powerful, Excel-like spreadsheet with formula support, AI-powered generation, and intelligent workspace management. No third-party dependencies—complete control and customization.",

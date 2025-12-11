@@ -54,6 +54,19 @@ const emit = defineEmits<{
   'sanitize-table': [connection: ConnectionEntry, table: string]
 }>()
 
+// Format table names to hide internal UUIDs
+// Converts "data_60643368_3269_4be6_921e_dff7c585cd3c_Sheet1" to "Sheet1"
+const formatTableName = (tableName: string): string => {
+  // Pattern: data_<uuid>_<sheetname>
+  // UUID format: 8-4-4-4-12 hex digits with underscores replacing hyphens
+  const match = tableName.match(/^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/i)
+  if (match && match[1]) {
+    return match[1]
+  }
+  // If it doesn't match the pattern, return as-is
+  return tableName
+}
+
 const isAddConnectionModalOpen = ref(false)
 
 const handleConnectionSelect = (value: string) => {
@@ -200,7 +213,7 @@ const startRenameTable = (conn: ConnectionEntry, table: string) => {
   renamingTable.value = {
     conn,
     oldName: table,
-    newName: table
+    newName: formatTableName(table) // Use user-friendly name for input
   }
 
   // Auto-focus and select the input on next tick
@@ -222,17 +235,82 @@ const confirmRename = async () => {
 
   const { conn, oldName, newName } = renamingTable.value
 
-  if (newName === oldName || !newName.trim()) {
+  // Compare against formatted old name, because user expects to see/edit formatted name
+  if (newName === formatTableName(oldName) || !newName.trim()) {
     renamingTable.value = null
     return
   }
 
-  // TODO: Implement actual table rename via backend
-  toast.info('Table rename', {
-    description: `Renaming tables is not yet supported. Would rename "${oldName}" to "${newName}"`
-  })
-
-  renamingTable.value = null
+  try {
+    // Extract the UUID from the old table name
+    // Format: data_<uuid>_<sheetname>
+    // UUID format: 8-4-4-4-12 hex digits with underscores replacing hyphens
+    const match = oldName.match(/^data_([a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_(.+)$/i)
+    
+    if (!match) {
+      toast.error('Invalid table name format')
+      renamingTable.value = null
+      return
+    }
+    
+    const uuid = match[1] // e.g., "60643368_3269_4be6_921e_dff7c585cd3c"
+    const newTableName = `data_${uuid}_${newName.trim()}`
+    
+    // Call backend to rename table
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/rename-table`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        connection: conn,
+        oldTableName: oldName,
+        newTableName: newTableName,
+        provider: conn.provider
+      })
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to rename table')
+    }
+    
+    toast.success(`Renamed table to "${newName}"`)
+    
+    // Update local connection object to reflect the change immediately
+    // This is crucial because for uploaded connections, the table list is often hardcoded in the connection config
+    if (conn.sqlite && Array.isArray(conn.sqlite.tables)) {
+      const idx = conn.sqlite.tables.indexOf(oldName)
+      if (idx !== -1) {
+        conn.sqlite.tables[idx] = newTableName
+      } else {
+        // If not found (maybe not synced), just add it
+        conn.sqlite.tables.push(newTableName)
+      }
+      
+      // Also update the expandedDbByConn cache if it exists
+      const cache = dbTablesCache.value[conn.id]
+      if (cache) {
+         // Force refresh by clearing cache for this db
+         delete cache[conn.sqlite.database || 'main']
+      }
+    }
+    
+    // If it's a saved connection, we should also update it in the backend persistence
+    // The backend rename endpoint should ideally handle this, but we can also trigger a connection update here if needed.
+    // For now, updating the local object allows refreshSchemas() to work correctly.
+    
+    renamingTable.value = null
+    
+    // Refresh schemas to update UI
+    await refreshSchemas()
+    
+  } catch (error) {
+    toast.error('Failed to rename table', {
+      description: error instanceof Error ? error.message : String(error)
+    })
+  } finally {
+    renamingTable.value = null
+  }
 }
 
 const copyAllTableData = async (conn: ConnectionEntry, table: string) => {
@@ -469,11 +547,54 @@ const handleEditTable = (conn: ConnectionEntry, table: string) => {
   emit('edit-table', conn, table)
 }
 
-const handleDeleteTable = (table: string) => {
-  toast('Delete table', {
-    description: `${table} cannot be dropped from Pegasus just yet.`,
-    position: 'top-right',
-  })
+const handleDeleteTable = async (conn: ConnectionEntry, table: string) => {
+  // Show confirmation dialog
+  const confirmed = confirm(`Are you sure you want to permanently delete "${formatTableName(table)}"? This action cannot be undone.`)
+  
+  if (!confirmed) return
+  
+  try {
+    // Call backend to delete table
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/delete-table`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        connection: conn,
+        tableName: table,
+        provider: conn.provider
+      })
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to delete table')
+    }
+    
+    toast.success(`Deleted "${formatTableName(table)}"`)
+    
+    // Update local connection object
+    if (conn.sqlite && Array.isArray(conn.sqlite.tables)) {
+      const idx = conn.sqlite.tables.indexOf(table)
+      if (idx !== -1) {
+        conn.sqlite.tables.splice(idx, 1)
+      }
+      
+      // Clear cache
+      const cache = dbTablesCache.value[conn.id]
+      if (cache) {
+        delete cache[conn.sqlite.database || 'main']
+      }
+    }
+    
+    // Refresh schemas to remove deleted table from list
+    await refreshSchemas()
+    
+  } catch (error) {
+    toast.error('Failed to delete table', {
+      description: error instanceof Error ? error.message : String(error)
+    })
+  }
 }
 
 const viewerColumns = computed(() => {
@@ -636,7 +757,7 @@ onBeforeUnmount(() => {
                               class="font-medium text-foreground bg-muted border border-primary rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                               @click.stop
                             />
-                            <span v-else class="font-medium text-foreground truncate">{{ table }}</span>
+                            <span v-else class="font-medium text-foreground truncate">{{ formatTableName(table) }}</span>
                             <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
                               {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
                             </span>
@@ -657,7 +778,7 @@ onBeforeUnmount(() => {
                               <Edit class="w-4 h-4" />
                             </button>
                             <button
-                              @click.stop="handleDeleteTable(table)"
+                              @click.stop="handleDeleteTable(conn, table)"
                               class="rounded-md border border-border p-2 text-muted-foreground hover:text-destructive hover:border-destructive hover:bg-muted transition-colors"
                               title="Delete table"
                             >
@@ -760,10 +881,10 @@ onBeforeUnmount(() => {
       class="fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4 py-6"
       @click.self="closeViewer"
     >
-      <div class="relative max-w-[95vw] w-full max-h-[90vh] h-[90vh] overflow-hidden flex flex-col rounded-lg border border-border bg-background p-6 shadow-2xl">
+      <div class="relative max-w-[95vw] w-full max-h-[70vh] h-[70vh] overflow-hidden flex flex-col rounded-lg border border-border bg-background p-6 shadow-2xl">
         <div class="flex items-center justify-between flex-shrink-0 mb-4">
           <div>
-            <p class="text-lg font-semibold text-foreground">Entries in {{ viewer.table }}</p>
+            <p class="text-lg font-semibold text-foreground">Entries in {{ formatTableName(viewer.table) }}</p>
             <p class="text-xs text-muted-foreground">{{ viewer.connection?.nickname }}</p>
           </div>
           <div class="flex items-center gap-4">
@@ -772,14 +893,14 @@ onBeforeUnmount(() => {
               <button 
                 @click="decreaseViewerZoom" 
                 class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-                :disabled="viewerZoomLevel === 0"
+                :disabled="viewerZoomLevel.value === 0"
               >
                 <Minus class="w-4 h-4" />
               </button>
               <button 
                 @click="increaseViewerZoom" 
                 class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-                :disabled="viewerZoomLevel === viewerZoomClasses.length - 1"
+                :disabled="viewerZoomLevel.value === viewerZoomClasses.length - 1"
               >
                 <Plus class="w-4 h-4" />
               </button>
