@@ -1,5 +1,19 @@
 [
     {
+        "type": "Improvement",
+        "date": "December 13, 2025",
+        "title": "v0.4.2 - Engine Refactoring & Critical Checks",
+        "description": "Significant architectural improvements to the spreadsheet engine and critical bug fixes for data integrity.",
+        "items": [
+            "Modularized Spreadsheet Engine - Split engine into specialized modules (Storage, Data, Change Tracking) for better maintainability",
+            "Fixed Column Deletion - Resolved issues where deleting columns failed to save to database or update UI correctly",
+            "Smart Auto-Save - Eliminated redundant save operations by implementing precise modification tracking",
+            "Robust Undo/Redo - Fixed async execution issues and infinite recursion in command history",
+            "Database Integrity - Prevented duplicate header rows and ensured schema changes are always saved",
+            "UI Enhancements - Fixed missing icons and improved deletion UX to prioritize column selection"
+        ]
+    },
+    {
         "type": "New Feature",
         "date": "December 11, 2025",
         "title": "v0.4.1 - Intelligent Data Management & Stability",
@@ -12,6 +26,24 @@
             "Fixed infinite save/refresh loops with intelligent state tracking",
             "Resolved Light Mode issues - Pegasus logo now maintains brand color in all themes",
             "Enhanced support for multi-column and multi-row data clearing"
+        ]
+    },
+    {
+        "type": "Coming Soon",
+        "date": "Q1 2026",
+        "title": "v0.5.0 - Professional Spreadsheet Features (Preview)",
+        "description": "Making Pegasus a world-class spreadsheet application with essential UX features, power tools, and real-time collaboration foundation.",
+        "items": [
+            "🔄 Undo/Redo System - Full operation history with Ctrl+Z/Ctrl+Y support",
+            "🔍 Find & Replace - Search and replace across entire spreadsheet with Ctrl+F",
+            "📊 Export to Excel/CSV - Download your data in standard formats",
+            "⌨️ Enhanced Keyboard Shortcuts - F2 to edit, Ctrl+Arrow navigation, Ctrl+A select all",
+            "➕ Insert Column/Row - Add columns and rows anywhere in your spreadsheet",
+            "📏 Column Resize - Drag column borders to adjust width",
+            "🔽 Sort & Filter - Click headers to sort, filter data by values",
+            "🖱️ Context Menu - Right-click for quick access to common operations",
+            "💰 Number Formatting - Currency, percentage, date formatting",
+            "👥 Real-time Collaboration (Beta) - See other users' cursors and edits live"
         ]
     },
     {

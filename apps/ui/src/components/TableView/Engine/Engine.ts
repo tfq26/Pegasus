@@ -1,8 +1,10 @@
 
+
 import type { CellPosition, CellData, EngineConfig } from './types';
 import { CellType, posToKey } from './types';
 import { DependencyGraph } from './DependencyGraph';
 import { FormulaParser } from './FormulaParser';
+import { UndoManager } from './UndoManager';
 
 export class Engine {
     private cells: Map<string, CellData> = new Map();
@@ -11,8 +13,6 @@ export class Engine {
     public config: EngineConfig;
     private changeCallbacks: Set<() => void> = new Set();
     private storageKey: string;
-    private isBatching = false;
-
     // Database persistence tracking
     public sourceTable: string | null = null;
     public sourceConnection: any | null = null; // Full connection config
@@ -25,6 +25,14 @@ export class Engine {
     private addedColumns: string[] = []; // Track added columns
     private rowIdMap: Map<number, any> = new Map(); // Store _rowid_ for each row (hidden from grid)
     public saveStatus: 'saved' | 'saving' | 'error' = 'saved';
+
+    // Undo/Redo system
+    public undoManager: UndoManager = new UndoManager();
+    public isUndoRedoOperation = false; // Flag to prevent recording undo operations during undo/redo
+
+    // Header row tracking - row 0 is always the header row for database tables
+    public headerRowIndex = 0;
+
 
 
     // Transient view state (preserved in memory for tab switching)
@@ -94,6 +102,313 @@ export class Engine {
     }
 
     /**
+     * Get pending operations for atomic save - SEE IMPLEMENTATION BELOW
+     */
+
+    private getRowObject(row: number) {
+        const obj: any = {};
+        this.columnNames.forEach((colName, colIndex) => {
+            const cell = this.getCell({ row, col: colIndex });
+            obj[colName] = cell?.value ?? null;
+        });
+        return obj;
+    }
+
+    /**
+     * Legacy method for getting modified rows (deprecated)
+     */
+    public getModifiedRows(): Map<number, { data: Record<string, any>, original: Record<string, any> | null }> {
+        // ... kept for compatibility but should use getPendingOperations ...
+        return new Map();
+    }
+
+    /**
+     * Mark a row as deleted (for database DELETE operation)
+     */
+    public async deleteRow(row: number) {
+        if (!this.isUndoRedoOperation) {
+            const { DeleteRowCommand } = await import('./UndoManager');
+            this.undoManager.execute(new DeleteRowCommand(this, row));
+            return;
+        }
+
+        // Get the _rowid_ from the original data if it exists
+        const rowidCol = this.columnNames.indexOf('_rowid_');
+        if (rowidCol !== -1) {
+            const rowidCell = this.originalData.get(`${row},${rowidCol}`);
+            if (rowidCell && rowidCell.value !== null) {
+                this.deletedRows.add(Number(rowidCell.value));
+                this.saveStatus = 'saving';
+            }
+        }
+
+        // 1. Identify cells to delete (in the target row) and cells to move (below the target row)
+        const cellsToMove = new Map<string, CellData>();
+        const originalToMove = new Map<string, CellData>();
+        const keysToDelete: string[] = [];
+
+        // Process this.cells
+        for (const [key, cell] of this.cells) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (r === row) {
+                keysToDelete.push(key);
+            } else if (r > row) {
+                keysToDelete.push(key);
+                cellsToMove.set(posToKey({ row: r - 1, col: c }), cell);
+            }
+        }
+
+        // Process this.originalData
+        for (const [key, cell] of this.originalData) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (r === row) {
+                keysToDelete.push(key);
+            } else if (r > row) {
+                keysToDelete.push(key);
+                originalToMove.set(posToKey({ row: r - 1, col: c }), cell);
+            }
+        }
+
+        // Apply changes
+        keysToDelete.forEach(k => {
+            this.cells.delete(k);
+            this.originalData.delete(k);
+        });
+
+        for (const [k, v] of cellsToMove) this.cells.set(k, v);
+        for (const [k, v] of originalToMove) this.originalData.set(k, v);
+
+        this.notifyChange();
+    }
+
+    /**
+     * Get list of deleted row IDs
+     */
+    public getDeletedRows(): number[] {
+        return Array.from(this.deletedRows);
+    }
+
+    /**
+     * Mark a column as deleted (for database ALTER TABLE DROP COLUMN operation)
+     */
+    /**
+     * Mark a column as deleted and update local data structure
+     */
+    public async deleteColumn(col: number) {
+        console.log('[Engine] deleteColumn called, col:', col);
+        console.log('[Engine] isUndoRedoOperation:', this.isUndoRedoOperation);
+        const columnName = this.columnNames[col];
+
+        if (!this.isUndoRedoOperation) {
+            const { DeleteColumnCommand } = await import('./UndoManager');
+            await this.undoManager.execute(new DeleteColumnCommand(this, col));
+            return;
+        }
+
+        // Even if columnName is "undefined" string, we should allow deleting it
+        // We only skip if it's strictly undefined (out of bounds)
+        if (columnName !== undefined && columnName !== '_rowid_') {
+            this.deletedColumns.add(columnName);
+            this.saveStatus = 'saving';
+        }
+
+        // Even if columnName is "undefined" string, we should allow deleting it
+        // We only skip if it's strictly undefined (out of bounds)
+        if (columnName !== undefined && columnName !== '_rowid_') {
+            this.deletedColumns.add(columnName);
+            this.saveStatus = 'saving';
+        }
+
+        // 1. Remove from column definitions
+        this.columnNames.splice(col, 1);
+
+        // 2. We need to shift all cell data for columns > col to the left
+        // This is expensive but necessary for in-memory consistency
+        const cellsToMove = new Map<string, CellData>();
+        const originalToMove = new Map<string, CellData>();
+        const keysToDelete: string[] = [];
+
+        // Identify cells that need moving
+        for (const [key, cell] of this.cells) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (c === col) {
+                keysToDelete.push(key); // Check this column's data
+            } else if (c > col) {
+                keysToDelete.push(key);
+                // Store with new key (c-1)
+                cellsToMove.set(posToKey({ row: r, col: c - 1 }), cell);
+            }
+        }
+
+        // Same for original data
+        for (const [key, cell] of this.originalData) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (c === col) {
+                keysToDelete.push(key);
+            } else if (c > col) {
+                keysToDelete.push(key);
+                originalToMove.set(posToKey({ row: r, col: c - 1 }), cell);
+            }
+        }
+
+        // Apply changes
+        keysToDelete.forEach(k => {
+            this.cells.delete(k);
+            this.originalData.delete(k);
+        });
+
+        for (const [k, v] of cellsToMove) this.cells.set(k, v);
+        for (const [k, v] of originalToMove) this.originalData.set(k, v);
+
+        this.notifyChange();
+    }
+
+    /**
+     * Insert a new row at the specified index
+     */
+    public async insertRow(row: number) {
+        if (!this.isUndoRedoOperation) {
+            const { InsertRowCommand } = await import('./UndoManager');
+            this.undoManager.execute(new InsertRowCommand(this, row));
+            return;
+        }
+
+        const cellsToMove = new Map<string, CellData>();
+        const originalToMove = new Map<string, CellData>();
+        const keysToDelete: string[] = [];
+
+        // Shift existing cells down
+        for (const [key, cell] of this.cells) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (r >= row) {
+                keysToDelete.push(key);
+                cellsToMove.set(posToKey({ row: r + 1, col: c }), cell);
+            }
+        }
+
+        // Shift original data
+        for (const [key, cell] of this.originalData) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (r >= row) {
+                keysToDelete.push(key);
+                originalToMove.set(posToKey({ row: r + 1, col: c }), cell);
+            }
+        }
+
+        keysToDelete.forEach(k => {
+            this.cells.delete(k);
+            this.originalData.delete(k);
+        });
+
+        for (const [k, v] of cellsToMove) this.cells.set(k, v);
+        for (const [k, v] of originalToMove) this.originalData.set(k, v);
+
+        this.notifyChange();
+    }
+
+    /**
+     * Insert a new column at the specified index
+     */
+    public async insertColumn(col: number, name?: string) {
+        const columnName = name || `Column${this.columnNames.length + 1}`;
+
+        if (!this.isUndoRedoOperation) {
+            const { InsertColumnCommand } = await import('./UndoManager');
+            this.undoManager.execute(new InsertColumnCommand(this, col, columnName));
+            return;
+        }
+
+        // Insert into columnNames
+        this.columnNames.splice(col, 0, columnName);
+        this.addedColumns.push(columnName);
+
+        // Shift cells to right
+        const cellsToMove = new Map<string, CellData>();
+        const originalToMove = new Map<string, CellData>();
+        const keysToDelete: string[] = [];
+
+        for (const [key, cell] of this.cells) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (c >= col) {
+                keysToDelete.push(key);
+                cellsToMove.set(posToKey({ row: r, col: c + 1 }), cell);
+            }
+        }
+
+        for (const [key, cell] of this.originalData) {
+            const parts = key.split(',').map(Number);
+            const r = parts[0];
+            const c = parts[1];
+
+            if (r === undefined || c === undefined) continue;
+
+            if (c >= col) {
+                keysToDelete.push(key);
+                originalToMove.set(posToKey({ row: r, col: c + 1 }), cell);
+            }
+        }
+
+        keysToDelete.forEach(k => {
+            this.cells.delete(k);
+            this.originalData.delete(k);
+        });
+
+        for (const [k, v] of cellsToMove) this.cells.set(k, v);
+        for (const [k, v] of originalToMove) this.originalData.set(k, v);
+
+        this.notifyChange();
+    }
+
+    /**
+     * Get list of deleted column names
+     */
+    public getDeletedColumns(): string[] {
+        return Array.from(this.deletedColumns);
+    }
+
+    /**
+     * Get list of added column names
+     */
+    public getAddedColumns(): string[] {
+        return [...this.addedColumns];
+    }
+
+    /**
      * Get pending operations for atomic save
      */
     public getPendingOperations() {
@@ -110,10 +425,12 @@ export class Engine {
         });
 
         // 2. Updates & Creates
-        // Group modified cells by row
+        // Group modified cells by row (skip row 0 - headers)
         const rowsToProcess = new Set<number>();
         for (const cellKey of this.modifiedCells) {
             const row = parseInt(cellKey.split(',')[0]);
+            // Skip row 0 as it contains headers, not data
+            if (row === 0) continue;
             rowsToProcess.add(row);
         }
 
@@ -142,81 +459,6 @@ export class Engine {
         }
 
         return operations;
-    }
-
-    private getRowObject(row: number) {
-        const obj: any = {};
-        this.columnNames.forEach((colName, colIndex) => {
-            const cell = this.getCell({ row, col: colIndex });
-            obj[colName] = cell?.value ?? null;
-        });
-        return obj;
-    }
-
-    /**
-     * Legacy method for getting modified rows (deprecated)
-     */
-    public getModifiedRows(): Map<number, { data: Record<string, any>, original: Record<string, any> | null }> {
-        // ... kept for compatibility but should use getPendingOperations ...
-        return new Map();
-    }
-
-    /**
-     * Mark a row as deleted (for database DELETE operation)
-     */
-    public deleteRow(row: number) {
-        // Get the _rowid_ from the original data if it exists
-        const rowidCol = this.columnNames.indexOf('_rowid_');
-        if (rowidCol !== -1) {
-            const rowidCell = this.originalData.get(`${row},${rowidCol}`);
-            if (rowidCell && rowidCell.value !== null) {
-                this.deletedRows.add(Number(rowidCell.value));
-                this.saveStatus = 'saving';
-            }
-        }
-
-        // Clear all cells in the row
-        for (let col = 0; col < this.columnNames.length; col++) {
-            const key = posToKey({ row, col });
-            this.cells.delete(key);
-            this.originalData.delete(key);
-        }
-
-        this.notifyChange();
-    }
-
-    /**
-     * Get list of deleted row IDs
-     */
-    public getDeletedRows(): number[] {
-        return Array.from(this.deletedRows);
-    }
-
-    /**
-     * Mark a column as deleted (for database ALTER TABLE DROP COLUMN operation)
-     */
-    public deleteColumn(col: number) {
-        const columnName = this.columnNames[col];
-        if (columnName && columnName !== '_rowid_') {
-            this.deletedColumns.add(columnName);
-            this.saveStatus = 'saving';
-        }
-
-        // Clear all cells in the column
-        for (let row = 0; row < 1000; row++) { // Arbitrary large number
-            const key = posToKey({ row, col });
-            this.cells.delete(key);
-            this.originalData.delete(key);
-        }
-
-        this.notifyChange();
-    }
-
-    /**
-     * Get list of deleted column names
-     */
-    public getDeletedColumns(): string[] {
-        return Array.from(this.deletedColumns);
     }
 
     /**
@@ -266,10 +508,14 @@ export class Engine {
         const rowsMap = new Map<number, Record<string, any>>();
 
         // Collect all rows that have at least one non-empty cell
+        // Skip row 0 as it contains headers, not data
         for (const [key, cell] of this.cells.entries()) {
             const [rowStr, colStr] = key.split(',');
             const row = parseInt(rowStr);
             const col = parseInt(colStr);
+
+            // IMPORTANT: Skip row 0 as it contains headers, not data
+            if (row === 0) continue;
 
             if (!rowsMap.has(row)) {
                 rowsMap.set(row, {});
@@ -314,10 +560,31 @@ export class Engine {
         this.originalData = new Map(this.cells);
     }
 
+    /**
+     * Check if there are any pending modifications that require a save
+     * This prevents unnecessary saves when nothing has changed
+     */
+    public hasPendingModifications(): boolean {
+        // Check for any modifications (excluding header row modifications)
+        const hasDataModifications = Array.from(this.modifiedCells).some(key => {
+            const row = parseInt(key.split(',')[0]);
+            return row !== 0; // Ignore header row changes
+        });
+
+        const result = hasDataModifications ||
+            this.deletedRows.size > 0 ||
+            this.deletedColumns.size > 0 ||
+            this.addedColumns.length > 0;
+
+        return result;
+    }
+
 
     /**
      * Begin batch mode - notifications will be deferred until endBatch()
      */
+    public isBatching = false; // Made public for external checks
+
     public beginBatch() {
         this.isBatching = true;
     }
@@ -350,6 +617,20 @@ export class Engine {
     private saveToStorage() {
         try {
             const data = Array.from(this.cells.entries());
+
+            // If cells map is empty, remove the localStorage item entirely
+            if (data.length === 0) {
+                localStorage.removeItem(this.storageKey);
+                return;
+            }
+
+            // For large datasets without database backing, skip localStorage persistence
+            // This prevents quota issues and improves performance
+            if (data.length > 5000 && !this.sourceTable) {
+                console.warn('[Storage] Skipping localStorage for large non-database sheet (performance optimization)');
+                return;
+            }
+
             const storageData = {
                 version: 2,
                 cells: data,
@@ -360,9 +641,46 @@ export class Engine {
                     columns: this.columnNames
                 }
             };
+
             localStorage.setItem(this.storageKey, JSON.stringify(storageData));
-        } catch (e) {
-            console.error('Failed to save to localStorage:', e);
+        } catch (e: any) {
+            // Handle quota exceeded error
+            if (e.name === 'QuotaExceededError' || e.code === 22) {
+                console.warn('[Storage] localStorage quota exceeded, clearing old spreadsheet data');
+
+                // Clear old spreadsheet tab data to free up space
+                const keysToRemove: string[] = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key?.startsWith('spreadsheet-tab-') && key !== this.storageKey) {
+                        keysToRemove.push(key);
+                    }
+                }
+
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                console.log(`[Storage] Cleared ${keysToRemove.length} old spreadsheet entries`);
+
+                // Try saving again after cleanup
+                try {
+                    const data = Array.from(this.cells.entries());
+                    const storageData = {
+                        version: 2,
+                        cells: data,
+                        source: {
+                            table: this.sourceTable,
+                            connection: this.sourceConnection,
+                            provider: this.sourceProvider,
+                            columns: this.columnNames
+                        }
+                    };
+                    localStorage.setItem(this.storageKey, JSON.stringify(storageData));
+                    console.log('[Storage] Successfully saved after cleanup');
+                } catch (e2) {
+                    console.error('[Storage] Still failed after cleanup, skipping persistence:', e2);
+                }
+            } else {
+                console.error('[Storage] Failed to save to localStorage:', e);
+            }
         }
     }
 
@@ -398,6 +716,15 @@ export class Engine {
      */
     public async setValue(pos: CellPosition, input: string, silent: boolean = false) {
         const key = posToKey(pos);
+
+        // Record undo command (unless this is an undo/redo operation itself)
+        if (!this.isUndoRedoOperation && !silent) {
+            const oldValue = this.getCell(pos)?.rawInput || '';
+            const { SetValueCommand } = await import('./UndoManager');
+            const command = new SetValueCommand(this, pos, input, oldValue);
+            this.undoManager.execute(command);
+            return; // Command.execute() will call setValue again with silent=true
+        }
 
         // 1. Clear old dependencies
         this.graph.clearDependencies(pos);
@@ -446,6 +773,11 @@ export class Engine {
     public getCell(pos: CellPosition): CellData | null {
         return this.cells.get(posToKey(pos)) || null;
     }
+
+    public getCells(): Map<string, CellData> {
+        return this.cells;
+    }
+
 
     public getDisplayValue(pos: CellPosition): string {
         const cell = this.getCell(pos);
@@ -504,6 +836,47 @@ export class Engine {
 
     public clear() {
         this.cells.clear();
+        // Also clear localStorage to prevent data from reappearing
+        try {
+            localStorage.removeItem(this.storageKey);
+        } catch (e) {
+            console.error('Failed to clear localStorage:', e);
+        }
         this.notifyChange();
     }
+
+    /**
+     * Undo the last operation
+     */
+    public undo(): boolean {
+        this.isUndoRedoOperation = true;
+        const result = this.undoManager.undo();
+        this.isUndoRedoOperation = false;
+        return result;
+    }
+
+    /**
+     * Redo the last undone operation
+     */
+    public redo(): boolean {
+        this.isUndoRedoOperation = true;
+        const result = this.undoManager.redo();
+        this.isUndoRedoOperation = false;
+        return result;
+    }
+
+    /**
+     * Check if undo is available
+     */
+    public canUndo(): boolean {
+        return this.undoManager.canUndo();
+    }
+
+    /**
+     * Check if redo is available
+     */
+    public canRedo(): boolean {
+        return this.undoManager.canRedo();
+    }
 }
+

@@ -55,6 +55,8 @@
           @visualize="handleVisualize"
           @sanitize="handleSanitize"
           @load-table-to-sheet="handleLoadTableToSheet"
+          @export="handleExport"
+          @refresh-table="handleRefreshTable"
         />
 
         <!-- Editor -->
@@ -196,8 +198,25 @@ const handleSaveFormulaQuery = async (query: string, type: 'formula') => {
   }
 }
 
+const handleExport = (format: 'csv' | 'xlsx') => {
+  if (workspaceRef.value?.exportCurrentTable) {
+    workspaceRef.value.exportCurrentTable(format);
+  } else {
+    toast.error("Export not available");
+  }
+}
+
+const handleRefreshTable = () => {
+  if (workspaceRef.value?.refreshCurrentTable) {
+    workspaceRef.value.refreshCurrentTable();
+  } else {
+    toast.error("Refresh not available");
+  }
+}
+
 
 const handleVisualize = async () => {
+  // TODO: Update to use workspaceRef instead of excelEditorRef
   if (!excelEditorRef.value) return
   
   const selectedData = excelEditorRef.value.getSelectedData()

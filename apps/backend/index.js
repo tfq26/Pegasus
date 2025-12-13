@@ -51,6 +51,27 @@ const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/au
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
   try {
+    const userId = payload.sub || payload.id
+
+    // Check if user exists by email but with different ID
+    const existingUserRs = await db.execute({
+      sql: "SELECT id FROM users WHERE email = ?",
+      args: [payload.email]
+    })
+
+    if (existingUserRs.rows.length > 0) {
+      const existingId = existingUserRs.rows[0].id
+
+      if (existingId !== userId) {
+        console.log(`[Auth] Email ${payload.email} exists with different ID (${existingId}). Cleaning up old user...`)
+        const tables = ['dashboards', 'dashboards_v2', 'connections', 'user_settings', 'dashboard_elements', 'queries', 'chats']
+        for (const table of tables) {
+          await db.execute({ sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [existingId] })
+        }
+        await db.execute({ sql: "DELETE FROM users WHERE id = ?", args: [existingId] })
+      }
+    }
+
     await db.execute({
       sql: `
         INSERT INTO users (id, email, first_name, last_name, profile_picture_url)
@@ -61,8 +82,9 @@ const upsertUser = async (payload) => {
           last_name = excluded.last_name,
           profile_picture_url = excluded.profile_picture_url
       `,
+      // Ensure we use the same ID we resolved above
       args: [
-        payload.sub || payload.id,
+        userId,
         payload.email,
         payload.firstName,
         payload.lastName,

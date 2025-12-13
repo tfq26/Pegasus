@@ -56,3 +56,29 @@ export const keyToPos = (key: string): CellPosition => {
     const [rowStr, colStr] = key.split(',');
     return { row: Number(rowStr) || 0, col: Number(colStr) || 0 };
 };
+
+/**
+ * Engine interface for type-safe UndoManager integration
+ * This allows UndoManager to work with Engine without circular dependencies
+ */
+export interface IEngine {
+    cells: Map<string, CellData>;
+    columnNames: string[];
+    setValue(pos: CellPosition, value: string, silent?: boolean): Promise<void>;
+    deleteRow(row: number): Promise<void>;
+    insertRow(row: number): Promise<void>;
+    deleteColumn(col: number): Promise<void>;
+    insertColumn(col: number, name?: string): Promise<void>;
+    notifyChange(): void;
+    getCell(pos: CellPosition): CellData | null;
+}
+
+/**
+ * Source metadata for persistence
+ */
+export interface SourceMetadata {
+    table: string | null;
+    connection: any;
+    provider: string | null;
+    columns: string[];
+}

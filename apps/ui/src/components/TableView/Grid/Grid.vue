@@ -1,12 +1,23 @@
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted, nextTick } from 'vue';
+import { ref, computed, onUnmounted, onMounted, nextTick, watch } from 'vue';
 import { Engine } from '../Engine/Engine';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
 import type { CellPosition } from '../Engine/types';
 import { CellType } from '../Engine/types';
 import { toast } from 'vue-sonner';
 import { useFeatureFlags } from '@/composables/useFeatureFlags';
+import FindDialog from '../FindDialog.vue';
+import { SearchEngine } from '../Engine/SearchEngine';
+import ProviderBadge from '../ProviderBadge.vue';
+import { 
+  ChevronDown, 
+  Sparkles, 
+  X, 
+  HelpCircle, 
+  AlertTriangle, 
+  AlertCircle 
+} from 'lucide-vue-next';
 
 const props = defineProps<{
   engine: Engine;
@@ -25,6 +36,8 @@ const rowCount = 1000;
 const colCount = 26; // Reduced to 26 (A-Z) for better horizontal fit
 const rowHeight = 24;
 const colWidth = 100;
+// Row header width is usually fixed, e.g. 48px. 
+// We should check template for scrolling calculation or just assume col * 100 relative to scroll container
 
 // Virtualization State
 const virtualState = ref({
@@ -68,6 +81,48 @@ props.engine.onChange(() => {
   renderKey.value++;
 });
 
+// Search State
+const showFindDialog = ref(false);
+const searchEngine = computed(() => new SearchEngine(props.engine));
+
+// Scrolling Logic
+const scrollToCell = (row: number, col: number) => {
+  if (!gridContainer.value) return;
+  
+  // Vertical
+  const top = row * rowHeight;
+  const bottom = (row + 1) * rowHeight;
+  const containerHeight = gridContainer.value.clientHeight;
+  const scrollTop = gridContainer.value.scrollTop;
+  
+  if (top < scrollTop) {
+      gridContainer.value.scrollTop = top;
+  } else if (bottom > scrollTop + containerHeight) {
+      gridContainer.value.scrollTop = bottom - containerHeight;
+  }
+  
+  // Horizontal
+  const left = col * colWidth;
+  const right = (col + 1) * colWidth;
+  const containerWidth = gridContainer.value.clientWidth;
+  const scrollLeft = gridContainer.value.scrollLeft;
+  
+  if (left < scrollLeft) {
+      gridContainer.value.scrollLeft = left;
+  } else if (right > scrollLeft + containerWidth) {
+      gridContainer.value.scrollLeft = right - containerWidth;
+  }
+};
+
+const onMatchSelected = (pos: CellPosition) => {
+    scrollToCell(pos.row, pos.col);
+    selection.value = pos;
+    // Ensure we are in write mode?
+    if (props.mode !== 'read') {
+        focusGrid();
+    }
+};
+
 const isProcessingAI = ref(false);
 
 // --- Selection & Editing State ---
@@ -79,7 +134,7 @@ const dragStart = ref<CellPosition | null>(null);
 const rangeSelection = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 
 // Watch selection to update engine state
-import { watch } from 'vue';
+// Watch selection to update engine state
 watch(selection, (newVal) => {
   props.engine.viewState.selection = newVal;
 });
@@ -178,11 +233,13 @@ const clearColumnRowSelection = () => {
   lastSelectedRow.value = null;
 };
 
-const deleteSelectedColumn = () => {
-  if (selectedColumn.value === null) return;
+const deleteSelectedColumn = async () => {
+  if (selectedColumn.value === null) {
+    return;
+  }
   
   // Use Engine's deleteColumn method which tracks deletion for database
-  props.engine.deleteColumn(selectedColumn.value);
+  await props.engine.deleteColumn(selectedColumn.value);
   
   toast.success(`Deleted column ${colIndexToLabel(selectedColumn.value)}`);
   selectedColumn.value = null; // Clear selection
@@ -398,10 +455,23 @@ const onMouseDown = async (e: MouseEvent) => {
   }
 
   isDragging.value = true;
-  dragStart.value = cell;
-  selection.value = cell;
-  rangeSelection.value = { start: cell, end: cell };
-  formulaBarValue.value = currentCellRawValue.value;
+  
+  if (e.shiftKey && selection.value) {
+    // Shift-click: Extend selection from the original anchor
+    // We keep the original dragStart validation or anchor point
+    if (!dragStart.value) dragStart.value = selection.value;
+    
+    rangeSelection.value = { 
+      start: dragStart.value, 
+      end: cell 
+    };
+  } else {
+    // Normal click: Start new selection
+    dragStart.value = cell;
+    selection.value = cell;
+    rangeSelection.value = { start: cell, end: cell };
+    formulaBarValue.value = currentCellRawValue.value;
+  }
 
   // Focus the grid container for keyboard events
   focusGrid();
@@ -1049,19 +1119,30 @@ const handleDelete = async () => {
   const range = getSelectedRange();
   if (!range) return;
   
-  // Delete key ALWAYS clears cell values (data), never deletes structure
-  // This allows users to freely clear all data in a table
+  // Only delete cells with content (skip empty cells)
+  let clearedCount = 0;
   props.engine.beginBatch();
+  
   for (let row = range.minRow; row <= range.maxRow; row++) {
     for (let col = range.minCol; col <= range.maxCol; col++) {
-      await props.engine.setValue({ row, col }, '', true);
+      const cell = props.engine.getCell({ row, col });
+      // Only clear cells that have content (non-empty value)
+      if (cell && cell.value !== null && cell.value !== undefined && cell.value !== '') {
+        // Use silent=false so change is tracked (user requested treat all rows same)
+        await props.engine.setValue({ row, col }, '', false);
+        clearedCount++;
+      }
     }
   }
+  
   props.engine.endBatch();
   props.engine.notifyChange();
   
-  const cellCount = (range.maxRow - range.minRow + 1) * (range.maxCol - range.minCol + 1);
-  toast.success(`Cleared ${cellCount} cell(s)`);
+  if (clearedCount > 0) {
+    toast.success(`Cleared ${clearedCount} cell(s)`);
+  } else {
+    toast.info('No cells with content to clear');
+  }
 };
 
 const handlePaste = async () => {
@@ -1104,6 +1185,34 @@ const onKeyDown = async (e: KeyboardEvent) => {
   
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
   const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+  
+  // Undo (Ctrl/Cmd+Z)
+  if (cmdOrCtrl && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    if (props.engine.canUndo()) {
+      props.engine.undo();
+      toast.success('Undo');
+    }
+    return;
+  }
+  
+  // Redo (Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z)
+  if (cmdOrCtrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    e.preventDefault();
+    if (props.engine.canRedo()) {
+      props.engine.redo();
+      toast.success('Redo');
+    }
+    return;
+  }
+
+  // Find (Ctrl/Cmd+F)
+  if (cmdOrCtrl && e.key === 'f') {
+      e.preventDefault();
+      showFindDialog.value = true;
+      return;
+  }
+
   
   // Select All (Ctrl/Cmd+A)
   if (cmdOrCtrl && e.key === 'a') {
@@ -1163,13 +1272,13 @@ const onKeyDown = async (e: KeyboardEvent) => {
     startEditing(selection.value.row, selection.value.col);
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
-    // Prioritize range selection (multi-select) over single column/row
-    if (rangeSelection.value) {
-      await handleDelete();
-    } else if (selectedColumn.value !== null) {
+    // Prioritize explicit column/row selection over generic range selection
+    if (selectedColumn.value !== null) {
       deleteSelectedColumn();
     } else if (selectedRow.value !== null) {
       deleteSelectedRow();
+    } else if (rangeSelection.value) {
+      await handleDelete();
     } else if (selection.value) {
       await handleDelete();
     }
@@ -1213,6 +1322,12 @@ onUnmounted(() => {
         {{ selectedCellLabel || 'A1' }}
       </div>
       
+      <!-- Provider Badge -->
+      <ProviderBadge 
+        v-if="props.engine.sourceProvider" 
+        :provider="props.engine.sourceProvider" 
+      />
+      
       <div class="flex-1">
         <input
           v-model="formulaBarValue"
@@ -1249,6 +1364,12 @@ onUnmounted(() => {
       <div class="w-12 text-xs font-semibold text-muted-foreground text-center tabular-nums">
         {{ selectedCellLabel || 'A1' }}
       </div>
+      
+      <!-- Provider Badge -->
+      <ProviderBadge 
+        v-if="props.engine.sourceProvider" 
+        :provider="props.engine.sourceProvider" 
+      />
       
       <div class="flex-1 relative">
         <input
@@ -1419,6 +1540,15 @@ onUnmounted(() => {
         </tbody>
       </table>
     </div>
+    <!-- Find Dialog -->
+    <FindDialog 
+      v-if="showFindDialog"
+      :is-visible="showFindDialog"
+      :search-engine="searchEngine"
+      @close="showFindDialog = false"
+      @select-match="onMatchSelected"
+    />
+
     <!-- Formula Preview Modal -->
     <div 
       v-if="showFormulaPreviewModal"

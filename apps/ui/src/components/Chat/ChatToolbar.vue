@@ -17,9 +17,9 @@ import {
   AlignLeft, 
   AlignCenter, 
   AlignRight,
-  Save,
   FunctionSquare,
-  BarChart
+  BarChart,
+  Download
 } from 'lucide-vue-next'
 import {
   Select,
@@ -60,6 +60,8 @@ const emit = defineEmits<{
   'visualize': []
   'sanitize': []
   'load-table-to-sheet': []
+  'export': [format: 'csv' | 'xlsx']
+  'refresh-table': []
 }>()
 
 const expanded = ref(false)
@@ -345,26 +347,48 @@ watchEffect(() => {
             <span>Sanitize</span>
           </button>
 
+           <!-- Export Buttons -->
+           <div class="flex items-center gap-1 ml-auto">
+              <button 
+                  class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
+                  @click="emit('export', 'csv')"
+                  title="Export to CSV"
+              >
+                  <span class="text-[10px] font-bold">CSV</span>
+              </button>
+              <button 
+                  class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                  @click="emit('export', 'xlsx')"
+                  title="Export to Excel"
+              >
+                  <Download class="w-3.5 h-3.5" />
+              </button>
+           </div>
           </div>
       </div>
 
       <!-- Right: Expand Button -->
       <div class="flex items-center gap-2">
-         <!-- Save Status Indicator -->
-          <div class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30 text-xs font-medium">
+         <!-- Save Status Indicator (Clickable to refresh) -->
+          <button 
+            v-if="mode === 'spreadsheet'"
+            @click="emit('refresh-table')"
+            class="flex items-center gap-2 px-2 py-1 rounded-md bg-muted/30 text-xs font-medium hover:bg-muted/50 transition-colors cursor-pointer"
+            :title="saveStatus === 'saved' ? 'Click to refresh data from database' : saveStatus === 'saving' ? 'Saving changes...' : 'Error saving - click to retry'"
+          >
             <template v-if="saveStatus === 'saving'">
               <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
               <span class="text-muted-foreground">Saving...</span>
             </template>
             <template v-else-if="saveStatus === 'error'">
               <span class="w-2 h-2 rounded-full bg-destructive"></span>
-              <span class="text-destructive">Error</span>
+              <span class="text-destructive">Error - Click to refresh</span>
             </template>
             <template v-else>
               <span class="w-2 h-2 rounded-full bg-green-500"></span>
-              <span class="text-muted-foreground">Saved</span>
+              <span class="text-muted-foreground">Saved - Click to refresh</span>
             </template>
-          </div>
+          </button>
 
         <button
           @click="expanded = !expanded"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted, onMounted } from 'vue';
 import TabsManager from './TabsManager.vue';
 import type { Tab } from './TabsManager.vue';
 import { Engine } from '../TableView/Engine/Engine';
@@ -112,26 +112,49 @@ const refreshTableData = async (engine: Engine) => {
     console.log('[Refresh] Reloading with new API...');
     const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider);
     
-    // Reload into Engine
-    engine.beginBatch();
-    engine.clear(); // Clear grid
+    // Clear existing data first to prevent duplication
+    engine.clear(); // This also clears localStorage
     
-    // Reload headers
-    headers.forEach((header: any, colIndex: any) => {
-      engine.setValue({ row: 0, col: colIndex }, header, true); // silent=true
-    });
+    // Reload into Engine with silent mode to prevent modification tracking
+    engine.beginBatch();
+    
+    // Deduplication Logic: Check if first row of data matches headers
+    let dataStartsAtRow = 1;
+    let injectHeaders = true;
+
+    if (rows.length > 0) {
+        const firstRow = rows[0];
+        // Check if values in first row match column names
+        const isMatch = headers.every((h: string) => {
+             const val = firstRow[h];
+             return val === h || val === String(h);
+        });
+        
+        if (isMatch) {
+            console.log('[Refresh] Detected headers in data, preventing duplication');
+            dataStartsAtRow = 0; // Shift data up to row 0
+            injectHeaders = false;
+        }
+    }
+
+    // Reload headers (if not already in data)
+    if (injectHeaders) {
+        headers.forEach((header: any, colIndex: any) => {
+          engine.setValue({ row: 0, col: colIndex }, header, true);
+        });
+    }
     
     // Reload data
     rows.forEach((row: any, rowIndex: number) => {
       headers.forEach((header: any, colIndex: any) => {
         const value = row[header];
-        engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''), true); // silent=true
+        engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
       });
     });
     
     engine.endBatch();
     
-    // Update persistence
+    // Update persistence metadata
     engine.setSource(engine.sourceTable, engine.sourceConnection, headers, engine.sourceProvider);
     engine.setOriginalData(rows);
     
@@ -152,6 +175,14 @@ const saveChanges = async (engine: Engine) => {
      return;
    }
    
+   // Skip save if no actual modifications exist
+   if (!engine.hasPendingModifications()) {
+     console.log('[Save] No pending modifications, skipping save');
+     engine.saveStatus = 'saved';
+     emit('save-status', 'saved');
+     return;
+   }
+   
    try {
      // 1. Determine Save Strategy
      const strategy = engine.getSaveStrategy();
@@ -164,10 +195,23 @@ const saveChanges = async (engine: Engine) => {
        const allRows = engine.getAllNonEmptyRows();
        console.log(`[Save] Full replacement with ${allRows.length} rows`);
        
-       if (allRows.length === 0) {
-         // Empty table - just delete all
+       // Include schema changes BEFORE full replacement
+       const deletedCols = engine.getDeletedColumns();
+       const addedCols = engine.getAddedColumns?.() || [];
+       
+       deletedCols.forEach(col => {
+         ops.push({ type: 'drop_column', column: col });
+       });
+       
+       addedCols.forEach(col => {
+         ops.push({ type: 'add_column', column: col });
+       });
+       
+       if (allRows.length === 0 && deletedCols.length === 0 && addedCols.length === 0) {
+         // Empty table and no schema changes - just delete all
          ops.push({ type: 'full_replacement', rows: [] });
-       } else {
+       } else if (allRows.length > 0 || deletedCols.length === 0) {
+         // Only do full replacement if we have data or no schema changes
          ops.push({ type: 'full_replacement', rows: allRows });
        }
      } else {
@@ -238,8 +282,12 @@ const getEngineForTab = (tabId: string) => {
       `spreadsheet-tab-${tabId}`
     );
     
-    // Auto-save listener
+    // Auto-save listener with rate limiting
     let saveTimeout: ReturnType<typeof setTimeout>;
+    let lastSaveTime = 0;
+    let hasPendingChanges = false;
+    const SAVE_INTERVAL = 2000; // Save at most once every 2 seconds
+    
     engine.onChange(() => {
         // Set saving status immediately when change happens
         if (engine.saveStatus !== 'saving') {
@@ -247,10 +295,31 @@ const getEngineForTab = (tabId: string) => {
              emit('save-status', 'saving');
         }
         
+        hasPendingChanges = true;
+        
+        // Calculate time since last save
+        const now = Date.now();
+        const timeSinceLastSave = now - lastSaveTime;
+        
+        // Clear any existing timeout
         if (saveTimeout) clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => {
+        
+        // If enough time has passed, save immediately
+        if (timeSinceLastSave >= SAVE_INTERVAL) {
+            lastSaveTime = now;
+            hasPendingChanges = false;
             saveChanges(engine);
-        }, 2000);
+        } else {
+            // Otherwise, schedule save for when interval is up
+            const timeUntilNextSave = SAVE_INTERVAL - timeSinceLastSave;
+            saveTimeout = setTimeout(() => {
+                if (hasPendingChanges) {
+                    lastSaveTime = Date.now();
+                    hasPendingChanges = false;
+                    saveChanges(engine);
+                }
+            }, timeUntilNextSave);
+        }
     });
     
     engineCache.set(tabId, engine);
@@ -403,22 +472,49 @@ const openTable = async (tableName: string, connection: any, provider: string) =
 
         const engine = getEngineForTab(newId);
         
-        // Populate
+        // CRITICAL: Clear any existing data to prevent duplication
+        // This handles case where tab ID is reused from workspace state
+        engine.clear();
+        
+        // Populate with silent=true to prevent modification tracking during initial load
         engine.beginBatch();
-        // Sets Headers
-        headers.forEach((header: string, colIndex: number) => {
-             engine.setValue({ row: 0, col: colIndex }, header);
-        });
+
+        // Deduplication Logic: Check if first row of data matches headers
+        let dataStartsAtRow = 1;
+        let injectHeaders = true;
+
+        if (rows.length > 0) {
+            const firstRow = rows[0];
+            // Check if values in first row match column names
+            const isMatch = headers.every((h: string) => {
+                 const val = firstRow[h];
+                 return val === h || val === String(h);
+            });
+            
+            if (isMatch) {
+                console.log('[OpenTable] Detected headers in data, preventing duplication');
+                dataStartsAtRow = 0; // Shift data up to row 0
+                injectHeaders = false;
+            }
+        }
+        
+        // Sets Headers (if not already in data)
+        if (injectHeaders) {
+            headers.forEach((header: string, colIndex: number) => {
+                 engine.setValue({ row: 0, col: colIndex }, header, true);
+            });
+        }
+        
         // Sets Data
         rows.forEach((row: any, rowIndex: number) => {
              headers.forEach((header: string, colIndex: number) => {
                  const value = row[header];
-                 engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''));
+                 engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
              });
         });
         engine.endBatch();
 
-        // Init Persistence
+        // Init Persistence metadata
         engine.setSource(tableName, connection, headers, provider);
         engine.setOriginalData(rows);
 
@@ -498,6 +594,52 @@ const refreshCurrentTable = async () => {
   }
 };
 
+import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
+
+// ... existing code ...
+
+const exportCurrentTable = (format: 'csv' | 'xlsx') => {
+  const activeTab = tabs.value.find(t => t.id === activeTabId.value);
+  if (activeTab && activeTab.type === 'table') {
+    const engine = getEngineForTab(activeTabId.value);
+    const filename = `${activeTab.label || 'export'}.${format}`;
+    
+    if (format === 'csv') {
+      CSVExporter.export(engine, filename);
+    } else {
+      ExcelExporter.export(engine, filename);
+    }
+    toast.success(`Exported to ${format.toUpperCase()}`);
+  } else {
+      toast.error('No table active');
+  }
+};
+
+// Polling for live data
+// DISABLED: This was causing repeated queries to Turso every 5 seconds
+// even when no external changes occurred. Re-enable when live data sync
+// is actually needed (e.g., collaborative editing, external data sources)
+let pollingInterval: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  // Polling disabled - uncomment below to re-enable
+  // pollingInterval = setInterval(() => {
+  //   if (activeTabId.value) {
+  //       const currentTab = tabs.value.find(t => t.id === activeTabId.value);
+  //       if (currentTab && currentTab.type === 'table') {
+  //           const engine = engineCache.get(activeTabId.value);
+  //           if (engine && engine.saveStatus === 'saved' && !isRefreshing.value && !engine.isBatching) {
+  //                refreshTableData(engine).catch(e => console.error('[Polling] Refresh failed', e));
+  //           }
+  //       }
+  //   }
+  // }, 5000);
+});
+
+onUnmounted(() => {
+  if (pollingInterval) clearInterval(pollingInterval);
+});
+
 // Expose method for parent component
 defineExpose({
   loadTableData,
@@ -507,7 +649,9 @@ defineExpose({
   createQueryTab,
   getActiveQueryContent,
   refreshCurrentTable,
+  exportCurrentTable
 });
+
 
 </script>
 
