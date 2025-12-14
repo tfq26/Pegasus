@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.5.0",
+            "releaseDate": "December 14, 2025",
+            "title": "Backend Stability & Collaboration",
+            "description": "Critical backend migration to SurrealDB, server stability fixes, and real-time collaboration foundations.",
+            "changelogFile": "v0.5.0.json",
+            "isLatest": true
+        },
+        {
             "version": "0.3.1",
             "releaseDate": "December 7, 2025",
             "title": "Vercel Deployment & Visualization Enhancements",
             "description": "Critical deployment fixes for Vercel serverless environment and major improvements to dashboard visualization capabilities.",
             "changelogFile": "v0.3.1.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.3.0",
