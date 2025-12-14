@@ -41,6 +41,7 @@
           :save-status="saveStatus"
           :ai-mode="aiMode"
           :auto-execute="autoExecute"
+          :private-mode="privateMode"
           @update:mode="mode = $event"
           @update:selected-connection-id="selectedConnectionId = $event"
           @update:ai-options="aiOptions = $event"
@@ -56,6 +57,8 @@
           @sanitize="handleSanitize"
           @load-table-to-sheet="handleLoadTableToSheet"
           @export="handleExport"
+          @update:private-mode="privateMode = $event"
+          @merge="handleMergeRequest"
           @refresh-table="handleRefreshTable"
         />
 
@@ -64,9 +67,10 @@
           ref="workspaceRef"
           class="flex-1 min-h-0"
           :mode="mode"
-          :input="currentInput"
+          :input="currentInput || ''"
           :ai-mode="aiMode"
           :auto-execute="autoExecute"
+          :private-mode="privateMode"
           @update:mode="mode = $event"
           @update:input="currentInput = $event"
           @submit="run"
@@ -127,6 +131,15 @@
         :connection-id="selectedConnectionId"
         @execute-fix="handleExecuteSanitization"
       />
+
+       <DiffView
+        v-model:open="diffViewVisible"
+        v-if="privateMode && workspaceRef?.getEngineForTab(workspaceRef?.activeTabId)"
+        :private-engine="workspaceRef.getEngineForTab(workspaceRef.activeTabId)"
+        @confirm-merge="handleConfirmMerge"
+      />
+      
+      <PresenceCounter v-if="aiMode" />
     </div>
   </div>
 </template>
@@ -144,6 +157,8 @@ import AmbiguityDialog from '../components/Chat/AmbiguityDialog.vue'
 import SanitizePreviewDialog from '../components/Chat/SanitizePreviewDialog.vue'
 import DashboardElementPreview from '../components/Dashboard/DashboardElementPreview.vue'
 import ChatHistoryModal from '../components/Chat/ChatHistoryModal.vue'
+import DiffView from '../components/TableView/DiffView.vue'
+import PresenceCounter from '../components/PresenceCounter.vue'
 import {
   Select,
   SelectContent,
@@ -178,9 +193,37 @@ const excelEditorRef = ref<any>(null)
 const saveStatus = ref<'saved' | 'saving' | 'error'>('saved')
 const aiMode = ref(false)
 const autoExecute = ref(false)
+const privateMode = ref(false)
 
 const handleToggleAIMode = () => {
     aiMode.value = !aiMode.value 
+}
+
+const diffViewVisible = ref(false)
+
+const handleMergeRequest = () => {
+    diffViewVisible.value = true
+}
+
+const handleConfirmMerge = async () => {
+    // Logic to merge private branch to main
+    const engine = workspaceRef.value?.getEngineForTab(workspaceRef.value.activeTabId)
+    if (engine && engine.parentBranch) {
+        const parent = engine.parentBranch
+        await parent.mergeBranch(engine)
+        
+        // Switch back to parent (Live)
+        // In a real app we might reload or re-assign the engine in the tab
+        // For now, simpler: we just turn off private mode for visual check
+        privateMode.value = false
+        diffViewVisible.value = false
+        toast.success('Merged changes to live dashboard')
+        
+        // Force refresh of the grid to show merged data (since we are viewing parent now)
+        // workspaceRef.value.refreshCurrentTable() // If needed
+    } else {
+        toast.error('Cannot merge: Not in a private branch')
+    }
 }
 
 const handleSaveFormulaQuery = async (query: string, type: 'formula') => {
@@ -663,7 +706,7 @@ const handleLoadQuery = async (query: string) => {
     // Extract just the formula part if it's in "ColumnName: =FORMULA" format
     let formulaToLoad = query
     const match = query.match(/^[^:]+:\s*(.+)$/)
-    if (match) {
+    if (match && match[1]) {
       formulaToLoad = match[1]
     }
     
@@ -1363,7 +1406,10 @@ const handleSanitize = async () => {
         }
     } else if (mode.value === 'spreadsheet' && selectedConnection.value?.sqlite?.tables?.length) {
         // Fallback for spreadsheet mode
-        table = selectedConnection.value.sqlite.tables[0]
+        const tables = selectedConnection.value.sqlite.tables;
+        if (tables && tables.length > 0) {
+             table = tables[0] || '';
+        }
     }
     
     if (!table) {

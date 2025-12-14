@@ -89,13 +89,18 @@ export class SearchEngine {
         this.engine.setValue(pos, newValue);
     }
 
-    public replaceAll(results: SearchResult[], newValue: string) {
+    public async replaceAll(results: SearchResult[], newValue: string) {
         // Use transaction batching if possible, but for now sequential
         // Creating a single undo command for this would be ideal, 
         // but implementing a BatchCommand is a nice-to-have.
         // For now, individual replaces.
-        results.forEach(res => {
-            this.engine.setValue(res.pos, newValue);
-        });
+
+        // We use sequential await to ensure undo history order is preserved correctly
+        // (though slower than Promise.all)
+        this.engine.beginBatch();
+        for (const res of results) {
+            await this.engine.setValue(res.pos, newValue);
+        }
+        this.engine.endBatch();
     }
 }

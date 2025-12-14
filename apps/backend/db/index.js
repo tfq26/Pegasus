@@ -313,6 +313,18 @@ const initDb = async () => {
       )
     `)
 
+    // Dashboard Permissions Table (Secure Sharing)
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS dashboard_permissions (
+        dashboard_id TEXT,
+        email TEXT,
+        access_level TEXT DEFAULT 'read',
+        created_at INTEGER DEFAULT (unixepoch()),
+        PRIMARY KEY (dashboard_id, email),
+        FOREIGN KEY(dashboard_id) REFERENCES dashboards_v2(id) ON DELETE CASCADE
+      )
+    `)
+
     // Migration: Move v1 data to v2
     try {
       const v2Check = await db.execute("SELECT count(*) as count FROM dashboards_v2")

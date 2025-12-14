@@ -16,14 +16,29 @@ import {
   X, 
   HelpCircle, 
   AlertTriangle, 
-  AlertCircle 
+  AlertCircle,
+  MoreHorizontal,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Trash2,
+  Download,
+  MessageSquare
 } from 'lucide-vue-next';
+import { CSVExporter, ExcelExporter } from '../Engine/Exporters';
+import ContextMenu, { type ContextMenuItem } from '../ContextMenu.vue';
+import NoteThread from '../NoteThread.vue';
+import PresenceOverlay from '../PresenceOverlay.vue';
+import { connectToSurreal } from '@/lib/surreal';
+import { RealtimeSync } from '../Engine/RealtimeSync';
 
 const props = defineProps<{
   engine: Engine;
   mode?: 'read' | 'write'; // Chat mode = AI input, Write mode = Excel formulas
   isAIMode?: boolean;
   autoExecuteMode?: boolean;
+  privateMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -77,8 +92,18 @@ const visibleRows = computed(() => {
 const renderKey = ref(0);
 
 // Subscribe to engine changes
+// Subscribe to engine changes
 props.engine.onChange(() => {
   renderKey.value++;
+  
+  if (followedUserId.value) {
+      const user = props.engine.presence.get(followedUserId.value);
+      if (user && user.cursor) {
+          scrollToCell(user.cursor.row, user.cursor.col);
+      } else {
+          // User left? Stop following logic could go here, or just wait
+      }
+  }
 });
 
 // Search State
@@ -114,6 +139,10 @@ const scrollToCell = (row: number, col: number) => {
   }
 };
 
+
+
+let realtimeSync: RealtimeSync | null = null;
+
 const onMatchSelected = (pos: CellPosition) => {
     scrollToCell(pos.row, pos.col);
     selection.value = pos;
@@ -125,7 +154,28 @@ const onMatchSelected = (pos: CellPosition) => {
 
 const isProcessingAI = ref(false);
 
-// --- Selection & Editing State ---
+
+
+// --- "Follow Me" Mode ---
+const followedUserId = ref<string | null>(null);
+
+const handleFollowUser = (userId: string) => {
+    if (userId === followedUserId.value) return;
+    
+    const user = props.engine.presence.get(userId);
+    if (user) {
+        followedUserId.value = userId;
+        const userName = user.userName || 'User';
+        toast.info(`Following ${userName}`);
+        // Immediate jump
+        scrollToCell(user.cursor.row, user.cursor.col);
+    }
+};
+
+const stopFollowing = () => {
+    followedUserId.value = null;
+    toast.info('Stopped following');
+};
 const selection = ref<CellPosition | null>(props.engine.viewState.selection);
 const editingCell = ref<CellPosition | null>(null);
 const formulaBarValue = ref('');
@@ -135,8 +185,12 @@ const rangeSelection = ref<{ start: CellPosition, end: CellPosition } | null>(nu
 
 // Watch selection to update engine state
 // Watch selection to update engine state
+// Watch selection to update engine state
 watch(selection, (newVal) => {
   props.engine.viewState.selection = newVal;
+  if (newVal && realtimeSync) {
+      realtimeSync.updateCursor(newVal);
+  }
 });
 
 // Watch formula bar for autocomplete
@@ -314,6 +368,184 @@ const formulaErrorData = ref<any>(null);
 const popoverPosition = ref({ x: 0, y: 0 });
 const isAnalyzingFormula = ref(false);
 
+// --- Context Menu State ---
+const showContextMenu = ref(false);
+const contextMenuPos = ref({ x: 0, y: 0 });
+const contextMenuOptions = ref<ContextMenuItem[]>([]);
+const contextTarget = ref<{ type: 'cell' | 'row-header' | 'col-header', row?: number, col?: number } | null>(null);
+
+// Note State
+const activeNoteCell = ref<{row: number, col: number} | null>(null);
+const activeNotePos = ref({ x: 0, y: 0 });
+const activeNoteKey = computed(() => activeNoteCell.value ? `${activeNoteCell.value.row},${activeNoteCell.value.col}` : null);
+const activeNoteLabel = computed(() => {
+    if(!activeNoteCell.value) return '';
+    const colName = colIndexToLabel(activeNoteCell.value.col);
+    return `${colName}${activeNoteCell.value.row + 1}`;
+});
+
+const closeNotePopover = () => {
+    activeNoteCell.value = null;
+};
+
+const handleAddNote = (entityId: string, content: string) => {
+    props.engine.addNote('cell', entityId, content);
+    // Force reactivity if needed, though engine notifyChange should trigger grid update
+};
+
+const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    const target = e.target as HTMLElement;
+    
+    // Check if we clicked a cell, row header, or column header
+    const cell = target.closest('td');
+    const thCol = target.closest('th[data-col]');
+    const thRow = target.closest('th[data-row]');
+    
+    // Default options
+    let options: ContextMenuItem[] = [];
+    
+    if (thCol) {
+        // Column Header Click
+        const colStr = thCol.getAttribute('data-col');
+        const col = parseInt(colStr || '-1');
+        if (col >= 0) {
+            contextTarget.value = { type: 'col-header', col };
+            selectColumn(col); // Auto-select the column
+            options = [
+                { label: 'Insert Column Left', action: 'insert_col_left', icon: ArrowLeft },
+                { label: 'Insert Column Right', action: 'insert_col_right', icon: ArrowRight },
+                { type: 'divider' },
+                { label: 'Delete Column', action: 'delete_col', icon: Trash2, variant: 'destructive' },
+                { label: 'Export Selection (CSV)', action: 'export_col_csv', icon: Download },
+            ];
+        }
+    } else if (thRow) {
+        // Row Header Click
+        const rowStr = thRow.getAttribute('data-row');
+        const row = parseInt(rowStr || '-1');
+        if (row >= 0) {
+            contextTarget.value = { type: 'row-header', row };
+            selectRow(row); // Auto-select the row
+            options = [
+                { label: 'Insert Row Above', action: 'insert_row_above', icon: ArrowUp },
+                { label: 'Insert Row Below', action: 'insert_row_below', icon: ArrowDown },
+                { type: 'divider' },
+                { label: 'Delete Row', action: 'delete_row', icon: Trash2, variant: 'destructive' },
+            ];
+        }
+    } else if (cell) {
+        // Regular Cell Click
+        const rowStr = cell.dataset.row;
+        const colStr = cell.dataset.col;
+        const row = parseInt(rowStr || '-1');
+        const col = parseInt(colStr || '-1');
+        
+        if (row >= 0 && col >= 0) {
+            contextTarget.value = { type: 'cell', row, col };
+            
+            // If right-click is outside current selection, update selection
+            if (!isInSelection(row, col)) {
+                selection.value = { row, col };
+                rangeSelection.value = null;
+            }
+            
+            options = [
+                { label: 'Insert Row Above', action: 'insert_row_above', icon: ArrowUp },
+                { label: 'Insert Row Below', action: 'insert_row_below', icon: ArrowDown },
+                { label: 'Insert Column Left', action: 'insert_col_left', icon: ArrowLeft },
+                { label: 'Insert Column Right', action: 'insert_col_right', icon: ArrowRight },
+                { type: 'divider' },
+                { label: 'Delete Row', action: 'delete_row', icon: Trash2 },
+                { label: 'Delete Column', action: 'delete_col', icon: Trash2 },
+                { type: 'divider' },
+                { label: 'Insert Note', action: 'insert_note', icon: MessageSquare },
+                { type: 'divider' },
+                { label: 'Toggle Simulation (Demo)', action: 'toggle_simulation', icon: Sparkles },
+                { type: 'divider' },
+                { label: 'Export Selection (CSV)', action: 'export_selection_csv', icon: Download },
+            ];
+        }
+    } else {
+        return; // Not a valid target
+    }
+    
+    if (options.length > 0) {
+        contextMenuOptions.value = options;
+        contextMenuPos.value = { x: e.clientX, y: e.clientY };
+        showContextMenu.value = true;
+    }
+};
+
+const handleContextMenuAction = async (action: string) => {
+    const target = contextTarget.value;
+    if (!target) return;
+    
+    // Helper to get row/col safely
+    const r = target.row ?? selection.value?.row ?? 0;
+    const c = target.col ?? selection.value?.col ?? 0;
+    
+    try {
+        switch (action) {
+            case 'insert_row_above':
+                await props.engine.insertRow(r);
+                break;
+            case 'insert_row_below':
+                await props.engine.insertRow(r + 1);
+                break;
+            case 'insert_col_left':
+                await props.engine.insertColumn(c);
+                break;
+            case 'insert_col_right':
+                await props.engine.insertColumn(c + 1);
+                break;
+            case 'delete_row':
+                await props.engine.deleteRow(r);
+                break;
+            case 'delete_col':
+                await props.engine.deleteColumn(c);
+                break;
+            case 'insert_note':
+                activeNoteCell.value = { row: r, col: c };
+                activeNotePos.value = { x: contextMenuPos.value.x, y: contextMenuPos.value.y };
+                break;
+            case 'toggle_simulation':
+                if (props.engine['simulationInterval']) {
+                    props.engine.stopSimulation();
+                    toast.info('Presence Simulation Stopped');
+                } else {
+                    props.engine.startSimulation();
+                    toast.success('Presence Simulation Started');
+                }
+                break;
+            case 'export_selection_csv':
+                 // Determine range to export
+                 let start = { row: r, col: c };
+                 let end = { row: r, col: c };
+                 if (target.type === 'col-header' && target.col !== undefined) {
+                     start = { row: 0, col: target.col };
+                     end = { row: rowCount - 1, col: target.col };
+                 } else if (rangeSelection.value) {
+                    start = rangeSelection.value.start;
+                    end = rangeSelection.value.end;
+                 }
+                 
+                // Trigger export logic (TODO: Phase 2 - Actually filter by range)
+                // For now, we will just export the whole table as a placeholder
+                toast.info('Exporting selection...');
+                // Pass range
+                CSVExporter.export(props.engine, 'selection.csv', { start, end }); 
+                break;
+        }
+        
+        // Force refresh
+        renderKey.value++;
+    } catch (e: any) {
+        console.error('Menu Action Failed:', e);
+        toast.error(`Action failed: ${e.message}`);
+    }
+};
+
 // --- Feature Flags ---
 const { hasManualFormulas } = useFeatureFlags();
 
@@ -408,7 +640,7 @@ const isInSelection = (row: number, col: number) => {
 
 // Check if cell is referenced in current formula
 const isReferencedInFormula = (row: number, col: number): number => {
-  if (!editingCell.value || !formulaBarValue.value.startsWith('=')) return -1;
+  if (!editingCell.value || !formulaBarValue.value || !formulaBarValue.value.startsWith('=')) return -1;
   
   // Check direct cell references
   for (let i = 0; i < formulaReferences.value.length; i++) {
@@ -671,7 +903,7 @@ const commitEdit = async () => {
   });
   
   // Save the value silently (don't trigger auto-save yet)
-  if (formulaBarValue.value !== currentCellRawValue.value) {
+  if (formulaBarValue.value !== currentCellRawValue.value && editingCell.value) {
     console.log('[Grid] Value changed, calling setValue...');
     await props.engine.setValue(editingCell.value, formulaBarValue.value, true); // silent = true
   } else {
@@ -708,7 +940,8 @@ const onFormulaBarKeydown = async (e: KeyboardEvent) => {
       selectedSuggestionIndex.value = Math.max(selectedSuggestionIndex.value - 1, 0);
       return;
     } else if (e.key === 'Tab' || e.key === 'Enter') {
-      if (formulaSuggestions.value[selectedSuggestionIndex.value]) {
+      const suggestion = formulaSuggestions.value[selectedSuggestionIndex.value];
+      if (suggestion) {
         e.preventDefault();
         insertSuggestion(formulaSuggestions.value[selectedSuggestionIndex.value]);
         return;
@@ -1170,6 +1403,18 @@ const handlePaste = async () => {
   }
 };
 
+// Handle Double Click to open notes if they exist
+const handleCellDblClick = (row: number, col: number, e: MouseEvent) => {
+    const key = `${row},${col}`;
+    if (props.engine.hasNotes(key)) {
+        activeNoteCell.value = { row, col };
+        activeNotePos.value = { x: e.clientX, y: e.clientY };
+        return; // specific handling prevents edit mode?
+    }
+    // allow default edit behavior otherwise
+    startEditing(row, col);
+};
+
 const onKeyDown = async (e: KeyboardEvent) => {
   if (editingCell.value) {
     if (e.key === 'Enter') {
@@ -1302,6 +1547,48 @@ onMounted(() => {
     gridContainer.value.scrollTop = props.engine.viewState.scrollTop;
   }
   focusGrid();
+
+  // Initialize or Re-initialize Realtime Sync
+  const initRealtimeSync = async () => {
+      // Cleanup existing
+      if (realtimeSync) {
+          realtimeSync.stop();
+          realtimeSync = null;
+      }
+
+      // Don't sync in private mode
+      if (props.privateMode) return;
+
+      const connected = await connectToSurreal();
+      if (connected) {
+           // Stable user identity for this session if possible, or random
+           // In a real app, get this from auth context
+           let storedUser = localStorage.getItem('pegasus-temp-user');
+           let user;
+           if (storedUser) {
+               user = JSON.parse(storedUser);
+           } else {
+               user = {
+                    id: 'user_' + Math.random().toString(36).substr(2, 9),
+                    name: 'User ' + Math.floor(Math.random() * 100),
+                    color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
+               };
+               localStorage.setItem('pegasus-temp-user', JSON.stringify(user));
+           }
+
+           // (window as any).currentUser = user; 
+           
+           realtimeSync = new RealtimeSync(props.engine, 'main-room', user);
+          //  toast.success('Connected to Realtime Server');
+      }
+  };
+
+  initRealtimeSync();
+
+  // Watch for mode/engine changes to restart sync
+  watch(() => [props.privateMode, props.engine], () => {
+      initRealtimeSync();
+  });
 });
 
 // Cleanup
@@ -1309,12 +1596,15 @@ onUnmounted(() => {
   document.removeEventListener('mousemove', onGlobalMouseMove);
   document.removeEventListener('mouseup', onGlobalMouseUp);
   document.removeEventListener('mousemove', onFillHandleMouseMove);
+  if (realtimeSync) realtimeSync.stop();
 });
 </script>
 
 <template>
   <div 
-    class="flex flex-col w-full h-full bg-background" 
+    class="flex flex-col w-full h-full bg-background transition-colors duration-300" 
+    :class="{ 'border-4 border-dashed border-amber-500/50 rounded-lg p-1': privateMode }"
+    @contextmenu.prevent="onContextMenu"
   >
     <!-- Simple Text Input (Default - No Experimental Access) -->
     <div v-if="!showManualFormulaFeatures" class="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
@@ -1445,6 +1735,7 @@ onUnmounted(() => {
               :class="{ 'bg-primary/20 text-primary font-bold': isColumnSelected(col - 1) }"
               :style="{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }"
               @click="selectColumn(col - 1, $event)"
+              :data-col="col - 1"
             >
               {{ colIndexToLabel(col - 1) }}
               <div class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -1466,6 +1757,27 @@ onUnmounted(() => {
       <!-- Phantom spacer to set scroll height -->
       <div :style="{ height: `${rowCount * rowHeight}px`, width: `${colCount * colWidth}px` }"></div>
       
+      <!-- Live Cursors Overlay -->
+      <PresenceOverlay 
+        :engine="engine" 
+        :row-height="rowHeight" 
+        :col-width="colWidth"
+        :offset-x="40"
+        :trigger="renderKey"
+        @follow-user="handleFollowUser"
+      />
+      
+      <!-- Follow Status Badge -->
+      <div 
+        v-if="followedUserId"
+        class="fixed bottom-6 right-6 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 cursor-pointer hover:bg-primary/90"
+        @click="stopFollowing"
+      >
+        <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+        <span class="text-sm font-medium">Following {{ props.engine.presence.get(followedUserId)?.userName || 'User' }}</span>
+        <X class="w-4 h-4 ml-1" />
+      </div>
+
       <!-- Virtualized Table Body -->
       <table 
         class="border-collapse table-fixed bg-background absolute top-0 left-0"
@@ -1483,6 +1795,7 @@ onUnmounted(() => {
               class="w-10 border-r border-b border-border bg-muted text-[10px] text-center text-muted-foreground select-none sticky left-0 z-10 cursor-pointer hover:bg-muted/80"
               :class="{ 'bg-primary/20 text-primary font-bold': isRowSelected(virtualState.startRow + rowOffset) }"
               @click="selectRow(virtualState.startRow + rowOffset, $event)"
+              :data-row="virtualState.startRow + rowOffset"
             >
               {{ virtualState.startRow + rowOffset + 1 }}
             </td>
@@ -1511,9 +1824,9 @@ onUnmounted(() => {
                 [getReferenceColorClass(virtualState.startRow + rowOffset, col - 1)]: true,
                 'text-foreground': true
               }"
-              @mousedown="onMouseDown"
-              @mouseenter="onMouseEnter"
-              @dblclick="startEditing(virtualState.startRow + rowOffset, col - 1)"
+              @mousedown="(e) => onMouseDown(virtualState.startRow + rowOffset, col - 1, e)"
+              @mouseover="onMouseEnter(virtualState.startRow + rowOffset, col - 1)"
+              @dblclick="(e) => handleCellDblClick(virtualState.startRow + rowOffset, col - 1, e)"
             >
               <!-- Editing Input -->
               <input
@@ -1528,6 +1841,12 @@ onUnmounted(() => {
               />
               <!-- Display Value -->
               <span v-else class="pointer-events-none">{{ getDisplayValue(virtualState.startRow + rowOffset, col - 1) }}</span>
+
+              <!-- Note Indicator -->
+              <div 
+                v-if="props.engine.hasNotes(`${virtualState.startRow + rowOffset},${col - 1}`)" 
+                class="absolute top-0 right-0 w-0 h-0 border-l-[6px] border-l-transparent border-t-[6px] border-t-amber-500 pointer-events-none"
+              ></div>
 
               <!-- Fill Handle (only on active cell) -->
               <div
@@ -1745,4 +2064,30 @@ onUnmounted(() => {
     </div>
 
   </div>
+  
+  <ContextMenu
+    :visible="showContextMenu"
+    :x="contextMenuPos.x"
+    :y="contextMenuPos.y"
+    :options="contextMenuOptions"
+    @close="showContextMenu = false"
+    @select="handleContextMenuAction"
+  />
+    
+    <!-- Note Popover -->
+    <div 
+      v-if="activeNoteCell"
+      class="fixed z-50 transform translate-x-2 -translate-y-4"
+      :style="{ top: `${activeNotePos.y}px`, left: `${activeNotePos.x}px` }"
+    >
+        <NoteThread 
+            :notes="engine.getNotes(activeNoteKey!)"
+            :title="`Notes on ${activeNoteLabel}`"
+            @add="(content) => handleAddNote(activeNoteKey!, content)"
+            @resolve="(id, resolved) => engine.resolveNote(activeNoteKey!, id, resolved)"
+            @delete="(id) => engine.deleteNote(activeNoteKey!, id)"
+            @close="closeNotePopover"
+        />
+    </div>
 </template>
+```

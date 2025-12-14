@@ -6,12 +6,29 @@ import { serve } from '@hono/node-server'
 const app = new Hono()
 
 // CORS configuration - supports both development and production
+// CORS configuration - supports both development and production
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 app.use("*", cors({
-  origin: allowedOrigins,
+  origin: (origin) => {
+    // Allow localhost/127.0.0.1
+    if (!origin) return allowedOrigins[0];
+    if (allowedOrigins.includes(origin)) return origin;
+
+    // In development (no strict check), allow local network IPs/hostnames on port 5173
+    // Allow any http://...:5173 origin in dev
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
+    if (!isProd) {
+      // Match http://anything:5173
+      if (/^http:\/\/.+:5173$/.test(origin)) {
+        return origin;
+      }
+    }
+    return allowedOrigins[0];
+  },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
   allowHeaders: ["Content-Type", "Authorization"]
@@ -326,6 +343,16 @@ app.post("/webhook", async (c) => {
 })
 
 app.get("/auth/login", (c) => {
+  const returnTo = c.req.query("return_to");
+  if (returnTo) {
+    setCookie(c, "auth_return_to", returnTo, {
+      httpOnly: true,
+      path: '/',
+      maxAge: 300, // 5 min
+      sameSite: 'Lax'
+    });
+  }
+
   const authorizationUrl = workos.userManagement.getAuthorizationUrl({
     provider: "authkit", // Or specific provider like 'google'
     clientId,
@@ -334,6 +361,7 @@ app.get("/auth/login", (c) => {
 
   return c.redirect(authorizationUrl)
 })
+
 
 app.get("/auth/callback", async (c) => {
   const code = c.req.query("code")
@@ -398,6 +426,13 @@ app.get("/auth/callback", async (c) => {
       path: "/",
       maxAge: 60 * 60 * 24,
     })
+
+    // improved redirect logic
+    const returnTo = getCookie(c, "auth_return_to");
+    if (returnTo) {
+      deleteCookie(c, "auth_return_to");
+      return c.redirect(returnTo);
+    }
 
     // Redirect to the first allowed origin (frontend)
     const frontendUrl = allowedOrigins[0] || "http://localhost:5173"

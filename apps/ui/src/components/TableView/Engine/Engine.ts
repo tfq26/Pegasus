@@ -1,6 +1,6 @@
 
 
-import type { CellPosition, CellData, EngineConfig } from './types';
+import type { CellPosition, CellData, EngineConfig, Note, NoteEntityType, UserPresence } from './types';
 import { CellType, posToKey } from './types';
 import { DependencyGraph } from './DependencyGraph';
 import { FormulaParser } from './FormulaParser';
@@ -24,7 +24,18 @@ export class Engine {
     private deletedColumns: Set<string> = new Set(); // Track deleted column names
     private addedColumns: string[] = []; // Track added columns
     private rowIdMap: Map<number, any> = new Map(); // Store _rowid_ for each row (hidden from grid)
+
+    // Notes System
+    private notes: Map<string, Note[]> = new Map(); // Key: entityId, Value: Note thread
+
+    // Presence System
+    public presence: Map<string, UserPresence> = new Map();
+
     public saveStatus: 'saved' | 'saving' | 'error' = 'saved';
+
+    // Branching state
+    public parentBranch: Engine | null = null;
+    public currentBranchName: string = 'main';
 
     // Undo/Redo system
     public undoManager: UndoManager = new UndoManager();
@@ -628,21 +639,27 @@ export class Engine {
             // This prevents quota issues and improves performance
             if (data.length > 5000 && !this.sourceTable) {
                 console.warn('[Storage] Skipping localStorage for large non-database sheet (performance optimization)');
+                // If we skip persistence, but there are notes, we should still save notes if cells are empty.
+                // However, the current logic implies skipping everything if cells are large.
+                // For now, we'll stick to the original intent of skipping if cells are large.
                 return;
             }
 
-            const storageData = {
-                version: 2,
+            const state = {
+                version: 2, // Keep versioning for future compatibility
                 cells: data,
-                source: {
+                rowCount: this.config.rowCount,
+                colCount: this.config.colCount,
+                source: { // Nested source object for consistency with V2
                     table: this.sourceTable,
                     connection: this.sourceConnection,
                     provider: this.sourceProvider,
                     columns: this.columnNames
-                }
+                },
+                notes: Array.from(this.notes.entries())
             };
 
-            localStorage.setItem(this.storageKey, JSON.stringify(storageData));
+            localStorage.setItem(this.storageKey, JSON.stringify(state));
         } catch (e: any) {
             // Handle quota exceeded error
             if (e.name === 'QuotaExceededError' || e.code === 22) {
@@ -703,6 +720,11 @@ export class Engine {
                         this.sourceProvider = parsed.source.provider;
                         this.columnNames = parsed.source.columns || [];
                     }
+                }
+
+                // Restore notes
+                if (parsed.notes) {
+                    this.notes = new Map(parsed.notes);
                 }
             }
         } catch (e) {
@@ -877,6 +899,235 @@ export class Engine {
      */
     public canRedo(): boolean {
         return this.undoManager.canRedo();
+    }
+    // --- Branching / Private Mode Logic (Git for Data) ---
+
+    /**
+     * Create a new branch (fork) of this engine.
+     * The new engine starts with a copy of current data but tracks its own edits.
+     */
+    public createBranch(branchName: string): Engine {
+        const newConfig = { ...this.config };
+        // Use a temporary storage key for the branch
+        const branchKey = `${this.storageKey}-branch-${branchName}`;
+
+        const branchEngine = new Engine(newConfig, branchKey);
+
+        // Copy source metadata
+        branchEngine.sourceTable = this.sourceTable;
+        branchEngine.sourceConnection = this.sourceConnection;
+        branchEngine.sourceProvider = this.sourceProvider;
+        branchEngine.columnNames = [...this.columnNames];
+        branchEngine.rowIdMap = new Map(this.rowIdMap);
+
+        // Deep copy data
+        // We copy current cells to new engine's cells AND originalData
+        // This effectively "rebases" the branch on the current state
+        this.cells.forEach((val, key) => {
+            branchEngine.cells.set(key, { ...val });
+            branchEngine.originalData.set(key, { ...val });
+        });
+
+        branchEngine.parentBranch = this;
+        branchEngine.currentBranchName = branchName;
+
+        return branchEngine;
+    }
+
+    /**
+     * Merge changes from another branch (usually a private draft) into this engine (main).
+     * @param sourceEngine The private branch engine containing changes
+     */
+    public async mergeBranch(sourceEngine: Engine) {
+        // 1. Get operations from source
+        const operations = sourceEngine.getPendingOperations();
+
+        if (operations.length === 0) {
+            console.log('[Merge] No changes to merge');
+            return;
+        }
+
+        this.beginBatch();
+
+        // 2. Apply operations
+        // For now, we apply blindly (Last Write Wins). 
+        // Real implementation would check for conflicts against current this.modifiedCells
+
+        for (const op of operations) {
+            if (op.type === 'update') {
+                // Update existing row
+                // We need to find the grid row index for this database ID
+                // This is inefficient (O(N)), in production we need a reverse map
+                let gridRow = -1;
+                for (const [r, id] of this.rowIdMap.entries()) {
+                    if (id === op.id) {
+                        gridRow = r;
+                        break;
+                    }
+                }
+
+                if (gridRow !== -1) {
+                    const changes = op.changes;
+                    Object.keys(changes).forEach(colName => {
+                        const colIndex = this.columnNames.indexOf(colName);
+                        if (colIndex !== -1) {
+                            const val = changes[colName];
+                            this.setValue({ row: gridRow, col: colIndex }, String(val ?? ''), true);
+                        }
+                    });
+                }
+            } else if (op.type === 'create') {
+                // Insert new row at the end
+                // Note: This matches simple append behavior. 
+                // Creating at specific index would require 'insertRow' logic integration
+                const newRowIndex = this.getNonEmptyRowCount() + 1; // logical next row
+                const data = op.data;
+
+                Object.keys(data).forEach(colName => {
+                    const colIndex = this.columnNames.indexOf(colName);
+                    if (colIndex !== -1) {
+                        const val = data[colName];
+                        this.setValue({ row: newRowIndex, col: colIndex }, String(val ?? ''), true);
+                    }
+                });
+            } else if (op.type === 'delete') {
+                let gridRow = -1;
+                for (const [r, id] of this.rowIdMap.entries()) {
+                    if (id === op.id) {
+                        gridRow = r;
+                        break;
+                    }
+                }
+                if (gridRow !== -1) {
+                    await this.deleteRow(gridRow);
+                }
+            } else if (op.type === 'add_column') {
+                if (!this.columnNames.includes(op.column)) {
+                    this.addColumn(op.column);
+                }
+            } else if (op.type === 'drop_column') {
+                const idx = this.columnNames.indexOf(op.column);
+                if (idx !== -1) {
+                    await this.deleteColumn(idx);
+                }
+            }
+        }
+
+        this.endBatch();
+        this.saveStatus = 'saving'; // Trigger persistence to backend
+        this.notifyChange();
+    }
+
+    // --- Smart Notes System ---
+
+    public addNote(entityType: NoteEntityType, entityId: string, content: string, author: string = 'You'): Note {
+        const note: Note = {
+            id: crypto.randomUUID(),
+            entityType,
+            entityId,
+            content,
+            author,
+            timestamp: Date.now(),
+            resolved: false,
+            replies: []
+        };
+
+        if (!this.notes.has(entityId)) {
+            this.notes.set(entityId, []);
+        }
+
+        this.notes.get(entityId)!.push(note);
+        this.notifyChange();
+        return note;
+    }
+
+    public getNotes(entityId: string): Note[] {
+        return this.notes.get(entityId) || [];
+    }
+
+    public deleteNote(entityId: string, noteId: string) {
+        const thread = this.notes.get(entityId);
+        if (!thread) return;
+
+        const idx = thread.findIndex(n => n.id === noteId);
+        if (idx !== -1) {
+            thread.splice(idx, 1);
+            if (thread.length === 0) {
+                this.notes.delete(entityId);
+            }
+            this.notifyChange();
+        }
+    }
+
+    public resolveNote(entityId: string, noteId: string, resolved: boolean) {
+        const thread = this.notes.get(entityId);
+        if (!thread) return;
+
+        const note = thread.find(n => n.id === noteId);
+        if (note) {
+            note.resolved = resolved;
+            this.notifyChange();
+        }
+    }
+
+    public hasNotes(entityId: string): boolean {
+        return this.notes.has(entityId) && this.notes.get(entityId)!.length > 0;
+    }
+
+    // --- Live Presence System ---
+
+    public updatePresence(p: UserPresence) {
+        this.presence.set(p.userId, p);
+        this.notifyChange();
+    }
+
+    public removePresence(userId: string) {
+        this.presence.delete(userId);
+        this.notifyChange();
+    }
+
+    // Simulation for Demo
+    private simulationInterval: any = null;
+
+    public startSimulation() {
+        if (this.simulationInterval) return;
+
+        const users = [
+            { userId: 'u1', userName: 'Alice', color: '#3b82f6' }, // Blue
+            { userId: 'u2', userName: 'Bob', color: '#ef4444' },   // Red
+            { userId: 'u3', userName: 'Charlie', color: '#22c55e' } // Green
+        ];
+
+        let tick = 0;
+        this.simulationInterval = setInterval(() => {
+            tick++;
+            // Move users randomly
+            users.forEach(u => {
+                // Determine new pos
+                const row = Math.max(1, Math.min(100, Math.floor(Math.random() * 20) + 1));
+                const col = Math.max(0, Math.min(25, Math.floor(Math.random() * 10)));
+
+                this.updatePresence({
+                    ...u,
+                    cursor: { row, col },
+                    lastActive: Date.now()
+                });
+
+                // Occasionally add a random value (simulate typing)
+                if (Math.random() > 0.9) {
+                    this.setValue({ row, col }, `Edit by ${u.userName}`, true);
+                }
+            });
+        }, 1000); // Update every second
+    }
+
+    public stopSimulation() {
+        if (this.simulationInterval) {
+            clearInterval(this.simulationInterval);
+            this.simulationInterval = null;
+            this.presence.clear();
+            this.notifyChange();
+        }
     }
 }
 

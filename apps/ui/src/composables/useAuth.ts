@@ -4,7 +4,7 @@ import { useFeatureFlags } from './useFeatureFlags'
 const user = ref(null)
 const isLoading = ref(true)
 
-const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_QUERY_API_URL || `${window.location.protocol}//${window.location.hostname}:3000`
 
 export function useAuth() {
     const { setUser } = useFeatureFlags()
@@ -28,7 +28,8 @@ export function useAuth() {
     }
 
     const login = () => {
-        window.location.href = `${API_URL}/auth/login`
+        const returnTo = window.location.origin;
+        window.location.href = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
     }
 
     const logout = () => {

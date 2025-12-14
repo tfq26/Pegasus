@@ -491,6 +491,47 @@ export async function fetchSharedDashboard(token: string) {
   return body.dashboard
 }
 
+export async function searchUsers(query: string) {
+  const response = await fetch(`${QUERY_API_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to search users')
+  const body = await response.json()
+  return body.users || []
+}
+
+export async function inviteUserToDashboard(dashboardId: string, email: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/share/invite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email })
+  })
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error || 'Failed to invite user')
+  }
+  return await response.json()
+}
+
+export async function fetchDashboardPermissions(dashboardId: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/permissions`, {
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to fetch permissions')
+  const body = await response.json()
+  return body.permissions || []
+}
+
+export async function removeDashboardPermission(dashboardId: string, email: string) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/permissions/${email}`, {
+    method: 'DELETE',
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to remove user')
+  return true
+}
+
 export interface FeedbackData {
   userEmail?: string
   featureCategory: string

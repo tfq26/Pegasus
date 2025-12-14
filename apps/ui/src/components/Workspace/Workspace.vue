@@ -13,6 +13,7 @@ const props = defineProps<{
   input: string;
   aiMode: boolean;
   autoExecute: boolean;
+  privateMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -65,6 +66,7 @@ watch([tabs, activeTabId], () => {
 
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
+const privateEngines = new Map<string, Engine>(); // Cache for private branches
 
 // Helper to fetch schema + data
 const fetchTableData = async (tableName: string, connection: any, provider: string) => {
@@ -324,8 +326,39 @@ const getEngineForTab = (tabId: string) => {
     
     engineCache.set(tabId, engine);
   }
+  
+  // If in private mode and we have a private branch for this tab, return it
+  if (props.privateMode && privateEngines.has(tabId)) {
+      return privateEngines.get(tabId)!;
+  }
+  
   return engineCache.get(tabId)!;
 };
+
+// Watch for Private Mode toggle
+watch(() => props.privateMode, (isPrivate) => {
+    const tabId = activeTabId.value;
+    const activeTab = tabs.value.find(t => t.id === tabId);
+    
+    if (activeTab && activeTab.type === 'table') {
+        if (isPrivate) {
+            // Turning ON Private Mode: Create Branch
+            const baseEngine = engineCache.get(tabId);
+            if (baseEngine && !privateEngines.has(tabId)) {
+                console.log('[Workspace] Creating private branch for tab', tabId);
+                const branch = baseEngine.createBranch('private');
+                privateEngines.set(tabId, branch);
+            }
+        } else {
+            // Turning OFF Private Mode: Discard Branch (or it was just merged)
+            // We just clear the private engine from cache so next render uses base
+            console.log('[Workspace] Exiting private mode for tab', tabId);
+            privateEngines.delete(tabId);
+        }
+        // Force re-render of Grid to pick up new engine
+        // (Vue might not detect map change automatically if not reactive, but getEngineForTab call in template should re-run if prop changed)
+    }
+});
 
 // --- Handlers ---
 const onTabClose = (id: string) => {
@@ -649,7 +682,9 @@ defineExpose({
   createQueryTab,
   getActiveQueryContent,
   refreshCurrentTable,
-  exportCurrentTable
+  exportCurrentTable,
+  getEngineForTab,
+  activeTabId
 });
 
 
@@ -676,9 +711,10 @@ defineExpose({
             v-if="tab.type === 'table'"
             :ref="(el: any) => setGridRef(el, tab.id)"
             :engine="getEngineForTab(tab.id)"
-            :mode="props.mode === 'spreadsheet' ? 'write' : props.mode"
+            :mode="(props.mode === 'spreadsheet' || props.mode === 'chat') ? 'write' : 'read'"
             :is-a-i-mode="props.aiMode"
             :auto-execute-mode="props.autoExecute"
+            :private-mode="props.privateMode"
             @save-query="(query, type) => emit('save-query', query, type)"
           />
           

@@ -146,21 +146,21 @@ const findPrev = () => {
     if (match) emit('select-match', match.pos);
 };
 
-const replaceCurrent = () => {
+const replaceCurrent = async () => {
     if (currentIndex.value === -1 || !results.value[currentIndex.value]) return;
     
     const match = results.value[currentIndex.value];
     if (match) {
-        props.searchEngine.replace(match.pos, replaceText.value);
+        await props.searchEngine.replace(match.pos, replaceText.value);
         // Refresh search
         performSearch();
     }
 };
 
-const replaceAll = () => {
+const replaceAll = async () => {
     if (matchCount.value === 0) return;
     
-    props.searchEngine.replaceAll(results.value, replaceText.value);
+    await props.searchEngine.replaceAll(results.value, replaceText.value);
     performSearch();
 };
 

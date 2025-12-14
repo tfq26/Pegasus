@@ -15,6 +15,28 @@ export interface CellPosition {
     sheetId?: SheetId; // Optional for multi-sheet support later
 }
 
+// Smart Note Types
+export type NoteEntityType = 'cell' | 'row' | 'table';
+
+export interface Note {
+    id: string; // UUID
+    entityType: NoteEntityType;
+    entityId: string; // "row,col" for cell, "rowId" for row, "table" for table
+    content: string; // Markdown supported
+    author: string; // "You" or User ID
+    timestamp: number;
+    resolved: boolean;
+    replies?: Note[]; // Threaded replies
+}
+
+export interface UserPresence {
+    userId: string;
+    userName: string;
+    color: string;
+    cursor: CellPosition;
+    lastActive: number;
+}
+
 // Basic styling properties
 export interface CellStyle {
     bold?: boolean;

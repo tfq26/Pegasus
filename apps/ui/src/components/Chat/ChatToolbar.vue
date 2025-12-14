@@ -19,7 +19,11 @@ import {
   AlignRight,
   FunctionSquare,
   BarChart,
-  Download
+} from 'lucide-vue-next'
+import { GitMerge } from 'lucide-vue-next'
+import {
+  Lock, 
+  Users
 } from 'lucide-vue-next'
 import {
   Select,
@@ -41,7 +45,9 @@ const props = defineProps<{
   availableModels?: any[]
   saveStatus?: 'saved' | 'saving' | 'error'
   aiMode?: boolean
+  aiMode?: boolean
   autoExecute?: boolean
+  privateMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -50,6 +56,8 @@ const emit = defineEmits<{
   'update:aiOptions': [value: { model: string; temperature: number }]
   'update:queryOptions': [value: { timeout: number; limit: number; autoCommit: boolean }]
   'update:auto-execute': [value: boolean]
+  'update:private-mode': [value: boolean]
+  'merge': []
   'run': []
   'stop': []
   'ai-generate': []
@@ -347,23 +355,56 @@ watchEffect(() => {
             <span>Sanitize</span>
           </button>
 
-           <!-- Export Buttons -->
-           <div class="flex items-center gap-1 ml-auto">
-              <button 
-                  class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
-                  @click="emit('export', 'csv')"
-                  title="Export to CSV"
-              >
-                  <span class="text-[10px] font-bold">CSV</span>
-              </button>
-              <button 
-                  class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                  @click="emit('export', 'xlsx')"
-                  title="Export to Excel"
-              >
-                  <Download class="w-3.5 h-3.5" />
-              </button>
-           </div>
+            <!-- Private Mode Toggle -->
+            <div class="flex items-center gap-1 border-l border-border pl-3 ml-2">
+                <div class="flex items-center gap-2">
+                    <Switch
+                        :checked="privateMode"
+                        @update:checked="emit('update:private-mode', $event)"
+                        id="private-mode-toggle"
+                        class="data-[state=checked]:bg-amber-500"
+                    />
+                    <label 
+                        for="private-mode-toggle" 
+                        class="flex items-center gap-1.5 text-xs font-medium cursor-pointer select-none"
+                         :class="privateMode ? 'text-amber-600' : 'text-muted-foreground'"
+                    >
+                        <Lock v-if="privateMode" class="w-3.5 h-3.5" />
+                        <Users v-else class="w-3.5 h-3.5" />
+                        <span>{{ privateMode ? 'Private' : 'Live' }}</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Merge Button (Private Mode Only) -->
+             <div v-if="privateMode" class="flex items-center gap-1 border-l border-border pl-3 ml-2">
+                 <button
+                    class="h-7 px-3 rounded flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors text-xs font-semibold"
+                    @click="emit('merge')"
+                    title="Merge changes to live dashboard"
+                 >
+                    <GitMerge class="w-3.5 h-3.5" />
+                    Merge
+                 </button>
+            </div>
+
+            <!-- Export Buttons -->
+            <div class="flex items-center gap-1 ml-4 border-l border-border pl-3">
+               <button 
+                   class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
+                   @click="emit('export', 'csv')"
+                   title="Export to CSV"
+               >
+                   <span class="text-[10px] font-bold">CSV</span>
+               </button>
+               <button 
+                   class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                   @click="emit('export', 'xlsx')"
+                   title="Export to Excel"
+               >
+                   <Download class="w-3.5 h-3.5" />
+               </button>
+            </div>
           </div>
       </div>
 

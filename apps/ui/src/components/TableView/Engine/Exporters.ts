@@ -1,12 +1,13 @@
 import { utils, writeFile } from 'xlsx';
 import { Engine } from './Engine';
+import type { CellPosition } from './types';
 
 /**
  * Handles data export to CSV format
  */
 export class CSVExporter {
-    static export(engine: Engine, filename: string = 'export.csv') {
-        const data = this.getData(engine);
+    static export(engine: Engine, filename: string = 'export.csv', range?: { start: CellPosition, end: CellPosition }) {
+        const data = this.getData(engine, range);
 
         const csvContent = data.map(row =>
             row.map(cell => {
@@ -32,24 +33,46 @@ export class CSVExporter {
         }
     }
 
-    private static getData(engine: Engine): any[][] {
+    private static getData(engine: Engine, range?: { start: CellPosition, end: CellPosition }): any[][] {
         // Get headers excluding internal ones
-        const headers = engine.columnNames.filter(h => h !== '_rowid_');
-        // Map display headers to their original indices
-        const headerIndices = headers.map(h => engine.columnNames.indexOf(h));
+        const allHeaders = engine.columnNames.filter(h => h !== '_rowid_');
+
+        let headerIndices: number[] = [];
+        let headers: string[] = [];
+        let minRow = 0;
+        let maxRow = 0;
+
+        if (range) {
+            const minCol = Math.min(range.start.col, range.end.col);
+            const maxCol = Math.max(range.start.col, range.end.col);
+            minRow = Math.min(range.start.row, range.end.row);
+            maxRow = Math.max(range.start.row, range.end.row);
+
+            // Filter headers based on range
+            allHeaders.forEach((h, i) => {
+                // internal index check might be needed if columns were reordered, but assuming columnNames is reliable
+                const originalIndex = engine.columnNames.indexOf(h);
+                if (originalIndex >= minCol && originalIndex <= maxCol) {
+                    headers.push(h);
+                    headerIndices.push(originalIndex);
+                }
+            });
+        } else {
+            headers = allHeaders;
+            headerIndices = headers.map(h => engine.columnNames.indexOf(h));
+
+            // Determine max row
+            const cells = engine.getCells();
+            for (const k of cells.keys()) {
+                const r = parseInt(k.split(',')[0]);
+                if (!isNaN(r) && r > maxRow) maxRow = r;
+            }
+        }
 
         const data: any[][] = [headers];
 
-        // Determine range
-        const cells = engine.getCells();
-        let maxRow = 0;
-        for (const k of cells.keys()) {
-            const r = parseInt(k.split(',')[0]);
-            if (!isNaN(r) && r > maxRow) maxRow = r;
-        }
-
         // Extract data
-        for (let r = 0; r <= maxRow; r++) {
+        for (let r = minRow; r <= maxRow; r++) {
             const rowData = [];
             for (const colIndex of headerIndices) {
                 // Use display value for CSV (text representation)
@@ -65,22 +88,44 @@ export class CSVExporter {
  * Handles data export to Excel (.xlsx) format using SheetJS
  */
 export class ExcelExporter {
-    static export(engine: Engine, filename: string = 'export.xlsx') {
+    static export(engine: Engine, filename: string = 'export.xlsx', range?: { start: CellPosition, end: CellPosition }) {
         // Get headers excluding internal ones
-        const headers = engine.columnNames.filter(h => h !== '_rowid_');
-        const headerIndices = headers.map(h => engine.columnNames.indexOf(h));
+        const allHeaders = engine.columnNames.filter(h => h !== '_rowid_');
+
+        let headerIndices: number[] = [];
+        let headers: string[] = [];
+        let minRow = 0;
+        let maxRow = 0;
+
+        if (range) {
+            const minCol = Math.min(range.start.col, range.end.col);
+            const maxCol = Math.max(range.start.col, range.end.col);
+            minRow = Math.min(range.start.row, range.end.row);
+            maxRow = Math.max(range.start.row, range.end.row);
+
+            allHeaders.forEach((h, i) => {
+                const originalIndex = engine.columnNames.indexOf(h);
+                if (originalIndex >= minCol && originalIndex <= maxCol) {
+                    headers.push(h);
+                    headerIndices.push(originalIndex);
+                }
+            });
+        } else {
+            headers = allHeaders;
+            headerIndices = headers.map(h => engine.columnNames.indexOf(h));
+
+            // Determine max row
+            const cells = engine.getCells();
+            for (const k of cells.keys()) {
+                const r = parseInt(k.split(',')[0]);
+                if (!isNaN(r) && r > maxRow) maxRow = r;
+            }
+        }
 
         // Create worksheet data array
         const wsData: any[][] = [headers];
 
-        let maxRow = 0;
-        const cells = engine.getCells();
-        for (const k of cells.keys()) {
-            const r = parseInt(k.split(',')[0]);
-            if (!isNaN(r) && r > maxRow) maxRow = r;
-        }
-
-        for (let r = 0; r <= maxRow; r++) {
+        for (let r = minRow; r <= maxRow; r++) {
             const rowData = [];
             for (const colIndex of headerIndices) {
                 const cell = engine.getCell({ row: r, col: colIndex });
