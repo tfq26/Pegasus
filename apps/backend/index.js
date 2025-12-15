@@ -101,9 +101,10 @@ const upsertUser = async (payload) => {
 // upsertUser end
 
 // File Upload Endpoint
-import { uploadsDb } from "./db/uploads.js"
+// Migrated from Turso to SurrealDB
+// We will store uploaded data in SurrealDB tables.
+// Metadata in `uploads` table, data in `data_{uploadId}_{tableName}` tables.
 
-// File Upload Endpoint
 app.post("/upload", async (c) => {
   try {
     const token = getCookie(c, "session")
@@ -125,11 +126,13 @@ app.post("/upload", async (c) => {
     const fileName = file.name
     const fileSize = file.size
     const fileType = fileName.split('.').pop().toLowerCase()
-    const uuid = crypto.randomUUID().replace(/-/g, '_') // Remove dashes for cleaner table names
-    const uploadId = crypto.randomUUID() // Standard UUID for metadata record
+
+    // Use SurrealDB friendly IDs (alphanumeric)
+    const uploadUuid = crypto.randomUUID().replace(/-/g, '')
+    const uploadId = `uploads:${uploadUuid}`
 
     const uploadDir = path.join(os.tmpdir(), "uploads")
-    const tempFilePath = path.join(uploadDir, `${uuid}_${fileName}`)
+    const tempFilePath = path.join(uploadDir, `${uploadUuid}_${fileName}`)
 
     // Ensure uploads dir exists
     await fs.mkdir(uploadDir, { recursive: true })
@@ -169,58 +172,60 @@ app.post("/upload", async (c) => {
 
     const createdTables = []
 
-    // 1. Insert Metadata into Uploads DB
-    await uploadsDb.execute({
-      sql: `INSERT INTO uploads (id, user_id, filename, size, format, visibility) VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [uploadId, userId, fileName, fileSize, fileType, 'private']
-    })
+    // 1. Insert Metadata into Uploads DB (SurrealDB)
+    // We explicitly define `id` to ensure we can reference it easily
+    await db.create(uploadId, {
+      user_id: userId ? `user:${userId}` : null,
+      filename: fileName,
+      size: fileSize,
+      format: fileType,
+      visibility: 'private',
+      created_at: new Date()
+    });
 
-    // 2. Create tables and insert data into Uploads DB
+    // 2. Create tables and insert data into SurrealDB
     for (const [rawTableName, rows] of Object.entries(data)) {
       if (!rows || rows.length === 0) continue
 
-      // Infer columns from first row
-      const columns = Object.keys(rows[0])
-      if (columns.length === 0) continue
+      // Sanitize table name for SurrealDB
+      // SurrealDB tables are best as snake_case alphanumeric
+      const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+      // Prefix with 'data_uploadId_' to isolate
+      const uniqueTableName = `data_${uploadUuid}_${safeTableName}`;
 
-      // Sanitize table name
-      const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_')
-      const uniqueTableName = `data_${uploadId}_${safeTableName}`.replace(/-/g, '_')
-
-      const createTableSql = `CREATE TABLE "${uniqueTableName}" (${columns.map(col => `"${col}" TEXT`).join(', ')})`
-      await uploadsDb.execute(createTableSql)
-      createdTables.push(uniqueTableName)
+      // define table (optional in schemaless, but good practice if needed)
+      // For bulk insert, we can just use `insert`
+      // Surreal don't need CREATE TABLE.
 
       // Batch Insert
+      // SurrealDB `insert` can take an array of objects
       const chunkSize = 500
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize)
 
-        const values = []
-        const args = []
+        // Ensure data keys are safe
+        const safeChunk = chunk.map(row => {
+          const newRow = {};
+          for (const key in row) {
+            // Sanitize column names?
+            // Surreal supports many, but let's be safe
+            newRow[key] = row[key];
+          }
+          return newRow;
+        });
 
-        for (const row of chunk) {
-          const rowValues = columns.map(col => {
-            const val = row[col]
-            args.push(typeof val === 'object' ? JSON.stringify(val) : String(val ?? ''))
-            return '?'
-          })
-          values.push(`(${rowValues.join(', ')})`)
-        }
-
-        const insertSql = `INSERT INTO "${uniqueTableName}" (${columns.map(col => `"${col}"`).join(', ')}) VALUES ${values.join(', ')}`
-
-        await uploadsDb.execute({
-          sql: insertSql,
-          args: args
-        })
+        await db.insert(uniqueTableName, safeChunk);
       }
+
+      createdTables.push(uniqueTableName)
     }
 
     return c.json({
       success: true,
-      dbPath: uploadsDb.url,
-      authToken: uploadsDb.authToken,
+      // For SurrealDB, we might not need separate dbPath/authToken if we are in the same app context
+      // But if frontend connects directly, it uses the main connection.
+      // We return the table names which the frontend can now query directly using `surreal.select()`
+      provider: 'surrealdb',
       tables: createdTables
     })
 
