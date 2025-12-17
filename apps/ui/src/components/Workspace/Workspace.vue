@@ -579,8 +579,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
 
         const rows = queryBody.rows || [];
         
-        // For SurrealDB, headers are column letters (A, B, C...)
-        // For other providers, headers are actual column names
+        // Get column names from schema
         const headers = (schemaBody.columns || [])
            .map((c: any) => c.name)
            .filter((n: string) => n !== '__id' && n !== '_rowid_' && n !== '_row_order');
@@ -588,7 +587,17 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         console.log('[Workspace] Loaded', rows.length, 'rows with', headers.length, 'columns');
         console.log('[Workspace] Headers:', headers);
 
-        // 3. Create Tab
+        // 3. Detect schema mode
+        // Check if headers follow A, B, C... pattern (column letters)
+        const isColumnLetters = headers.every((name: string, index: number) => {
+            const expectedLetter = labelToColIndex(name) === index;
+            return expectedLetter || name.match(/^[A-Z]+$/);
+        });
+        
+        const schemaMode = isColumnLetters ? 'column-letters' : 'named-headers';
+        console.log('[Workspace] Detected schema mode:', schemaMode);
+
+        // 4. Create Tab
         const newId = String(Date.now());
         const newTab = {
             id: newId,
@@ -598,31 +607,29 @@ const openTable = async (tableName: string, connection: any, provider: string) =
                 tableName,
                 connection,
                 provider,
-                headers
+                headers,
+                schemaMode
             }
         };
         tabs.value.push(newTab);
         activeTabId.value = newId;
 
-        // 4. Load into Engine
+        // 5. Load into Engine with unified approach
         const engine = getEngineForTab(newId);
         engine.clear();
         engine.beginBatch();
 
-        // Load data into cells
-        // For SurrealDB: headers are A, B, C... so we map them to column indices
-        // For other providers: headers are actual names, we put them in row 0
-        if (provider === 'surrealdb') {
-            // Column letters - load all rows as data (no header row)
+        // Unified data loading - works for all providers
+        if (schemaMode === 'column-letters') {
+            // Column letters mode - all rows are data (including row 0)
             rows.forEach((row: any, rowIndex: number) => {
-                headers.forEach((colLetter: string) => {
-                    const colIndex = labelToColIndex(colLetter);
+                headers.forEach((colLetter: string, colIndex: number) => {
                     const value = row[colLetter];
                     engine.setValue({ row: rowIndex, col: colIndex }, String(value ?? ''), true);
                 });
             });
         } else {
-            // Traditional approach - row 0 is headers
+            // Named headers mode - row 0 contains headers, data starts at row 1
             headers.forEach((header: string, colIndex: number) => {
                 engine.setValue({ row: 0, col: colIndex }, header, true);
             });
@@ -636,10 +643,22 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         }
 
         engine.endBatch();
-        engine.setSource(tableName, connection, headers, provider);
+        
+        // Set correct rowCount based on actual data
+        const actualRowCount = schemaMode === 'column-letters' 
+            ? rows.length  // In column-letters mode, all rows are data
+            : rows.length + 1;  // In named-headers mode, add 1 for header row
+        
+        engine.config.rowCount = actualRowCount;
+        engine.config.colCount = headers.length;
+        
+        console.log(`[Workspace] Set rowCount=${actualRowCount}, colCount=${headers.length}`);
+        
+        // Set source with schema mode
+        engine.setSource(tableName, connection, headers, provider, schemaMode);
         engine.setOriginalData(rows);
 
-        console.log('[Workspace] Table loaded successfully');
+        console.log('[Workspace] Table loaded successfully with schema mode:', schemaMode);
         toast.dismiss(loadingId);
         emit('update:mode', 'spreadsheet');
     } catch (e: any) {

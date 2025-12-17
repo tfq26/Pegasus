@@ -52,6 +52,7 @@ export async function fetchConnectionSchema(entry: ConnectionEntry) {
     tables: (body.tables ?? []) as string[],
     previews: (body.previews ?? []) as SchemaPreview[],
     databases: (body.databases ?? undefined) as string[] | undefined,
+    tableMetadata: (body.tableMetadata ?? {}) as Record<string, { displayName: string; actualName: string }>,
   }
 }
 

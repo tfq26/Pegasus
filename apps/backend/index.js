@@ -824,15 +824,44 @@ app.post("/schema", async (c) => {
       const tables = await adapter.listCollections()
       console.log(`[/schema] ${provider} returned ${tables.length} tables for database ${connection.database ?? 'unknown'}`)
 
-      // Clean up table names for SurrealDB uploads
-      // Convert "data_uuid_sheetname" to just "sheetname"
+      // For SurrealDB, fetch display names from uploads metadata
+      let tableDisplayNames = {}
+      if (provider === 'surrealdb') {
+        for (const tableName of tables) {
+          // Extract UUID from table name
+          const uuidMatch = tableName.match(/^data_([a-f0-9]{32})_/i)
+          if (uuidMatch) {
+            const uuid = uuidMatch[1]
+            // Convert to hyphenated format
+            const hyphenatedUuid = uuid.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, '$1-$2-$3-$4-$5')
+            const uploadId = `uploads:${hyphenatedUuid}`
+
+            try {
+              const [upload] = await db.query(`SELECT display_name FROM ${uploadId}`)
+              if (upload[0]?.display_name) {
+                tableDisplayNames[tableName] = upload[0].display_name
+              }
+            } catch (e) {
+              // If no display_name found, fall back to extracting from table name
+              const displayNameMatch = tableName.match(/^data_[a-f0-9]{32}_(.+)$/i)
+              if (displayNameMatch) {
+                tableDisplayNames[tableName] = displayNameMatch[1]
+              }
+            }
+          }
+        }
+      }
+
+      // Clean up table names for display
       const cleanTableName = (tableName) => {
+        if (provider === 'surrealdb' && tableDisplayNames[tableName]) {
+          return tableDisplayNames[tableName]
+        }
         if (provider === 'surrealdb' && tableName.startsWith('data_')) {
-          // Pattern: data_{uuid}_{sheetname}
-          const parts = tableName.split('_')
-          if (parts.length >= 3) {
-            // Return everything after the UUID (parts[0] = 'data', parts[1] = uuid, parts[2+] = sheet name)
-            return parts.slice(2).join('_')
+          // Fallback: extract from table name
+          const match = tableName.match(/^data_[a-f0-9]{32}_(.+)$/i)
+          if (match) {
+            return match[1]
           }
         }
         return tableName

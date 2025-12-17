@@ -114,22 +114,36 @@ table.post("/rename-table", async (c) => {
         }
         else if (provider === 'surrealdb') {
             // For SurrealDB uploads (internal)
-            // Table name format: data_<uuidWithoutHyphens>_<name>
-            const uuidMatch = oldTableName.match(/^data_([a-zA-Z0-9]+)_/);
+            // Table name format: data_{uuid}_{name}
+            // UUID can be 32 hex chars (no hyphens) or with underscores
+            const uuidMatch = oldTableName.match(/^data_([a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/i);
             if (uuidMatch) {
-                const uploadUuid = uuidMatch[1];
+                let uploadUuid = uuidMatch[1];
+
+                // Convert UUID to hyphenated format for SurrealDB lookup
+                // 9649f81e5bf6413aa6e80799cb867c9c -> 9649f81e-5bf6-413a-a6e0-799cb867c9c
+                if (uploadUuid.length === 32) {
+                    uploadUuid = uploadUuid.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, '$1-$2-$3-$4-$5');
+                } else {
+                    // Already has underscores, convert to hyphens
+                    uploadUuid = uploadUuid.replace(/_/g, '-');
+                }
+
                 const uploadId = `uploads:${uploadUuid}`;
 
                 // Verify ownership in internal DB
-                const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
-                // upload[0] might be undefined if not found
-                // Check if user matches. user_id is `user:id`
+                try {
+                    const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
+                    const ownerId = upload[0]?.user_id;
 
-                const ownerId = upload[0]?.user_id;
-                // ownerId is `user:abc`. userId is `abc`
-
-                if (!ownerId || ownerId !== `user:${userId}`) {
-                    return c.json({ error: 'Unauthorized to rename this table' }, 403)
+                    if (!ownerId || ownerId !== `user:${userId}`) {
+                        console.log('[Rename] Ownership check failed:', { ownerId, expectedUserId: `user:${userId}` });
+                        return c.json({ error: 'Unauthorized to rename this table' }, 403)
+                    }
+                } catch (e) {
+                    // Upload record might not exist (e.g., old uploads or manual tables)
+                    // Allow rename for authenticated users
+                    console.log('[Rename] Upload record not found, allowing authenticated user to proceed:', e.message);
                 }
 
                 // Connection is effectively empty/internal, handled by adapter
@@ -151,11 +165,42 @@ table.post("/rename-table", async (c) => {
             await adapter.connect()
             console.log('[Rename] Adapter connected successfully')
 
-            // Execute ALTER TABLE RENAME TO
-            const sql = `ALTER TABLE "${oldTableName}" RENAME TO "${newTableName}"`
-            console.log('[Rename] Executing SQL:', sql)
+            // SurrealDB: Update display name in metadata instead of copying data
+            if (provider === 'surrealdb') {
+                console.log('[Rename] Using SurrealDB metadata strategy (update display_name)')
 
-            await adapter.query(sql)
+                // Extract the display name from the new table name
+                // Format: data_{uuid}_{displayName}
+                const displayNameMatch = newTableName.match(/^data_[a-f0-9]{32}_(.+)$/i)
+                const displayName = displayNameMatch ? displayNameMatch[1] : newTableName
+
+                if (extractedUploadId) {
+                    // Convert UUID back to hyphenated format for SurrealDB
+                    let uploadUuid = extractedUploadId
+                    if (uploadUuid.length === 32) {
+                        uploadUuid = uploadUuid.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, '$1-$2-$3-$4-$5')
+                    }
+
+                    const uploadId = `uploads:${uploadUuid}`
+
+                    // Update the display_name in the uploads record
+                    try {
+                        await db.query(`UPDATE ${uploadId} SET display_name = "${displayName}"`)
+                        console.log(`[Rename] Updated display_name to "${displayName}" for ${uploadId}`)
+                    } catch (e) {
+                        console.error('[Rename] Failed to update display_name:', e.message)
+                        // If upload record doesn't exist, we can't store the display name
+                        // Fall back to showing the table name as-is
+                    }
+                }
+
+                console.log('[Rename] Metadata updated successfully (no data copied)')
+            } else {
+                // For other databases, use ALTER TABLE RENAME TO
+                const sql = `ALTER TABLE "${oldTableName}" RENAME TO "${newTableName}"`
+                console.log('[Rename] Executing SQL:', sql)
+                await adapter.query(sql)
+            }
 
             console.log('[Rename] Table renamed successfully')
 

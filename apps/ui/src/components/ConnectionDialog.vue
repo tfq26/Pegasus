@@ -153,6 +153,7 @@ const formatRow = (row: Record<string, unknown>) => {
 // File Upload Logic
 const isUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const isDragging = ref(false)
 
 const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement
@@ -160,7 +161,43 @@ const handleFileUpload = async (event: Event) => {
 
   const file = target.files[0]
   if (!file) return
+  await processFile(file)
+}
+
+const handleDrop = async (event: DragEvent) => {
+  event.preventDefault()
+  isDragging.value = false
+  
+  const files = event.dataTransfer?.files
+  if (!files || files.length === 0) return
+  
+  const file = files[0]
+  if (!file) return
+  
+  // Validate file type
+  const validExtensions = ['.xlsx', '.xml', '.json']
+  const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+  if (!validExtensions.includes(fileExtension)) {
+    tempError.value = `Invalid file type. Please upload ${validExtensions.join(', ')} files.`
+    return
+  }
+  
+  await processFile(file)
+}
+
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault()
+  isDragging.value = true
+}
+
+const handleDragLeave = (event: DragEvent) => {
+  event.preventDefault()
+  isDragging.value = false
+}
+
+const processFile = async (file: File) => {
   isUploading.value = true
+  tempError.value = null
 
   try {
     const result = await uploadFile(file)

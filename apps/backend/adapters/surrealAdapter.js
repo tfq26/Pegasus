@@ -224,6 +224,54 @@ export class SurrealAdapter extends DatabaseAdapter {
         }
     }
 
+    /**
+     * Detect schema mode for a table
+     * Returns 'named-headers' if columns have semantic names, 'column-letters' if using A, B, C pattern
+     */
+    async detectSchemaMode(tableName) {
+        try {
+            const schema = await this.getSchema();
+            const tableSchema = schema[tableName];
+
+            if (!tableSchema || tableSchema.length === 0) {
+                console.log(`[SurrealDB] No schema for ${tableName}, defaulting to column-letters`);
+                return 'column-letters';
+            }
+
+            // Check if column names follow the A, B, C... pattern
+            const columnNames = tableSchema.map(col => col.name);
+            const allLetterPattern = columnNames.every((name, index) => {
+                // Convert index to expected letter (0->A, 1->B, etc.)
+                const expectedLetter = this.colIndexToLetter(index);
+                return name === expectedLetter;
+            });
+
+            if (allLetterPattern) {
+                console.log(`[SurrealDB] Table ${tableName} uses column-letters schema`);
+                return 'column-letters';
+            }
+
+            console.log(`[SurrealDB] Table ${tableName} uses named-headers schema`);
+            return 'named-headers';
+        } catch (e) {
+            console.error(`[SurrealDB] Error detecting schema mode for ${tableName}:`, e);
+            return 'column-letters'; // Safe default
+        }
+    }
+
+    /**
+     * Convert column index to Excel-style letter (0->A, 25->Z, 26->AA)
+     */
+    colIndexToLetter(index) {
+        let label = '';
+        let i = index;
+        while (i >= 0) {
+            label = String.fromCharCode(65 + (i % 26)) + label;
+            i = Math.floor(i / 26) - 1;
+        }
+        return label;
+    }
+
     async disconnect() {
         if (!this.isInternal && this.db) {
             // Only close if we opened it

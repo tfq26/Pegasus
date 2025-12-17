@@ -44,7 +44,9 @@ export class Engine {
     // Header row tracking - row 0 is always the header row for database tables
     public headerRowIndex = 0;
 
-
+    // Schema mode - determines how columns are named
+    public schemaMode: 'named-headers' | 'column-letters' = 'column-letters';
+    public hasDetectedHeaders: boolean = false;
 
     // Transient view state (preserved in memory for tab switching)
     public viewState = {
@@ -100,11 +102,20 @@ export class Engine {
     /**
      * Set the source table for database persistence
      */
-    public setSource(tableName: string, connection: any, columns: string[], provider?: string) {
+    public setSource(tableName: string, connection: any, columns: string[], provider?: string, schemaMode?: 'named-headers' | 'column-letters') {
         this.sourceTable = tableName;
         this.sourceConnection = connection;
         this.sourceProvider = provider || 'sqlite'; // Default if missing
         this.columnNames = columns; // visible columns only
+
+        // Set schema mode if provided, otherwise auto-detect
+        if (schemaMode) {
+            this.schemaMode = schemaMode;
+        } else {
+            // Auto-detect based on column names
+            this.schemaMode = this.detectSchemaMode(columns);
+        }
+
         // Take snapshot of current data as "original" (if not set by setOriginalData)
         if (this.originalData.size === 0) {
             this.originalData = new Map(this.cells);
@@ -526,26 +537,59 @@ export class Engine {
     }
 
     /**
+     * Detect schema mode based on column names
+     * Returns 'named-headers' if columns have semantic names, 'column-letters' if using A, B, C pattern
+     */
+    private detectSchemaMode(columns: string[]): 'named-headers' | 'column-letters' {
+        if (columns.length === 0) return 'column-letters';
+
+        // Check if all column names match the A, B, C... pattern
+        const allLetterPattern = columns.every((name, index) => {
+            const expectedLetter = this.colIndexToLabel(index);
+            return name === expectedLetter;
+        });
+
+        return allLetterPattern ? 'column-letters' : 'named-headers';
+    }
+
+    /**
+     * Get field name for a column index based on schema mode
+     * Returns either the actual column name or a letter (A, B, C...)
+     */
+    public getFieldName(colIndex: number): string {
+        if (this.schemaMode === 'named-headers' && this.columnNames[colIndex]) {
+            return this.columnNames[colIndex];
+        }
+        return this.colIndexToLabel(colIndex);
+    }
+
+
+    /**
      * Get all non-empty rows for full replacement save
-     * Uses column letters (A, B, C...) as field names instead of reading headers
-     * This allows row 0 to be data and eliminates header assumptions
+     * Uses smart field naming: actual column names for named-headers mode, letters for column-letters mode
      */
     public getAllNonEmptyRows(): Array<Record<string, any>> {
         const rowsMap = new Map<number, Record<string, any>>();
 
-        // Collect all rows (including row 0) using column letters as field names
+        // Determine starting row based on schema mode
+        const startRow = this.schemaMode === 'named-headers' ? 1 : 0;
+
+        // Collect all rows using smart field names
         for (const [key, cell] of this.cells.entries()) {
             const [rowStr, colStr] = key.split(',');
             const row = parseInt(rowStr);
             const col = parseInt(colStr);
 
+            // Skip header row in named-headers mode
+            if (row < startRow) continue;
+
             if (!rowsMap.has(row)) {
                 rowsMap.set(row, {});
             }
 
-            // Use column letter (A, B, C...) as field name
-            const colName = this.colIndexToLabel(col);
-            rowsMap.get(row)![colName] = cell.value ?? null;
+            // Use smart field name (either actual column name or letter)
+            const fieldName = this.getFieldName(col);
+            rowsMap.get(row)![fieldName] = cell.value ?? null;
         }
 
         // Filter out completely empty rows

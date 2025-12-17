@@ -63,11 +63,22 @@ const emit = defineEmits<{
 }>()
 
 // Format table names to hide internal UUIDs
+// Converts "data_9649f81e5bf6413aa6e80799cb867c9c_data" to "data"
 // Converts "data_60643368_3269_4be6_921e_dff7c585cd3c_Sheet1" to "Sheet1"
-const formatTableName = (tableName: string): string => {
-  // Pattern: data_<uuid>_<sheetname>
-  // UUID format: 8-4-4-4-12 hex digits with underscores replacing hyphens
-  const match = tableName.match(/^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/i)
+const formatTableName = (tableName: string, connectionId?: string): string => {
+  // First, check if we have metadata with a display name
+  if (connectionId) {
+    const schema = connectionSchemas.value[connectionId]
+    if (schema?.tableMetadata?.[tableName]?.displayName) {
+      return schema.tableMetadata[tableName].displayName
+    }
+  }
+  
+  // Fallback: Pattern matching for data_{uuid}_{sheetname}
+  // UUID can be either:
+  //   - 32 hex chars: 9649f81e5bf6413aa6e80799cb867c9c
+  //   - With underscores: 60643368_3269_4be6_921e_dff7c585cd3c
+  const match = tableName.match(/^data_(?:[a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_(.+)$/i)
   if (match && match[1]) {
     return match[1]
   }
@@ -103,6 +114,7 @@ type ConnectionSchemaState = {
   status: 'loading' | 'connected' | 'error'
   tables: string[]
   databases?: string[]
+  tableMetadata?: Record<string, { displayName: string; actualName: string }>
   error?: string
 }
 
@@ -221,7 +233,7 @@ const startRenameTable = (conn: ConnectionEntry, table: string) => {
   renamingTable.value = {
     conn,
     oldName: table,
-    newName: formatTableName(table) // Use user-friendly name for input
+    newName: formatTableName(table, conn.id) // Use user-friendly name for input
   }
 
   // Auto-focus and select the input on next tick
@@ -244,16 +256,18 @@ const confirmRename = async () => {
   const { conn, oldName, newName } = renamingTable.value
 
   // Compare against formatted old name, because user expects to see/edit formatted name
-  if (newName === formatTableName(oldName) || !newName.trim()) {
+  if (newName === formatTableName(oldName, conn.id) || !newName.trim()) {
     renamingTable.value = null
     return
   }
 
   try {
     // Extract the UUID from the old table name
-    // Format: data_<uuid>_<sheetname>
-    // UUID format: 8-4-4-4-12 hex digits with underscores replacing hyphens
-    const match = oldName.match(/^data_([a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_(.+)$/i)
+    // Format: data_{uuid}_{sheetname}
+    // UUID can be either:
+    //   - 32 hex chars: 9649f81e5bf6413aa6e80799cb867c9c
+    //   - With underscores: 60643368_3269_4be6_921e_dff7c585cd3c
+    const match = oldName.match(/^data_([a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_(.+)$/i)
     
     if (!match) {
       toast.error('Invalid table name format')
@@ -261,7 +275,7 @@ const confirmRename = async () => {
       return
     }
     
-    const uuid = match[1] // e.g., "60643368_3269_4be6_921e_dff7c585cd3c"
+    const uuid = match[1] // e.g., "9649f81e5bf6413aa6e80799cb867c9c" or "60643368_3269_4be6_921e_dff7c585cd3c"
     const newTableName = `data_${uuid}_${newName.trim()}`
     
     // Call backend to rename table
@@ -399,6 +413,7 @@ const refreshSchemas = async () => {
           status: 'connected',
           tables: schema.tables,
           databases: schema.databases,
+          tableMetadata: schema.tableMetadata,
         }
         // cache top-level tables so we can restore after DB-scoped views
         dbTablesCache.value[conn.id] = dbTablesCache.value[conn.id] || {}
@@ -587,7 +602,7 @@ const confirmDelete = async () => {
       throw new Error(error.error || 'Failed to delete table')
     }
     
-    toast.success(`Deleted "${formatTableName(table)}"`)
+    toast.success(`Deleted "${formatTableName(table, conn.id)}"`)
     
     // Update local connection object
     if (conn.sqlite && Array.isArray(conn.sqlite.tables)) {
@@ -675,26 +690,108 @@ const viewerColumns = computed(() => {
     key !== 'id' && key !== '__id' && key !== '_row_order'
   )
   
-  // For SurrealDB: columns are A, B, C... so we use first row VALUES as headers
-  // For other DBs: columns are actual names, so we use them as-is
+  // For SurrealDB with column-letters mode: use first row VALUES as headers
+  // For SurrealDB with named-headers mode: use column names directly
+  // For other DBs: use column names as-is
   if (viewer.value.connection?.provider === 'surrealdb') {
-    // Return first row's values as column headers
-    return columns.map(col => String(firstRow[col] ?? col))
+    // Check if this looks like column-letters mode (columns are A, B, C...)
+    const isColumnLetters = columns.length > 0 && columns[0] && /^[A-Z]+$/.test(columns[0])
+    
+    if (isColumnLetters) {
+      // Column-letters mode: Return first row's values as column headers
+      return columns.map(col => String(firstRow[col] ?? col))
+    }
   }
   
+  // Named-headers mode or other providers: use column names directly
   return columns
 })
 
-// Data rows to display (skip first row for SurrealDB since it's used as headers)
+// Data rows to display (skip first row for SurrealDB column-letters mode only)
 const viewerDataRows = computed(() => {
   if (!viewer.value.entries.length) return []
   
   if (viewer.value.connection?.provider === 'surrealdb') {
-    // Skip first row (it's the header row)
-    return viewer.value.entries.slice(1)
+    const firstRow = viewer.value.entries[0]
+    if (!firstRow) return []
+    
+    const columns = Object.keys(firstRow).filter(key => 
+      key !== 'id' && key !== '__id' && key !== '_row_order'
+    )
+    
+    // Check if this looks like column-letters mode
+    const isColumnLetters = columns.length > 0 && columns[0] && /^[A-Z]+$/.test(columns[0])
+    
+    if (isColumnLetters) {
+      // Column-letters mode: Skip first row (it's the header row)
+      return viewer.value.entries.slice(1)
+    }
   }
   
+  // Named-headers mode or other providers: use all rows
   return viewer.value.entries
+})
+
+// Sorting and search state
+const sortColumn = ref<string | null>(null)
+const sortDirection = ref<'asc' | 'desc'>('asc')
+const searchQuery = ref('')
+
+// Toggle sort on column click
+const toggleSort = (column: string) => {
+  if (sortColumn.value === column) {
+    // Toggle direction if same column
+    sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    // New column, default to ascending
+    sortColumn.value = column
+    sortDirection.value = 'asc'
+  }
+}
+
+// Filtered and sorted data rows
+const filteredAndSortedRows = computed(() => {
+  let rows = viewerDataRows.value
+  
+  // Apply search filter
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase()
+    rows = rows.filter(row => {
+      return Object.values(row).some(val => 
+        String(val).toLowerCase().includes(query)
+      )
+    })
+  }
+  
+  // Apply sorting
+  if (sortColumn.value) {
+    const col = sortColumn.value
+    const dir = sortDirection.value
+    
+    rows = [...rows].sort((a, b) => {
+      const aVal = a[col]
+      const bVal = b[col]
+      
+      // Handle null/undefined
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return dir === 'asc' ? 1 : -1
+      if (bVal == null) return dir === 'asc' ? -1 : 1
+      
+      // Compare values
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return dir === 'asc' ? aVal - bVal : bVal - aVal
+      }
+      
+      const aStr = String(aVal).toLowerCase()
+      const bStr = String(bVal).toLowerCase()
+      
+      if (aStr < bStr) return dir === 'asc' ? -1 : 1
+      if (aStr > bStr) return dir === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+  
+  return rows
 })
 
 const isJsonValue = (value: unknown): boolean => {
@@ -848,7 +945,7 @@ onBeforeUnmount(() => {
                               class="font-medium text-foreground bg-muted border border-primary rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                               @click.stop
                             />
-                            <span v-else class="font-medium text-foreground truncate">{{ formatTableName(table) }}</span>
+                            <span v-else class="font-medium text-foreground truncate">{{ formatTableName(table, conn.id) }}</span>
                             <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
                               {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
                             </span>
@@ -983,7 +1080,7 @@ onBeforeUnmount(() => {
       <div class="relative max-w-[95vw] w-full max-h-[70vh] h-[70vh] overflow-hidden flex flex-col rounded-lg border border-border bg-background p-6 shadow-2xl">
         <div class="flex items-center justify-between flex-shrink-0 mb-4">
           <div>
-            <p class="text-lg font-semibold text-foreground">Entries in {{ formatTableName(viewer.table) }}</p>
+            <p class="text-lg font-semibold text-foreground">Entries in {{ formatTableName(viewer.table, viewer.connection?.id) }}</p>
             <p class="text-xs text-muted-foreground">{{ viewer.connection?.nickname }}</p>
           </div>
           <div class="flex items-center gap-4">
@@ -992,14 +1089,14 @@ onBeforeUnmount(() => {
               <button 
                 @click="decreaseViewerZoom" 
                 class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-                :disabled="viewerZoomLevel.value === 0"
+                :disabled="viewerZoomLevel === 0"
               >
                 <Minus class="w-4 h-4" />
               </button>
               <button 
                 @click="increaseViewerZoom" 
                 class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-                :disabled="viewerZoomLevel.value === viewerZoomClasses.length - 1"
+                :disabled="viewerZoomLevel === viewerZoomClasses.length - 1"
               >
                 <Plus class="w-4 h-4" />
               </button>
@@ -1014,6 +1111,22 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="flex-1 flex flex-col min-h-0 space-y-3">
+          <!-- Search Box -->
+          <div class="flex items-center gap-2 px-1">
+            <div class="relative flex-1">
+              <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Search in table..."
+                class="w-full pl-8 pr-3 py-1.5 text-xs rounded border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <span v-if="searchQuery" class="text-xs text-muted-foreground whitespace-nowrap">
+              {{ filteredAndSortedRows.length }} of {{ viewerDataRows.length }} rows
+            </span>
+          </div>
+          
           <div v-if="viewer.loading" class="text-xs text-muted-foreground">Loading rows…</div>
           <div v-else-if="viewer.error" class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {{ viewer.error }}
@@ -1028,14 +1141,23 @@ onBeforeUnmount(() => {
                       <th
                         v-for="col in viewerColumns"
                         :key="col"
-                        class="px-2 py-1 sticky top-0 bg-muted"
+                        @click="toggleSort(col)"
+                        class="px-2 py-1 sticky top-0 bg-muted cursor-pointer hover:bg-muted/80 transition-colors select-none group"
+                        :class="{ 'text-primary font-semibold': sortColumn === col }"
                       >
-                        {{ col }}
+                        <div class="flex items-center gap-1">
+                          <span>{{ col }}</span>
+                          <span class="opacity-0 group-hover:opacity-100 transition-opacity" :class="{ '!opacity-100': sortColumn === col }">
+                            <span v-if="sortColumn === col && sortDirection === 'asc'">↑</span>
+                            <span v-else-if="sortColumn === col && sortDirection === 'desc'">↓</span>
+                            <span v-else class="text-muted-foreground/50">↕</span>
+                          </span>
+                        </div>
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="(entry, index) in viewerDataRows" :key="`row-${index}`">
+                    <template v-for="(entry, index) in filteredAndSortedRows" :key="`row-${index}`">
                       <!-- Main row -->
                       <tr
                         :class="[
@@ -1123,7 +1245,7 @@ onBeforeUnmount(() => {
         <DialogHeader>
           <DialogTitle>Delete Table</DialogTitle>
           <DialogDescription>
-            Are you sure you want to permanently delete "{{ tableToDelete ? formatTableName(tableToDelete.table) : '' }}"? 
+            Are you sure you want to permanently delete "{{ tableToDelete ? formatTableName(tableToDelete.table, tableToDelete.conn.id) : '' }}"?
             This action cannot be undone.
           </DialogDescription>
         </DialogHeader>

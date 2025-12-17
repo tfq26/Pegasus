@@ -77,11 +77,16 @@ const columns = computed(() => {
       Object.keys(item).forEach(k => keys.add(k))
     }
   })
-  return Array.from(keys)
+  const cols = Array.from(keys)
+  console.log('[ResultsTable] Columns:', cols)
+  console.log('[ResultsTable] Sample data:', props.data[0])
+  return cols
 })
 
 const formatValue = (val: any): string => {
-  if (val === null || val === undefined) return ''
+  if (val === null) return '-'
+  if (val === undefined) return '-'
+  if (val === '') return '(empty)'
   if (typeof val === 'boolean') return val ? 'Yes' : 'No'
   
   // Date formatting
@@ -215,7 +220,13 @@ const copyCellValue = async (value: any) => {
                   <Braces class="w-3 h-3" />
                   <span>View JSON</span>
                 </button>
-                <span v-else :title="formatValue(row[col])">{{ formatValue(row[col]) }}</span>
+                <span v-else :title="formatValue(row[col])">
+                  {{ formatValue(row[col]) }}
+                  <!-- Debug: show raw value if formatted is empty -->
+                  <span v-if="!formatValue(row[col]) || formatValue(row[col]) === '-'" class="text-xs text-red-500 ml-2">
+                    [{{ typeof row[col] }}: {{ JSON.stringify(row[col]) }}]
+                  </span>
+                </span>
               </td>
             </tr>
           </tbody>

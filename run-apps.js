@@ -4,6 +4,24 @@
 
 import { spawn, execSync } from "child_process";
 import { join } from "path";
+import { readFileSync } from "fs";
+
+// Load environment variables from backend .env file
+try {
+    const envPath = join(import.meta.dir, "apps", "backend", ".env");
+    const envFile = readFileSync(envPath, "utf8");
+    envFile.split("\n").forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+            const [key, ...valueParts] = trimmed.split("=");
+            if (key && valueParts.length > 0) {
+                process.env[key.trim()] = valueParts.join("=").trim();
+            }
+        }
+    });
+} catch (e) {
+    // .env file doesn't exist, use defaults
+}
 
 const processes = [];
 
@@ -28,17 +46,23 @@ process.on("exit", cleanup);
 
 function killPort(port) {
     try {
-        const pid = execSync(`lsof -t -i:${port}`).toString().trim();
-        if (pid) {
-            console.log(`Killing process on port ${port} (PID: ${pid})...`);
-            try {
-                process.kill(parseInt(pid), 'SIGKILL');
-            } catch (e) {
-                // ignore
+        // Windows-compatible port killing using netstat and taskkill
+        const output = execSync(`netstat -ano | findstr :${port}`).toString();
+        const lines = output.split('\n').filter(line => line.includes('LISTENING'));
+
+        if (lines.length > 0) {
+            const pidMatch = lines[0].trim().split(/\s+/).pop();
+            if (pidMatch) {
+                console.log(`Killing process on port ${port} (PID: ${pidMatch})...`);
+                try {
+                    execSync(`taskkill /PID ${pidMatch} /F`, { stdio: 'ignore' });
+                } catch (e) {
+                    // ignore - process might already be dead
+                }
             }
         }
     } catch (e) {
-        // No process found on port
+        // No process found on port or command failed
     }
 }
 
@@ -98,8 +122,26 @@ async function main() {
     console.log("Installing dependencies...");
     await runCommand("bun", ["install"], rootDir, "Root Install");
 
-    // Start DB
-    await startSurrealDB(rootDir);
+    // Check if using cloud database
+    const surrealUrl = process.env.SURREAL_URL || 'ws://127.0.0.1:8000/rpc';
+    const isCloudDatabase = surrealUrl.startsWith('wss://');
+
+    if (isCloudDatabase) {
+        console.log("\n🌐 ========================================");
+        console.log("🌐  USING SURREAL CLOUD DATABASE");
+        console.log("🌐  URL:", surrealUrl);
+        console.log("🌐  Skipping local SurrealDB startup");
+        console.log("🌐 ========================================\n");
+    } else {
+        console.log("\n⚠️  ========================================");
+        console.log("⚠️   WARNING: USING LOCAL DATABASE");
+        console.log("⚠️   URL:", surrealUrl);
+        console.log("⚠️   Data is stored locally, not in cloud");
+        console.log("⚠️  ========================================\n");
+
+        // Start local DB only if not using cloud
+        await startSurrealDB(rootDir);
+    }
 
     const backendDir = join(rootDir, "apps", "backend");
     const uiDir = join(rootDir, "apps", "ui");
