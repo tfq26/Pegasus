@@ -73,6 +73,12 @@ export async function fetchTableEntries({
   } else if (provider === 'sqlite') {
     const safeTable = table.replace(/"/g, '""')
     queryPayload = `SELECT * FROM "${safeTable}" LIMIT ${limit} OFFSET ${offset}`
+  } else if (provider === 'postgres') {
+    const safeTable = table.replace(/"/g, '""')
+    queryPayload = `SELECT * FROM "${safeTable}" LIMIT ${limit} OFFSET ${offset}`
+  } else if (provider === 'surrealdb') {
+    // SurrealDB uses SQL-like syntax
+    queryPayload = `SELECT * FROM ${table} LIMIT ${limit} START ${offset}`
   } else if (provider === 'mongodb') {
     connection = buildConnectionPayload(entry, { collection: table })
     queryPayload = JSON.stringify({
@@ -81,6 +87,7 @@ export async function fetchTableEntries({
       limit,
     })
   } else {
+    // Kusto and other providers
     const sanitizedTable = table.replace(/"/g, '\\"')
     queryPayload = `${sanitizedTable} | take ${limit}`
   }
@@ -120,6 +127,12 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
   } else if (provider === 'sqlite') {
     const safeTable = table.replace(/"/g, '""')
     queryPayload = `SELECT COUNT(*) as count FROM "${safeTable}"`
+  } else if (provider === 'postgres') {
+    const safeTable = table.replace(/"/g, '""')
+    queryPayload = `SELECT COUNT(*) as count FROM "${safeTable}"`
+  } else if (provider === 'surrealdb') {
+    // SurrealDB count syntax
+    queryPayload = `SELECT count() FROM ${table} GROUP ALL`
   } else if (provider === 'mongodb') {
     connection = buildConnectionPayload(entry, { collection: table })
     // For MongoDB adapter, we need to send a specific "count" command or use aggregate

@@ -1,8 +1,12 @@
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef } from 'vue';
 import { Engine } from '../Engine/Engine';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
+import { useGridScroll } from '../../../composables/grid/useGridScroll';
+import { useGridSelection } from '../../../composables/grid/useGridSelection';
+import { useRealtimeCursor } from '../../../composables/grid/useRealtimeCursor';
+import { useGridEditing } from '../../../composables/grid/useGridEditing';
 import type { CellPosition } from '../Engine/types';
 import { CellType } from '../Engine/types';
 import { toast } from 'vue-sonner';
@@ -46,102 +50,79 @@ const emit = defineEmits<{
 }>();
 
 
-// --- Viewport State ---
-const rowCount = 1000;
-const colCount = 26; // Reduced to 26 (A-Z) for better horizontal fit
-const rowHeight = 24;
-const colWidth = 100;
-// Row header width is usually fixed, e.g. 48px. 
-// We should check template for scrolling calculation or just assume col * 100 relative to scroll container
 
-// Virtualization State
-const virtualState = ref({
-  startRow: 0,
-  visibleRowCount: 40 // Initial buffer
-});
-
-const gridContainer = ref<HTMLElement | null>(null);
-const headerContainer = ref<HTMLElement | null>(null);
-
-const onScroll = (e: Event) => {
-  const target = e.target as HTMLElement;
-  const scrollTop = target.scrollTop;
-  
-  // Update engine view state
-  props.engine.viewState.scrollTop = scrollTop;
-
-  // Sync horizontal scroll
-  if (headerContainer.value) {
-    headerContainer.value.scrollLeft = target.scrollLeft;
-  }
-  
-  // Calculate start row based on scroll position
-  const startRow = Math.floor(scrollTop / rowHeight);
-  
-  // Update state if changed
-  if (startRow !== virtualState.value.startRow) {
-    virtualState.value.startRow = startRow;
-  }
-};
-
-const visibleRows = computed(() => {
-  return Array.from({ length: virtualState.value.visibleRowCount }, (_, i) => i); // 0 to visibleRowCount-1
-});
+// --- Viewport State (useGridScroll) ---
+const { 
+  gridContainer, 
+  headerContainer, 
+  virtualState, 
+  visibleRows, 
+  onScroll, 
+  scrollToCell,
+  rowCount,
+  colCount,
+  rowHeight,
+  colWidth
+} = useGridScroll(props.engine);
 
 // Force re-render trigger
 const renderKey = ref(0);
 
-// Subscribe to engine changes
+// --- Realtime & Follow Me (useRealtimeCursor) ---
+// --- Selection State (useGridSelection) ---
+const {
+  selection,
+  rangeSelection,
+  selectedColumn,
+  selectedRow,
+  lastSelectedColumn,
+  lastSelectedRow,
+  selectColumn,
+  selectRow,
+  clearColumnRowSelection,
+  deleteSelectedColumn,
+  deleteSelectedRow,
+  fillSelectedColumn,
+  fillSelectedRow,
+  isColumnSelected,
+  isRowSelected,
+  focusGrid
+} = useGridSelection(props.engine, gridContainer, rowCount, colCount, renderKey);
+
+
+// --- Realtime & Follow Me (useRealtimeCursor) ---
+const {
+  followedUserId,
+  handleFollowUser,
+  stopFollowing,
+  updateCursor // Use this instead of direct realtimeSync access
+} = useRealtimeCursor(props.engine, toRef(props, 'privateMode'), scrollToCell);
+
+
+// --- Editing (useGridEditing) ---
+const {
+  editingCell,
+  formulaBarValue,
+  currentCellRawValue,
+  startEditing,
+  commitEdit,
+  onCellInputChange,
+  onCellBlur
+} = useGridEditing(props.engine, gridContainer, selection);
+
+
 // Subscribe to engine changes
 props.engine.onChange(() => {
   renderKey.value++;
-  
-  if (followedUserId.value) {
-      const user = props.engine.presence.get(followedUserId.value);
-      if (user && user.cursor) {
-          scrollToCell(user.cursor.row, user.cursor.col);
-      } else {
-          // User left? Stop following logic could go here, or just wait
-      }
-  }
 });
 
 // Search State
 const showFindDialog = ref(false);
 const searchEngine = computed(() => new SearchEngine(props.engine));
 
-// Scrolling Logic
-const scrollToCell = (row: number, col: number) => {
-  if (!gridContainer.value) return;
-  
-  // Vertical
-  const top = row * rowHeight;
-  const bottom = (row + 1) * rowHeight;
-  const containerHeight = gridContainer.value.clientHeight;
-  const scrollTop = gridContainer.value.scrollTop;
-  
-  if (top < scrollTop) {
-      gridContainer.value.scrollTop = top;
-  } else if (bottom > scrollTop + containerHeight) {
-      gridContainer.value.scrollTop = bottom - containerHeight;
-  }
-  
-  // Horizontal
-  const left = col * colWidth;
-  const right = (col + 1) * colWidth;
-  const containerWidth = gridContainer.value.clientWidth;
-  const scrollLeft = gridContainer.value.scrollLeft;
-  
-  if (left < scrollLeft) {
-      gridContainer.value.scrollLeft = left;
-  } else if (right > scrollLeft + containerWidth) {
-      gridContainer.value.scrollLeft = right - containerWidth;
-  }
-};
 
 
-
-let realtimeSync: RealtimeSync | null = null;
+// (realtimeSync definition removed - in useRealtimeCursor)
 
 const onMatchSelected = (pos: CellPosition) => {
     scrollToCell(pos.row, pos.col);
@@ -156,42 +137,16 @@ const isProcessingAI = ref(false);
 
 
 
-// --- "Follow Me" Mode ---
-const followedUserId = ref<string | null>(null);
-
-const handleFollowUser = (userId: string) => {
-    if (userId === followedUserId.value) return;
-    
-    const user = props.engine.presence.get(userId);
-    if (user) {
-        followedUserId.value = userId;
-        const userName = user.userName || 'User';
-        toast.info(`Following ${userName}`);
-        // Immediate jump
-        scrollToCell(user.cursor.row, user.cursor.col);
-    }
-};
-
-const stopFollowing = () => {
-    followedUserId.value = null;
-    toast.info('Stopped following');
-};
-const selection = ref<CellPosition | null>(props.engine.viewState.selection);
-const editingCell = ref<CellPosition | null>(null);
-const formulaBarValue = ref('');
+// Follow me logic removed (moved to useRealtimeCursor)
+// const editingCell = ref<CellPosition | null>(null); -> moved to useGridEditing
+// const formulaBarValue = ref(''); -> moved to useGridEditing
 const isDragging = ref(false);
 const dragStart = ref<CellPosition | null>(null);
-const rangeSelection = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 
 // Watch selection to update engine state
 // Watch selection to update engine state
 // Watch selection to update engine state
-watch(selection, (newVal) => {
-  props.engine.viewState.selection = newVal;
-  if (newVal && realtimeSync) {
-      realtimeSync.updateCursor(newVal);
-  }
-});
+// Watcher moved below definition
 
 // Watch formula bar for autocomplete
 watch(formulaBarValue, (val) => {
@@ -224,124 +179,16 @@ const isFillDragging = ref(false);
 const fillStart = ref<CellPosition | null>(null);
 const fillRange = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 
-// Column/Row selection state
-const selectedColumn = ref<number | null>(null);
-const selectedRow = ref<number | null>(null);
-const lastSelectedColumn = ref<number | null>(null);
-const lastSelectedRow = ref<number | null>(null);
+// --- Selection State (useGridSelection) ---
 
-const selectColumn = (col: number, e?: MouseEvent) => {
-  if (e?.shiftKey && lastSelectedColumn.value !== null) {
-      // Range selection
-      const start = Math.min(lastSelectedColumn.value, col);
-      const end = Math.max(lastSelectedColumn.value, col);
-      
-      rangeSelection.value = {
-          start: { row: 0, col: start },
-          end: { row: rowCount - 1, col: end }
-      };
-      // Keep selectedColumn as the anchor? Or null?
-      selectedColumn.value = col; 
-  } else {
-      lastSelectedColumn.value = col;
-      selectedColumn.value = col;
-      rangeSelection.value = {
-        start: { row: 0, col },
-        end: { row: rowCount - 1, col }
-      };
+
+// Watch selection to update engine state
+watch(selection, (newVal) => {
+  props.engine.viewState.selection = newVal;
+  if (newVal) {
+      updateCursor(newVal);
   }
-  
-  selectedRow.value = null;
-  selection.value = { row: 0, col };
-  focusGrid();
-};
-
-const selectRow = (row: number, e?: MouseEvent) => {
-  if (e?.shiftKey && lastSelectedRow.value !== null) {
-      const start = Math.min(lastSelectedRow.value, row);
-      const end = Math.max(lastSelectedRow.value, row);
-      
-      rangeSelection.value = {
-          start: { row: start, col: 0 },
-          end: { row: end, col: colCount - 1 }
-      };
-      selectedRow.value = row;
-  } else {
-      lastSelectedRow.value = row;
-      selectedRow.value = row;
-      rangeSelection.value = {
-        start: { row, col: 0 },
-        end: { row, col: colCount - 1 }
-      };
-  }
-  
-  selectedColumn.value = null;
-  selection.value = { row, col: 0 };
-  focusGrid();
-};
-
-const clearColumnRowSelection = () => {
-  selectedColumn.value = null;
-  selectedRow.value = null;
-  lastSelectedColumn.value = null;
-  lastSelectedRow.value = null;
-};
-
-const deleteSelectedColumn = async () => {
-  if (selectedColumn.value === null) {
-    return;
-  }
-  
-  // Use Engine's deleteColumn method which tracks deletion for database
-  await props.engine.deleteColumn(selectedColumn.value);
-  
-  toast.success(`Deleted column ${colIndexToLabel(selectedColumn.value)}`);
-  selectedColumn.value = null; // Clear selection
-  renderKey.value++;
-};
-
-const deleteSelectedRow = () => {
-  if (selectedRow.value === null) return;
-  
-  // Use Engine's deleteRow method which tracks deletion for database
-  props.engine.deleteRow(selectedRow.value);
-  
-  toast.success(`Deleted row ${selectedRow.value + 1}`);
-  selectedRow.value = null; // Clear selection
-  renderKey.value++;
-};
-
-const fillSelectedColumn = (value: string) => {
-  if (selectedColumn.value === null) return;
-  
-  // Fill all cells in the column with the value
-  for (let row = 0; row < rowCount; row++) {
-    props.engine.setValue({ row, col: selectedColumn.value }, value);
-  }
-  
-  toast.success(`Filled column ${colIndexToLabel(selectedColumn.value)}`);
-  renderKey.value++;
-};
-
-const fillSelectedRow = (value: string) => {
-  if (selectedRow.value === null) return;
-  
-  // Fill all cells in the row with the value
-  for (let col = 0; col < colCount; col++) {
-    props.engine.setValue({ row: selectedRow.value, col }, value);
-  }
-  
-  toast.success(`Filled row ${selectedRow.value + 1}`);
-  renderKey.value++;
-};
-
-const isColumnSelected = (col: number) => {
-  return selectedColumn.value === col;
-};
-
-const isRowSelected = (row: number) => {
-  return selectedRow.value === row;
-};
+});
 
 
 // --- AI Feature State ---
@@ -587,11 +434,7 @@ const selectedCellLabel = computed(() => {
   return `${colIndexToLabel(selection.value.col)}${selection.value.row + 1}`;
 });
 
-const currentCellRawValue = computed(() => {
-  if (!selection.value) return '';
-  const cell = props.engine.getCell(selection.value);
-  return cell?.rawInput || '';
-});
+// const currentCellRawValue = computed ... moved to useGridEditing
 
 // Helper for display value (direct engine access for performance)
 const getDisplayValue = (row: number, col: number) => {
@@ -675,15 +518,14 @@ const getReferenceColorClass = (row: number, col: number): string => {
 
 
 // --- Mouse Events ---
-const onMouseDown = async (e: MouseEvent) => {
+const onMouseDown = (row: number, col: number, e: MouseEvent) => {
   if (e.target instanceof HTMLInputElement) return;
 
-  const cell = getCellFromEvent(e);
-  if (!cell) return;
+  const cell = { row, col };
 
-  // Commit any pending edit BEFORE changing selection
+  // Commit any pending edit in background (don't block selection)
   if (editingCell.value) {
-    await commitEdit();
+    commitEdit(); // Remove await - let it run in background
   }
 
   isDragging.value = true;
@@ -856,73 +698,15 @@ const toggleStyle = async (styleKey: string, value?: any) => {
     props.engine.endBatch();
 };
 
-// --- Editing ---
-const startEditing = async (row: number, col: number, initialValue?: string) => {
-  // First, commit any pending edit
-  if (editingCell.value) {
-    await commitEdit();
-  }
-  
-  selection.value = { row, col };
-  editingCell.value = { row, col };
-  
-  // Use initial value if provided (for typing), otherwise use current cell value
-  if (initialValue !== undefined) {
-    formulaBarValue.value = initialValue;
-  } else {
-    formulaBarValue.value = currentCellRawValue.value;
-  }
-  
-  await nextTick();
-  await nextTick();
-  const td = document.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
-  const input = td?.querySelector('input') as HTMLInputElement;
-  if (input) {
-    input.focus();
-    // If we have an initial value, put cursor at end
-    if (initialValue !== undefined) {
-      input.setSelectionRange(initialValue.length, initialValue.length);
-    } else {
-      input.select();
-    }
-  }
-};
 
-const onCellInputChange = (e: Event) => {
-  formulaBarValue.value = (e.target as HTMLInputElement).value;
-};
 
-const commitEdit = async () => {
-  console.log('[Grid] commitEdit called', { editingCell: editingCell.value });
-  if (!editingCell.value) return;
-  
-  console.log('[Grid] Committing edit:', {
-    cell: editingCell.value,
-    oldValue: currentCellRawValue.value,
-    newValue: formulaBarValue.value
-  });
-  
-  // Save the value silently (don't trigger auto-save yet)
-  if (formulaBarValue.value !== currentCellRawValue.value && editingCell.value) {
-    console.log('[Grid] Value changed, calling setValue...');
-    await props.engine.setValue(editingCell.value, formulaBarValue.value, true); // silent = true
-  } else {
-    console.log('[Grid] Value unchanged, skipping setValue');
+// Watch selection to act as "formula bar sync" when not editing
+watch(selection, () => {
+  if (!editingCell.value && selection.value) {
+     formulaBarValue.value = currentCellRawValue.value;
   }
-  
-  editingCell.value = null;
-  
-  // Now trigger onChange to save
-  console.log('[Grid] Triggering notifyChange...');
-  props.engine.notifyChange();
-};
+});
 
-const onCellBlur = async () => {
-  // Commit the edit when input loses focus
-  if (editingCell.value) {
-    await commitEdit();
-  }
-};
 
 const onFormulaBarChange = (e: Event) => {
   formulaBarValue.value = (e.target as HTMLInputElement).value;
@@ -1538,57 +1322,15 @@ const onKeyDown = async (e: KeyboardEvent) => {
 
 
 // Ensure grid container gets focus on mount and click
-function focusGrid() {
-  gridContainer.value?.focus();
-}
+// focusGrid provided by useGridSelection
 
 onMounted(() => {
+// Realtime sync init removed (moved to useRealtimeCursor)
   if (gridContainer.value && props.engine.viewState.scrollTop > 0) {
     gridContainer.value.scrollTop = props.engine.viewState.scrollTop;
   }
+  // focusGrid called by useGridSelection logic? Wait, focusGrid is returned from useGridSelection.
   focusGrid();
-
-  // Initialize or Re-initialize Realtime Sync
-  const initRealtimeSync = async () => {
-      // Cleanup existing
-      if (realtimeSync) {
-          realtimeSync.stop();
-          realtimeSync = null;
-      }
-
-      // Don't sync in private mode
-      if (props.privateMode) return;
-
-      const connected = await connectToSurreal();
-      if (connected) {
-           // Stable user identity for this session if possible, or random
-           // In a real app, get this from auth context
-           let storedUser = localStorage.getItem('pegasus-temp-user');
-           let user;
-           if (storedUser) {
-               user = JSON.parse(storedUser);
-           } else {
-               user = {
-                    id: 'user_' + Math.random().toString(36).substr(2, 9),
-                    name: 'User ' + Math.floor(Math.random() * 100),
-                    color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')
-               };
-               localStorage.setItem('pegasus-temp-user', JSON.stringify(user));
-           }
-
-           // (window as any).currentUser = user; 
-           
-           realtimeSync = new RealtimeSync(props.engine, 'main-room', user);
-          //  toast.success('Connected to Realtime Server');
-      }
-  };
-
-  initRealtimeSync();
-
-  // Watch for mode/engine changes to restart sync
-  watch(() => [props.privateMode, props.engine], () => {
-      initRealtimeSync();
-  });
 });
 
 // Cleanup
@@ -1596,7 +1338,6 @@ onUnmounted(() => {
   document.removeEventListener('mousemove', onGlobalMouseMove);
   document.removeEventListener('mouseup', onGlobalMouseUp);
   document.removeEventListener('mousemove', onFillHandleMouseMove);
-  if (realtimeSync) realtimeSync.stop();
 });
 </script>
 

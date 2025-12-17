@@ -11,11 +11,11 @@
           >
             <ArrowLeft class="w-5 h-5" />
           </button>
-          <h1 class="text-lg font-bold text-primary">Dashboard</h1>
+          <h1 class="text-lg font-bold text-primary">{{ currentDashboard?.title || 'Dashboard' }}</h1>
           <span v-if="isShared" class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
             Read Only Preview
           </span>
-          <span class="text-muted-foreground">/</span>
+          <span v-if="currentDashboard" class="text-muted-foreground">/</span>
           <!-- Dashboard Selector -->
           <Select v-if="!isLoading" :model-value="currentDashboard?.id" @update:model-value="handleDashboardChange">
             <SelectTrigger class="w-[200px] h-8">
@@ -41,6 +41,19 @@
         
         <!-- Layout Controls -->
         <div class="flex items-center gap-2 px-3 py-1 bg-muted/50 rounded-lg border border-border">
+          <!-- Role Badge -->
+          <div v-if="currentDashboard && userRole" class="px-2 py-1 rounded text-xs font-medium"
+            :class="{
+              'bg-primary/10 text-primary': userRole === 'owner',
+              'bg-blue-500/10 text-blue-500': userRole === 'editor',
+              'bg-emerald-500/10 text-emerald-500': userRole === 'viewer'
+            }"
+          >
+            {{ userRole.charAt(0).toUpperCase() + userRole.slice(1) }}
+          </div>
+          
+          <div v-if="currentDashboard && userRole" class="w-px h-4 bg-border"></div>
+          
           <button
             @click="isCompact = !isCompact"
             class="p-1.5 rounded hover:bg-muted transition text-xs flex items-center gap-1.5"
@@ -234,7 +247,9 @@
         v-if="!isLoading && (!currentDashboard || !layout.length)"
         class="empty-state"
       >
-        <div class="empty-state-icon">📊</div>
+        <div class="empty-state-icon-wrapper">
+          <LayoutDashboard class="empty-state-icon" :size="64" :stroke-width="1.5" />
+        </div>
         <h2 class="empty-state-title">
           {{ currentDashboard ? 'No dashboard elements yet' : 'No dashboard selected' }}
         </h2>
@@ -439,6 +454,14 @@ const renameTitle = ref('')
 // Delete Modal State
 const showDeleteModal = ref(false)
 
+// User Role - determine if user is owner
+const userRole = computed<'owner' | 'editor' | 'viewer' | null>(() => {
+  if (!currentDashboard.value) return null
+  // For now, all dashboards created by the user are owned by them
+  // In the future, this could check dashboard.owner against current user ID
+  return 'owner'
+})
+
 // Computed grid style for background pattern
 const gridStyle = computed(() => {
   if (!showGrid.value) return {}
@@ -476,8 +499,8 @@ const layout = computed({
 })
 
 const onLayoutUpdated = () => {
-  // Auto-save logic could go here, but we have a manual save button now.
-  // Maybe debounce save?
+  // Auto-save layout changes
+  handleSave()
 }
 
 const handleDashboardChange = (id: string) => {
@@ -564,10 +587,11 @@ const copyShareLink = () => {
 }
 
 // Element Actions
-const removeElement = (id: string) => {
+const removeElement = async (id: string) => {
   if (!currentDashboard.value) return
   currentDashboard.value.data.elements = currentDashboard.value.data.elements.filter((el: any) => el.id !== id)
   currentDashboard.value.data.layout = currentDashboard.value.data.layout.filter((item: any) => item.i !== id)
+  await handleSave()
 }
 
 const handleEditQuery = (element: any) => {
@@ -588,14 +612,15 @@ const handleViewQuery = (element: any) => {
   showQueryModal.value = true
 }
 
-const saveQueryChanges = () => {
+const saveQueryChanges = async () => {
   if (!editingElement.value || !currentDashboard.value) return
   
   const el = currentDashboard.value.data.elements.find((e: any) => e.id === editingElement.value.id)
   if (el) {
     el.query = editingQuery.value
     showQueryModal.value = false
-    toast.success('Query updated locally. Remember to Save Dashboard.')
+    await handleSave()
+    toast.success('Query updated and saved.')
   }
 }
 
@@ -605,7 +630,7 @@ const handleEditElement = (element: any) => {
   showEditModal.value = true
 }
 
-const handleSaveElement = (updatedElement: any) => {
+const handleSaveElement = async (updatedElement: any) => {
   if (!currentDashboard.value) return
   
   const elementIndex = currentDashboard.value.data.elements.findIndex(
@@ -614,7 +639,8 @@ const handleSaveElement = (updatedElement: any) => {
   
   if (elementIndex !== -1) {
     currentDashboard.value.data.elements[elementIndex] = updatedElement
-    toast.success('Element updated. Remember to Save Dashboard.')
+    await handleSave()
+    toast.success('Element updated and saved.')
   }
   
   showEditModal.value = false
@@ -762,10 +788,16 @@ const handleKeyUp = (e: KeyboardEvent) => {
   padding: 2rem;
 }
 
+.empty-state-icon-wrapper {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: oklch(var(--color-primary) / 0.05);
+  border: 2px dashed oklch(var(--color-primary) / 0.2);
+}
+
 .empty-state-icon {
-  font-size: 4rem;
-  margin-bottom: 1rem;
-  opacity: 0.5;
+  color: oklch(var(--color-primary) / 0.4);
 }
 
 .empty-state-title {

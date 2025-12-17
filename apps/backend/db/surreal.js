@@ -87,7 +87,12 @@ const initSchema = async () => {
 
         console.log('[SurrealDB] Schema initialized');
     } catch (e) {
-        console.error('[SurrealDB] Schema initialization warning:', e);
+        // Ignore "table already exists" errors
+        if (e.message && e.message.includes('already exists')) {
+            // console.log('[SurrealDB] Schema already exists');
+        } else {
+            console.error('[SurrealDB] Schema initialization warning:', e);
+        }
     }
 }
 

@@ -10,6 +10,9 @@ export type ConnectionFormState = {
   mongodb: MongoConfig
   kusto: KustoConfig
   sqlite: SQLiteConfig
+  surrealdb: {
+    uploadId?: string
+  }
 }
 
 export const defaultConnectionForm: ConnectionFormState = {
@@ -20,7 +23,8 @@ export const defaultConnectionForm: ConnectionFormState = {
   postgres: { host: '', port: 5432, database: '', user: '', password: '', ssl: false },
   mongodb: { url: '', database: '', collection: '' },
   kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '' },
-  sqlite: { path: '', authToken: '' }
+  sqlite: { path: '', authToken: '' },
+  surrealdb: {}
 }
 
 export type ConnectionStatusState = {

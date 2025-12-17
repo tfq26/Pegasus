@@ -19,6 +19,7 @@ import {
   AlignRight,
   FunctionSquare,
   BarChart,
+  Download,
 } from 'lucide-vue-next'
 import { GitMerge } from 'lucide-vue-next'
 import {
@@ -44,7 +45,6 @@ const props = defineProps<{
   queryOptions: { timeout: number; limit: number; autoCommit: boolean }
   availableModels?: any[]
   saveStatus?: 'saved' | 'saving' | 'error'
-  aiMode?: boolean
   aiMode?: boolean
   autoExecute?: boolean
   privateMode?: boolean

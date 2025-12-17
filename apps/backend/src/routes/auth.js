@@ -11,7 +11,7 @@ const auth = new Hono()
 const workos = new WorkOS(process.env.WORKOS_API_KEY || "sk_test_placeholder")
 const clientId = process.env.WORKOS_CLIENT_ID
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
+const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:5173/auth/callback"
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
@@ -21,25 +21,52 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 const upsertUser = async (payload) => {
     try {
         const userId = payload.sub || payload.id
+        const userRecordId = `user:${userId}`
 
-        // SurrealDB Create/Update
-        await db.query(`
-        UPDATE user:${userId} SET 
-            email = $email,
-            first_name = $firstName,
-            last_name = $lastName,
-            profile_picture_url = $pic,
-            updated_at = time::now()
-        RETURN AFTER;
-    `, {
-            email: payload.email,
-            firstName: payload.firstName,
-            lastName: payload.lastName,
-            pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-        });
+        console.log(`[Auth] Upserting user: ${userRecordId}`)
+
+        // Check if user exists first
+        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+
+        if (existing && existing.length > 0) {
+            // User exists, just update
+            await db.query(`
+                UPDATE ${userRecordId} SET 
+                    email = $email,
+                    first_name = $firstName,
+                    last_name = $lastName,
+                    profile_picture_url = $pic,
+                    updated_at = time::now();
+            `, {
+                email: payload.email,
+                firstName: payload.firstName,
+                lastName: payload.lastName,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+            console.log(`[Auth] User updated: ${payload.email}`)
+        } else {
+            // User doesn't exist, create
+            await db.query(`
+                CREATE ${userRecordId} CONTENT {
+                    email: $email,
+                    first_name: $firstName,
+                    last_name: $lastName,
+                    profile_picture_url: $pic,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                };
+            `, {
+                email: payload.email,
+                firstName: payload.firstName,
+                lastName: payload.lastName,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+            console.log(`[Auth] User created: ${payload.email}`)
+        }
 
     } catch (e) {
-        console.error("Failed to upsert user:", e)
+        console.error("[Auth] Failed to upsert user:", e)
+        throw e
     }
 }
 

@@ -13,22 +13,44 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 const upsertUser = async (payload) => {
     try {
         const userId = payload.sub || payload.id
-        await db.query(`
-        UPDATE user:${userId} SET 
-            email = $email,
-            first_name = $firstName,
-            last_name = $lastName,
-            profile_picture_url = $pic,
-            updated_at = time::now()
-        RETURN AFTER;
-    `, {
-            email: payload.email,
-            firstName: payload.firstName,
-            lastName: payload.lastName,
-            pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-        });
+        const userRecordId = `user:${userId}`
+
+        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+
+        if (existing && existing.length > 0) {
+            await db.query(`
+                UPDATE ${userRecordId} SET 
+                    email = $email,
+                    first_name = $firstName,
+                    last_name = $lastName,
+                    profile_picture_url = $pic,
+                    updated_at = time::now();
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+        } else {
+            await db.query(`
+                CREATE ${userRecordId} CONTENT {
+                    email: $email,
+                    first_name: $firstName,
+                    last_name: $lastName,
+                    profile_picture_url: $pic,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                };
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+        }
     } catch (e) {
-        console.error("Failed to upsert user:", e)
+        console.error("[Chat] Failed to upsert user:", e)
+        throw e
     }
 }
 

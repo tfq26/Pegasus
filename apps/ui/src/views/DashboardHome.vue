@@ -91,31 +91,47 @@
                     <div class="bg-background rounded shadow-sm"></div>
                   </div>
                 </div>
+
+                <!-- Role Badges -->
+                <div class="absolute top-2 left-2 flex gap-1 z-10">
+                  <span v-if="dashboard.access_role === 'owner'" class="bg-primary/90 text-primary-foreground px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm">
+                    Owner
+                  </span>
+                  <span v-else-if="dashboard.access_role === 'editor'" class="bg-blue-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm">
+                    Editor
+                  </span>
+                  <span v-else-if="dashboard.access_role === 'read' || dashboard.access_role === 'viewer'" class="bg-emerald-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm">
+                    Viewer
+                  </span>
+                  <span v-if="dashboard.is_public" class="bg-orange-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm border border-border/20">
+                    Public
+                  </span>
+                </div>
                 
                 <!-- Overlay Actions -->
-                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ContextMenu>
-                    <ContextMenuTrigger>
-                      <button class="p-1.5 bg-background/80 backdrop-blur-sm rounded-md hover:bg-background shadow-sm border border-border/50">
+                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10" @click.stop>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <button class="p-1.5 bg-background/80 backdrop-blur-sm rounded-md hover:bg-background shadow-sm border border-border/50 hover:border-primary transition-colors">
                         <MoreVertical class="w-4 h-4 text-muted-foreground" />
                       </button>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem @select="handleRename(dashboard)">
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem @click="handleRename(dashboard)">
                         <Pencil class="w-4 h-4 mr-2" />
                         Rename
-                      </ContextMenuItem>
-                      <ContextMenuItem @select="handleShare(dashboard)">
+                      </DropdownMenuItem>
+                      <DropdownMenuItem @click="handleShare(dashboard)">
                         <Share2 class="w-4 h-4 mr-2" />
                         Share
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem @select="handleDelete(dashboard)" class="text-destructive">
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem @click="handleDelete(dashboard)" class="text-destructive focus:text-destructive">
                         <Trash2 class="w-4 h-4 mr-2" />
                         Delete
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
@@ -265,6 +281,124 @@
         </div>
       </DialogContent>
     </Dialog>
+
+    <!-- Create Dashboard Modal -->
+    <Dialog v-model:open="showCreateModal">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create New Dashboard</DialogTitle>
+          <DialogDescription>
+            Set up your dashboard with a name, privacy settings, and optional collaborators.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div class="flex flex-col gap-4 py-4">
+          <!-- Dashboard Name -->
+          <div class="space-y-2">
+            <label for="new-dashboard-name" class="text-sm font-medium">Dashboard Name</label>
+            <input
+              id="new-dashboard-name"
+              v-model="newDashboardName"
+              @keyup.enter="confirmCreateDashboard"
+              placeholder="Enter dashboard name"
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+
+          <!-- Privacy Settings -->
+          <div class="space-y-2">
+            <label class="text-sm font-medium">Privacy</label>
+            <div class="flex gap-2">
+              <button
+                @click="newDashboardIsPublic = false"
+                :class="[
+                  'flex-1 px-3 py-2 text-sm rounded-md border transition-all',
+                  !newDashboardIsPublic 
+                    ? 'bg-primary text-primary-foreground border-primary' 
+                    : 'bg-background border-border hover:border-primary'
+                ]"
+              >
+                <div class="flex items-center justify-center gap-2">
+                  <Lock class="w-4 h-4" />
+                  Private
+                </div>
+              </button>
+              <button
+                @click="newDashboardIsPublic = true"
+                :class="[
+                  'flex-1 px-3 py-2 text-sm rounded-md border transition-all',
+                  newDashboardIsPublic 
+                    ? 'bg-primary text-primary-foreground border-primary' 
+                    : 'bg-background border-border hover:border-primary'
+                ]"
+              >
+                <div class="flex items-center justify-center gap-2">
+                  <Globe class="w-4 h-4" />
+                  Public
+                </div>
+              </button>
+            </div>
+            <p class="text-xs text-muted-foreground mt-1">
+              {{ newDashboardIsPublic ? 'Anyone with the link can view this dashboard' : 'Only you and invited users can access' }}
+            </p>
+          </div>
+
+          <!-- Invite Users (only for public dashboards) -->
+          <div v-if="newDashboardIsPublic" class="space-y-2">
+            <label class="text-sm font-medium">Invite Collaborators (Optional)</label>
+            <div class="flex gap-2">
+              <input
+                v-model="inviteEmail"
+                @keyup.enter="addInvite"
+                placeholder="Enter email address"
+                type="email"
+                class="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <button
+                @click="addInvite"
+                :disabled="!inviteEmail.trim()"
+                class="px-3 py-2 text-sm font-medium bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+            
+            <!-- Invited Users List -->
+            <div v-if="invitedUsers.length > 0" class="mt-2 space-y-1">
+              <div 
+                v-for="(email, index) in invitedUsers" 
+                :key="index"
+                class="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-md text-sm"
+              >
+                <span>{{ email }}</span>
+                <button
+                  @click="removeInvite(index)"
+                  class="text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <X class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button 
+            @click="showCreateModal = false"
+            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
+          >
+            Cancel
+          </button>
+          <button 
+            @click="confirmCreateDashboard"
+            :disabled="!newDashboardName.trim() || isCreating"
+            class="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md disabled:opacity-50"
+          >
+            {{ isCreating ? 'Creating...' : 'Create Dashboard' }}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -282,15 +416,18 @@ import {
   Pencil, 
   Trash2, 
   Share2,
-  Download
+  Download,
+  Lock,
+  Globe,
+  X
 } from 'lucide-vue-next'
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator,
-} from '@/components/ui/context-menu'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -326,6 +463,14 @@ const dashboardToRename = ref<any>(null)
 const showDeleteModal = ref(false)
 const dashboardToDelete = ref<any>(null)
 
+// Create Dashboard Modal State
+const showCreateModal = ref(false)
+const newDashboardName = ref('')
+const newDashboardIsPublic = ref(false)
+const inviteEmail = ref('')
+const invitedUsers = ref<string[]>([])
+const isCreating = ref(false)
+
 const filteredDashboards = computed(() => {
   let result = [...dashboards.value]
   
@@ -346,12 +491,56 @@ const filteredDashboards = computed(() => {
   return result
 })
 
-const handleCreateDashboard = async () => {
+const handleCreateDashboard = () => {
+  // Open the create modal instead of directly creating
+  newDashboardName.value = ''
+  newDashboardIsPublic.value = false
+  invitedUsers.value = []
+  inviteEmail.value = ''
+  showCreateModal.value = true
+}
+
+const addInvite = () => {
+  const email = inviteEmail.value.trim()
+  if (email && !invitedUsers.value.includes(email)) {
+    invitedUsers.value.push(email)
+    inviteEmail.value = ''
+  }
+}
+
+const removeInvite = (index: number) => {
+  invitedUsers.value.splice(index, 1)
+}
+
+const confirmCreateDashboard = async () => {
+  if (!newDashboardName.value.trim()) return
+  
+  isCreating.value = true
   try {
-    const id = await store.createNewDashboard('Untitled Dashboard')
+    const id = await store.createNewDashboard(newDashboardName.value.trim())
+    
+    // Update dashboard privacy settings
+    if (newDashboardIsPublic.value) {
+      await store.selectDashboard(id)
+      if (store.currentDashboard) {
+        store.currentDashboard.is_public = true
+        await store.saveCurrentDashboard()
+      }
+    }
+    
+    // TODO: Handle invited users - send invitations via backend
+    if (invitedUsers.value.length > 0) {
+      console.log('Invited users:', invitedUsers.value)
+      // This would require a backend endpoint to send invitation emails
+    }
+    
+    toast.success('Dashboard created successfully')
+    showCreateModal.value = false
     router.push(`/dashboard/${id}`)
   } catch (e) {
     toast.error('Failed to create dashboard')
+  } finally {
+    isCreating.value = false
   }
 }
 

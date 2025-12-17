@@ -12,22 +12,44 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 const upsertUser = async (payload) => {
     try {
         const userId = payload.sub || payload.id
-        await db.query(`
-        UPDATE user:${userId} SET 
-            email = $email,
-            first_name = $firstName,
-            last_name = $lastName,
-            profile_picture_url = $pic,
-            updated_at = time::now()
-        RETURN AFTER;
-    `, {
-            email: payload.email,
-            firstName: payload.firstName,
-            lastName: payload.lastName,
-            pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-        });
+        const userRecordId = `user:${userId}`
+
+        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+
+        if (existing && existing.length > 0) {
+            await db.query(`
+                UPDATE ${userRecordId} SET 
+                    email = $email,
+                    first_name = $firstName,
+                    last_name = $lastName,
+                    profile_picture_url = $pic,
+                    updated_at = time::now();
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+        } else {
+            await db.query(`
+                CREATE ${userRecordId} CONTENT {
+                    email: $email,
+                    first_name: $firstName,
+                    last_name: $lastName,
+                    profile_picture_url: $pic,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                };
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+        }
     } catch (e) {
-        console.error("Failed to upsert user:", e)
+        console.error("[Table] Failed to upsert user:", e)
+        throw e
     }
 }
 
@@ -61,7 +83,9 @@ table.post("/rename-table", async (c) => {
         let actualConnection = connection
         let extractedUploadId = null
         const tursoPath = connection?.sqlite?.path || connection?.sqlite?.url
+
         if (provider === 'sqlite' && tursoPath?.includes('turso.io')) {
+            // ... existing Turso logic ...
             // UUID in table name uses underscores, but in DB it uses hyphens
             const uuidMatch = oldTableName.match(/data_([a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/);
             const uuidWithUnderscores = uuidMatch ? uuidMatch[1] : null;
@@ -86,6 +110,33 @@ table.post("/rename-table", async (c) => {
                     path: process.env.TURSO_UPLOAD_DB_URL,
                     authToken: process.env.TURSO_UPLOAD_TOKEN
                 }
+            }
+        }
+        else if (provider === 'surrealdb') {
+            // For SurrealDB uploads (internal)
+            // Table name format: data_<uuidWithoutHyphens>_<name>
+            const uuidMatch = oldTableName.match(/^data_([a-zA-Z0-9]+)_/);
+            if (uuidMatch) {
+                const uploadUuid = uuidMatch[1];
+                const uploadId = `uploads:${uploadUuid}`;
+
+                // Verify ownership in internal DB
+                const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
+                // upload[0] might be undefined if not found
+                // Check if user matches. user_id is `user:id`
+
+                const ownerId = upload[0]?.user_id;
+                // ownerId is `user:abc`. userId is `abc`
+
+                if (!ownerId || ownerId !== `user:${userId}`) {
+                    return c.json({ error: 'Unauthorized to rename this table' }, 403)
+                }
+
+                // Connection is effectively empty/internal, handled by adapter
+                actualConnection = {
+                    uploadId: uploadUuid // Hint to adapter if needed
+                }
+                extractedUploadId = uploadUuid;
             }
         }
 
@@ -196,6 +247,7 @@ table.post("/delete-table", async (c) => {
         // For SQLite/Turso uploads, verify ownership and get correct connection
         let actualConnection = connection
         const tursoPath = connection?.sqlite?.path || connection?.sqlite?.url
+
         if (provider === 'sqlite' && tursoPath?.includes('turso.io')) {
             // UUID in table name uses underscores, but in DB it uses hyphens
             const uuidMatch = tableName.match(/data_([a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/);
@@ -230,6 +282,38 @@ table.post("/delete-table", async (c) => {
                 }
             }
         }
+        else if (provider === 'surrealdb') {
+            // For SurrealDB uploads (internal)
+            const uuidMatch = tableName.match(/^data_([a-zA-Z0-9]+)_/);
+            if (uuidMatch) {
+                const uploadUuid = uuidMatch[1];
+                const uploadId = `uploads:${uploadUuid}`;
+
+                // Verify ownership (lenient for missing upload records)
+                try {
+                    const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
+
+                    if (upload && upload.length > 0 && upload[0]) {
+                        const ownerId = upload[0].user_id;
+                        if (ownerId !== `user:${userId}`) {
+                            console.log('[Delete] Ownership mismatch');
+                            return c.json({ error: 'Unauthorized to delete this table' }, 403)
+                        }
+
+                        // Delete metadata if it exists
+                        await db.delete(uploadId);
+                        console.log('[Delete] Deleted upload record:', uploadId);
+                    } else {
+                        console.log('[Delete] Upload record not found, allowing authenticated user to delete');
+                    }
+                } catch (e) {
+                    console.log('[Delete] Error checking ownership, allowing delete:', e.message);
+                }
+
+                // Actual table drop happens below via adapter
+                actualConnection = { uploadId: uploadUuid };
+            }
+        }
 
         const Adapter = adapters[provider]
         if (!Adapter) {
@@ -242,8 +326,10 @@ table.post("/delete-table", async (c) => {
             await adapter.connect()
             console.log('[Delete] Adapter connected successfully')
 
-            // Execute DROP TABLE
-            const sql = `DROP TABLE "${tableName}"`
+            // Execute DROP/REMOVE TABLE
+            const sql = provider === 'surrealdb'
+                ? `REMOVE TABLE ${tableName}` // SurrealDB syntax (no quotes)
+                : `DROP TABLE "${tableName}"`; // SQL syntax
             console.log('[Delete] Executing SQL:', sql)
 
             await adapter.query(sql)
@@ -347,6 +433,24 @@ table.post("/save-table-data", async (c) => {
                     }
                 } catch (err) {
                     console.error('[Save] Error verifying upload ownership:', err)
+                    return c.json({ error: "Failed to verify upload ownership" }, 500)
+                }
+            }
+        }
+        else if (provider === 'surrealdb') {
+            const uuidMatch = tableName.match(/^data_([a-zA-Z0-9]+)_/);
+            if (uuidMatch) {
+                const uploadUuid = uuidMatch[1];
+                const uploadId = `uploads:${uploadUuid}`;
+
+                try {
+                    const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
+                    const ownerId = upload[0]?.user_id;
+
+                    if (!ownerId || ownerId !== `user:${userId}`) {
+                        return c.json({ error: "Unauthorized - Not your upload" }, 403)
+                    }
+                } catch (err) {
                     return c.json({ error: "Failed to verify upload ownership" }, 500)
                 }
             }
@@ -530,25 +634,51 @@ table.post("/table/:tableName/query", async (c) => {
         const tableName = c.req.param("tableName")
         const { connection, provider, limit = 100, offset = 0 } = await c.req.json()
 
+        console.log(`[Query] Table: ${tableName}, Provider: ${provider}, Limit: ${limit}`);
+
         const token = getCookie(c, "session")
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
         const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+        if (!Adapter) {
+            console.log(`[Query] Provider ${provider} not supported`);
+            return c.json({ error: "Provider not supported" }, 400)
+        }
 
         const adapter = new Adapter(connection)
         try {
+            console.log(`[Query] Connecting to ${provider}...`);
             await adapter.connect()
-            const sql = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+            console.log(`[Query] Connected successfully`);
+
+            // Generate provider-specific SQL
+            let sql
+            if (provider === 'surrealdb') {
+                // SurrealDB: no quotes, uses START instead of OFFSET, id is implicit
+                // Order by _row_order to preserve original row order
+                sql = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+            } else if (provider === 'postgres' || provider === 'mysql') {
+                // PostgreSQL and MySQL use standard SQL
+                const quote = provider === 'mysql' ? '`' : '"'
+                sql = `SELECT * FROM ${quote}${tableName}${quote} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+            } else {
+                // SQLite and others
+                sql = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+            }
+
+            console.log(`[Query] Executing: ${sql}`);
             const rows = await adapter.query(sql)
+            console.log(`[Query] Returned ${rows?.length || 0} rows`);
             await adapter.disconnect()
 
             return c.json({ rows: Array.isArray(rows) ? rows : [] })
         } catch (e) {
+            console.error(`[Query] Error:`, e.message);
             return c.json({ error: e.message }, 500)
         }
     } catch (e) {
+        console.error(`[Query] Outer error:`, e.message);
         return c.json({ error: e.message }, 500)
     }
 })
@@ -558,6 +688,8 @@ table.post("/table/:tableName/operations", async (c) => {
     try {
         const tableName = c.req.param("tableName")
         const { connection, provider, operations } = await c.req.json()
+
+        console.log(`[Operations] Received for ${provider} table ${tableName}, ${operations.length} operations`)
 
         const token = getCookie(c, "session")
         if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -582,6 +714,37 @@ table.post("/table/:tableName/operations", async (c) => {
                 } catch (e) { console.error('Upload verify failed', e) }
             }
         }
+        else if (provider === 'surrealdb') {
+            const uuidMatch = tableName.match(/^data_([a-zA-Z0-9]+)_/);
+            if (uuidMatch) {
+                const uploadId = `uploads:${uuidMatch[1]}`;
+                console.log(`[Operations] Checking ownership for uploadId: ${uploadId}, userId: ${userId}`);
+                try {
+                    const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
+                    console.log(`[Operations] Upload query result:`, upload);
+
+                    if (upload && upload.length > 0 && upload[0]) {
+                        // Upload record exists, verify ownership
+                        const ownerId = upload[0].user_id;
+                        console.log(`[Operations] Owner ID: ${ownerId}, Expected: user:${userId}`);
+
+                        if (ownerId !== `user:${userId}`) {
+                            console.log(`[Operations] Authorization failed - user mismatch`);
+                            return c.json({ error: "Unauthorized - Not your upload" }, 403)
+                        }
+                        console.log(`[Operations] Authorization passed`);
+                    } else {
+                        // Upload record doesn't exist (legacy upload or missing metadata)
+                        // Allow authenticated users to proceed (they can only see their own tables anyway)
+                        console.log(`[Operations] Upload record not found, allowing authenticated user to proceed`);
+                    }
+                } catch (e) {
+                    console.error(`[Operations] Verification error:`, e);
+                    // Don't block on verification errors for now
+                    console.log(`[Operations] Allowing operation despite verification error`);
+                }
+            }
+        }
 
         const Adapter = adapters[provider]
         if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
@@ -591,75 +754,151 @@ table.post("/table/:tableName/operations", async (c) => {
             await adapter.connect()
             const queries = []
 
-            for (const op of operations) {
-                if (op.type === 'update') {
-                    const setClause = Object.keys(op.changes).map(k => {
-                        const val = op.changes[k]
-                        if (val === null) return `"${k}" = NULL`
-                        return `"${k}" = '${String(val).replace(/'/g, "''")}'`
-                    }).join(', ')
+            if (provider === 'surrealdb') {
+                for (const op of operations) {
+                    if (op.type === 'full_replacement') {
+                        const rows = op.rows || []
 
-                    if (setClause) {
-                        queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE rowid = ${Number(op.id)}`)
+                        // Define schema fields for all columns in the data
+                        if (rows.length > 0) {
+                            const allColumns = new Set();
+                            rows.forEach(row => {
+                                Object.keys(row).forEach(key => {
+                                    if (key !== '_row_order') allColumns.add(key);
+                                });
+                            });
+
+                            console.log(`[Operations] Defining ${allColumns.size} fields for ${tableName}`);
+                            for (const colName of allColumns) {
+                                // Don't add to queries array - execute immediately to avoid batch issues
+                                try {
+                                    await adapter.query(`DEFINE FIELD \`${colName}\` ON TABLE ${tableName} FLEXIBLE PERMISSIONS FULL;`);
+                                } catch (e) {
+                                    // Ignore "already exists" errors (SurrealDB returns this when field is already defined)
+                                    if (!e.message.includes('already exists')) {
+                                        console.warn(`[Operations] Failed to define field ${colName}:`, e.message);
+                                    }
+                                }
+                            }
+                        }
+
+                        // 1. Delete all
+                        queries.push(`DELETE ${tableName}`)
+
+                        // 2. Insert all with row_order to preserve order
+                        const batchSize = 1000
+                        for (let i = 0; i < rows.length; i += batchSize) {
+                            const batch = rows.slice(i, i + batchSize).map((row, idx) => ({
+                                ...row,
+                                _row_order: i + idx  // Add order field
+                            }))
+                            if (batch.length > 0) {
+                                queries.push(`INSERT INTO ${tableName} ${JSON.stringify(batch)}`)
+                            }
+                        }
                     }
-                }
-                else if (op.type === 'delete') {
-                    queries.push(`DELETE FROM "${tableName}" WHERE rowid = ${Number(op.id)}`)
-                }
-                else if (op.type === 'create') {
-                    const keys = Object.keys(op.data)
-                    const cols = keys.map(k => `"${k}"`).join(', ')
-                    const vals = keys.map(k => {
-                        const val = op.data[k]
-                        if (val === null) return 'NULL'
-                        return `'${String(val).replace(/'/g, "''")}'`
-                    }).join(', ')
-                    queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
-                }
-                else if (op.type === 'drop_column') {
-                    queries.push(`ALTER TABLE "${tableName}" DROP COLUMN "${op.column}"`)
-                }
-                else if (op.type === 'add_column') {
-                    queries.push(`ALTER TABLE "${tableName}" ADD COLUMN "${op.column}" TEXT`)
-                }
-                else if (op.type === 'full_replacement') {
-                    queries.push(`DELETE FROM "${tableName}"`)
-                    const rows = op.rows || []
-                    const batchSize = 1000
-                    for (let i = 0; i < rows.length; i += batchSize) {
-                        const batch = rows.slice(i, i + batchSize)
-                        for (const row of batch) {
-                            const keys = Object.keys(row)
-                            if (keys.length === 0) continue
-                            const cols = keys.map(k => `"${k}"`).join(', ')
-                            const vals = keys.map(k => {
-                                const val = row[k]
-                                if (val === null || val === undefined) return 'NULL'
-                                return `'${String(val).replace(/'/g, "''")}'`
-                            }).join(', ')
-                            queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+                    else if (op.type === 'create') {
+                        queries.push(`INSERT INTO ${tableName} ${JSON.stringify(op.data)}`)
+                    }
+                    else if (op.type === 'update') {
+                        if (op.id) {
+                            queries.push(`UPDATE ${op.id} MERGE ${JSON.stringify(op.changes)}`)
+                        } else {
+                            // Fallback if no ID (should rely on full_replacement usually)
+                            console.warn('[SurrealDB] Update operation missing ID, skipping')
+                        }
+                    }
+                    else if (op.type === 'delete') {
+                        if (op.id) {
+                            queries.push(`DELETE ${op.id}`)
                         }
                     }
                 }
-                else if (op.type === 'cleanup_empty') {
-                    const schemaResult = await adapter.query(`PRAGMA table_info("${tableName}")`)
-                    const columns = schemaResult.map(col => col.name).filter(name => name !== 'rowid')
-                    if (columns.length > 0) {
-                        const conditions = columns.map(col => `("${col}" IS NULL OR "${col}" = '')`).join(' AND ')
-                        queries.push(`DELETE FROM "${tableName}" WHERE ${conditions}`)
+            } else {
+                // SQLite / Others logic
+                for (const op of operations) {
+                    if (op.type === 'update') {
+                        const setClause = Object.keys(op.changes).map(k => {
+                            const val = op.changes[k]
+                            if (val === null) return `"${k}" = NULL`
+                            return `"${k}" = '${String(val).replace(/'/g, "''")}'`
+                        }).join(', ')
+
+                        if (setClause) {
+                            queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE rowid = ${Number(op.id)}`)
+                        }
+                    }
+                    else if (op.type === 'delete') {
+                        queries.push(`DELETE FROM "${tableName}" WHERE rowid = ${Number(op.id)}`)
+                    }
+                    else if (op.type === 'create') {
+                        const keys = Object.keys(op.data)
+                        const cols = keys.map(k => `"${k}"`).join(', ')
+                        const vals = keys.map(k => {
+                            const val = op.data[k]
+                            if (val === null) return 'NULL'
+                            return `'${String(val).replace(/'/g, "''")}'`
+                        }).join(', ')
+                        queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+                    }
+                    else if (op.type === 'drop_column') {
+                        queries.push(`ALTER TABLE "${tableName}" DROP COLUMN "${op.column}"`)
+                    }
+                    else if (op.type === 'add_column') {
+                        queries.push(`ALTER TABLE "${tableName}" ADD COLUMN "${op.column}" TEXT`)
+                    }
+                    else if (op.type === 'full_replacement') {
+                        queries.push(`DELETE FROM "${tableName}"`)
+                        const rows = op.rows || []
+                        const batchSize = 1000
+                        for (let i = 0; i < rows.length; i += batchSize) {
+                            const batch = rows.slice(i, i + batchSize)
+                            for (const row of batch) {
+                                const keys = Object.keys(row)
+                                if (keys.length === 0) continue
+                                const cols = keys.map(k => `"${k}"`).join(', ')
+                                const vals = keys.map(k => {
+                                    const val = row[k]
+                                    if (val === null || val === undefined) return 'NULL'
+                                    return `'${String(val).replace(/'/g, "''")}'`
+                                }).join(', ')
+                                queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+                            }
+                        }
+                    }
+                    else if (op.type === 'cleanup_empty') {
+                        const schemaResult = await adapter.query(`PRAGMA table_info("${tableName}")`)
+                        const columns = schemaResult.map(col => col.name).filter(name => name !== 'rowid')
+                        if (columns.length > 0) {
+                            const conditions = columns.map(col => `("${col}" IS NULL OR "${col}" = '')`).join(' AND ')
+                            queries.push(`DELETE FROM "${tableName}" WHERE ${conditions}`)
+                        }
                     }
                 }
             }
 
+            console.log(`[Operations] Generated ${queries.length} queries`);
             if (queries.length > 0) {
+                console.log(`[Operations] First query:`, queries[0].substring(0, 200));
+
                 if (adapter.batch) {
+                    console.log(`[Operations] Executing batch...`);
                     await adapter.batch(queries)
+                    console.log(`[Operations] Batch executed successfully`);
                 } else {
-                    for (const q of queries) await adapter.query(q)
+                    console.log(`[Operations] Executing queries individually...`);
+                    for (const q of queries) {
+                        console.log(`[Operations] Executing:`, q.substring(0, 100));
+                        await adapter.query(q)
+                    }
+                    console.log(`[Operations] All queries executed`);
                 }
+            } else {
+                console.log(`[Operations] No queries to execute`);
             }
 
             await adapter.disconnect()
+            console.log(`[Operations] Success! Executed ${queries.length} queries`);
             return c.json({ success: true, count: queries.length })
         } catch (e) {
             return c.json({ error: e.message }, 500)

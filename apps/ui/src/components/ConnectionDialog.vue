@@ -165,13 +165,19 @@ const handleFileUpload = async (event: Event) => {
   try {
     const result = await uploadFile(file)
     if (result.success) {
-      props.connectionForm.sqlite.path = result.dbPath || ''
-      props.connectionForm.sqlite.authToken = result.authToken
-      props.connectionForm.sqlite.tables = result.tables
+      if (result.provider === 'surrealdb') {
+        props.connectionForm.provider = 'surrealdb'
+        if (!props.connectionForm.surrealdb) props.connectionForm.surrealdb = {}
+        props.connectionForm.surrealdb.uploadId = result.uploadId
+      } else {
+        props.connectionForm.sqlite.path = result.dbPath || ''
+        props.connectionForm.sqlite.authToken = result.authToken
+        props.connectionForm.sqlite.tables = result.tables
+      }
       
       // Auto-set nickname if empty
       if (!props.connectionForm.nickname) {
-        props.connectionForm.nickname = file.name.split('.')[0]
+        props.connectionForm.nickname = file.name.split('.')[0] ?? 'Untitled'
       }
     } else {
       tempError.value = (result.error as string) || 'Upload failed'
@@ -243,7 +249,7 @@ const handleFileUpload = async (event: Event) => {
         <div class="h-px bg-border my-4"></div>
 
         <!-- File Import -->
-        <div v-if="props.connectionForm.provider === 'file'" class="space-y-4">
+        <div v-if="props.connectionForm.provider === 'file' || props.connectionForm.provider === 'surrealdb'" class="space-y-4">
              <div class="space-y-1.5">
                 <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Upload File</label>
                 <div class="flex items-center gap-3">
@@ -262,7 +268,7 @@ const handleFileUpload = async (event: Event) => {
                         <Upload class="w-4 h-4" />
                         {{ isUploading ? 'Uploading...' : 'Choose File (Excel, JSON, XML)' }}
                     </button>
-                    <span v-if="props.connectionForm.sqlite.path" class="text-xs text-emerald-400">
+                    <span v-if="props.connectionForm.sqlite.path || props.connectionForm.surrealdb?.uploadId" class="text-xs text-emerald-400">
                         File uploaded successfully!
                     </span>
                 </div>

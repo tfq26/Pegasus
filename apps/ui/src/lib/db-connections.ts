@@ -1,4 +1,4 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb'
 
 export type MySQLConfig = {
   host: string
@@ -39,6 +39,10 @@ export type SQLiteConfig = {
   tables?: string[]
 }
 
+export type SurrealConfig = {
+  uploadId?: string
+}
+
 export type ConnectionEntry = {
   id: string
   nickname: string
@@ -49,6 +53,7 @@ export type ConnectionEntry = {
   mongodb?: MongoConfig
   kusto?: KustoConfig
   sqlite?: SQLiteConfig
+  surrealdb?: SurrealConfig
 }
 
 export const CONNECTION_STORAGE_KEY = 'pegasus-db-connections'
@@ -104,6 +109,8 @@ export const buildConnectionPayload = (
       return { ...entry.kusto }
     case 'sqlite':
       return { ...entry.sqlite }
+    case 'surrealdb':
+      return { ...entry.surrealdb }
     default:
       return {}
   }

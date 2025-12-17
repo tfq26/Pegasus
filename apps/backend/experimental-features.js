@@ -36,7 +36,12 @@ export async function initExperimentalTables(db) {
         `);
         console.log('✅ Experimental features tables initialized')
     } catch (e) {
-        console.error('Failed to init experimental tables:', e);
+        // Ignore "table already exists" errors which happen on restart
+        if (e.message && e.message.includes('already exists')) {
+            // console.log('Experimental tables already exist');
+        } else {
+            console.error('Failed to init experimental tables:', e);
+        }
     }
 }
 

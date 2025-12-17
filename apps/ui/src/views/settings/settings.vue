@@ -194,7 +194,8 @@ const connectionForm = reactive<ConnectionFormState>({
     password: '',
     database: 'postgres',
     ssl: false
-  }
+  },
+  surrealdb: {}
 })
 
 const canAddConnection = computed(() => connectionForm.nickname.trim().length > 0)
@@ -308,19 +309,20 @@ const resetConnectionForm = () => {
       password: '',
       database: 'postgres',
       ssl: false
-    }
+    },
+    surrealdb: {}
   }
   Object.assign(connectionForm, fresh)
 }
 
 const summaryFor = (conn: ConnectionEntry) => {
-  const payload =
-    conn.provider === 'mysql'
-      ? conn.mysql
-      : conn.provider === 'mongodb'
-        ? conn.mongodb
-        : conn.kusto
-  return payload ? JSON.stringify(payload, null, 2) : ''
+  if (conn.provider === 'mysql') return JSON.stringify(conn.mysql, null, 2)
+  if (conn.provider === 'postgres') return JSON.stringify(conn.postgres, null, 2)
+  if (conn.provider === 'mongodb') return JSON.stringify(conn.mongodb, null, 2)
+  if (conn.provider === 'kusto') return JSON.stringify(conn.kusto, null, 2)
+  if (conn.provider === 'sqlite') return JSON.stringify(conn.sqlite, null, 2)
+  if (conn.provider === 'surrealdb') return JSON.stringify(conn.surrealdb, null, 2)
+  return ''
 }
 
 const loadConnections = async () => {
@@ -370,6 +372,9 @@ const editConnection = (conn: ConnectionEntry) => {
   if (conn.provider === 'postgres' && conn.postgres) {
     connectionForm.postgres = { ...conn.postgres }
   }
+  if (conn.provider === 'surrealdb' && conn.surrealdb) {
+    connectionForm.surrealdb = { ...conn.surrealdb }
+  }
 }
 
 const updateConnection = async () => {
@@ -396,6 +401,9 @@ const updateConnection = async () => {
   }
   if (payload.provider === 'postgres') {
     payload.postgres = { ...connectionForm.postgres }
+  }
+  if (payload.provider === 'surrealdb') {
+    payload.surrealdb = { ...connectionForm.surrealdb }
   }
   if (payload.provider === 'file') {
     payload.provider = 'sqlite'

@@ -513,29 +513,39 @@ export class Engine {
     }
 
     /**
+     * Convert column index to Excel-style letter (0->A, 25->Z, 26->AA)
+     */
+    private colIndexToLabel(index: number): string {
+        let label = '';
+        let i = index;
+        while (i >= 0) {
+            label = String.fromCharCode(65 + (i % 26)) + label;
+            i = Math.floor(i / 26) - 1;
+        }
+        return label;
+    }
+
+    /**
      * Get all non-empty rows for full replacement save
+     * Uses column letters (A, B, C...) as field names instead of reading headers
+     * This allows row 0 to be data and eliminates header assumptions
      */
     public getAllNonEmptyRows(): Array<Record<string, any>> {
         const rowsMap = new Map<number, Record<string, any>>();
 
-        // Collect all rows that have at least one non-empty cell
-        // Skip row 0 as it contains headers, not data
+        // Collect all rows (including row 0) using column letters as field names
         for (const [key, cell] of this.cells.entries()) {
             const [rowStr, colStr] = key.split(',');
             const row = parseInt(rowStr);
             const col = parseInt(colStr);
 
-            // IMPORTANT: Skip row 0 as it contains headers, not data
-            if (row === 0) continue;
-
             if (!rowsMap.has(row)) {
                 rowsMap.set(row, {});
             }
 
-            const colName = this.columnNames[col];
-            if (colName && colName !== '_rowid_' && colName !== '__id') {
-                rowsMap.get(row)![colName] = cell.value ?? null;
-            }
+            // Use column letter (A, B, C...) as field name
+            const colName = this.colIndexToLabel(col);
+            rowsMap.get(row)![colName] = cell.value ?? null;
         }
 
         // Filter out completely empty rows

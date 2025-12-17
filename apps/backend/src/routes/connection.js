@@ -10,22 +10,44 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 const upsertUser = async (payload) => {
     try {
         const userId = payload.sub || payload.id
-        await db.query(`
-        UPDATE user:${userId} SET 
-            email = $email,
-            first_name = $firstName,
-            last_name = $lastName,
-            profile_picture_url = $pic,
-            updated_at = time::now()
-        RETURN AFTER;
-    `, {
-            email: payload.email,
-            firstName: payload.firstName,
-            lastName: payload.lastName,
-            pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-        });
+        const userRecordId = `user:${userId}`
+
+        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+
+        if (existing && existing.length > 0) {
+            await db.query(`
+                UPDATE ${userRecordId} SET 
+                    email = $email,
+                    first_name = $firstName,
+                    last_name = $lastName,
+                    profile_picture_url = $pic,
+                    updated_at = time::now();
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+        } else {
+            await db.query(`
+                CREATE ${userRecordId} CONTENT {
+                    email: $email,
+                    first_name: $firstName,
+                    last_name: $lastName,
+                    profile_picture_url: $pic,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                };
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+        }
     } catch (e) {
-        console.error("Failed to upsert user:", e)
+        console.error("[Connection] Failed to upsert user:", e)
+        throw e
     }
 }
 
@@ -38,8 +60,8 @@ connections.get("/", async (c) => {
         const userId = payload.sub
 
         const [results] = await db.query(`
-        SELECT * FROM connection WHERE user = $user ORDER BY created_at ASC;
-    `, { user: `user:${userId}` });
+        SELECT * FROM connection WHERE user = type::thing('user', $userId) ORDER BY created_at ASC;
+    `, { userId });
 
         const connectionList = results.map(row => {
             const config = typeof row.config === 'string' ? JSON.parse(row.config) : row.config
@@ -54,6 +76,7 @@ connections.get("/", async (c) => {
 
         return c.json({ connections: connectionList })
     } catch (error) {
+        console.error("[Connection] GET error:", error)
         return c.json({ error: "Unauthorized" }, 401)
     }
 })
@@ -75,12 +98,16 @@ connections.post("/", async (c) => {
         else if (connection.provider === 'kusto') config = { kusto: connection.kusto }
         else if (connection.provider === 'sqlite') config = { sqlite: connection.sqlite }
         else if (connection.provider === 'postgres') config = { postgres: connection.postgres }
+        else if (connection.provider === 'surrealdb') config = { surrealdb: connection.surrealdb }
 
-        const id = connection.id || crypto.randomUUID()
+        // Generate ID without hyphens for SurrealDB compatibility
+        const id = connection.id ? connection.id.replace(/-/g, '') : crypto.randomUUID().replace(/-/g, '')
+
+        console.log('[Connection] Saving connection:', id, 'for user:', userId)
 
         await db.query(`
         CREATE connection:${id} CONTENT {
-            user: $user,
+            user: type::thing('user', $userId),
             nickname: $nickname,
             description: $description,
             provider: $provider,
@@ -88,12 +115,14 @@ connections.post("/", async (c) => {
             created_at: time::now()
         };
     `, {
-            user: `user:${userId}`,
+            userId: userId,
             nickname: connection.nickname,
             description: connection.description ?? null,
             provider: connection.provider,
             config: config
         });
+
+        console.log('[Connection] Connection saved successfully')
 
         return c.json({ ok: true })
     } catch (error) {
@@ -121,26 +150,30 @@ connections.put("/:id", async (c) => {
         else if (connection.provider === 'kusto') config = { kusto: connection.kusto }
         else if (connection.provider === 'sqlite') config = { sqlite: connection.sqlite }
         else if (connection.provider === 'postgres') config = { postgres: connection.postgres }
+        else if (connection.provider === 'surrealdb') config = { surrealdb: connection.surrealdb }
+
+        console.log('[Connection] Updating connection:', connectionId, 'for user:', userId)
 
         const [updated] = await db.query(`
-        UPDATE ${connectionId} MERGE {
+        UPDATE ${connectionId} SET {
             nickname: $nickname,
             description: $description,
             provider: $provider,
             config: $config
-        } WHERE user = $user;
+        } WHERE user = type::thing('user', $userId);
     `, {
+            userId: userId,
             nickname: connection.nickname,
             description: connection.description ?? null,
             provider: connection.provider,
-            config: config,
-            user: `user:${userId}`
+            config: config
         });
 
         if (!updated || !updated.length) {
             return c.json({ error: "Connection not found or not authorized" }, 404)
         }
 
+        console.log('[Connection] Connection updated successfully')
         return c.json({ ok: true })
     } catch (error) {
         console.error("Connection update error:", error)
@@ -158,10 +191,14 @@ connections.delete("/:id", async (c) => {
         let connectionId = c.req.param('id')
         if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
 
-        await db.query(`DELETE ${connectionId} WHERE user = $user;`, { user: `user:${userId}` });
+        console.log('[Connection] Deleting connection:', connectionId, 'for user:', userId)
 
+        await db.query(`DELETE ${connectionId} WHERE user = type::thing('user', $userId);`, { userId });
+
+        console.log('[Connection] Connection deleted successfully')
         return c.json({ success: true })
     } catch (e) {
+        console.error("Connection delete error:", e)
         return c.json({ error: "Failed to delete connection" }, 500)
     }
 })

@@ -31,6 +31,14 @@ import {
   SelectValue,
   SelectSeparator
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import { updateConnection as apiUpdateConnection } from '@/lib/api'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
@@ -547,11 +555,19 @@ const handleEditTable = (conn: ConnectionEntry, table: string) => {
   emit('edit-table', conn, table)
 }
 
-const handleDeleteTable = async (conn: ConnectionEntry, table: string) => {
-  // Show confirmation dialog
-  const confirmed = confirm(`Are you sure you want to permanently delete "${formatTableName(table)}"? This action cannot be undone.`)
+// Delete confirmation dialog state
+const deleteDialogOpen = ref(false)
+const tableToDelete = ref<{ conn: ConnectionEntry; table: string } | null>(null)
+
+const handleDeleteTable = (conn: ConnectionEntry, table: string) => {
+  tableToDelete.value = { conn, table }
+  deleteDialogOpen.value = true
+}
+
+const confirmDelete = async () => {
+  if (!tableToDelete.value) return
   
-  if (!confirmed) return
+  const { conn, table } = tableToDelete.value
   
   try {
     // Call backend to delete table
@@ -590,8 +606,58 @@ const handleDeleteTable = async (conn: ConnectionEntry, table: string) => {
     // Refresh schemas to remove deleted table from list
     await refreshSchemas()
     
+    // Close dialog and reset
+    deleteDialogOpen.value = false
+    tableToDelete.value = null
+    
   } catch (error) {
     toast.error('Failed to delete table', {
+      description: error instanceof Error ? error.message : String(error)
+    })
+    // Keep dialog open on error so user can retry or cancel
+  }
+}
+
+// Delete connection dialog state
+const deleteConnectionDialogOpen = ref(false)
+const connectionToDelete = ref<ConnectionEntry | null>(null)
+
+const handleDeleteConnection = (conn: ConnectionEntry) => {
+  connectionToDelete.value = conn
+  deleteConnectionDialogOpen.value = true
+}
+
+const confirmDeleteConnection = async () => {
+  if (!connectionToDelete.value) return
+  
+  const conn = connectionToDelete.value
+  
+  try {
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/connections/${conn.id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to delete connection')
+    }
+    
+    toast.success(`Deleted connection "${conn.nickname}"`)
+    
+    // Remove from local storage
+    const connections = JSON.parse(localStorage.getItem(CONNECTION_STORAGE_KEY) || '[]')
+    const filtered = connections.filter((c: ConnectionEntry) => c.id !== conn.id)
+    localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(filtered))
+    
+    // Refresh to update UI
+    window.location.reload()
+    
+    deleteConnectionDialogOpen.value = false
+    connectionToDelete.value = null
+    
+  } catch (error) {
+    toast.error('Failed to delete connection', {
       description: error instanceof Error ? error.message : String(error)
     })
   }
@@ -599,11 +665,36 @@ const handleDeleteTable = async (conn: ConnectionEntry, table: string) => {
 
 const viewerColumns = computed(() => {
   if (!viewer.value.entries.length) return []
-  const columns = new Set<string>()
-  viewer.value.entries.forEach((entry) => {
-    Object.keys(entry).forEach((key) => columns.add(key))
-  })
-  return Array.from(columns)
+  
+  // Get columns from first row to preserve order
+  const firstRow = viewer.value.entries[0]
+  if (!firstRow) return []
+  
+  const columns = Object.keys(firstRow).filter(key => 
+    // Filter out internal ID and order columns
+    key !== 'id' && key !== '__id' && key !== '_row_order'
+  )
+  
+  // For SurrealDB: columns are A, B, C... so we use first row VALUES as headers
+  // For other DBs: columns are actual names, so we use them as-is
+  if (viewer.value.connection?.provider === 'surrealdb') {
+    // Return first row's values as column headers
+    return columns.map(col => String(firstRow[col] ?? col))
+  }
+  
+  return columns
+})
+
+// Data rows to display (skip first row for SurrealDB since it's used as headers)
+const viewerDataRows = computed(() => {
+  if (!viewer.value.entries.length) return []
+  
+  if (viewer.value.connection?.provider === 'surrealdb') {
+    // Skip first row (it's the header row)
+    return viewer.value.entries.slice(1)
+  }
+  
+  return viewer.value.entries
 })
 
 const isJsonValue = (value: unknown): boolean => {
@@ -813,7 +904,15 @@ onBeforeUnmount(() => {
                 </li>
               </ul>
 
-              <p v-else class="text-xs text-muted-foreground">No tables or collections available yet.</p>
+              <div v-else class="text-xs text-muted-foreground space-y-2">
+                <p>No tables or collections available yet.</p>
+                <button
+                  @click="handleDeleteConnection(conn)"
+                  class="text-red-600 dark:text-red-400 hover:underline text-xs"
+                >
+                  Delete this connection
+                </button>
+              </div>
             </article>
           </div>
           <p v-else class="text-xs text-muted-foreground px-2">
@@ -936,7 +1035,7 @@ onBeforeUnmount(() => {
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="(entry, index) in viewer.entries" :key="`row-${index}`">
+                    <template v-for="(entry, index) in viewerDataRows" :key="`row-${index}`">
                       <!-- Main row -->
                       <tr
                         :class="[
@@ -1017,5 +1116,59 @@ onBeforeUnmount(() => {
     <AddConnectionModal
       v-model:open="isAddConnectionModalOpen"
     />
+    
+    <!-- Delete Confirmation Dialog -->
+    <Dialog v-model:open="deleteDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Table</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to permanently delete "{{ tableToDelete ? formatTableName(tableToDelete.table) : '' }}"? 
+            This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2">
+          <button
+            @click="deleteDialogOpen = false"
+            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmDelete"
+            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    
+    <!-- Delete Connection Dialog -->
+    <Dialog v-model:open="deleteConnectionDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Connection</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete the connection "{{ connectionToDelete?.nickname }}"? 
+            This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2">
+          <button
+            @click="deleteConnectionDialogOpen = false"
+            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmDeleteConnection"
+            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+          >
+            Delete Connection
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

@@ -3,11 +3,13 @@ import { MySQLAdapter } from "./mySQLAdapter.js"
 import { KustoAdapter } from "./kustoAdapter.js"
 import { SQLiteAdapter } from "./sqliteAdapter.js"
 import { PostgresAdapter } from "./postgresAdapter.js"
+import { SurrealAdapter } from "./surrealAdapter.js"
 
 export const adapters = {
   mongodb: MongoAdapter,
   mysql: MySQLAdapter,
   kusto: KustoAdapter,
   sqlite: SQLiteAdapter,
-  postgres: PostgresAdapter
+  postgres: PostgresAdapter,
+  surrealdb: SurrealAdapter
 }

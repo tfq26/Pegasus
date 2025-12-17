@@ -11,21 +11,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-// Mount Routes
-app.route('/dashboard', dashboardRoutes)
-app.route('/dashboards', dashboardRoutes)
-// Note: dashboardRoutes handles both /dashboard and /dashboards? 
-// In dashboard.js I defined `dashboard.get("/dashboard"...)` and `dashboard.get("/dashboards"...)`.
-// If I mount at `/`, they work as is.
-// If I mount at `/api`, they become `/api/dashboard`.
-// Current app structure is root-level.
-// So I should mount at `/`.
-app.route('/', dashboardRoutes)
-app.route('/connections', connectionRoutes)
-app.route('/api', tableRoutes)
-// Mount Chat/AI Routes
-app.route('/', chatRoutes)
-
+// CORS Configuration MUST be before routes
 app.use("*", cors({
   origin: (origin) => {
     // Allow localhost/127.0.0.1
@@ -48,6 +34,18 @@ app.use("*", cors({
   credentials: true,
   allowHeaders: ["Content-Type", "Authorization"]
 }))
+
+
+// Mount Routes
+// dashboardRoutes defines paths like /dashboard and /dashboards internally.
+// So we mount it at the root '/'.
+app.route('/', dashboardRoutes)
+app.route('/connections', connectionRoutes)
+app.route('/api', tableRoutes)
+// Mount Chat/AI Routes
+app.route('/', chatRoutes)
+
+
 
 import { authRoutes } from "./src/routes/auth.js"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
@@ -87,6 +85,49 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
 
 // Helper to ensure user exists in DB
+const upsertUser = async (payload) => {
+  try {
+    const userId = payload.sub || payload.id
+    const userRecordId = `user:${userId}`
+
+    const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+
+    if (existing && existing.length > 0) {
+      await db.query(`
+                UPDATE ${userRecordId} SET 
+                    email = $email,
+                    first_name = $firstName,
+                    last_name = $lastName,
+                    profile_picture_url = $pic,
+                    updated_at = time::now();
+            `, {
+        email: payload.email,
+        firstName: payload.firstName || payload.first_name,
+        lastName: payload.lastName || payload.last_name,
+        pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+      });
+    } else {
+      await db.query(`
+                CREATE ${userRecordId} CONTENT {
+                    email: $email,
+                    first_name: $firstName,
+                    last_name: $lastName,
+                    profile_picture_url: $pic,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                };
+            `, {
+        email: payload.email,
+        firstName: payload.firstName || payload.first_name,
+        lastName: payload.lastName || payload.last_name,
+        pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+      });
+    }
+  } catch (e) {
+    console.error("[DB] Failed to upsert user:", e)
+    throw e
+  }
+}
 
 // Mount Auth Routes
 app.route('/auth', authRoutes)
@@ -185,22 +226,36 @@ app.post("/upload", async (c) => {
       // Prefix with 'data_uploadId_' to isolate
       const uniqueTableName = `data_${uploadUuid}_${safeTableName}`;
 
-      // define table (optional in schemaless, but good practice if needed)
-      // For bulk insert, we can just use `insert`
-      // Surreal don't need CREATE TABLE.
+      // Define schema for the table
+      // Get all unique column names from the data
+      const columnNames = new Set();
+      rows.forEach(row => {
+        Object.keys(row).forEach(key => columnNames.add(key));
+      });
 
-      // Batch Insert
-      // SurrealDB `insert` can take an array of objects
+      console.log(`[Upload] Defining schema for ${uniqueTableName} with ${columnNames.size} columns`);
+
+      // Define each field as flexible to allow any data type (numbers, strings, etc.)
+      for (const colName of columnNames) {
+        try {
+          await db.query(`DEFINE FIELD \`${colName}\` ON TABLE ${uniqueTableName} FLEXIBLE PERMISSIONS FULL;`);
+        } catch (e) {
+          console.warn(`[Upload] Failed to define field ${colName}:`, e.message);
+        }
+      }
+
+      // Also define _row_order for maintaining row order
+      await db.query(`DEFINE FIELD _row_order ON TABLE ${uniqueTableName} TYPE option<number> PERMISSIONS FULL;`);
+
+      // Batch Insert with row_order
       const chunkSize = 500
       for (let i = 0; i < rows.length; i += chunkSize) {
         const chunk = rows.slice(i, i + chunkSize)
 
-        // Ensure data keys are safe
-        const safeChunk = chunk.map(row => {
-          const newRow = {};
+        // Ensure data keys are safe and add row_order
+        const safeChunk = chunk.map((row, idx) => {
+          const newRow = { _row_order: i + idx };
           for (const key in row) {
-            // Sanitize column names?
-            // Surreal supports many, but let's be safe
             newRow[key] = row[key];
           }
           return newRow;
@@ -214,10 +269,8 @@ app.post("/upload", async (c) => {
 
     return c.json({
       success: true,
-      // For SurrealDB, we might not need separate dbPath/authToken if we are in the same app context
-      // But if frontend connects directly, it uses the main connection.
-      // We return the table names which the frontend can now query directly using `surreal.select()`
       provider: 'surrealdb',
+      uploadId: uploadId, // Return the full ID "uploads:uuid" or just "uuid" if consistent
       tables: createdTables
     })
 
@@ -770,6 +823,21 @@ app.post("/schema", async (c) => {
       await adapter.connect()
       const tables = await adapter.listCollections()
       console.log(`[/schema] ${provider} returned ${tables.length} tables for database ${connection.database ?? 'unknown'}`)
+
+      // Clean up table names for SurrealDB uploads
+      // Convert "data_uuid_sheetname" to just "sheetname"
+      const cleanTableName = (tableName) => {
+        if (provider === 'surrealdb' && tableName.startsWith('data_')) {
+          // Pattern: data_{uuid}_{sheetname}
+          const parts = tableName.split('_')
+          if (parts.length >= 3) {
+            // Return everything after the UUID (parts[0] = 'data', parts[1] = uuid, parts[2+] = sheet name)
+            return parts.slice(2).join('_')
+          }
+        }
+        return tableName
+      }
+
       // If no specific database was provided, infer discovered databases from returned table names
       let databases = []
       if (!connection || !connection.database) {
@@ -789,13 +857,37 @@ app.post("/schema", async (c) => {
         tables.map(async (table) => {
           try {
             const rows = await adapter.sampleCollection(table, 3)
-            return { table, rows }
+            return {
+              table,
+              displayName: cleanTableName(table),
+              rows
+            }
           } catch (error) {
-            return { table, rows: [] }
+            return {
+              table,
+              displayName: cleanTableName(table),
+              rows: []
+            }
           }
         }),
       )
-      return c.json({ ok: true, tables, previews, databases })
+
+      // Create metadata map for display names
+      const tableMetadata = {}
+      tables.forEach(t => {
+        tableMetadata[t] = {
+          displayName: cleanTableName(t),
+          actualName: t
+        }
+      })
+
+      return c.json({
+        ok: true,
+        tables,  // Keep as array of strings for backward compatibility
+        tableMetadata,  // Add metadata separately
+        previews,
+        databases
+      })
     } catch (err) {
       // Return a more structured error so the UI can show friendlier messages.
       // Many driver errors include a 'code' or 'name' property; include that when present.

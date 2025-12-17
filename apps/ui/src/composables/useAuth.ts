@@ -32,8 +32,16 @@ export function useAuth() {
         window.location.href = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
     }
 
-    const logout = () => {
-        window.location.href = `${API_URL}/auth/logout`
+    const logout = async () => {
+        try {
+            await fetch(`${API_URL}/auth/logout`, { credentials: 'include' })
+        } catch (e) {
+            console.error('Logout failed', e)
+        } finally {
+            user.value = null
+            setUser(null)
+            window.location.href = '/'
+        }
     }
 
     return {

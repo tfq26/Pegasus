@@ -12,22 +12,52 @@ const workos = new WorkOS(process.env.WORKOS_API_KEY || "sk_test_placeholder")
 const upsertUser = async (payload) => {
     try {
         const userId = payload.sub || payload.id
-        await db.query(`
-        UPDATE user:${userId} SET 
-            email = $email,
-            first_name = $firstName,
-            last_name = $lastName,
-            profile_picture_url = $pic,
-            updated_at = time::now()
-        RETURN AFTER;
-    `, {
-            email: payload.email,
-            firstName: payload.firstName,
-            lastName: payload.lastName,
-            pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-        });
+        const userRecordId = `user:${userId}`
+
+        console.log(`[Dashboard] Upserting user: ${userRecordId}`)
+
+        // Check if user exists first
+        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+
+        if (existing && existing.length > 0) {
+            // User exists, just update
+            await db.query(`
+                UPDATE ${userRecordId} SET 
+                    email = $email,
+                    first_name = $firstName,
+                    last_name = $lastName,
+                    profile_picture_url = $pic,
+                    updated_at = time::now();
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+            console.log(`[Dashboard] User updated: ${payload.email}`)
+        } else {
+            // User doesn't exist, create
+            await db.query(`
+                CREATE ${userRecordId} CONTENT {
+                    email: $email,
+                    first_name: $firstName,
+                    last_name: $lastName,
+                    profile_picture_url: $pic,
+                    created_at: time::now(),
+                    updated_at: time::now()
+                };
+            `, {
+                email: payload.email,
+                firstName: payload.firstName || payload.first_name,
+                lastName: payload.lastName || payload.last_name,
+                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+            });
+            console.log(`[Dashboard] User created: ${payload.email}`)
+        }
+
     } catch (e) {
-        console.error("Failed to upsert user:", e)
+        console.error("[Dashboard] Failed to upsert user:", e)
+        throw e
     }
 }
 
@@ -165,24 +195,28 @@ dashboard.get("/dashboards", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
 
+        console.log(`[Dashboard] Fetching dashboards for user: user:${userId}`)
+
         const [dashboards] = await db.query(`
         SELECT 
             id, 
             title, 
             is_public, 
-            updated_at,
-            (SELECT role FROM dashboard_permission WHERE user = $user AND dashboard = $parent.id)[0] as permission_role,
-            IF owner = $user THEN 'owner' ELSE (SELECT role FROM dashboard_permission WHERE user = $user AND dashboard = $parent.id)[0] END as access_role
+            owner,
+            created_at,
+            updated_at
         FROM dashboard 
-        WHERE owner = $user 
-           OR id IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user = $user)
+        WHERE owner = type::thing('user', $userId)
         ORDER BY updated_at DESC;
     `, {
-            user: `user:${userId}`
+            userId: userId
         });
+
+        console.log(`[Dashboard] Found ${dashboards?.length || 0} dashboards:`, JSON.stringify(dashboards))
 
         return c.json({ dashboards })
     } catch (e) {
+        console.error("[Dashboard] Error fetching dashboards:", e)
         return c.json({ error: "Failed to fetch dashboards" }, 500)
     }
 })
@@ -193,25 +227,39 @@ dashboard.post("/dashboards", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
+
+        // Ensure user exists in DB before linking
+        await upsertUser(payload);
+
         const { title, data } = await c.req.json()
 
         // Create Dashboard Record
+        console.log('[Dashboard] Creating dashboard for user:', userId, 'Title:', title);
         const [created] = await db.query(`
         CREATE dashboard CONTENT {
             title: $title,
-            owner: $owner,
+            owner: type::thing('user', $owner_id),
             created_at: time::now(),
             updated_at: time::now()
         };
     `, {
             title,
-            owner: `user:${userId}`
+            owner_id: userId
         });
 
+        console.log('[Dashboard] DB Create Result:', JSON.stringify(created));
+
+        if (!created || !created[0]) {
+            console.error('[Dashboard] DB returned no result/records');
+            throw new Error("DB creation failed");
+        }
+
         const dashboardId = created[0].id; // `dashboard:uuid`
+        console.log('[Dashboard] Created ID:', dashboardId);
 
         // Create Elements (from initial data blob)
         if (data && data.elements && Array.isArray(data.elements)) {
+            console.log('[Dashboard] Creating elements:', data.elements.length);
             for (const el of data.elements) {
                 await db.query(`
                  CREATE dashboard_element CONTENT {
@@ -238,7 +286,8 @@ dashboard.post("/dashboards", async (c) => {
 
         return c.json({ id: dashboardId })
     } catch (e) {
-        return c.json({ error: "Failed to create dashboard" }, 500)
+        console.error('[Dashboard] Create Error:', e);
+        return c.json({ error: "Failed to create dashboard: " + e.message }, 500)
     }
 })
 
@@ -251,14 +300,18 @@ dashboard.get("/dashboards/:id", async (c) => {
         let id = c.req.param("id")
         if (!id.includes(':')) id = `dashboard:${id}`
 
+        console.log(`[Dashboard] Fetching dashboard: ${id} for user: ${userId}`)
+
         // 1. Fetch Dashboard Metadata & Access Level
         const [result] = await db.query(`
         SELECT 
             *,
-            (owner = $user) as is_owner,
-            (SELECT role FROM dashboard_permission WHERE user = $user AND dashboard = $parent.id)[0] as permission_role
+            (owner = type::thing('user', $userId)) as is_owner,
+            (SELECT role FROM dashboard_permission WHERE user = type::thing('user', $userId) AND dashboard = $parent.id)[0] as permission_role
         FROM ${id};
-    `, { user: `user:${userId}` });
+    `, { userId });
+
+        console.log(`[Dashboard] Query result:`, result)
 
         if (!result || result.length === 0) return c.json({ error: "Dashboard not found" }, 404)
         const dashboard = result[0]
@@ -269,6 +322,7 @@ dashboard.get("/dashboards/:id", async (c) => {
         else if (dashboard.permission_role) role = dashboard.permission_role;
 
         if (!role && !dashboard.is_public) {
+            console.log(`[Dashboard] Access denied for user ${userId} to dashboard ${id}`)
             return c.json({ error: "Unauthorized" }, 403)
         }
 
@@ -408,8 +462,12 @@ dashboard.delete("/dashboards/:id", async (c) => {
         let id = c.req.param("id")
         if (!id.includes(':')) id = `dashboard:${id}`
 
-        // Only Owner can delete
-        await db.query(`DELETE ${id} WHERE owner = $user;`, { user: `user:${userId}` });
+        console.log(`[Dashboard] Deleting dashboard: ${id} for user: ${userId}`)
+
+        // Only Owner can delete - use type::thing() for proper comparison
+        const result = await db.query(`DELETE ${id} WHERE owner = type::thing('user', $userId);`, { userId });
+
+        console.log(`[Dashboard] Delete result:`, result)
 
         // Cleanup items (simplistic)
         await db.query(`DELETE dashboard_element WHERE dashboard = ${id}`);
@@ -417,6 +475,7 @@ dashboard.delete("/dashboards/:id", async (c) => {
 
         return c.json({ ok: true })
     } catch (e) {
+        console.error("[Dashboard] Delete error:", e)
         return c.json({ error: "Failed to delete" }, 500)
     }
 })

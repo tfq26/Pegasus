@@ -176,18 +176,28 @@ const saveChanges = async (engine: Engine) => {
      console.log('[Save] Skipping save during refresh');
      return;
    }
-   
-   // Skip save if no actual modifications exist
-   if (!engine.hasPendingModifications()) {
-     console.log('[Save] No pending modifications, skipping save');
-     engine.saveStatus = 'saved';
-     emit('save-status', 'saved');
-     return;
-   }
-   
-   try {
-     // 1. Determine Save Strategy
-     const strategy = engine.getSaveStrategy();
+      // Determine if we're using full_replacement strategy
+    const isSurrealDB = engine.sourceProvider === 'surrealdb';
+    
+    // Skip save if no actual modifications exist (except for SurrealDB which uses full_replacement)
+    if (!isSurrealDB && !engine.hasPendingModifications()) {
+      console.log('[Save] No pending modifications, skipping save');
+      engine.saveStatus = 'saved';
+      emit('save-status', 'saved');
+      return;
+    }
+    
+    try {
+      // 1. Determine Save Strategy
+      let strategy = engine.getSaveStrategy();
+      
+      // For SurrealDB, we force full_replacement for now because we don't track record IDs in the engine
+      // (we explicitly hid them in openTable). Delta updates require IDs.
+      if (isSurrealDB) {
+          console.log('[Save] Forcing full_replacement for SurrealDB');
+          strategy = 'full_replacement';
+      }
+
      console.log(`[Save] Using strategy: ${strategy}`);
      
      let ops: any[] = [];
@@ -196,6 +206,8 @@ const saveChanges = async (engine: Engine) => {
        // Full Replacement: Get all current data and replace table
        const allRows = engine.getAllNonEmptyRows();
        console.log(`[Save] Full replacement with ${allRows.length} rows`);
+       console.log(`[Save] Engine source: table=${engine.sourceTable}, provider=${engine.sourceProvider}`);
+       console.log(`[Save] Sample rows:`, allRows.slice(0, 2));
        
        // Include schema changes BEFORE full replacement
        const deletedCols = engine.getDeletedColumns();
@@ -208,14 +220,20 @@ const saveChanges = async (engine: Engine) => {
        addedCols.forEach(col => {
          ops.push({ type: 'add_column', column: col });
        });
-       
-       if (allRows.length === 0 && deletedCols.length === 0 && addedCols.length === 0) {
-         // Empty table and no schema changes - just delete all
-         ops.push({ type: 'full_replacement', rows: [] });
-       } else if (allRows.length > 0 || deletedCols.length === 0) {
-         // Only do full replacement if we have data or no schema changes
-         ops.push({ type: 'full_replacement', rows: allRows });
-       }
+              if (allRows.length === 0 && deletedCols.length === 0 && addedCols.length === 0) {
+          // Empty table and no schema changes - just delete all
+          ops.push({ type: 'full_replacement', rows: [] });
+        } else if (allRows.length > 0 || deletedCols.length === 0) {
+          // Full replacement with all data
+          // Note: For SurrealDB, column names are now A, B, C... (no normalization needed)
+          console.log(`[Save] Full replacement with ${allRows.length} rows`);
+          if (allRows.length > 0 && allRows[0]) {
+            console.log(`[Save] First row columns:`, Object.keys(allRows[0]));
+            console.log(`[Save] First row data:`, allRows[0]);
+          }
+          
+          ops.push({ type: 'full_replacement', rows: allRows });
+        }
      } else {
        // Delta Operations: Only send what changed
        ops = engine.getPendingOperations();
@@ -283,6 +301,63 @@ const getEngineForTab = (tabId: string) => {
       { rowCount: 1000, colCount: 26 },
       `spreadsheet-tab-${tabId}`
     );
+    
+    // Restore metadata from tab if available
+    const tab = tabs.value.find(t => t.id === tabId);
+    if (tab?.data?.tableName) {
+        console.log('[Workspace] Restoring engine metadata from tab:', tab.data);
+        engine.setSource(
+            tab.data.tableName,
+            tab.data.connection,
+            tab.data.headers || [],
+            tab.data.provider
+        );
+        
+        // Reload data in background
+        console.log('[Workspace] Background reloading data for restored tab');
+        fetchTableData(tab.data.tableName, tab.data.connection, tab.data.provider)
+            .then(({ rows }) => {
+                 if (!rows || rows.length === 0) return;
+                 console.log(`[Workspace] Reloaded ${rows.length} rows`);
+                 
+                 engine.beginBatch();
+                 engine.clear(); // Ensure clean state
+                 
+                 const headers = tab.data.headers || [];
+                 let dataStartsAtRow = 1;
+                 let injectHeaders = true;
+
+                 // Logic to detect if headers are already in data (dedup)
+                 if (rows.length > 0) {
+                    const firstRow = rows[0];
+                    const isMatch = headers.every((h: string) => {
+                         const val = firstRow[h];
+                         return val === h || val === String(h);
+                    });
+                    if (isMatch) {
+                        dataStartsAtRow = 0;
+                        injectHeaders = false;
+                    }
+                 }
+                 
+                 if (injectHeaders) {
+                    headers.forEach((header: string, colIndex: number) => {
+                         engine.setValue({ row: 0, col: colIndex }, header, true);
+                    });
+                 }
+                 
+                 rows.forEach((row: any, rowIndex: number) => {
+                     headers.forEach((header: string, colIndex: number) => {
+                         const value = row[header];
+                         engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
+                     });
+                 });
+                 
+                 engine.endBatch();
+                 engine.setOriginalData(rows);
+            })
+            .catch(e => console.error('[Workspace] Failed to reload restored data:', e));
+    }
     
     // Auto-save listener with rate limiting
     let saveTimeout: ReturnType<typeof setTimeout>;
@@ -457,17 +532,32 @@ const loadTableData = (tableName: string, data: any[], connection: any = null, p
   emit('update:mode', 'spreadsheet');
 };
 
+// Helper: Convert column letter to index (A->0, B->1, Z->25, AA->26)
+const labelToColIndex = (label: string): number => {
+  let index = 0;
+  for (let i = 0; i < label.length; i++) {
+    index = index * 26 + (label.charCodeAt(i) - 64);
+  }
+  return index - 1;
+};
+
 // Robust Table Loading (New)
 const openTable = async (tableName: string, connection: any, provider: string) => {
+    console.log('[Workspace] openTable called:', { tableName, provider });
+    
     // Check if exists
-    if (findOrCreateSheetTab(tableName)) return;
+    if (findOrCreateSheetTab(tableName)) {
+        console.log('[Workspace] Tab already exists, switching to it');
+        return;
+    }
 
     try {
         const loadingId = toast.loading(`Loading ${formatTableName(tableName)}...`);
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
 
         // 1. Fetch Schema
-        const schemaRes = await fetch(`${baseUrl}/api/table/${tableName}/schema`, {
+        console.log('[Workspace] Fetching schema...');
+        const schemaRes = await fetch(`${baseUrl}/api/table/${tableName}/schema`, { 
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              credentials: 'include',
@@ -477,6 +567,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
 
         // 2. Fetch Data
+        console.log('[Workspace] Fetching data...');
         const queryRes = await fetch(`${baseUrl}/api/table/${tableName}/query`, {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
@@ -485,77 +576,75 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         });
         const queryBody = await queryRes.json();
         if (!queryRes.ok) throw new Error(queryBody.error || 'Failed to load data');
-        
+
         const rows = queryBody.rows || [];
-        // Use schema for strict column order/visibility
-        // Filter out _rowid_ from visible columns
+        
+        // For SurrealDB, headers are column letters (A, B, C...)
+        // For other providers, headers are actual column names
         const headers = (schemaBody.columns || [])
            .map((c: any) => c.name)
-           .filter((n: string) => n !== '_rowid_' && n !== '__id');
+           .filter((n: string) => n !== '__id' && n !== '_rowid_' && n !== '_row_order');
+        
+        console.log('[Workspace] Loaded', rows.length, 'rows with', headers.length, 'columns');
+        console.log('[Workspace] Headers:', headers);
 
-        // Create Tab
+        // 3. Create Tab
         const newId = String(Date.now());
         const newTab = {
             id: newId,
             label: formatTableName(tableName),
-            type: 'table' as const
+            type: 'table' as const,
+            data: {
+                tableName,
+                connection,
+                provider,
+                headers
+            }
         };
         tabs.value.push(newTab);
         activeTabId.value = newId;
 
+        // 4. Load into Engine
         const engine = getEngineForTab(newId);
-        
-        // CRITICAL: Clear any existing data to prevent duplication
-        // This handles case where tab ID is reused from workspace state
         engine.clear();
-        
-        // Populate with silent=true to prevent modification tracking during initial load
         engine.beginBatch();
 
-        // Deduplication Logic: Check if first row of data matches headers
-        let dataStartsAtRow = 1;
-        let injectHeaders = true;
-
-        if (rows.length > 0) {
-            const firstRow = rows[0];
-            // Check if values in first row match column names
-            const isMatch = headers.every((h: string) => {
-                 const val = firstRow[h];
-                 return val === h || val === String(h);
+        // Load data into cells
+        // For SurrealDB: headers are A, B, C... so we map them to column indices
+        // For other providers: headers are actual names, we put them in row 0
+        if (provider === 'surrealdb') {
+            // Column letters - load all rows as data (no header row)
+            rows.forEach((row: any, rowIndex: number) => {
+                headers.forEach((colLetter: string) => {
+                    const colIndex = labelToColIndex(colLetter);
+                    const value = row[colLetter];
+                    engine.setValue({ row: rowIndex, col: colIndex }, String(value ?? ''), true);
+                });
+            });
+        } else {
+            // Traditional approach - row 0 is headers
+            headers.forEach((header: string, colIndex: number) => {
+                engine.setValue({ row: 0, col: colIndex }, header, true);
             });
             
-            if (isMatch) {
-                console.log('[OpenTable] Detected headers in data, preventing duplication');
-                dataStartsAtRow = 0; // Shift data up to row 0
-                injectHeaders = false;
-            }
-        }
-        
-        // Sets Headers (if not already in data)
-        if (injectHeaders) {
-            headers.forEach((header: string, colIndex: number) => {
-                 engine.setValue({ row: 0, col: colIndex }, header, true);
+            rows.forEach((row: any, rowIndex: number) => {
+                headers.forEach((header: string, colIndex: number) => {
+                    const value = row[header];
+                    engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''), true);
+                });
             });
         }
-        
-        // Sets Data
-        rows.forEach((row: any, rowIndex: number) => {
-             headers.forEach((header: string, colIndex: number) => {
-                 const value = row[header];
-                 engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
-             });
-        });
-        engine.endBatch();
 
-        // Init Persistence metadata
+        engine.endBatch();
         engine.setSource(tableName, connection, headers, provider);
         engine.setOriginalData(rows);
 
+        console.log('[Workspace] Table loaded successfully');
         toast.dismiss(loadingId);
         emit('update:mode', 'spreadsheet');
     } catch (e: any) {
+        console.error('[Workspace] Failed to open table:', e);
         toast.error(`Failed to open table: ${e.message}`);
-        console.error(e);
     }
 };
 

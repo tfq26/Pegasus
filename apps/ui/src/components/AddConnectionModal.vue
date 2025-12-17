@@ -37,7 +37,8 @@ const canAddConnection = computed(() => {
   if (f.provider === 'mongodb') return !!f.mongodb.url
   if (f.provider === 'kusto') return !!(f.kusto.cluster && f.kusto.database)
   if (f.provider === 'sqlite') return !!f.sqlite.path
-  if (f.provider === 'file') return !!f.sqlite.path // File uploads store path in sqlite.path
+  if (f.provider === 'file') return !!(f.sqlite.path || f.surrealdb?.uploadId) // File uploads can store in either sqlite.path or surrealdb.uploadId
+  if (f.provider === 'surrealdb') return !!f.surrealdb?.uploadId // SurrealDB file uploads
   return false
 })
 
