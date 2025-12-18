@@ -67,21 +67,15 @@
         </div>
       </div>
 
-      <footer class="py-6 text-center text-muted-foreground text-xs border-t border-border bg-background animate-fadeInUp" style="animation-delay: 1s">
-        <div class="flex items-center justify-center gap-4 mb-2">
-          <RouterLink to="/about" class="hover:text-primary transition-colors">About</RouterLink>
-          <span>•</span>
-          <RouterLink to="/support" class="hover:text-primary transition-colors">Support</RouterLink>
-        </div>
-        <p>© {{ new Date().getFullYear() }} Pegasus — Intelligent Cloud Insight Platform</p>
-      </footer>
+      <AppFooter />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 // Ensure the StarsBackground component is correctly imported
-import StarsBackground from '@/components/ui/bg-stars/StarsBackground.vue' 
+import StarsBackground from '@/components/ui/bg-stars/StarsBackground.vue'
+import AppFooter from '@/components/AppFooter.vue'
 defineOptions({ name: 'HomePage' })
 
 import { MessageSquare, Database, LayoutDashboard, Activity } from 'lucide-vue-next'

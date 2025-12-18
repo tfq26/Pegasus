@@ -1,9 +1,10 @@
+```html
 <template>
-  <div class="w-full min-h-full bg-background">
-    <div class="max-w-5xl mx-auto p-6 sm:p-10 space-y-8">
-      
-      <!-- Hero Card with Black Hole -->
-      <transition name="fade-slide" appear>
+  <div class="w-full bg-background flex flex-col">
+    <div class="flex-1">
+      <div class="max-w-7xl mx-auto p-6 sm:p-10 space-y-8">
+        
+        <!-- Hero Card with Black Hole -->
         <div class="relative w-full h-[400px] rounded-3xl overflow-hidden shadow-2xl border border-border/50 bg-black/5 dark:bg-black/20">
           <BlackHoleBackground class="absolute inset-0">
             <div class="relative z-10 h-full flex flex-col items-center justify-center text-center p-6">
@@ -13,7 +14,7 @@
                 <img
                   src="/pegasus-white.svg"
                   alt="Pegasus Logo"
-                  class="w-12 h-12 animate-float dark:invert-0 invert"
+                  class="w-12 h-12 dark:invert-0 invert"
                 />
               </div> -->
               
@@ -26,11 +27,9 @@
             </div>
           </BlackHoleBackground>
         </div>
-      </transition>
 
-      <!-- Main Content -->
-      <transition name="fade-slide" appear>
-        <div class="max-w-4xl mx-auto space-y-12 px-4" style="transition-delay: 100ms">
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto space-y-12 px-4">
           <!-- Mission Statement -->
           <div class="text-center space-y-6">
             <p class="text-xl text-foreground font-medium leading-relaxed">
@@ -47,7 +46,7 @@
 
           <!-- Features Grid -->
           <div>
-            <h2 class="text-2xl font-bold text-foreground mb-6 text-center">Key Features</h2>
+            <!-- <h2 class="text-2xl font-bold text-foreground mb-6 text-center">Key Features</h2> -->
             <div class="grid md:grid-cols-2 gap-6">
               <div
                 v-for="(feature, index) in features"
@@ -75,27 +74,18 @@
             </div>
           </div>
 
-          <!-- Footer -->
-          <div class="border-t border-border pt-8 text-center space-y-4">
+          <!-- About Page Footer -->
+          <!-- <div class="border-t border-border pt-8 text-center space-y-4">
             <p class="text-lg text-muted-foreground italic font-serif">
               “Making system management effortless through data, AI, and cloud.”
             </p>
-            
-            <div class="flex items-center justify-center gap-1 text-xs text-muted-foreground/60">
-              <span>Icon by</span>
-              <a
-                href="https://iconscout.com/contributors/mark-aventura"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="hover:text-primary underline decoration-dotted"
-              >
-                IconMark
-              </a>
-            </div>
-          </div>
+          </div> -->
         </div>
-      </transition>
+      </div>
     </div>
+
+    <!-- Footer (same as Home page) -->
+    <AppFooter />
 
     <!-- Feature Detail Modal -->
     <Dialog v-model:open="showFeatureModal">
@@ -130,6 +120,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import BlackHoleBackground from '@/components/ui/bg-black-hole/BlackHoleBackground.vue'
+import AppFooter from '@/components/AppFooter.vue'
 import {
   Dialog,
   DialogContent,
@@ -176,26 +167,74 @@ const features = [
     ]
   },
   {
-    icon: LayoutDashboard,
-    title: 'Dashboard Generation',
+    icon: Database,
+    title: 'Intelligent Data Import',
     description:
-      'Automatically create beautiful, interactive dashboards from your query results.',
+      'Instantly convert JSON, CSV, and Excel files into queryable database tables.',
     details: [
       {
-        subtitle: 'Smart Visualization Selection',
+        subtitle: 'Drag & Drop Simplicity',
+        content: 'Upload complete datasets just by dragging files into the app. Pegasus handles the parsing, schema detection, and import process automatically.'
+      },
+      {
+        subtitle: 'Smart Schema Detection',
+        content: 'Automatically identifies data types, headers, and structures from your files, ensuring your data is stored correctly and efficiently.'
+      },
+      {
+        subtitle: 'Excel & JSON Support',
+        content: 'Native support for complex Excel spreadsheets and nested JSON files. Preview and verify your data structure before importing.'
+      },
+      {
+        subtitle: 'Instant Querying',
+        content: 'Imported files become fully fully-featured database tables immediately, ready to be queried with SQL or visualized in dashboards.'
+      }
+    ]
+  },
+  {
+    icon: LayoutDashboard,
+    title: 'Visual Data Explorer',
+    description:
+      'A powerful, spreadsheet-like interface to view, search, and edit your data directly.',
+    details: [
+      {
+        subtitle: 'Inline Editing',
+        content: 'Edit database records directly in the grid view, just like a spreadsheet. Changes are validated and synced to your database in real-time.'
+      },
+      {
+        subtitle: 'Advanced Filtering',
+        content: 'Sort, search, and filter your data across millions of rows with high-performance client-side and server-side operations.'
+      },
+      {
+        subtitle: 'Smart Headers',
+        content: 'Automatically detects and manages table headers, allowing you to rename columns and restructure your view without altering the underlying data.'
+      },
+      {
+        subtitle: 'Schema Management',
+        content: 'View and modify table schemas, rename tables, and manage data types through an intuitive visual interface.'
+      }
+    ]
+  },
+  {
+    icon: LayoutDashboard,
+    title: 'Interactive Dashboards',
+    description:
+      'Turn your query results into beautiful, real-time visualizations in seconds.',
+    details: [
+      {
+        subtitle: 'Smart Visualization',
         content: 'Pegasus analyzes your data and automatically recommends the best chart types - whether it\'s bar charts, line graphs, pie charts, or stat cards.'
       },
       {
         subtitle: 'Drag & Drop Layout',
-        content: 'Easily customize your dashboard layout with an intuitive drag-and-drop interface. Resize, reposition, and organize your visualizations exactly how you want them.'
+        content: 'Easily customize your dashboard layout with an intuitive drag-and-drop interface. Resize and organize your widgets exactly how you want them.'
       },
       {
         subtitle: 'Real-Time Updates',
-        content: 'Dashboards can be configured to refresh automatically, keeping your insights current with live data from your databases.'
+        content: 'Dashboards auto-refresh to keep your insights current with live data from your connected databases.'
       },
       {
-        subtitle: 'Share & Collaborate',
-        content: 'Generate shareable links to your dashboards. Others can view them in read-only mode or import them to create their own customized versions.'
+        subtitle: 'Export & Share',
+        content: 'Generate shareable links (coming soon) or export your dashboard views to share insights with your team.'
       }
     ]
   },
@@ -206,20 +245,20 @@ const features = [
       'Connect to any database provider with flexible, provider-agnostic architecture.',
     details: [
       {
-        subtitle: 'Multiple Database Types',
-        content: 'Seamlessly connect to MySQL, PostgreSQL, MongoDB, Azure Data Explorer (Kusto), SQLite, and more. Each connection is managed independently with full schema discovery.'
+        subtitle: 'Broad Compatibility',
+        content: 'Seamlessly connect to MongoDB, PostgreSQL, MySQL, SQLite, SurrealDB, and more. Each connection is managed independently.'
       },
       {
         subtitle: 'Live Schema Discovery',
-        content: 'Automatically detect databases, tables, and collections when you connect. For MongoDB, Pegasus even previews sample documents to help you understand your data structure.'
+        content: 'Automatically detect databases, tables, and collections when you connect. For MongoDB, Pegasus previews sample documents to help you understand your data.'
       },
       {
         subtitle: 'Secure Connections',
-        content: 'Support for SSL/TLS encryption, service principal authentication for Azure services, and secure credential storage to keep your data safe.'
+        content: 'Support for SSL/TLS encryption, service principal authentication, and secure credential storage to ensure your data remains protected.'
       },
       {
-        subtitle: 'Connection Testing',
-        content: 'Test connections before saving them, with detailed error messages and troubleshooting guidance to help you get connected quickly.'
+        subtitle: 'Connection Health',
+        content: 'Active monitoring of connection status with detailed error reporting and troubleshooting guidance to keep your integrations running smoothly.'
       }
     ]
   },
@@ -235,46 +274,17 @@ const features = [
       },
       {
         subtitle: 'Performance Metrics',
-        content: 'Track query execution times, row counts, and resource usage to identify performance bottlenecks and optimize your database operations.'
+        content: 'Track query execution times, row counts, and resource usage to identify performance bottlenecks.'
       },
       {
-        subtitle: 'Connection Health',
-        content: 'Monitor the status of all your database connections at a glance, with automatic reconnection and detailed error reporting when issues arise.'
+        subtitle: 'System Health',
+        content: 'Monitor the status of all your database connections at a glance, with automatic reconnection logic.'
       },
       {
         subtitle: 'Activity History',
-        content: 'Keep a complete history of all queries and operations, making it easy to revisit past work or debug issues by reviewing what happened.'
+        content: 'Keep a complete history of all queries and operations, making it easy to revisit past work or debug issues.'
       }
     ]
   }
 ]
 </script>
-
-<style scoped>
-/* Fade + Slide entrance */
-.fade-slide-enter-active,
-.fade-slide-leave-active {
-  transition: all 0.6s ease;
-}
-.fade-slide-enter-from {
-  opacity: 0;
-  transform: translateY(30px);
-}
-.fade-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-30px);
-}
-
-/* Floating animation for logo */
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-</style>
