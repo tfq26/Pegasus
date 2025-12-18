@@ -1,38 +1,42 @@
 import { sql } from '../db/neon.js'
 
 const CRITICAL_KEYWORDS = [
-    'crash', 'error', 'broken', 'not working', 'data loss',
-    'security', 'vulnerability', 'hack', 'breach',
-    'urgent', 'critical', 'emergency',
-    "can't login", "can't access", "cannot login", "cannot access"
+  'crash', 'error', 'broken', 'not working', 'data loss',
+  'security', 'vulnerability', 'hack', 'breach',
+  'urgent', 'critical', 'emergency',
+  "can't login", "can't access", "cannot login", "cannot access"
 ]
 
 export interface FeedbackData {
-    userEmail?: string
-    featureCategory: string
-    customFeature?: string
-    issueType: string
-    description: string
-    browserInfo?: string
-    isUrgent: boolean
+  userEmail?: string
+  featureCategory: string
+  customFeature?: string
+  issueType: string
+  description: string
+  browserInfo?: string
+  isUrgent: boolean
 }
 
 export function detectPriority(description: string, isUrgent: boolean): string {
-    if (isUrgent) return 'critical'
+  if (isUrgent) return 'critical'
 
-    const lowerDesc = description.toLowerCase()
-    const hasCriticalKeyword = CRITICAL_KEYWORDS.some(keyword =>
-        lowerDesc.includes(keyword.toLowerCase())
-    )
+  const lowerDesc = description.toLowerCase()
+  const hasCriticalKeyword = CRITICAL_KEYWORDS.some(keyword =>
+    lowerDesc.includes(keyword.toLowerCase())
+  )
 
-    if (hasCriticalKeyword) return 'critical'
-    return 'normal'
+  if (hasCriticalKeyword) return 'critical'
+  return 'normal'
 }
 
-export async function createFeedback(data: FeedbackData) {
-    const priority = detectPriority(data.description, data.isUrgent)
 
-    const result = await sql`
+export async function createFeedback(data: FeedbackData) {
+  const db = sql
+  if (!db) throw new Error("Neon database connection not configured")
+
+  const priority = detectPriority(data.description, data.isUrgent)
+
+  const result = await db`
     INSERT INTO feedback (
       user_email,
       feature_category,
@@ -55,11 +59,14 @@ export async function createFeedback(data: FeedbackData) {
     RETURNING *
   `
 
-    return { feedback: result[0], priority }
+  return { feedback: result[0], priority }
 }
 
 export async function getUnnotifiedFeedback() {
-    return await sql`
+  const db = sql
+  if (!db) return []
+
+  return await db`
     SELECT * FROM feedback
     WHERE notified = false
     ORDER BY created_at DESC
@@ -67,9 +74,11 @@ export async function getUnnotifiedFeedback() {
 }
 
 export async function markAsNotified(ids: number[]) {
-    if (ids.length === 0) return
+  if (ids.length === 0) return
+  const db = sql
+  if (!db) return
 
-    await sql`
+  await db`
     UPDATE feedback
     SET notified = true
     WHERE id = ANY(${ids})
