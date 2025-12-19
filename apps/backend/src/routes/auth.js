@@ -138,23 +138,44 @@ auth.get("/callback", async (c) => {
         const token = await sign(payload, jwtSecret)
         const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
 
-        setCookie(c, "session", token, {
+        // Cookie configuration for mobile compatibility
+        // Using 'Lax' instead of 'None' because:
+        // 1. Frontend and backend are on different Vercel domains
+        // 2. Mobile browsers (especially Safari) block 'None' cookies in cross-site contexts
+        // 3. 'Lax' allows cookies on top-level navigations (OAuth redirects) while preventing CSRF
+        const cookieOptions = {
             httpOnly: true,
             secure: isProduction,
-            sameSite: isProduction ? "None" : "Lax",
+            sameSite: "Lax", // Changed from 'None' to 'Lax' for mobile compatibility
             path: "/",
-            maxAge: 60 * 60 * 24,
+            maxAge: 60 * 60 * 24, // 24 hours
+        }
+
+        console.log('[Auth /callback] Setting session cookie with options:', {
+            secure: cookieOptions.secure,
+            sameSite: cookieOptions.sameSite,
+            isProduction
         })
+
+        setCookie(c, "session", token, cookieOptions)
 
         // improved redirect logic
         const returnTo = getCookie(c, "auth_return_to");
         if (returnTo) {
             deleteCookie(c, "auth_return_to");
-            return c.redirect(returnTo);
+            // Include token in URL for mobile/cross-domain compatibility
+            const redirectUrl = new URL(returnTo)
+            redirectUrl.searchParams.set('token', token)
+            console.log('[Auth /callback] Redirecting to returnTo with token')
+            return c.redirect(redirectUrl.toString());
         }
 
         const frontendUrl = allowedOrigins[0] || "http://localhost:5173"
-        return c.redirect(frontendUrl)
+        // Include token in URL for mobile/cross-domain compatibility
+        const redirectUrl = new URL(frontendUrl)
+        redirectUrl.searchParams.set('token', token)
+        console.log('[Auth /callback] Redirecting to:', redirectUrl.toString())
+        return c.redirect(redirectUrl.toString())
     } catch (error) {
         console.error("Auth error:", error)
         return c.json({ error: error.message }, 500)
@@ -167,9 +188,18 @@ auth.get("/logout", (c) => {
 })
 
 auth.get("/me", async (c) => {
-    const token = getCookie(c, "session")
+    // Try cookie first (desktop/same-domain)
+    let token = getCookie(c, "session")
 
-    console.log('[Auth /me] Request received, token present:', !!token)
+    // Fallback to Authorization header (mobile/cross-domain)
+    if (!token) {
+        const authHeader = c.req.header("Authorization")
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7)
+        }
+    }
+
+    console.log('[Auth /me] Request received, token present:', !!token, 'source:', token ? (getCookie(c, "session") ? 'cookie' : 'header') : 'none')
 
     if (!token) {
         console.log('[Auth /me] No session token, returning null user')
