@@ -38,7 +38,7 @@
               : 'bg-muted text-foreground'
           ]"
         >
-          <div class="whitespace-pre-wrap break-words">{{ msg.content }}</div>
+          <div class="whitespace-pre-wrap break-words">{{ formatContent(msg.content) }}</div>
           <div class="text-[10px] mt-1 opacity-70">
             {{ formatTime(msg.timestamp) }}
           </div>
@@ -109,6 +109,12 @@ const formatTime = (timestamp: number) => {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
   return date.toLocaleDateString()
+}
+
+const formatContent = (content: string) => {
+  if (typeof content !== 'string') return content
+  // Convert literal \n strings to actual newlines
+  return content.replace(/\\n/g, '\n')
 }
 
 const loadMore = async () => {

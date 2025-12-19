@@ -360,7 +360,7 @@ const copyToClipboard = async (text: string) => {
               </div>
             </div>
             
-            <div class="text-sm text-foreground leading-relaxed prose prose-invert prose-sm max-w-none dark:prose-invert prose-stone" v-html="renderMarkdown(analysis.summary || analysis)"></div>
+            <div class="text-sm text-foreground leading-relaxed prose prose-invert prose-sm max-w-none dark:prose-invert prose-stone" v-html="renderMarkdown(analysis.answer || analysis.summary || analysis)"></div>
           </div>
 
           <!-- Check if this is a multi-step result -->

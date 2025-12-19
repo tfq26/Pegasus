@@ -687,7 +687,11 @@ chat.post("/ai/analyze", async (c) => {
         let summaryText = analysis
         try {
             const parsed = JSON.parse(analysis)
-            if (parsed.summary) {
+            // Check for both 'answer' and 'summary' fields
+            if (parsed.answer) {
+                summaryText = parsed.answer
+                console.log('[AI Analyze] Extracted answer from JSON response')
+            } else if (parsed.summary) {
                 summaryText = parsed.summary
                 console.log('[AI Analyze] Extracted summary from JSON response')
             }

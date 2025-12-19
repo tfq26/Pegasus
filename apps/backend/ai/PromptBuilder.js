@@ -153,10 +153,11 @@ RULES:
 1. Return valid ${dialect} SQL syntax only
 2. Use appropriate quoting for table/column names if they contain special characters
 3. For partial text matches, use LIKE with wildcards: WHERE column LIKE '%search%'
-4. Always include a LIMIT clause (default 100)
-5. When selecting data, include primary keys or identifying columns
-6. JOINs are encouraged if data is split across tables
-7. CRITICAL: DO NOT include simulated results (e.g. "Results: [...]") or explanations after the query
+4. **CRITICAL**: For company/supplier/vendor/manufacturer names, ALWAYS use LIKE '%name%' instead of exact equality (=)
+5. Always include a LIMIT clause (default 100)
+6. When selecting data, include primary keys or identifying columns
+7. JOINs are encouraged if data is split across tables
+8. CRITICAL: DO NOT include simulated results (e.g. "Results: [...]") or explanations after the query
 
 "HOW MANY" QUESTIONS:
 When users ask "how many X", they typically want to see the actual data, not just a count.
@@ -308,6 +309,26 @@ YOUR RESPONSE (single query):
 SELECT * FROM employee WHERE City IN ['Los Angeles', 'San Francisco', 'Seattle', 'Portland', 'San Diego'] LIMIT 100
 
 NOT: SELECT count() FROM employee WHERE ... (too minimal, user wants to see the data)
+NOT: RETURN array::len(...) (too minimal, user wants to see the data)
+
+CONCRETE EXAMPLE - Company/Supplier Query:
+User: "How many products does TechCorp supply?"
+
+YOUR RESPONSE:
+SELECT * FROM inventory WHERE string::lowercase(Supplier) CONTAINS string::lowercase('TechCorp') LIMIT 100
+
+NOT: RETURN array::len(array::unique((SELECT VALUE Product FROM inventory WHERE ...)))
+
+CONCRETE EXAMPLE - Status/Enum Field Query:
+User: "Were there any cancelled orders?"
+
+YOUR RESPONSE:
+SELECT * FROM orders WHERE Status = 'cancelled' LIMIT 100
+
+OR (case-insensitive):
+SELECT * FROM orders WHERE string::lowercase(Status) = 'cancelled' LIMIT 100
+
+NOT: SELECT * FROM orders (missing WHERE clause - returns all orders, not just cancelled)
 
 RULES:
 1. ALWAYS use multi-step for queries involving:
@@ -321,7 +342,14 @@ RULES:
    - The user can see the count from the result set size
    - Only use SELECT count() if the user explicitly asks for "just the count" or "only the number"
 
-3. AGGREGATION SYNTAX:
+3. **CRITICAL**: For company/supplier/vendor/manufacturer names, use case-insensitive matching:
+   - Use: WHERE string::lowercase(Supplier) CONTAINS string::lowercase('TechCorp')
+   - This handles all case variations (TechCorp, techcorp, TECHCORP, etc.)
+   - Alternative: WHERE Supplier ~ '(?i)TechCorp' (case-insensitive regex)
+   - NOT: WHERE Supplier CONTAINS 'TechCorp' (case-sensitive)
+   - NOT: WHERE Supplier = 'TechCorp' (exact match only)
+
+4. AGGREGATION SYNTAX:
    - Count (when needed): SELECT count() FROM table WHERE ... (returns single number)
    - Average: RETURN math::mean((SELECT VALUE type::number(column) FROM table WHERE ...))
    - Sum: RETURN math::sum((SELECT VALUE type::number(column) FROM table WHERE ...))
@@ -409,25 +437,33 @@ You have access to world knowledge and should use it to interpret queries intell
 - **Time & Dates**: You understand relative dates (last month, this year, Q1, etc.)
 - **Common Categories**: You can infer categories (e.g., "tech companies" might include companies with names like "Google", "Microsoft", "Apple")
 - **Industry Standards**: You understand common business terms, job titles, departments, etc.
+- **Company/Supplier Names**: When users mention a company, supplier, vendor, or manufacturer name:
+  - Look for fields like: supplier, company, vendor, manufacturer, organization, brand, provider
+  - Use partial matching (LIKE '%name%' or $regex) to find the company name in the data
+  - Check sample values to see which field contains company names
+  - Be flexible with capitalization (TechCorp, techcorp, TECHCORP should all match)
 
 WHEN TO USE WORLD KNOWLEDGE:
 ✅ DO use world knowledge when:
 - User asks about geographic regions (West Coast, East Coast, Midwest, etc.)
 - User asks about time periods (last quarter, this year, etc.)
 - User asks about common categories that can be inferred from data
+- User asks about specific companies, suppliers, or organizations by name
 - The question requires general knowledge that's not database-specific
 
 ❌ DO NOT ask for clarification when:
 - You can use world knowledge to resolve the query
 - The intent is clear even if the exact field name isn't mentioned
 - There's a reasonable interpretation based on common sense
+- You can find the company/supplier name in sample values
 
 Rules:
 1. **Use World Knowledge First**: Before asking for clarification, check if you can use world knowledge to resolve the query
-2. **Smart Field Matching**: If the user mentions a concept (like "West Coast cities"), look at sample values to find matching data
-3. **Only Ask for Clarification When Truly Ambiguous**: Only return an "ambiguous" response when there are multiple valid interpretations that CANNOT be resolved with world knowledge
-4. If the term appears in the sample values of MULTIPLE fields AND you cannot determine which field is intended, you MUST return an "ambiguous" response with specific choices
-5. Use partial matching (LIKE, $regex) for proper nouns or names unless the user asks for an exact match
+2. **Smart Field Matching**: If the user mentions a concept (like "West Coast cities" or "TechCorp"), look at sample values to find matching data
+3. **Company Name Matching**: For company/supplier queries, check sample values in fields like 'supplier', 'company', 'vendor', 'manufacturer' and use partial matching
+4. **Only Ask for Clarification When Truly Ambiguous**: Only return an "ambiguous" response when there are multiple valid interpretations that CANNOT be resolved with world knowledge
+5. If the term appears in the sample values of MULTIPLE fields AND you cannot determine which field is intended, you MUST return an "ambiguous" response with specific choices
+6. Use partial matching (LIKE, $regex) for proper nouns or names unless the user asks for an exact match
 
 AMBIGUOUS RESPONSE FORMAT:
 When you truly need clarification, provide SPECIFIC, ACTIONABLE choices:

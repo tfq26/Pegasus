@@ -955,7 +955,11 @@ const handleAIGenerate = async () => {
         const { analyzeResults } = await import('@/lib/api')
         const flatResults = combinedResults.map(step => step.result).filter(r => r)
         console.log('[Chat] Calling analyzeResults with:', { userPrompt, flatResults, combinedQuery })
-        aiSummary = await analyzeResults(userPrompt, flatResults, combinedQuery)
+        const analysisResponse = await analyzeResults(userPrompt, flatResults, combinedQuery)
+        // Extract the answer field from the response object
+        aiSummary = typeof analysisResponse === 'object' && analysisResponse.answer 
+          ? analysisResponse.answer 
+          : (typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse))
         console.log('[Chat] AI Summary received:', aiSummary)
         toast.dismiss('ai-summary')
       } catch (e) {
