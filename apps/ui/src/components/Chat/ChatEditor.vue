@@ -113,8 +113,21 @@ const formatTime = (timestamp: number) => {
 
 const formatContent = (content: string) => {
   if (typeof content !== 'string') return content
-  // Convert literal \n strings to actual newlines
-  return content.replace(/\\n/g, '\n')
+  
+  let formatted = content
+
+  // Try to parse if it looks like a JSON string (starts and ends with quotes)
+  if (formatted.startsWith('"') && formatted.endsWith('"')) {
+    try {
+      formatted = JSON.parse(formatted)
+    } catch (e) {
+      // If parse fails, just strip quotes manually
+      formatted = formatted.slice(1, -1)
+    }
+  }
+
+  // Convert literal \n strings to actual newlines (if any remain)
+  return formatted.replace(/\\n/g, '\n')
 }
 
 const loadMore = async () => {

@@ -918,6 +918,23 @@ const handleAIGenerate = async () => {
     // Check if user explicitly wants a visualization
     const wantsVisualization = /visualize|chart|graph|plot|dashboard|histogram|pie/i.test(userPrompt)
     
+    // Check if referring to existing data ("visualize this", "chart it")
+    const isReferenceToContext = /\b(this|it|results?|data)\b/i.test(userPrompt)
+    
+    // CASE 1: Visualize existing data
+    if (wantsVisualization && isReferenceToContext && queryResult.value && lastQuery.value) {
+      finishOperation(opId)
+      
+      // Add to chat history
+      chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+      chatHistory.value.push({ role: 'assistant', content: 'Generating visualization based on the results...', timestamp: Date.now() })
+      
+      // Trigger visualization
+      isExecuting.value = false
+      await handleCreateDashboardElement()
+      return
+    }
+    
     // Pass chat history if available, otherwise empty array
     // @ts-ignore
     const history = typeof chatHistory !== 'undefined' ? chatHistory.value : []
@@ -955,7 +972,8 @@ const handleAIGenerate = async () => {
         const { analyzeResults } = await import('@/lib/api')
         const flatResults = combinedResults.map(step => step.result).filter(r => r)
         console.log('[Chat] Calling analyzeResults with:', { userPrompt, flatResults, combinedQuery })
-        const analysisResponse = await analyzeResults(userPrompt, flatResults, combinedQuery)
+        const summaryPrompt = wantsVisualization ? "Summarize these results" : userPrompt
+        const analysisResponse = await analyzeResults(summaryPrompt, flatResults, combinedQuery)
         // Extract the answer field from the response object
         aiSummary = typeof analysisResponse === 'object' && analysisResponse.answer 
           ? analysisResponse.answer 
@@ -1019,6 +1037,12 @@ const handleAIGenerate = async () => {
         description: `${aiResponse.steps.length} steps completed`,
         position: 'top-right',
       })
+      
+      // CASE 2: New query + Visualization requested (Multi-step)
+      if (wantsVisualization) {
+        toast.info('Generating requested visualization...')
+        await handleCreateDashboardElement()
+      }
       
       return
     }
@@ -1134,7 +1158,8 @@ const handleAIGenerate = async () => {
       try {
         toast.loading('Generating summary...', { id: 'ai-summary' })
         const { analyzeResults } = await import('@/lib/api')
-        aiSummary = await analyzeResults(userPrompt, Array.isArray(body.result) ? body.result : [body.result], query)
+        const summaryPrompt = wantsVisualization ? "Summarize these results" : userPrompt
+        aiSummary = await analyzeResults(summaryPrompt, Array.isArray(body.result) ? body.result : [body.result], query)
         toast.dismiss('ai-summary')
       } catch (e) {
         toast.dismiss('ai-summary')
@@ -1161,6 +1186,15 @@ const handleAIGenerate = async () => {
             console.error('Failed to refresh chat list:', e)
           }
         }, 2000) // 2 second delay to allow backend title generation
+      }
+      
+      // Update lastQuery for visualization
+      lastQuery.value = query
+      
+      // CASE 2: New query + Visualization requested (Single-step)
+      if (wantsVisualization) {
+        toast.info('Generating requested visualization...')
+        await handleCreateDashboardElement()
       }
       
       // Add to query history
