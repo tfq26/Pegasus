@@ -6,10 +6,10 @@
       <BlackHoleBackground class="absolute inset-0" />
       
       <div class="absolute inset-0 flex flex-col items-center justify-center text-center p-6 z-10">
-        <h1 class="text-3xl font-bold text-white tracking-tight mb-2 drop-shadow-md">
+        <h1 class="text-3xl font-bold text-primary tracking-tight mb-2 drop-shadow-md">
           Pegasus
         </h1>
-        <p class="text-base text-white/90 font-medium max-w-xs mx-auto">
+        <p class="text-base text-foreground font-medium max-w-xs mx-auto">
           Insight with Intelligence and Ease.
         </p>
       </div>
@@ -54,11 +54,11 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
-            <div v-show="expandedFeature === index" class="px-4 pb-4 pt-0 text-sm text-muted-foreground border-t border-border/50 bg-muted/20">
+            <div v-show="expandedFeature === index" class="px-4 pb-4 pt-0 text-sm text-muted-primary border-t border-border/50 bg-muted/20">
               <p class="mt-3 mb-3">{{ feature.description }}</p>
               <ul class="space-y-2 pl-2">
                 <li v-for="(detail, i) in feature.details" :key="i" class="flex gap-2 text-xs">
-                  <span class="text-primary">•</span>
+                  <span class="text-secondary">•</span>
                   <span>{{ detail.subtitle }}</span>
                 </li>
               </ul>

@@ -64,7 +64,7 @@ const currentStrokeColor = computed(() => {
   if (typeof window !== 'undefined' && document.documentElement.classList.contains('dark')) {
     return "#a855f7"; // Purple for dark mode (matches primary color)
   }
-  return "#a3a3a3"; // Lighter gray for light mode
+  return "#a855f7"; // Lighter gray for light mode
 });
 
 // Watch for theme changes to update canvas

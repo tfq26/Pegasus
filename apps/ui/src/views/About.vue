@@ -18,10 +18,10 @@
                 />
               </div> -->
               
-              <h1 class="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 drop-shadow-md">
+              <h1 class="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 drop-shadow-md dark:text-primary">
                 Pegasus
               </h1>
-              <p class="text-lg md:text-xl text-foreground font-medium max-w-xl mx-auto">
+              <p class="text-lg md:text-xl text-foreground font-medium max-w-xl mx-auto dark:text-primary">
                 Insight with Intelligence and Ease, built to make your data soar.
               </p>
             </div>
@@ -32,11 +32,11 @@
         <div class="max-w-7xl mx-auto space-y-12 px-4">
           <!-- Mission Statement -->
           <div class="text-center space-y-6">
-            <p class="text-xl text-foreground font-medium leading-relaxed">
+            <p class="text-xl text-foreground font-medium leading-relaxed dark:text-primary">
               The next generation of data management — where security, insight, and AI
               converge into one seamless, collaborative workspace.
             </p>
-            <p class="text-muted-foreground leading-relaxed max-w-2xl mx-auto">
+            <p class="text-muted-foreground leading-relaxed max-w-2xl mx-auto dark:text-primary">
               Inspired by the workflow of SQL Server Management Studio (SMSS) and enhanced
               through modern cloud architecture, Pegasus bridges performance, awareness, and
               intelligence. It enables resource visualization, database exploration, log inspection, 

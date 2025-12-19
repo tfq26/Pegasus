@@ -8,7 +8,8 @@
         "Smarter 'how many' query handling returns actual data instead of just counts",
         "Internal database IDs automatically hidden from users",
         "Fully functional 'Analyze with AI' feature",
-        "Improved visualization preview with flexible chart type conversions"
+        "Improved visualization preview with flexible chart type conversions",
+        "Mobile login now works with cross-domain authentication"
     ],
     "sections": [
         {
@@ -110,6 +111,17 @@
         {
             "category": "Bug Fixes",
             "items": [
+                {
+                    "title": "Mobile Login Authentication",
+                    "description": "Fixed authentication issues on mobile browsers with cross-domain deployments",
+                    "details": [
+                        "Implemented hybrid authentication supporting both cookies and localStorage",
+                        "Token now passed via URL parameter after OAuth redirect",
+                        "Authorization header support for cross-domain API requests",
+                        "Works seamlessly on both desktop (cookies) and mobile (localStorage)",
+                        "Solves Safari/iOS strict cookie policies"
+                    ]
+                },
                 {
                     "title": "SurrealDB Query Syntax",
                     "description": "Fixed count query generation for SurrealDB",

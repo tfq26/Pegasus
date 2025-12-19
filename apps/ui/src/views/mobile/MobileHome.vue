@@ -1,5 +1,5 @@
 <template>
-  <div class="relative flex min-h-full w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground py-6">
+  <div class="relative flex w-full flex-col items-center justify-center overflow-hidden bg-background text-foreground py-6">
     <!-- Stars Background -->
     <StarsBackground
       class="absolute inset-0"
@@ -27,8 +27,8 @@
           >
             Learn More
           </RouterLink>
-          <div class="text-xs text-muted-foreground text-center mt-2">
-            Use desktop for full dashboard access
+          <div class="text-xs text-primary text-center mt-2 font-semibold">
+            Open on desktop for full access
           </div>
         </div>
       </div>
