@@ -45,7 +45,16 @@ router.beforeEach(async (to, from) => {
   const isComingFromLogin = from.path === '/login'
   const hasAuthParams = to.query.code || to.query.state || to.query.session_state
 
+  console.log('[Router] Navigation:', {
+    from: from.path,
+    to: to.path,
+    isComingFromLogin,
+    hasAuthParams,
+    query: to.query
+  })
+
   if (isComingFromLogin || hasAuthParams) {
+    console.log('[Router] Refreshing user state after login/OAuth redirect')
     // Refresh user state to update mobile navigation and other components
     await fetchUser()
 
@@ -56,6 +65,7 @@ router.beforeEach(async (to, from) => {
       delete cleanQuery.state
       delete cleanQuery.session_state
 
+      console.log('[Router] Cleaning auth params from URL')
       // Replace current route to remove auth params from URL
       router.replace({ path: to.path, query: cleanQuery })
     }

@@ -100,13 +100,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { Home, Info, Sparkles, MessageSquare, User, LogOut, LogIn } from 'lucide-vue-next'
 
 defineOptions({ name: 'MobileHeader' })
 
-const { user, logout } = useAuth()
+const { user, fetchUser, logout } = useAuth()
 const isMenuOpen = ref(false)
 
 const navItems = [
@@ -116,8 +116,23 @@ const navItems = [
   { to: '/feedback', label: 'Feedback', icon: MessageSquare },
 ]
 
-const toggleMenu = () => {
+// Refresh user state on mount to ensure we have the latest auth status
+onMounted(async () => {
+  await fetchUser()
+})
+
+// Watch user state changes for debugging
+watch(user, (newUser) => {
+  console.log('[MobileHeader] User state changed:', newUser ? 'Logged in' : 'Logged out')
+}, { immediate: true })
+
+const toggleMenu = async () => {
   isMenuOpen.value = !isMenuOpen.value
+  
+  // Refresh user state when opening menu to ensure it's current
+  if (isMenuOpen.value) {
+    await fetchUser()
+  }
 }
 
 const closeMenu = () => {
