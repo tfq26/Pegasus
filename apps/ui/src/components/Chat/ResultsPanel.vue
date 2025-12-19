@@ -356,7 +356,66 @@ const copyToClipboard = async (text: string) => {
             <div class="text-sm text-foreground leading-relaxed prose prose-invert prose-sm max-w-none dark:prose-invert prose-stone" v-html="renderMarkdown(analysis.summary || analysis)"></div>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between mb-3 gap-2">
+          <!-- Check if this is a multi-step result -->
+          <template v-if="Array.isArray(result) && result.length > 0 && result[0]?.explanation">
+            <!-- Multi-step results -->
+            <div v-for="(step, idx) in result" :key="idx" class="space-y-2">
+              <div class="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border border-border">
+                <div class="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
+                  {{ idx + 1 }}
+                </div>
+                <div class="text-sm text-foreground font-medium">{{ step.explanation }}</div>
+              </div>
+              
+              <div v-if="step.error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+                <div class="text-destructive text-sm font-mono">{{ step.error }}</div>
+              </div>
+              
+              <div v-else-if="step.result" class="rounded-lg border border-border overflow-hidden">
+                <!-- Check if this is a scalar result (e.g., from RETURN statement) -->
+                <div v-if="step.result.rows !== undefined && typeof step.result.rows === 'number'" 
+                     class="p-6 bg-gradient-to-br from-primary/5 to-primary/10">
+                  <div class="text-center">
+                    <div class="text-4xl font-bold text-primary mb-2">
+                      {{ (() => {
+                        const val = step.result.rows;
+                        const exp = step.explanation.toLowerCase();
+                        // Currency formatting for salary/price/cost/revenue
+                        if (exp.includes('salary') || exp.includes('price') || exp.includes('cost') || exp.includes('revenue') || exp.includes('amount')) {
+                          return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
+                        }
+                        // Percentage formatting
+                        if (exp.includes('percent') || exp.includes('rate')) {
+                          return `${val.toFixed(1)}%`;
+                        }
+                        // Default: number with thousand separators
+                        return val.toLocaleString('en-US');
+                      })() }}
+                    </div>
+                    <div class="text-xs text-muted-foreground uppercase tracking-wider">
+                      {{ step.explanation.toLowerCase().includes('average') ? 'Average' : 
+                         step.explanation.toLowerCase().includes('total') || step.explanation.toLowerCase().includes('sum') ? 'Total' :
+                         step.explanation.toLowerCase().includes('count') ? 'Count' : 'Result' }}
+                    </div>
+                  </div>
+                </div>
+                <!-- Array results (table view) -->
+                <ResultsTable 
+                  v-else-if="Array.isArray(step.result) && step.result.length > 0" 
+                  :data="step.result" 
+                  :settings="settings"
+                />
+                <!-- Other results (JSON view) -->
+                <div v-else class="p-4 text-sm text-muted-foreground">
+                  <JsonViewer :data="step.result" :max-depth="3" />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Single-step result (original logic) -->
+          <template v-else>
+            <div class="flex flex-wrap items-center justify-between mb-3 gap-2">
               <div class="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">Query Results</div>
               
               <div class="flex flex-wrap items-center gap-2">
@@ -430,7 +489,8 @@ const copyToClipboard = async (text: string) => {
                 </ContextMenuContent>
               </ContextMenu>
             </div>
-          </div>
+          </template>
+        </div>
         <div v-else class="flex items-center justify-center py-12 text-muted-foreground">
           <div class="text-center">
             <div class="text-sm">No results yet</div>

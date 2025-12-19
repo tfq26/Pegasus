@@ -206,6 +206,15 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
     throw new Error(body.error ?? 'AI generation failed')
   }
 
+  // Check if this is a multi-step response
+  if (body.multi_step && Array.isArray(body.steps)) {
+    return {
+      multi_step: true,
+      steps: body.steps,
+      usage: body.usage
+    }
+  }
+
   return { query: body.query, usage: body.usage }
 }
 

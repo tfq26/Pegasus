@@ -11,6 +11,7 @@ import { toast } from 'vue-sonner';
 const props = defineProps<{
   mode: 'chat' | 'write' | 'spreadsheet';
   input: string;
+  chatHistory?: Array<{ role: string; content: string; timestamp: number }>;
   aiMode: boolean;
   autoExecute: boolean;
   privateMode?: boolean;
@@ -831,6 +832,7 @@ defineExpose({
             v-else
             :mode="tab.type === 'query' ? 'write' : 'chat'"
             :input="tab.type === 'query' ? (tab.data?.content || '') : input"
+            :history="tab.type === 'chat' ? props.chatHistory : undefined"
             @update:input="(val) => {
               if (tab.type === 'query') {
                 // Update tab-specific content

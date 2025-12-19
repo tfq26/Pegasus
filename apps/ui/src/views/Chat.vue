@@ -68,6 +68,7 @@
           class="flex-1 min-h-0"
           :mode="mode"
           :input="currentInput || ''"
+          :chat-history="chatHistory"
           :ai-mode="aiMode"
           :auto-execute="autoExecute"
           :private-mode="privateMode"
@@ -920,7 +921,106 @@ const handleAIGenerate = async () => {
     // Pass chat history if available, otherwise empty array
     // @ts-ignore
     const history = typeof chatHistory !== 'undefined' ? chatHistory.value : []
-    const { query, usage } = await generateAIQuery(userPrompt, selectedConnectionId.value, history)
+    const aiResponse = await generateAIQuery(userPrompt, selectedConnectionId.value, history)
+    
+    // Check if this is a multi-step response
+    if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
+      // Multi-step response - aggregate results
+      const combinedResults: any[] = []
+      const combinedQuery = aiResponse.steps.map((step: any) => step.query).join(';\n')
+      
+      for (const step of aiResponse.steps) {
+        if (step.result) {
+          combinedResults.push({
+            explanation: step.explanation,
+            result: step.result
+          })
+        } else if (step.error) {
+          combinedResults.push({
+            explanation: step.explanation,
+            error: step.error
+          })
+        }
+      }
+      
+      // Display combined results
+      queryResult.value = combinedResults
+      lastQuery.value = combinedQuery
+      
+      // Generate AI summary of results
+      let aiSummary = ''
+      try {
+        console.log('[Chat] Generating AI summary for multi-step query...')
+        toast.loading('Generating summary...', { id: 'ai-summary' })
+        const { analyzeResults } = await import('@/lib/api')
+        const flatResults = combinedResults.map(step => step.result).filter(r => r)
+        console.log('[Chat] Calling analyzeResults with:', { userPrompt, flatResults, combinedQuery })
+        aiSummary = await analyzeResults(userPrompt, flatResults, combinedQuery)
+        console.log('[Chat] AI Summary received:', aiSummary)
+        toast.dismiss('ai-summary')
+      } catch (e) {
+        toast.dismiss('ai-summary')
+        console.error('[Chat] Failed to generate AI summary:', e)
+        // Create a better fallback summary
+        aiSummary = `I executed ${aiResponse.steps.length} step${aiResponse.steps.length > 1 ? 's' : ''} to answer your question:\n\n` +
+          combinedResults.map((step, idx) => {
+            let resultText = ''
+            if (step.error) {
+              resultText = `❌ Error: ${step.error}`
+            } else if (step.result?.rows !== undefined) {
+              resultText = `Result: ${typeof step.result.rows === 'number' ? step.result.rows.toLocaleString() : step.result.rows}`
+            } else if (Array.isArray(step.result)) {
+              resultText = `Found ${step.result.length} record${step.result.length !== 1 ? 's' : ''}`
+            }
+            return `${idx + 1}. ${step.explanation}\n   ${resultText}`
+          }).join('\n\n')
+        console.log('[Chat] Using fallback summary:', aiSummary)
+      }
+      
+      const timestamp = Date.now()
+      
+      console.log('[Chat] Adding to chat history:', { userPrompt, aiSummary, timestamp })
+      chatHistory.value.push({ role: 'user', content: userPrompt, timestamp })
+      chatHistory.value.push({ role: 'assistant', content: aiSummary, timestamp })
+      console.log('[Chat] Chat history length:', chatHistory.value.length)
+      
+      if (selectedChatId.value) {
+        await saveMessage(selectedChatId.value, 'user', userPrompt)
+        await saveMessage(selectedChatId.value, 'ai', aiSummary)
+        
+        setTimeout(async () => {
+          try {
+            await loadChats()
+          } catch (e) {
+            console.error('Failed to refresh chat list:', e)
+          }
+        }, 2000)
+      }
+      
+      // Add to query history
+      queryHistory.value.unshift({
+        id: crypto.randomUUID(),
+        query: combinedQuery,
+        timestamp,
+        source: 'ai',
+        status: 'success'
+      })
+      
+      // Show results (keep input for user reference)
+      resultsPanelVisible.value = true
+      
+      finishOperation(opId)
+      
+      toast.success('Multi-step query executed', {
+        description: `${aiResponse.steps.length} steps completed`,
+        position: 'top-right',
+      })
+      
+      return
+    }
+    
+    // Single-step response (original logic)
+    const { query, usage } = aiResponse
     
     // Check for ambiguity or parse errors
     let isAmbiguous = false
@@ -1025,16 +1125,28 @@ const handleAIGenerate = async () => {
 
       queryResult.value = body.result ?? null
       
-      // Save to chat history (Backend)
+      // Generate AI summary of results
+      let aiSummary = ''
+      try {
+        toast.loading('Generating summary...', { id: 'ai-summary' })
+        const { analyzeResults } = await import('@/lib/api')
+        aiSummary = await analyzeResults(userPrompt, Array.isArray(body.result) ? body.result : [body.result], query)
+        toast.dismiss('ai-summary')
+      } catch (e) {
+        toast.dismiss('ai-summary')
+        console.error('Failed to generate AI summary:', e)
+        const resultCount = Array.isArray(body.result) ? body.result.length : 1
+        aiSummary = `Query executed successfully. Found ${resultCount} result${resultCount !== 1 ? 's' : ''}.`
+      }
+      
       const timestamp = Date.now()
-      const aiContent = `Executed query: ${query}\n\nResults: ${JSON.stringify(body.result)}`
       
       chatHistory.value.push({ role: 'user', content: userPrompt, timestamp })
-      chatHistory.value.push({ role: 'assistant', content: aiContent, timestamp })
+      chatHistory.value.push({ role: 'assistant', content: aiSummary, timestamp })
       
       if (selectedChatId.value) {
         await saveMessage(selectedChatId.value, 'user', userPrompt)
-        await saveMessage(selectedChatId.value, 'ai', aiContent)
+        await saveMessage(selectedChatId.value, 'ai', aiSummary)
         
         // Refresh chat list after a delay to show AI-generated title
         // The backend generates the title asynchronously after the 2nd message
@@ -1056,8 +1168,7 @@ const handleAIGenerate = async () => {
         status: 'success'
       })
       
-      // Clear input and show results
-      chatInput.value = ''
+      // Show results (keep input for user reference)
       resultsPanelVisible.value = true
       
       finishOperation(opId)

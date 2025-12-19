@@ -15,9 +15,11 @@ const upsertUser = async (payload) => {
         const userId = payload.sub || payload.id
         const userRecordId = `user:${userId}`
 
-        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+        // 1. Try to find by ID
+        const [existingById] = await db.query(`SELECT id FROM ${userRecordId}`);
 
-        if (existing && existing.length > 0) {
+        if (existingById && existingById.length > 0) {
+            // Found by ID -> Update
             await db.query(`
                 UPDATE ${userRecordId} SET 
                     email = $email,
@@ -31,26 +33,49 @@ const upsertUser = async (payload) => {
                 lastName: payload.lastName || payload.last_name,
                 pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
             });
+            return existingById[0].id.toString();
         } else {
-            await db.query(`
-                CREATE ${userRecordId} CONTENT {
-                    email: $email,
-                    first_name: $firstName,
-                    last_name: $lastName,
-                    profile_picture_url: $pic,
-                    created_at: time::now(),
-                    updated_at: time::now()
-                };
-            `, {
-                email: payload.email,
-                firstName: payload.firstName || payload.first_name,
-                lastName: payload.lastName || payload.last_name,
-                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-            });
+            // 2. Not found by ID -> Check by Email to prevent duplicates
+            const [existingByEmail] = await db.query(`SELECT id FROM user WHERE email = $email`, { email: payload.email });
+
+            if (existingByEmail && existingByEmail.length > 0) {
+                // Found by Email -> Update that record instead
+                const targetId = existingByEmail[0].id.toString();
+                await db.query(`
+                    UPDATE ${targetId} SET 
+                        first_name = $firstName,
+                        last_name = $lastName,
+                        profile_picture_url = $pic,
+                        updated_at = time::now();
+                `, {
+                    firstName: payload.firstName || payload.first_name,
+                    lastName: payload.lastName || payload.last_name,
+                    pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+                });
+                return targetId;
+            } else {
+                // 3. Not found by ID or Email -> Create new
+                await db.query(`
+                    CREATE ${userRecordId} CONTENT {
+                        email: $email,
+                        first_name: $firstName,
+                        last_name: $lastName,
+                        profile_picture_url: $pic,
+                        created_at: time::now(),
+                        updated_at: time::now()
+                    };
+                `, {
+                    email: payload.email,
+                    firstName: payload.firstName || payload.first_name,
+                    lastName: payload.lastName || payload.last_name,
+                    pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+                });
+                return userRecordId;
+            }
         }
     } catch (e) {
         console.error("[Chat] Failed to upsert user:", e)
-        throw e
+        return null;
     }
 }
 
@@ -151,8 +176,13 @@ chat.post("/chats", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        await upsertUser(payload)
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
         const { title } = await c.req.json()
 
         const [created] = await db.query(`
@@ -207,8 +237,13 @@ chat.post("/chats/:id/messages", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        await upsertUser(payload)
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
         let chatId = c.req.param("id")
         if (!chatId.includes(':')) chatId = `chat:${chatId}`
         const { role, content } = await c.req.json()
@@ -348,21 +383,45 @@ chat.post("/ai/generate", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        const { prompt, connectionId, context } = await c.req.json()
+        let userId = payload.sub // Default to JWT sub
+
+        // Resolve real user ID (handle Dev/Prod mismatch)
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
+
+        const { prompt, connectionId: rawConnId, context } = await c.req.json()
+        let connectionId = rawConnId;
+        if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
+
+        // Debug: Check Resolution
+        console.log(`[Chat] JWT User ID: ${payload.sub}`)
+        console.log(`[Chat] Resolved User ID: ${userId}`)
+        console.log(`[Chat] Fetching connection: ${connectionId}`)
 
         // 1. Fetch connection details
-        const rs = await db.execute({
-            sql: "SELECT * FROM connections WHERE id = $id AND user_id = $userId",
-            args: { id: connectionId, userId }
-        })
-        const connRow = rs.rows[0]
+        const [rs] = await db.query(
+            "SELECT * FROM connection WHERE id = type::thing($id)",
+            { id: connectionId }
+        )
+        const connRow = rs ? rs[0] : null
 
-        if (!connRow) {
+        if (connRow) {
+            const ownerStr = connRow.user.toString();
+            const allowedOwners = [`user:${userId}`, `user:${payload.sub}`, userId, payload.sub];
+
+            if (!allowedOwners.includes(ownerStr)) {
+                console.error(`[Chat] MISMATCH! Owner: ${ownerStr} vs Allowed: ${allowedOwners.join(', ')}`)
+                return c.json({ error: "Connection not found" }, 404)
+            }
+        } else {
             return c.json({ error: "Connection not found" }, 404)
         }
 
-        const config = JSON.parse(connRow.config)
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
         const provider = connRow.provider
         const adapterConfig = config[provider]
 
@@ -401,20 +460,165 @@ chat.post("/ai/generate", async (c) => {
         // Fetch user settings
         let aiSettings = { modelId: null, temperature: 0.7 }
         try {
-            const settingsRes = await db.execute({
-                sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
-                args: { userId }
-            })
-            if (settingsRes.rows.length > 0) {
-                const s = JSON.parse(settingsRes.rows[0].settings)
+            const [settingsRes] = await db.query(
+                "SELECT settings FROM user_settings WHERE user_id = $userId",
+                { userId }
+            )
+            if (settingsRes && settingsRes.length > 0 && settingsRes[0].settings) {
+                const s = JSON.parse(settingsRes[0].settings)
                 aiSettings.modelId = s.activeModel
                 aiSettings.temperature = s.temperature
             }
         } catch (e) { }
 
         const result = await aiClient.generateQuery(prompt, aiContext, aiSettings)
-        const generatedQuery = typeof result === 'string' ? result : result.text
+        let generatedQuery = typeof result === 'string' ? result : result.text
         const usage = typeof result === 'string' ? null : result.usage
+
+        // Clean markdown code blocks
+        generatedQuery = generatedQuery.replace(/^```(?:surrealql|sql)?\s*([\s\S]*?)\s*```$/i, '$1').trim()
+        // Clean leading label if present (e.g. "surrealql\nSELECT...")
+        if (generatedQuery.toLowerCase().startsWith('surrealql')) {
+            generatedQuery = generatedQuery.substring(9).trim()
+        }
+
+
+
+
+
+        // Handle Multi-Step Queries (JSON format)
+        let multiStepResult = null;
+        try {
+            console.log('[Chat] Raw AI response (first 500 chars):', generatedQuery.substring(0, 500));
+            console.log('[Chat] Raw AI response (last 500 chars):', generatedQuery.substring(Math.max(0, generatedQuery.length - 500)));
+
+            const jsonStart = generatedQuery.indexOf('{');
+            const jsonEnd = generatedQuery.lastIndexOf('}');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+                const potentialJson = generatedQuery.substring(jsonStart, jsonEnd + 1);
+                console.log('[Chat] Extracted JSON (length:', potentialJson.length, ')');
+                const parsed = JSON.parse(potentialJson);
+
+                console.log('[Chat] Parsed potential JSON from AI:', JSON.stringify(parsed, null, 2));
+
+                // Normalize 'steps' or 'queries'
+                const steps = parsed.steps || parsed.queries || [];
+
+                // Relaxed check: Accept if 'multi_step' is true OR if 'steps' array is present
+                if ((parsed.multi_step || steps.length > 0) && Array.isArray(steps)) {
+                    multiStepResult = [];
+                    let previousStepResults = {}; // Store results from previous steps
+
+                    for (let i = 0; i < steps.length; i++) {
+                        const step = steps[i];
+                        // Support both { query: "..." } and string "..." steps
+                        let stepQuery = (typeof step === 'string' ? step : step.query) || '';
+                        stepQuery = stepQuery.replace(/;\s*$/, ''); // Remove semi-colon
+                        // stepQuery = stepQuery.replace(/[")}\]]+$/, ''); // Remove trailing junk - DISABLED: was removing valid SQL parens
+                        stepQuery = stepQuery.trim();
+
+                        console.log(`[Chat] Step ${i + 1} cleaned query:`, stepQuery);
+
+                        if (!stepQuery) continue;
+
+                        // Replace placeholders with actual values from previous steps
+                        // Look for patterns like [AVERAGE_SALARY_FROM_PREVIOUS_STEP], [RESULT_FROM_STEP_1], etc.
+                        stepQuery = stepQuery.replace(/\[([^\]]+)\]/g, (match, placeholder) => {
+                            // Try to find the value from previous step
+                            if (i > 0 && multiStepResult[i - 1]?.result) {
+                                const prevResult = multiStepResult[i - 1].result;
+
+                                // If previous result is a scalar (number)
+                                if (typeof prevResult === 'number') {
+                                    return prevResult;
+                                }
+
+                                // If previous result has a 'rows' property (from RETURN statement)
+                                if (prevResult.rows !== undefined) {
+                                    return prevResult.rows;
+                                }
+
+                                // If previous result is an array with one item
+                                if (Array.isArray(prevResult) && prevResult.length === 1) {
+                                    return prevResult[0];
+                                }
+                            }
+
+                            // If no substitution found, log warning and keep placeholder
+                            console.warn(`[Chat] Could not substitute placeholder: ${match}`);
+                            return match;
+                        });
+
+                        try {
+                            // Execute each step
+                            console.log(`[Chat] Executing step ${i + 1}: ${stepQuery}`);
+                            const stepRes = await adapter.query(stepQuery);
+                            multiStepResult.push({
+                                explanation: step.explanation,
+                                query: stepQuery,
+                                result: stepRes
+                            });
+                        } catch (err) {
+                            console.error(`[Chat] Step ${i + 1} execution failed: ${err.message}`);
+                            multiStepResult.push({
+                                explanation: step.explanation,
+                                error: err.message
+                            });
+                        }
+                    }
+
+                    // Return aggregated results
+                    return c.json({
+                        multi_step: true,
+                        steps: multiStepResult,
+                        usage
+                    });
+                }
+            }
+        } catch (e) {
+            console.log('[Chat] JSON parse attempt failed:', e.message);
+            // Not valid JSON, continue as single query
+        }
+
+        // Safety Check: If we are here, we are treating it as a single SQL query.
+        // If the query still looks like a JSON object (starts with {), it's likely a failed parse or unhandled JSON.
+        // We should try to extract SQL from it or fail gracefully rather than sending JSON to DB.
+        if (generatedQuery.trim().startsWith('{') && generatedQuery.trim().endsWith('}')) {
+            console.warn('[Chat] AI returned JSON but not handled as multi-step. Raw:', generatedQuery);
+            try {
+                const p = JSON.parse(generatedQuery);
+                if (p.query) {
+                    generatedQuery = p.query;
+                } else if (!p.ambiguous) {
+                    return c.json({ error: "AI returned an invalid query format (JSON). See console for details." }, 400);
+                }
+            } catch (e) { }
+        }
+
+
+        // Standard Single Query Logic...
+        // Extract only the SQL statement if AI added explanatory text
+        // Look for SELECT, INSERT, UPDATE, DELETE, CREATE statements
+        // Improvement: Stop at the first "Results:", "Explanation:" or similar headers if they appear at start of a line
+        const sqlStartMatch = generatedQuery.match(/(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH)\s+/i)
+
+
+        if (sqlStartMatch) {
+            const startIndex = sqlStartMatch.index
+            let possibleQuery = generatedQuery.substring(startIndex)
+
+            // Cut off at "Results:" or "Output:" if present on a new line
+            const cutoffMatch = possibleQuery.match(/\n\s*(Results|Output|Explanation|Analysis|Row \d):/i)
+            if (cutoffMatch) {
+                possibleQuery = possibleQuery.substring(0, cutoffMatch.index)
+            }
+
+            generatedQuery = possibleQuery.trim()
+        }
+
+
+        // Remove trailing semicolon if present (SurrealDB doesn't require it in queries)
+        generatedQuery = generatedQuery.replace(/;\s*$/, '').trim()
 
         return c.json({ query: generatedQuery, usage })
     } catch (error) {
@@ -434,12 +638,12 @@ chat.post("/ai/recommend-visualization", async (c) => {
         // Get Model
         let activeModel = null
         try {
-            const settingsRes = await db.execute({
-                sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
-                args: { userId }
-            })
-            if (settingsRes.rows.length > 0) {
-                activeModel = JSON.parse(settingsRes.rows[0].settings).activeModel
+            const [settingsRes] = await db.query(
+                "SELECT settings FROM user_settings WHERE user_id = $userId",
+                { userId }
+            )
+            if (settingsRes && settingsRes.length > 0 && settingsRes[0].settings) {
+                activeModel = JSON.parse(settingsRes[0].settings).activeModel
             }
         } catch (e) { }
 
@@ -455,23 +659,47 @@ chat.post("/ai/analyze", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { question, results, query } = await c.req.json()
+        console.log('[AI Analyze] Request received:', {
+            question,
+            resultsCount: Array.isArray(results) ? results.length : 'not array',
+            queryLength: query?.length
+        })
+
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
 
         let activeModel = null
         try {
-            const settingsRes = await db.execute({
-                sql: "SELECT settings FROM user_settings WHERE user_id = $userId",
-                args: { userId }
-            })
-            if (settingsRes.rows.length > 0) {
-                activeModel = JSON.parse(settingsRes.rows[0].settings).activeModel
+            const [settingsRes] = await db.query(
+                "SELECT settings FROM user_settings WHERE user_id = $userId",
+                { userId }
+            )
+            if (settingsRes && settingsRes.length > 0 && settingsRes[0].settings) {
+                activeModel = JSON.parse(settingsRes[0].settings).activeModel
             }
         } catch (e) { }
 
+        console.log('[AI Analyze] Calling aiClient.analyzeResults...')
         const analysis = await aiClient.analyzeResults(question, results, query, activeModel)
-        return c.json(analysis)
+        console.log('[AI Analyze] Analysis received (type:', typeof analysis, ', length:', analysis?.length, ')')
+
+        // Parse the AI response - it might be JSON with a "summary" field
+        let summaryText = analysis
+        try {
+            const parsed = JSON.parse(analysis)
+            if (parsed.summary) {
+                summaryText = parsed.summary
+                console.log('[AI Analyze] Extracted summary from JSON response')
+            }
+        } catch (e) {
+            // Not JSON, use as-is
+            console.log('[AI Analyze] Using response as plain text')
+        }
+
+        console.log('[AI Analyze] Final summary:', summaryText?.substring ? summaryText.substring(0, 200) : summaryText)
+        return c.json({ analysis: summaryText })
     } catch (e) {
+        console.error('[AI Analyze] Error:', e)
         return c.json({ error: e.message }, 500)
     }
 })

@@ -204,14 +204,15 @@ table.post("/rename-table", async (c) => {
 
             console.log('[Rename] Table renamed successfully')
 
+
             // Update persistently saved connection if exists
             if (connection.id) {
                 try {
-                    const connRows = await db.execute({ sql: "SELECT * FROM connections WHERE id = ?", args: [connection.id] })
-                    const connRow = connRows.rows[0]
+                    const [connRows] = await db.query("SELECT * FROM connection WHERE id = type::thing('connection', $id)", { id: connection.id })
+                    const connRow = connRows[0]
 
                     if (connRow) {
-                        const config = JSON.parse(connRow.config)
+                        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
 
                         // Upgrade to robust 'uploadId' linking if available
                         if (extractedUploadId) {
@@ -219,10 +220,10 @@ table.post("/rename-table", async (c) => {
                             // We can remove the static tables list since we now search dynamically
                             if (config.sqlite.tables) delete config.sqlite.tables
 
-                            await db.execute({
-                                sql: "UPDATE connections SET config = ? WHERE id = ?",
-                                args: [JSON.stringify(config), connection.id]
-                            })
+                            await db.query(
+                                "UPDATE connection SET config = $config WHERE id = type::thing('connection', $id)",
+                                { config: JSON.stringify(config), id: connection.id }
+                            )
                         }
                         // Fallback for legacy connections without uploadId (shouldn't happen for Turso uploads ideally)
                         else if (config.sqlite && Array.isArray(config.sqlite.tables)) {
@@ -231,10 +232,10 @@ table.post("/rename-table", async (c) => {
                             if (idx !== -1) {
                                 config.sqlite.tables[idx] = newTableName
                                 // Save back
-                                await db.execute({
-                                    sql: "UPDATE connections SET config = ? WHERE id = ?",
-                                    args: [JSON.stringify(config), connection.id]
-                                })
+                                await db.query(
+                                    "UPDATE connection SET config = $config WHERE id = type::thing('connection', $id)",
+                                    { config: JSON.stringify(config), id: connection.id }
+                                )
                             }
                         }
                     }
@@ -242,6 +243,7 @@ table.post("/rename-table", async (c) => {
                     console.error('[Rename] Failed to update persistent connection:', e)
                 }
             }
+
 
             await adapter.disconnect()
 
@@ -381,24 +383,25 @@ table.post("/delete-table", async (c) => {
 
             console.log('[Delete] Table deleted successfully')
 
+
             // Update persistently saved connection if exists
             if (connection.id) {
                 try {
-                    const connRows = await db.execute({ sql: "SELECT * FROM connections WHERE id = ?", args: [connection.id] })
-                    const connRow = connRows.rows[0]
+                    const [connRows] = await db.query("SELECT * FROM connection WHERE id = type::thing('connection', $id)", { id: connection.id })
+                    const connRow = connRows[0]
 
                     if (connRow) {
-                        const config = JSON.parse(connRow.config)
+                        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
                         if (config.sqlite && Array.isArray(config.sqlite.tables)) {
                             // Remove table from list
                             const idx = config.sqlite.tables.indexOf(tableName)
                             if (idx !== -1) {
                                 config.sqlite.tables.splice(idx, 1)
                                 // Save back
-                                await db.execute({
-                                    sql: "UPDATE connections SET config = ? WHERE id = ?",
-                                    args: [JSON.stringify(config), connection.id]
-                                })
+                                await db.query(
+                                    "UPDATE connection SET config = $config WHERE id = type::thing('connection', $id)",
+                                    { config: JSON.stringify(config), id: connection.id }
+                                )
                                 console.log('[Delete] Updated persistent connection config')
                             }
                         }

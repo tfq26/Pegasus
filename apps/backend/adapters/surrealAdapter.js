@@ -48,14 +48,19 @@ export class SurrealAdapter extends DatabaseAdapter {
     async query(query) {
         // console.log(`[SurrealDB] Executing query: ${query}`);
         try {
+            console.log(`[SurrealDB] Executing query: ${query}`);
             const result = await this.db.query(query);
-            // console.log(`[SurrealDB] Raw result:`, JSON.stringify(result, null, 2));
+            console.log(`[SurrealDB] Raw result type: ${typeof result}`);
+            console.log(`[SurrealDB] Raw result stringified:`, JSON.stringify(result, null, 2));
 
             if (!Array.isArray(result)) {
+                console.log('[SurrealDB] Result is not an array');
                 return result;
             }
 
             const firstRes = result[0];
+            console.log(`[SurrealDB] First response item type: ${typeof firstRes}`);
+            console.log(`[SurrealDB] First response item:`, JSON.stringify(firstRes, null, 2));
 
             // Check for error
             if (firstRes && firstRes.status === 'ERR') {
@@ -66,13 +71,13 @@ export class SurrealAdapter extends DatabaseAdapter {
             // Not result[0].result
             // If firstRes is an array, it's the data
             if (Array.isArray(firstRes)) {
-                // console.log(`[SurrealDB] Returning ${firstRes.length} rows`);
+                console.log(`[SurrealDB] Returning ${firstRes.length} rows (direct array)`);
                 return firstRes;
             }
 
             // If firstRes has a result property that's an array
             if (firstRes && firstRes.result && Array.isArray(firstRes.result)) {
-                // console.log(`[SurrealDB] Returning ${firstRes.result.length} rows from result property`);
+                console.log(`[SurrealDB] Returning ${firstRes.result.length} rows from result property`);
                 return firstRes.result;
             }
 

@@ -34,7 +34,7 @@ export class GeminiProvider extends AIProvider {
         }
 
         const generationConfig = {
-            maxOutputTokens: options.maxTokens || 1000,
+            maxOutputTokens: options.maxTokens || 4000,
             temperature: options.temperature ?? undefined
         }
         if (options.json) {
@@ -112,9 +112,6 @@ export class GeminiProvider extends AIProvider {
             const relevantModels = [
                 'gemini-2.5-pro',
                 'gemini-2.5-flash',
-                'gemini-2.0-flash-exp',
-                'gemini-1.5-pro',
-                'gemini-1.5-flash'
             ]
 
             if (data.models) {

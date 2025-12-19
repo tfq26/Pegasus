@@ -33,3 +33,7 @@ Thumbs.db
 .cache
 .eslintcache
 *.tsbuildinfo
+
+# Database
+pegasus.db/
+*.db

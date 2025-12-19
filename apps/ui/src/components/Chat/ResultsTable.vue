@@ -83,7 +83,7 @@ const columns = computed(() => {
   return cols
 })
 
-const formatValue = (val: any): string => {
+const formatValue = (val: any, columnName?: string): string => {
   if (val === null) return '-'
   if (val === undefined) return '-'
   if (val === '') return '(empty)'
@@ -99,6 +99,52 @@ const formatValue = (val: any): string => {
     }
     // Default to ISO/Original for 'iso' or fallback
     return val instanceof Date ? val.toISOString() : val
+  }
+
+  // Smart number formatting based on column name
+  if (typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val)) && isFinite(parseFloat(val)))) {
+    const numVal = typeof val === 'number' ? val : parseFloat(val)
+    const colLower = columnName?.toLowerCase() || ''
+    
+    // Currency fields (salary, price, cost, revenue, amount, etc.)
+    if (colLower.includes('salary') || colLower.includes('price') || colLower.includes('cost') || 
+        colLower.includes('revenue') || colLower.includes('amount') || colLower.includes('payment') ||
+        colLower.includes('fee') || colLower.includes('charge') || colLower.includes('total')) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(numVal)
+    }
+    
+    // Percentage fields
+    if (colLower.includes('percent') || colLower.includes('rate') || colLower.includes('ratio')) {
+      return `${numVal.toFixed(1)}%`
+    }
+    
+    // Count/quantity fields (students, employees, items, count, quantity, etc.)
+    if (colLower.includes('count') || colLower.includes('quantity') || colLower.includes('qty') ||
+        colLower.includes('students') || colLower.includes('employees') || colLower.includes('users') ||
+        colLower.includes('items') || colLower.includes('orders') || colLower.includes('total')) {
+      return numVal.toLocaleString('en-US') // Add thousand separators
+    }
+    
+    // Weight/measurement fields
+    if (colLower.includes('weight') || colLower.includes('kg') || colLower.includes('lb')) {
+      return `${numVal.toLocaleString('en-US')} ${colLower.includes('kg') ? 'kg' : 'lbs'}`
+    }
+    
+    // Distance fields
+    if (colLower.includes('distance') || colLower.includes('miles') || colLower.includes('km')) {
+      return `${numVal.toLocaleString('en-US')} ${colLower.includes('km') ? 'km' : 'mi'}`
+    }
+    
+    // Default number formatting with thousand separators
+    if (Number.isInteger(numVal)) {
+      return numVal.toLocaleString('en-US')
+    }
+    return numVal.toLocaleString('en-US', { maximumFractionDigits: 2 })
   }
 
   return String(val)
@@ -220,10 +266,10 @@ const copyCellValue = async (value: any) => {
                   <Braces class="w-3 h-3" />
                   <span>View JSON</span>
                 </button>
-                <span v-else :title="formatValue(row[col])">
-                  {{ formatValue(row[col]) }}
+                <span v-else :title="formatValue(row[col], col)">
+                  {{ formatValue(row[col], col) }}
                   <!-- Debug: show raw value if formatted is empty -->
-                  <span v-if="!formatValue(row[col]) || formatValue(row[col]) === '-'" class="text-xs text-red-500 ml-2">
+                  <span v-if="!formatValue(row[col], col) || formatValue(row[col], col) === '-'" class="text-xs text-red-500 ml-2">
                     [{{ typeof row[col] }}: {{ JSON.stringify(row[col]) }}]
                   </span>
                 </span>

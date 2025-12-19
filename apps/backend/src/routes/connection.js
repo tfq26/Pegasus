@@ -12,9 +12,11 @@ const upsertUser = async (payload) => {
         const userId = payload.sub || payload.id
         const userRecordId = `user:${userId}`
 
-        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+        // 1. Try to find by ID
+        const [existingById] = await db.query(`SELECT id FROM ${userRecordId}`);
 
-        if (existing && existing.length > 0) {
+        if (existingById && existingById.length > 0) {
+            // Found by ID -> Update
             await db.query(`
                 UPDATE ${userRecordId} SET 
                     email = $email,
@@ -28,26 +30,49 @@ const upsertUser = async (payload) => {
                 lastName: payload.lastName || payload.last_name,
                 pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
             });
+            return existingById[0].id.toString();
         } else {
-            await db.query(`
-                CREATE ${userRecordId} CONTENT {
-                    email: $email,
-                    first_name: $firstName,
-                    last_name: $lastName,
-                    profile_picture_url: $pic,
-                    created_at: time::now(),
-                    updated_at: time::now()
-                };
-            `, {
-                email: payload.email,
-                firstName: payload.firstName || payload.first_name,
-                lastName: payload.lastName || payload.last_name,
-                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-            });
+            // 2. Not found by ID -> Check by Email to prevent duplicates
+            const [existingByEmail] = await db.query(`SELECT id FROM user WHERE email = $email`, { email: payload.email });
+
+            if (existingByEmail && existingByEmail.length > 0) {
+                // Found by Email -> Update that record instead
+                const targetId = existingByEmail[0].id.toString();
+                await db.query(`
+                    UPDATE ${targetId} SET 
+                        first_name = $firstName,
+                        last_name = $lastName,
+                        profile_picture_url = $pic,
+                        updated_at = time::now();
+                `, {
+                    firstName: payload.firstName || payload.first_name,
+                    lastName: payload.lastName || payload.last_name,
+                    pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+                });
+                return targetId;
+            } else {
+                // 3. Not found by ID or Email -> Create new
+                await db.query(`
+                    CREATE ${userRecordId} CONTENT {
+                        email: $email,
+                        first_name: $firstName,
+                        last_name: $lastName,
+                        profile_picture_url: $pic,
+                        created_at: time::now(),
+                        updated_at: time::now()
+                    };
+                `, {
+                    email: payload.email,
+                    firstName: payload.firstName || payload.first_name,
+                    lastName: payload.lastName || payload.last_name,
+                    pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
+                });
+                return userRecordId;
+            }
         }
     } catch (e) {
         console.error("[Connection] Failed to upsert user:", e)
-        throw e
+        return null;
     }
 }
 
@@ -57,7 +82,13 @@ connections.get("/", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
 
         const [results] = await db.query(`
         SELECT * FROM connection WHERE user = type::thing('user', $userId) ORDER BY created_at ASC;
@@ -87,10 +118,14 @@ connections.post("/", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
         const connection = await c.req.json()
-
-        await upsertUser(payload)
 
         let config = {}
         if (connection.provider === 'mysql') config = { mysql: connection.mysql }
@@ -137,12 +172,16 @@ connections.put("/:id", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
         let connectionId = c.req.param('id')
         if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
         const connection = await c.req.json()
-
-        await upsertUser(payload)
 
         let config = {}
         if (connection.provider === 'mysql') config = { mysql: connection.mysql }
@@ -187,7 +226,13 @@ connections.delete("/:id", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) userId = parts[1]
+            else userId = resolvedId
+        }
         let connectionId = c.req.param('id')
         if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
 

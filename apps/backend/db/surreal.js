@@ -48,6 +48,7 @@ const initSchema = async () => {
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
         `);
 
+
         // Dashboards Table
         await db.query(`
             DEFINE TABLE dashboard SCHEMALESS;
