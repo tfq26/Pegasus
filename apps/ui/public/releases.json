@@ -9,6 +9,30 @@
             "isLatest": true
         },
         {
+            "version": "0.4.2",
+            "releaseDate": "December 13, 2025",
+            "title": "Engine Refactoring & Critical Checks",
+            "description": "Significant architectural improvements to the spreadsheet engine and critical bug fixes for data integrity.",
+            "changelogFile": "v0.4.2.json",
+            "isLatest": false
+        },
+        {
+            "version": "0.4.1",
+            "releaseDate": "December 9, 2025",
+            "title": "Intelligent Data Management & Stability",
+            "description": "Major stability improvements for Excel/Table operations, robust data handling, and infinite loop prevention.",
+            "changelogFile": "v0.4.1.json",
+            "isLatest": false
+        },
+        {
+            "version": "0.4.0",
+            "releaseDate": "December 7, 2025",
+            "title": "Professional Spreadsheet Features",
+            "description": "Essential UX features, power tools, and real-time collaboration foundation.",
+            "changelogFile": "v0.4.0.json",
+            "isLatest": false
+        },
+        {
             "version": "0.3.1",
             "releaseDate": "December 7, 2025",
             "title": "Vercel Deployment & Visualization Enhancements",
