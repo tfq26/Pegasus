@@ -169,23 +169,36 @@ auth.get("/logout", (c) => {
 auth.get("/me", async (c) => {
     const token = getCookie(c, "session")
 
+    console.log('[Auth /me] Request received, token present:', !!token)
+
     if (!token) {
+        console.log('[Auth /me] No session token, returning null user')
         return c.json({ user: null })
     }
 
     try {
         const payload = await verify(token, jwtSecret)
+        console.log('[Auth /me] Token verified, user:', payload.email)
 
         // Get user's feature flags
         const featureFlags = await getUserFeatureFlags(db, payload.sub)
 
-        return c.json({
+        const response = {
             user: {
                 ...payload,
                 featureFlags
             }
+        }
+
+        console.log('[Auth /me] Returning user data:', {
+            email: payload.email,
+            sub: payload.sub,
+            hasFeatureFlags: featureFlags.length > 0
         })
+
+        return c.json(response)
     } catch (error) {
+        console.error('[Auth /me] Token verification failed:', error.message)
         return c.json({ error: "Invalid token" }, 401)
     }
 })
