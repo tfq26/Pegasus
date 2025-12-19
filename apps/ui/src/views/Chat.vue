@@ -1422,9 +1422,38 @@ const sanitizeDialogVisible = ref(false)
 const analysisResult = ref<any>(null)
 const isAnalyzing = ref(false)
 
-const handleAnalyze = () => {
-    // Placeholder for future implementation
-    console.log('Analyze triggered')
+const handleAnalyze = async () => {
+  if (!queryResult.value || !lastQuery.value) {
+    toast.error('No results to analyze')
+    return
+  }
+
+  isAnalyzing.value = true
+  analysisResult.value = null
+
+  try {
+    const { analyzeResults } = await import('@/lib/api')
+    
+    // Get the user's original question from chat input or use a generic prompt
+    const userQuestion = chatInput.value || 'Analyze these query results'
+    
+    // Call the AI analysis API
+    const analysis = await analyzeResults(
+      userQuestion,
+      Array.isArray(queryResult.value) ? queryResult.value : [queryResult.value],
+      lastQuery.value
+    )
+    
+    analysisResult.value = analysis
+    toast.success('Analysis complete')
+  } catch (error) {
+    console.error('Failed to analyze results:', error)
+    toast.error('Failed to analyze results', {
+      description: error instanceof Error ? error.message : 'Please try again'
+    })
+  } finally {
+    isAnalyzing.value = false
+  }
 }
 
 const handleEditTable = async (conn: ConnectionEntry, table: string) => {

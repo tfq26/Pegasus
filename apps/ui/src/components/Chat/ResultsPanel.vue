@@ -119,7 +119,14 @@ const md = new MarkdownIt({
 
 const renderMarkdown = (text: string) => {
   if (typeof text !== 'string') return ''
-  return md.render(text)
+  
+  // Convert unicode bullets (•) to markdown bullets for proper rendering
+  let processedText = text.replace(/^[•·]\s+/gm, '- ')
+  
+  // Also handle bullets that might be in the middle of lines
+  processedText = processedText.replace(/\n[•·]\s+/g, '\n- ')
+  
+  return md.render(processedText)
 }
 
 const copied = ref(false)

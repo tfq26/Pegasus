@@ -153,6 +153,9 @@ const config = ref<any>(null)
 const input = ref('')
 const isRefining = ref(false)
 
+// Store original chart data when converting to stat (for restoration)
+const originalChartData = ref<any>(null)
+
 // Create Dashboard State
 const showCreateDashboardModal = ref(false)
 const newDashboardName = ref('')
@@ -161,6 +164,8 @@ const isCreatingDashboard = ref(false)
 watch(() => props.initialConfig, (newConfig) => {
   if (newConfig) {
     config.value = JSON.parse(JSON.stringify(newConfig))
+    // Reset original data when new config is loaded
+    originalChartData.value = null
   }
 }, { immediate: true })
 
@@ -177,6 +182,9 @@ watch(() => props.open, async (isOpen) => {
         } else if (dashboards.value.length > 0) {
             selectedDashboardId.value = dashboards.value[0]!.id
         }
+        
+        // Reset original data when dialog opens
+        originalChartData.value = null
     }
 })
 
@@ -287,15 +295,13 @@ const refineChart = async () => {
 const applyChartType = (newType: string) => {
   if (!config.value) return
 
-  // Special handling for Stat <-> Chart conversion
-  if (config.value.type === 'stat' && newType !== 'stat') {
-      // Trying to convert Stat to Chart
-       toast.error("Cannot convert simple stat to chart directly yet.")
-       return
-  }
+  // In preview mode, allow all conversions for experimentation
+  // The restriction only applies to saved dashboard elements (in GeneralSettings.vue)
   
   if (newType === 'stat' && config.value.type !== 'stat') {
-      // Trying to convert Chart to Stat - simplistic approach: take first value
+      // Converting Chart to Stat - store original data for restoration
+      originalChartData.value = JSON.parse(JSON.stringify(config.value.config))
+      
       const firstDataset = config.value.config.data?.datasets?.[0]
       if (firstDataset && firstDataset.data?.length > 0) {
           const val = firstDataset.data[0]
@@ -311,6 +317,53 @@ const applyChartType = (newType: string) => {
           }
           return
       }
+  }
+
+  // Converting Stat to Chart - restore original data if available
+  if (config.value.type === 'stat' && newType !== 'stat') {
+      // Check if we have original data stored
+      if (originalChartData.value) {
+          config.value = {
+              type: newType,
+              title: config.value.title,
+              config: originalChartData.value
+          }
+          
+          // Apply type-specific styling
+          const styledConfig = convertToChartType(newType)
+          if (styledConfig) {
+              config.value = styledConfig
+          }
+          return
+      }
+      
+      // No original data - create a simple single-point chart
+      const statValue = config.value.config.value
+      const statLabel = config.value.config.label || 'Value'
+      
+      config.value = {
+          type: newType,
+          title: config.value.title,
+          config: {
+              data: {
+                  labels: [statLabel],
+                  datasets: [{
+                      label: statLabel,
+                      data: [statValue],
+                      backgroundColor: 'hsl(220, 70%, 50%)',
+                      borderColor: 'hsl(220, 70%, 50%)',
+                      borderWidth: 1
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  plugins: {
+                      legend: { display: false }
+                  }
+              }
+          }
+      }
+      return
   }
 
   const newConfig = convertToChartType(newType)

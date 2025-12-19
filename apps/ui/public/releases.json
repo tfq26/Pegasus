@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.5.1",
+            "releaseDate": "December 18, 2024",
+            "title": "AI Intelligence & UX Refinements",
+            "description": "Enhanced AI query generation with world knowledge, improved visualization workflows, and better data presentation.",
+            "changelogFile": "v0.5.1.json",
+            "isLatest": true
+        },
+        {
             "version": "0.5.0",
             "releaseDate": "December 14, 2025",
             "title": "Backend Stability & Collaboration",
             "description": "Critical backend migration to SurrealDB, server stability fixes, and real-time collaboration foundations.",
             "changelogFile": "v0.5.0.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.4.2",

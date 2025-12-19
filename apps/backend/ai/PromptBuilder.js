@@ -71,6 +71,13 @@ OR if ambiguous:
   "choices": ["Option 1", "Option 2"]
 }
 
+"HOW MANY" QUESTIONS:
+When users ask "how many X", they typically want to see the actual documents, not just a count.
+- Return the matching documents with a filter and limit
+- Do NOT use aggregation pipeline with $count
+- Only use count if the user explicitly asks for "just the count" or "only the number"
+- The count is implied by the number of documents returned
+
 IMPORTANT RULES FOR NESTED FIELDS:
 - To search in nested objects, use dot notation: "player1.clubName", "player2.name"
 - For partial text matches (like searching for "New Mexico" in club names), use $regex with case-insensitive flag
@@ -83,6 +90,10 @@ EXAMPLES:
 
 2. Nested field search with regex:
    {"reasoning": "Searching for teams from New Mexico. Using $or to check both player1 and player2 clubName fields with regex.", "collection": "teams", "filter": {"$or": [{"player1.clubName": {"$regex": "New Mexico", "$options": "i"}}, {"player2.clubName": {"$regex": "New Mexico", "$options": "i"}}]}}
+
+3. "How many" question:
+   User: "How many employees are from California?"
+   {"reasoning": "Finding all employees from California. Using $in to match West Coast cities.", "collection": "employees", "filter": {"city": {"$in": ["Los Angeles", "San Francisco", "San Diego", "Sacramento"]}}, "limit": 100}
 `
     } else if (dialect === 'mysql' || dialect === 'sqlite' || dialect === 'postgres') {
       // SQL Dialects
@@ -144,8 +155,15 @@ RULES:
 3. For partial text matches, use LIKE with wildcards: WHERE column LIKE '%search%'
 4. Always include a LIMIT clause (default 100)
 5. When selecting data, include primary keys or identifying columns
-6. JOINs are encouraged if data is split across tables.
-7. CRITICAL: DO NOT include simulated results (e.g. "Results: [...]") or explanations after the query.
+6. JOINs are encouraged if data is split across tables
+7. CRITICAL: DO NOT include simulated results (e.g. "Results: [...]") or explanations after the query
+
+"HOW MANY" QUESTIONS:
+When users ask "how many X", they typically want to see the actual data, not just a count.
+- Use: SELECT * FROM table WHERE ... LIMIT 100
+- NOT: SELECT COUNT(*) FROM table WHERE ...
+- Only use COUNT(*) if the user explicitly asks for "just the count" or "only the number"
+- The count is implied by the number of results returned
 
 AMBIGUITY & JOINS:
 1. If the request requires data from MULTIPLE tables (JOIN), you MUST verify that the join is logical.
@@ -168,6 +186,10 @@ EXAMPLES:
 
 3. JOIN query:
    SELECT u.id, u.name, o.order_id FROM users u JOIN orders o ON u.id = o.user_id WHERE u.status = 'active' LIMIT 20
+
+4. "How many" question:
+   User: "How many employees are from California?"
+   SELECT * FROM employees WHERE state = 'California' LIMIT 100
 `
 
     } else if (dialect === 'surrealdb') {
@@ -275,14 +297,32 @@ YOUR RESPONSE:
   ]
 }
 
+CONCRETE EXAMPLE - "How Many" Questions:
+User: "How many employees are from west coast cities?"
+
+IMPORTANT: When users ask "how many X", they want to see:
+1. The actual records/data
+2. The count is implied by the number of results
+
+YOUR RESPONSE (single query):
+SELECT * FROM employee WHERE City IN ['Los Angeles', 'San Francisco', 'Seattle', 'Portland', 'San Diego'] LIMIT 100
+
+NOT: SELECT count() FROM employee WHERE ... (too minimal, user wants to see the data)
+
 RULES:
 1. ALWAYS use multi-step for queries involving:
-   - "average by", "sum by", "count by"
+   - "average by", "sum by", "count by" (when grouped by categories)
    - "below average", "above average"
    - Multiple aggregations
    - Filtering based on aggregated values
 
-2. AGGREGATION SYNTAX:
+2. For "how many X" questions:
+   - Return the actual records with SELECT * FROM ... WHERE ... LIMIT 100
+   - The user can see the count from the result set size
+   - Only use SELECT count() if the user explicitly asks for "just the count" or "only the number"
+
+3. AGGREGATION SYNTAX:
+   - Count (when needed): SELECT count() FROM table WHERE ... (returns single number)
    - Average: RETURN math::mean((SELECT VALUE type::number(column) FROM table WHERE ...))
    - Sum: RETURN math::sum((SELECT VALUE type::number(column) FROM table WHERE ...))
    - Max: RETURN math::max((SELECT VALUE type::number(column) FROM table WHERE ...))
@@ -363,9 +403,42 @@ Your task is to convert the user's natural language request into a valid ${diale
 ${formatInstructions}
 ${schemaPresentation}
 
+WORLD KNOWLEDGE & COMMON SENSE:
+You have access to world knowledge and should use it to interpret queries intelligently:
+- **Geography**: You know which cities are on the West Coast (Los Angeles, San Francisco, Seattle, Portland, San Diego, etc.), East Coast (New York, Boston, Miami, etc.), or in specific regions
+- **Time & Dates**: You understand relative dates (last month, this year, Q1, etc.)
+- **Common Categories**: You can infer categories (e.g., "tech companies" might include companies with names like "Google", "Microsoft", "Apple")
+- **Industry Standards**: You understand common business terms, job titles, departments, etc.
+
+WHEN TO USE WORLD KNOWLEDGE:
+✅ DO use world knowledge when:
+- User asks about geographic regions (West Coast, East Coast, Midwest, etc.)
+- User asks about time periods (last quarter, this year, etc.)
+- User asks about common categories that can be inferred from data
+- The question requires general knowledge that's not database-specific
+
+❌ DO NOT ask for clarification when:
+- You can use world knowledge to resolve the query
+- The intent is clear even if the exact field name isn't mentioned
+- There's a reasonable interpretation based on common sense
+
 Rules:
-3. If the term appears in the sample values of MULTIPLE fields (e.g. "team_name" and "location"), you MUST return an "ambiguous" response asking the user to clarify.
-4. Use partial matching (LIKE, $regex) for proper nouns or names unless the user asks for an exact match.
+1. **Use World Knowledge First**: Before asking for clarification, check if you can use world knowledge to resolve the query
+2. **Smart Field Matching**: If the user mentions a concept (like "West Coast cities"), look at sample values to find matching data
+3. **Only Ask for Clarification When Truly Ambiguous**: Only return an "ambiguous" response when there are multiple valid interpretations that CANNOT be resolved with world knowledge
+4. If the term appears in the sample values of MULTIPLE fields AND you cannot determine which field is intended, you MUST return an "ambiguous" response with specific choices
+5. Use partial matching (LIKE, $regex) for proper nouns or names unless the user asks for an exact match
+
+AMBIGUOUS RESPONSE FORMAT:
+When you truly need clarification, provide SPECIFIC, ACTIONABLE choices:
+{
+  "ambiguous": true,
+  "message": "Clear explanation of why clarification is needed",
+  "choices": [
+    "Option 1: Specific interpretation (e.g., 'Search by city field')",
+    "Option 2: Alternative interpretation (e.g., 'Search by state field')"
+  ]
+}
 
 ${detailInstruction}
 

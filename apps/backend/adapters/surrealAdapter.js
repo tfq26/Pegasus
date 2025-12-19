@@ -67,25 +67,42 @@ export class SurrealAdapter extends DatabaseAdapter {
                 throw new Error(firstRes.detail || firstRes.result);
             }
 
+            // Helper function to remove internal fields from records
+            const cleanRecord = (record) => {
+                if (!record || typeof record !== 'object') return record;
+                const cleaned = { ...record };
+                delete cleaned.id;
+                delete cleaned.__id;
+                delete cleaned._row_order;
+                return cleaned;
+            };
+
+            const cleanResults = (data) => {
+                if (Array.isArray(data)) {
+                    return data.map(cleanRecord);
+                }
+                return cleanRecord(data);
+            };
+
             // Based on our INFO FOR DB testing, the structure is result[0] directly
             // Not result[0].result
             // If firstRes is an array, it's the data
             if (Array.isArray(firstRes)) {
                 console.log(`[SurrealDB] Returning ${firstRes.length} rows (direct array)`);
-                return firstRes;
+                return cleanResults(firstRes);
             }
 
             // If firstRes has a result property that's an array
             if (firstRes && firstRes.result && Array.isArray(firstRes.result)) {
                 console.log(`[SurrealDB] Returning ${firstRes.result.length} rows from result property`);
-                return firstRes.result;
+                return cleanResults(firstRes.result);
             }
 
             // For mutations or other responses
             // console.log(`[SurrealDB] Returning metadata response`);
             return {
                 affectedRows: Array.isArray(firstRes) ? firstRes.length : 1,
-                rows: firstRes
+                rows: cleanRecord(firstRes)
             };
 
         } catch (error) {
@@ -151,11 +168,23 @@ export class SurrealAdapter extends DatabaseAdapter {
     async sampleCollection(name, limit = 5) {
         try {
             const result = await this.db.query(`SELECT * FROM ${name} LIMIT ${limit}`);
+
+            // Helper to clean internal fields
+            const cleanRecord = (record) => {
+                if (!record || typeof record !== 'object') return record;
+                const cleaned = { ...record };
+                delete cleaned.id;
+                delete cleaned.__id;
+                delete cleaned._row_order;
+                return cleaned;
+            };
+
             // SurrealDB returns data in result[0] directly, not result[0].result
             if (Array.isArray(result[0])) {
-                return result[0];
+                return result[0].map(cleanRecord);
             }
-            return result[0]?.result || [];
+            const data = result[0]?.result || [];
+            return Array.isArray(data) ? data.map(cleanRecord) : [];
         } catch (error) {
             console.warn(`[SurrealDB] Failed to sample table ${name}:`, error.message);
             return [];
