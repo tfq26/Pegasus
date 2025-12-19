@@ -1,18 +1,26 @@
 {
     "releases": [
         {
+            "version": "0.5.2",
+            "releaseDate": "2025-12-18",
+            "title": "AI Response Quality & Chat Formatting Improvements",
+            "description": "Major improvements to AI query generation, response formatting, and chat message display quality.",
+            "changelogFile": "v0.5.2.json",
+            "isLatest": true
+        },
+        {
             "version": "0.5.1",
             "releaseDate": "December 18, 2024",
             "title": "AI Intelligence & UX Refinements",
             "description": "Enhanced AI query generation with world knowledge, improved visualization workflows, and better data presentation.",
             "changelogFile": "v0.5.1.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.5.0",
             "releaseDate": "December 14, 2025",
-            "title": "Backend Stability & Collaboration",
-            "description": "Critical backend migration to SurrealDB, server stability fixes, and real-time collaboration foundations.",
+            "title": "Collaboration & Smart Notes",
+            "description": "Introducing real-time collaboration features, smart annotations, and the foundation for the 'Git for Data' workflow.",
             "changelogFile": "v0.5.0.json",
             "isLatest": false
         },
@@ -27,16 +35,16 @@
         {
             "version": "0.4.1",
             "releaseDate": "December 9, 2025",
-            "title": "Intelligent Data Management & Stability",
-            "description": "Major stability improvements for Excel/Table operations, robust data handling, and infinite loop prevention.",
+            "title": "Dashboard Editor Improvements & Quick Creation",
+            "description": "Enhanced the dashboard editing experience with a wider modal layout, quick dashboard creation from visualizations, and improved validation.",
             "changelogFile": "v0.4.1.json",
             "isLatest": false
         },
         {
             "version": "0.4.0",
             "releaseDate": "December 7, 2025",
-            "title": "Professional Spreadsheet Features",
-            "description": "Essential UX features, power tools, and real-time collaboration foundation.",
+            "title": "Advanced Dashboard Customization",
+            "description": "Introduced a comprehensive editor for dashboard elements featuring real-time preview, advanced color palette generation, and detailed data annotation capabilities.",
             "changelogFile": "v0.4.0.json",
             "isLatest": false
         },
@@ -44,7 +52,7 @@
             "version": "0.3.1",
             "releaseDate": "December 7, 2025",
             "title": "Vercel Deployment & Visualization Enhancements",
-            "description": "Critical deployment fixes for Vercel serverless environment and major improvements to dashboard visualization capabilities.",
+            "description": "Critical deployment fixes for Vercel serverless environment and major improvements to dashboard visualization capabilities with user-controlled chart types.",
             "changelogFile": "v0.3.1.json",
             "isLatest": false
         },

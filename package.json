@@ -22,7 +22,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
-    "start": "bun run-apps.js"
+    "start": "bun run-apps.js",
+    "changelog:generate": "node scripts/generate-releases-index.js"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
