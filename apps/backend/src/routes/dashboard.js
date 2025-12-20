@@ -295,6 +295,59 @@ dashboard.post("/dashboards", async (c) => {
     }
 })
 
+dashboard.get("/dashboards/shared", async (c) => {
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const userRecId = `user:${userId}`
+
+        // Fetch dashboards shared with this user via dashboard_permission
+        // We join with the dashboard table and fetch the owner details
+        const [results] = await db.query(`
+            SELECT 
+                role,
+                created_at as shared_at,
+                dashboard.id as id,
+                dashboard.title as title,
+                dashboard.cover_image as cover_image,
+                dashboard.updated_at as updated_at,
+                dashboard.owner.first_name as owner_first_name,
+                dashboard.owner.last_name as owner_last_name,
+                dashboard.owner.email as owner_email,
+                dashboard.owner as owner_id
+            FROM dashboard_permission 
+            WHERE user = $user
+            ORDER BY created_at DESC;
+        `, {
+            user: userRecId
+        });
+
+        // Format the response to look like regular dashboards but with owner info
+        const sharedDashboards = results.map(item => ({
+            id: item.id,
+            title: item.title,
+            cover_image: item.cover_image,
+            updated_at: item.updated_at, // Use original dashboard updated_at
+            shared_at: item.shared_at,
+            role: item.role,
+            owner: {
+                id: item.owner_id,
+                first_name: item.owner_first_name,
+                last_name: item.owner_last_name,
+                email: item.owner_email
+            },
+            is_shared: true
+        }));
+
+        return c.json({ dashboards: sharedDashboards })
+    } catch (e) {
+        console.error("Failed to fetch shared dashboards:", e)
+        return c.json({ error: "Failed to fetch shared dashboards" }, 500)
+    }
+})
+
 dashboard.get("/dashboards/:id", async (c) => {
     const token = getCookie(c, "session")
     if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -658,8 +711,29 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
         if (!email) return c.json({ error: "Email is required" }, 400)
 
         // 1. Verify Ownership
-        const [ownerCheck] = await db.query(`SELECT 1 FROM ${id} WHERE owner = $user;`, { user: `user:${userId}` });
-        if (!ownerCheck.length) return c.json({ error: "Dashboard not found or unauthorized" }, 404)
+        const userRecId = `user:${userId}`;
+        console.log(`[Invite] Verifying ownership for dashboard ${id}, user ${userRecId}`);
+
+        try {
+            // Check if dashboard exists first
+            const [exists] = await db.query(`SELECT * FROM ${id}`);
+            console.log(`[Invite] Dashboard exists check:`, !!exists[0]);
+            if (exists[0]) {
+                console.log(`[Invite] Dashboard owner:`, exists[0].owner);
+                console.log(`[Invite] Current user:`, userRecId);
+                console.log(`[Invite] Match?`, exists[0].owner.toString() === userRecId);
+            }
+        } catch (err) {
+            console.error('[Invite] Error checking dashboard:', err);
+        }
+
+        const [ownerCheck] = await db.query(`SELECT 1 FROM ${id} WHERE <string>owner = $user;`, { user: userRecId });
+        console.log(`[Invite] Owner check result:`, ownerCheck);
+
+        if (!ownerCheck.length) {
+            console.warn(`[Invite] Ownership verification failed for dashboard ${id} and user ${userRecId}`);
+            return c.json({ error: "Dashboard not found or unauthorized" }, 404)
+        }
 
         // 2. Verify User
         let workosUser = null
@@ -677,22 +751,30 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
         const targetUserId = localUserCheck[0].id;
 
         // 3. Grant Permission
-        await db.query(`
-        DELETE dashboard_permission WHERE user=$target AND dashboard=$dashboard;
-        CREATE dashboard_permission CONTENT {
-            user: $target,
-            dashboard: $dashboard,
-            role: 'read',
-            created_at: time::now()
-        };
-    `, {
-            target: targetUserId,
-            dashboard: id
-        });
+        console.log(`[Invite] Granting permission. Target: ${targetUserId}, Dashboard: ${id}`);
+        try {
+            await db.query(`
+                DELETE dashboard_permission WHERE user=type::thing($target) AND dashboard=type::thing($dashboard);
+                CREATE dashboard_permission CONTENT {
+                    user: type::thing($target),
+                    dashboard: type::thing($dashboard),
+                    role: 'read',
+                    created_at: time::now()
+                };
+            `, {
+                target: targetUserId,
+                dashboard: id
+            });
+            console.log(`[Invite] Permission granted successfully`);
+        } catch (queryErr) {
+            console.error(`[Invite] Permission query failed:`, queryErr);
+            throw queryErr;
+        }
 
         return c.json({ ok: true })
     } catch (e) {
-        return c.json({ error: "Failed to invite user" }, 500)
+        console.error(`[Invite] Final error catch:`, e);
+        return c.json({ error: "Failed to invite user: " + e.message }, 500)
     }
 })
 

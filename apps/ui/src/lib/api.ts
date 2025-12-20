@@ -188,16 +188,23 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
   return 0
 }
 
-export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = []) {
+export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = [], activeTable?: string) {
+  const requestBody: any = {
+    prompt,
+    connectionId,
+    context
+  };
+
+  // Only include activeTable if it has a value
+  if (activeTable) {
+    requestBody.activeTable = activeTable;
+  }
+
   const response = await fetch(`${QUERY_API_URL}/ai/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({
-      prompt,
-      connectionId,
-      context
-    }),
+    body: JSON.stringify(requestBody),
   })
 
   const body = await response.json()
@@ -219,19 +226,29 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
 }
 
 
-export async function analyzeTableSanitization(connectionId: string, table: string) {
-  const response = await fetch(`${QUERY_API_URL}/ai/sanitize/analyze`, {
+
+export async function sanitizeTable(table: string) {
+  const response = await fetch(`${QUERY_API_URL}/api/table/${table}/sanitize`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include', // Include cookies for authentication
-    body: JSON.stringify({ connectionId, table }),
+    credentials: 'include'
   })
+
   if (!response.ok) {
     const error = await response.json()
-    throw new Error(error.error || 'Sanitization analysis failed')
+    throw new Error(error.error || 'Sanitization failed')
   }
-  return response.json()
+
+  // Read response as text first so we can log it if parsing fails
+  const text = await response.text()
+
+  try {
+    return JSON.parse(text)
+  } catch (e: any) {
+    console.error('Failed to parse sanitize response:', text.substring(0, 500))
+    throw new Error(`Invalid JSON response from server: ${e.message}`)
+  }
 }
+
 
 export async function executeQuery({ connectionId, query, source = 'user' }: { connectionId: string, query: string, source?: string }) {
   // Try to find provider from connectionId if possible, but connection payload building is complex here without the entry.
@@ -452,6 +469,15 @@ export async function fetchDashboards() {
     cache: 'no-store'
   })
   if (!response.ok) throw new Error('Failed to fetch dashboards')
+  const body = await response.json()
+  return body.dashboards || []
+}
+
+export async function fetchSharedDashboards() {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/shared`, {
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to fetch shared dashboards')
   const body = await response.json()
   return body.dashboards || []
 }

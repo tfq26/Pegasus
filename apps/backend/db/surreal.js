@@ -87,6 +87,17 @@ const initSchema = async () => {
             DEFINE INDEX unique_access ON TABLE dashboard_permission COLUMNS user, dashboard UNIQUE;
         `);
 
+        // Sanitization Metadata Table (Versioning)
+        await db.query(`
+            DEFINE TABLE sanitization_metadata SCHEMAFULL;
+            DEFINE FIELD original_table ON sanitization_metadata TYPE string;
+            DEFINE FIELD versions ON sanitization_metadata TYPE array; 
+            DEFINE FIELD current_version ON sanitization_metadata TYPE number; 
+            DEFINE FIELD upload_id ON sanitization_metadata TYPE string;
+            
+            DEFINE INDEX idx_original_table ON sanitization_metadata COLUMNS original_table UNIQUE;
+        `);
+
         console.log('[SurrealDB] Schema initialized');
     } catch (e) {
         // Ignore "table already exists" errors

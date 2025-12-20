@@ -53,11 +53,38 @@
         </div>
       </div>
 
-      <!-- Recent Dashboards -->
+      <!-- Tabs & Filters -->
       <div class="py-8 px-6">
         <div class="max-w-6xl mx-auto">
-          <div class="flex items-center justify-between mb-6">
-            <h2 class="text-base font-medium">Recent dashboards</h2>
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+            
+            <!-- Tabs -->
+            <div class="flex items-center gap-1 bg-muted/50 p-1 rounded-lg">
+              <button 
+                @click="activeTab = 'my'"
+                :class="[
+                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                  activeTab === 'my' 
+                    ? 'bg-background text-foreground shadow-sm' 
+                    : 'text-muted-foreground hover:text-foreground'
+                ]"
+              >
+                My Dashboards
+              </button>
+              <button 
+                @click="activeTab = 'shared'"
+                :class="[
+                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                  activeTab === 'shared' 
+                    ? 'bg-background text-foreground shadow-sm' 
+                    : 'text-muted-foreground hover:text-foreground'
+                ]"
+              >
+                Shared with me
+              </button>
+            </div>
+
+            <!-- Sort -->
             <div class="flex items-center gap-2">
               <select v-model="sortBy" class="bg-transparent text-sm font-medium text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground">
                 <option value="updated">Last modified</option>
@@ -66,7 +93,7 @@
             </div>
           </div>
 
-          <div v-if="isLoading" class="flex items-center justify-center py-12">
+          <div v-if="isLoading || isLoadingShared" class="flex items-center justify-center py-12">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
 
@@ -115,8 +142,14 @@
                   </span>
                 </div>
                 
-                <!-- Overlay Actions -->
-                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10" @click.stop>
+                <!-- Shared Indicator -->
+                <div v-if="dashboard.is_shared" class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                  <Users class="w-3 h-3" />
+                  <span>Shared by {{ dashboard.owner?.first_name }}</span>
+                </div>
+                
+                <!-- Actions Menu (Only show for owned dashboards or if permissions allow) -->
+                <div v-else class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10" @click.stop>
                   <DropdownMenu>
                     <DropdownMenuTrigger as-child>
                       <button class="p-1.5 bg-background/80 backdrop-blur-sm rounded-md hover:bg-background shadow-sm border border-border/50 hover:border-primary transition-colors">
@@ -472,11 +505,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
-import { fetchSharedDashboard } from '@/lib/api'
+import { 
+  fetchSharedDashboards,
+  fetchSharedDashboard 
+} from '@/lib/api'
 import { 
   LayoutDashboard, 
   Search, 
@@ -490,6 +526,7 @@ import {
   Globe,
   X,
   Upload,
+  Users
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -514,6 +551,46 @@ const { dashboards, isLoading } = storeToRefs(store)
 
 const searchQuery = ref('')
 const sortBy = ref('updated')
+const activeTab = ref('my') // 'my' | 'shared'
+const sharedDashboards = ref<any[]>([])
+const isLoadingShared = ref(false)
+
+// Fetch shared dashboards when tab changes
+watch(activeTab, async (val) => {
+  if (val === 'shared' && sharedDashboards.value.length === 0) {
+    isLoadingShared.value = true
+    try {
+      sharedDashboards.value = await fetchSharedDashboards()
+    } catch (e) {
+      toast.error('Failed to load shared dashboards')
+    } finally {
+      isLoadingShared.value = false
+    }
+  }
+})
+
+const filteredDashboards = computed(() => {
+  // Select source based on active tab
+  let source = activeTab.value === 'my' ? dashboards.value : sharedDashboards.value
+  
+  // Filter by search
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    source = source.filter(d => d.title?.toLowerCase().includes(q))
+  }
+  
+  // Sort
+  return [...source].sort((a, b) => {
+    if (sortBy.value === 'name') {
+      return (a.title || '').localeCompare(b.title || '')
+    } else {
+      // Sort by updated_at or shared_at depending on tab
+      const dateA = activeTab.value === 'shared' ? (a.shared_at || a.updated_at) : a.updated_at
+      const dateB = activeTab.value === 'shared' ? (b.shared_at || b.updated_at) : b.updated_at
+      return new Date(dateB).getTime() - new Date(dateA).getTime()
+    }
+  })
+})
 
 // Helper to get cover image style (gradient or URL)
 const getCoverImageStyle = (coverImage: string) => {
@@ -607,26 +684,6 @@ const inviteEmail = ref('')
 const invitedUsers = ref<string[]>([])
 const isCreating = ref(false)
 
-const filteredDashboards = computed(() => {
-  let result = [...dashboards.value]
-  
-  // Filter
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter(d => d.title.toLowerCase().includes(query))
-  }
-  
-  // Sort
-  result.sort((a, b) => {
-    if (sortBy.value === 'name') {
-      return a.title.localeCompare(b.title)
-    }
-    return b.updated_at - a.updated_at
-  })
-  
-  return result
-})
-
 const handleCreateDashboard = () => {
   // Open the create modal instead of directly creating
   newDashboardName.value = ''
@@ -694,30 +751,17 @@ const handleRename = (dashboard: any) => {
 const confirmRename = async () => {
   if (!renameTitle.value.trim() || !dashboardToRename.value) return
   
-  console.log('[DashboardHome] confirmRename called')
-  console.log('[DashboardHome] Dashboard to rename:', dashboardToRename.value)
-  console.log('[DashboardHome] New title:', renameTitle.value)
-  console.log('[DashboardHome] Current cover_image on dashboard:', dashboardToRename.value.cover_image)
-  console.log('[DashboardHome] Selected cover_image:', renameCoverImage.value)
-  
   try {
     await store.selectDashboard(dashboardToRename.value.id)
-    console.log('[DashboardHome] Dashboard selected, currentDashboard:', store.currentDashboard)
     
     store.currentDashboard!.title = renameTitle.value.trim()
     
     // Update cover image if changed
     if (renameCoverImage.value !== dashboardToRename.value.cover_image) {
-      console.log('[DashboardHome] Cover image changed, updating from', dashboardToRename.value.cover_image, 'to', renameCoverImage.value)
       ;(store.currentDashboard as any).cover_image = renameCoverImage.value
-      console.log('[DashboardHome] After setting, currentDashboard.cover_image:', (store.currentDashboard as any).cover_image)
-    } else {
-      console.log('[DashboardHome] Cover image unchanged')
     }
     
-    console.log('[DashboardHome] About to save dashboard:', store.currentDashboard)
     await store.saveCurrentDashboard()
-    console.log('[DashboardHome] Dashboard saved successfully')
     
     toast.success('Dashboard updated successfully')
     showRenameModal.value = false

@@ -4,6 +4,7 @@ import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { uploadsDb } from "../../db/uploads.js"
 import { adapters } from "../../adapters/index.js"
+import { analyzeForSanitization, applySanitization, interpretDataset } from "../../ai/sanitizer.js"
 
 const table = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
@@ -956,4 +957,264 @@ table.post("/table/:tableName/operations", async (c) => {
     }
 })
 
+// 4. Re-Sanitize Endpoint (Versioning)
+// 4. Sanitize Endpoint (On-Demand)
+table.post("/table/:tableName/sanitize", async (c) => {
+    try {
+        const tableName = c.req.param("tableName")
+        console.log(`[Sanitize] Request for ${tableName}`)
+
+        const token = getCookie(c, "session")
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+        try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+        // Logic:
+        // 1. If table is raw upload (data_uuid_name), treat as First Time Sanitize
+        //    -> Rename current to _original
+        //    -> Sanitize -> Create _v1
+        //    -> Create Metadata
+        // 2. If table is already part of versioning (data_uuid_name_vN or _original)
+        //    -> Identify Original
+        //    -> Increment Version
+        //    -> Sanitize -> Create _v(N+1)
+        //    -> Update Metadata
+
+        // Helper to check metadata
+        let metadata = null;
+        // Simplified query - just check if original_table matches or if it's the _original version
+        const [metaResult] = await db.query(
+            `SELECT * FROM sanitization_metadata WHERE original_table = $t OR original_table = $orig LIMIT 1`,
+            { t: tableName, orig: `${tableName}_original` }
+        );
+        if (metaResult && metaResult[0]) metadata = metaResult[0];
+
+        let originalTable = tableName;
+        let currentVersion = 0;
+
+        if (!metadata) {
+            // Case 1: First time sanitization
+            // Check if this is a raw table (not ending in _vN or _original) behavior
+            // We'll rename it to _original to keep it safe
+            originalTable = `${tableName}_original`;
+
+            // Check if _original already exists
+            const [existingOriginal] = await db.query(`SELECT * FROM ${originalTable} LIMIT 1`);
+
+            if (!existingOriginal || existingOriginal.length === 0) {
+                console.log(`[Sanitize] First run: Copying ${tableName} to ${originalTable}`);
+
+                // Copy all data from the raw table to _original
+                const [rawData] = await db.query(`SELECT * FROM ${tableName}`);
+                if (rawData && rawData.length > 0) {
+                    // Insert into _original table
+                    for (const row of rawData) {
+                        const cleanRow = { ...row };
+                        delete cleanRow.id; // Remove the ID so SurrealDB generates a new one
+                        await db.create(originalTable, cleanRow);
+                    }
+                    console.log(`[Sanitize] Copied ${rawData.length} rows to ${originalTable}`);
+                } else {
+                    return c.json({ error: "Source table is empty" }, 400);
+                }
+            } else {
+                console.log(`[Sanitize] Using existing ${originalTable}`);
+            }
+        } else {
+            // Case 2: Re-sanitization
+            originalTable = metadata.original_table;
+            currentVersion = metadata.current_version;
+        }
+
+        console.log(`[Sanitize] Using original source: ${originalTable}`);
+
+        // Fetch Data from Original
+        const [rows] = await db.query(`SELECT * FROM ${originalTable} ORDER BY _row_order ASC`);
+        const cleanRows = rows.map(r => {
+            const newRow = { ...r };
+            delete newRow.id;
+            delete newRow._row_order;
+            return newRow;
+        });
+
+        if (cleanRows.length === 0) return c.json({ error: "Source table is empty" }, 400);
+
+        // Analyze & Interpret
+        // The analyeForSanitization now includes interpretDataset internally
+        // We pass a hint if we have one (could come from request body)
+        const body = await c.req.parseBody().catch(() => ({}));
+
+        // Extract logical name for better context
+        let logicalName = originalTable.replace(/^data_[^_]+_/, '').replace(/_original$/, '');
+
+        console.log(`[Sanitize] Analyzing data for ${logicalName}...`);
+        const analysis = await analyzeForSanitization(logicalName, cleanRows, { hint: body.hint });
+        const issues = analysis.issues || [];
+        const interpretation = analysis.interpretation;
+
+        // Apply Fixes
+        let sanitizedRows = cleanRows;
+        let issuesFixed = [];
+        if (issues.length > 0) {
+            console.log(`[Sanitize] Auto-fixing ${issues.length} issues`);
+            sanitizedRows = applySanitization(cleanRows, issues);
+            issuesFixed = issues.map(i => i.column);
+        }
+
+        // Determine New Version Name
+        const nextVersion = currentVersion + 1;
+        // Base name from original (remove _original)
+        const baseName = originalTable.replace(/_original$/, '');
+        const newTableName = `${baseName}_v${nextVersion}`;
+
+        console.log(`[Sanitize] Creating ${newTableName}`);
+        await createTableAndInsertData(newTableName, sanitizedRows);
+
+        // Update/Create Metadata
+        const versionRecord = {
+            version: nextVersion,
+            table: newTableName,
+            created_at: new Date(),
+            reason: body.reason || (currentVersion === 0 ? 'Initial Sanitization' : 'Re-sanitization'),
+            issues_fixed: issuesFixed,
+            interpretation_summary: interpretation?.domain?.domain, // Keep for backward compat
+            semantic_context: {
+                domain: interpretation?.domain,
+                columns: interpretation?.columns
+            }
+        };
+
+        if (metadata) {
+            await db.query(`UPDATE ${metadata.id} SET current_version = ${nextVersion}, versions += $ver`, { ver: versionRecord });
+        } else {
+            await db.create('sanitization_metadata', {
+                original_table: originalTable,
+                logical_name: logicalName,
+                upload_id: `uploads:${originalTable.match(/data_([^_]+)_/)?.[1] || 'unknown'}`,
+                current_version: nextVersion,
+                versions: [versionRecord]
+            });
+        }
+
+        const responseObj = {
+            success: true,
+            newTableName: newTableName,
+            version: nextVersion,
+            issuesFixed: issuesFixed.length
+        };
+
+        console.log('[Sanitize] Returning response:', JSON.stringify(responseObj));
+        return c.json(responseObj);
+
+    } catch (e) {
+        console.error("[Re-Sanitize] Error:", e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+// Internal Helper for Table Creation (Duplicated from index.js to keep file self-contained)
+async function createTableAndInsertData(tableName, rows) {
+    const columnNames = new Set();
+    rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)));
+
+    for (const colName of columnNames) {
+        try {
+            await db.query(`DEFINE FIELD \`${colName}\` ON TABLE ${tableName} FLEXIBLE PERMISSIONS FULL;`);
+        } catch (e) { }
+    }
+    await db.query(`DEFINE FIELD _row_order ON TABLE ${tableName} TYPE option<number> PERMISSIONS FULL;`);
+
+    const chunkSize = 500;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize);
+        const safeChunk = chunk.map((row, idx) => {
+            const newRow = { _row_order: i + idx };
+            for (const key in row) newRow[key] = row[key];
+            return newRow;
+        });
+        await db.insert(tableName, safeChunk);
+    }
+}
+
+// 5. Get Table Versions
+table.get("/table/:tableName/versions", async (c) => {
+    try {
+        const tableName = c.req.param("tableName")
+        const token = getCookie(c, "session")
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+        try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+        // Find metadata where tableName is either the original or one of the versions
+        // We look for any record that mentions this table
+        // Query: SELECT * FROM sanitization_metadata WHERE original_table = $t OR versions[?].table CONTAINS $t
+
+        let meta = null
+        const [result] = await db.query(`
+            SELECT * FROM sanitization_metadata 
+            WHERE original_table = $t 
+            OR $t IN versions[*].table
+            LIMIT 1
+        `, { t: tableName });
+
+        if (result && result[0]) {
+            meta = result[0]
+        } else {
+            // No history found. Maybe it's a standalone table.
+            // Return minimal info
+            return c.json({
+                original_table: tableName,
+                current_version: 1,
+                versions: []
+            })
+        }
+
+        return c.json({
+            original_table: meta.original_table,
+            current_version: meta.current_version,
+            versions: meta.versions || []
+        })
+
+    } catch (e) {
+        console.error("[Versions] Error:", e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+
+// Semantic Interpretation Endpoint
+table.get('/:tableName/interpret', async (c) => {
+    try {
+        const { tableName } = c.req.param()
+        const token = getCookie(c, "session")
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+        let rows = []
+        try {
+            // Limit to 100 rows for analysis
+            const result = await db.query(`SELECT * FROM type::table($tb) LIMIT 100`, { tb: tableName });
+            rows = result[0] || [];
+        } catch (e) {
+            console.error('[Interpret] Failed to fetch rows:', e);
+            return c.json({ error: "Table not found or access denied" }, 404);
+        }
+
+        if (rows.length === 0) {
+            return c.json({ message: "No data to interpret" });
+        }
+
+        console.log(`[Interpret] Interpreting ${tableName} with ${rows.length} rows`);
+        const interpretation = await interpretDataset(tableName, rows);
+
+        return c.json({
+            table: tableName,
+            interpretation
+        });
+
+    } catch (e) {
+        console.error('[Interpret] Error:', e);
+        return c.json({ error: e.message }, 500);
+    }
+})
+
 export { table as tableRoutes }
+
+

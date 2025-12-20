@@ -964,140 +964,162 @@ onBeforeUnmount(() => {
 
           <!-- Selected Connection Schema -->
           <div v-if="selectedConnectionId && connections.find(c => c.id === selectedConnectionId)" class="space-y-3">
-            <article
+            <ContextMenu
               v-for="conn in [connections.find(c => c.id === selectedConnectionId)!]"
               :key="conn.id"
-              class="rounded-md border border-border bg-card p-3 space-y-2"
             >
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="font-semibold text-foreground">{{ conn.nickname }}</p>
-                  <p class="text-xs text-muted-foreground">{{ conn.provider.toUpperCase() }}</p>
-                </div>
-                <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span :class="['h-2 w-2 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
-                  <span>{{ statusLabel(schemaFor(conn.id)) }}</span>
-                  <span class="text-[11px] text-muted-foreground">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
-                </div>
-              </div>
-              <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-destructive">
-                {{ schemaFor(conn.id)?.error }}
-              </p>
-
-              <!-- If the schema includes discovered databases and the saved connection has no specific database, show databases to expand -->
-              <div v-if="schemaFor(conn.id)?.databases && conn.provider === 'mongodb' && !(conn.mongodb && conn.mongodb.database)">
-                <ul class="space-y-1">
-                  <li
-                    v-for="db in schemaFor(conn.id)?.databases"
-                    :key="`${conn.id}-db-${db}`"
-                    class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary flex items-center justify-between"
-                  >
-                    <div class="flex items-center gap-2">
-                      <button @click="loadTablesForDatabase(conn, db)" class="flex items-center gap-2 text-left">
-                        <span
-                          class="text-muted-foreground transition-transform"
-                          :style="{ transform: expandedDbByConn[conn.id] === db ? 'rotate(90deg)' : 'rotate(0deg)' }"
-                        >
-                          ▸
-                        </span>
-                        <div class="flex flex-col">
-                          <span class="font-medium text-foreground truncate">{{ db }}</span>
-                          <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Database</span>
-                        </div>
-                      </button>
+              <ContextMenuTrigger class="w-full">
+                <article
+                  class="rounded-md border border-border bg-card p-3 space-y-2"
+                >
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <p class="font-semibold text-foreground">{{ conn.nickname }}</p>
+                      <p class="text-xs text-muted-foreground">{{ conn.provider.toUpperCase() }}</p>
                     </div>
-                    <div class="text-xs text-muted-foreground">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
-                  </li>
-                </ul>
-                <p class="text-xs text-muted-foreground mt-2">Select a database to list its collections.</p>
-              </div>
+                    <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span :class="['h-2 w-2 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
+                      <span>{{ statusLabel(schemaFor(conn.id)) }}</span>
+                      <span class="text-[11px] text-muted-foreground">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
+                    </div>
+                  </div>
+                  <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-destructive">
+                    {{ schemaFor(conn.id)?.error }}
+                  </p>
 
-              <!-- Otherwise show tables/collections (either from a DB-scoped probe or legacy schema) -->
-              <ul v-else-if="schemaFor(conn.id)?.tables.length" class="space-y-1">
-                <li
-                  v-for="table in schemaFor(conn.id)?.tables"
-                  :key="`${conn.id}-${table}`"
-                >
-                  <ContextMenu>
-                    <ContextMenuTrigger class="w-full">
-                      <div class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary">
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="flex flex-col flex-1 min-w-0">
-                            <input
-                              v-if="renamingTable?.oldName === table && renamingTable?.conn.id === conn.id"
-                              v-model="renamingTable.newName"
-                              @keyup.enter="confirmRename"
-                              @keyup.escape="cancelRename"
-                              @blur="confirmRename"
-                              class="font-medium text-foreground bg-muted border border-primary rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                              @click.stop
-                            />
-                            <span v-else class="font-medium text-foreground truncate">{{ formatTableName(table, conn.id) }}</span>
-                            <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
-                              {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
+                  <!-- If the schema includes discovered databases and the saved connection has no specific database, show databases to expand -->
+                  <div v-if="schemaFor(conn.id)?.databases && conn.provider === 'mongodb' && !(conn.mongodb && conn.mongodb.database)">
+                    <ul class="space-y-1">
+                      <li
+                        v-for="db in schemaFor(conn.id)?.databases"
+                        :key="`${conn.id}-db-${db}`"
+                        class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary flex items-center justify-between"
+                      >
+                        <div class="flex items-center gap-2">
+                          <button @click="loadTablesForDatabase(conn, db)" class="flex items-center gap-2 text-left">
+                            <span
+                              class="text-muted-foreground transition-transform"
+                              :style="{ transform: expandedDbByConn[conn.id] === db ? 'rotate(90deg)' : 'rotate(0deg)' }"
+                            >
+                              ▸
                             </span>
-                          </div>
-                          <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
-                            <button
-                              @click.stop="openViewer(conn, table)"
-                              class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
-                              title="View entries"
-                            >
-                              <Eye class="w-4 h-4" />
-                            </button>
-                            <button
-                              @click.stop="handleEditTable(conn, table)"
-                              class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
-                              title="Edit values"
-                            >
-                              <Edit class="w-4 h-4" />
-                            </button>
-                            <button
-                              @click.stop="handleDeleteTable(conn, table)"
-                              class="rounded-md border border-border p-2 text-muted-foreground hover:text-destructive hover:border-destructive hover:bg-muted transition-colors"
-                              title="Delete table"
-                            >
-                              <Trash class="w-4 h-4" />
-                            </button>
-                          </div>
+                            <div class="flex flex-col">
+                              <span class="font-medium text-foreground truncate">{{ db }}</span>
+                              <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Database</span>
+                            </div>
+                          </button>
                         </div>
-                      </div>
-                    </ContextMenuTrigger>
-                    
-                    <ContextMenuContent class="w-56 bg-popover border-border">
-                      <ContextMenuItem 
-                        @select="copyAllTableData(conn, table)"
-                        class="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        Copy All Data
-                      </ContextMenuItem>
-                      <ContextMenuItem 
-                        @select="startRenameTable(conn, table)"
-                        class="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        Rename Table
-                      </ContextMenuItem>
-                      <ContextMenuItem 
-                        @select="$emit('sanitize-table', conn, table)"
-                        class="text-foreground hover:bg-muted focus:bg-muted"
-                      >
-                        Sanitize Table
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                </li>
-              </ul>
+                        <div class="text-xs text-muted-foreground">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
+                      </li>
+                    </ul>
+                    <p class="text-xs text-muted-foreground mt-2">Select a database to list its collections.</p>
+                  </div>
 
-              <div v-else class="text-xs text-muted-foreground space-y-2">
-                <p>No tables or collections available yet.</p>
-                <button
-                  @click="handleDeleteConnection(conn)"
-                  class="text-red-600 dark:text-red-400 hover:underline text-xs"
+                  <!-- Otherwise show tables/collections (either from a DB-scoped probe or legacy schema) -->
+                  <ul v-else-if="schemaFor(conn.id)?.tables.length" class="space-y-1">
+                    <li
+                      v-for="table in schemaFor(conn.id)?.tables"
+                      :key="`${conn.id}-${table}`"
+                    >
+                      <ContextMenu>
+                        <ContextMenuTrigger class="w-full">
+                          <div class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary">
+                            <div class="flex items-center justify-between gap-2">
+                              <div class="flex flex-col flex-1 min-w-0">
+                                <input
+                                  v-if="renamingTable?.oldName === table && renamingTable?.conn.id === conn.id"
+                                  v-model="renamingTable.newName"
+                                  @keyup.enter="confirmRename"
+                                  @keyup.escape="cancelRename"
+                                  @blur="confirmRename"
+                                  class="font-medium text-foreground bg-muted border border-primary rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                                  @click.stop
+                                />
+                                <span v-else class="font-medium text-foreground truncate">{{ formatTableName(table, conn.id) }}</span>
+                                <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                                  {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
+                                </span>
+                              </div>
+                              <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                                <button
+                                  @click.stop="openViewer(conn, table)"
+                                  class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
+                                  title="View entries"
+                                >
+                                  <Eye class="w-4 h-4" />
+                                </button>
+                                <button
+                                  @click.stop="handleEditTable(conn, table)"
+                                  class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
+                                  title="Edit values"
+                                >
+                                  <Edit class="w-4 h-4" />
+                                </button>
+                                <button
+                                  @click.stop="handleDeleteTable(conn, table)"
+                                  class="rounded-md border border-border p-2 text-muted-foreground hover:text-destructive hover:border-destructive hover:bg-muted transition-colors"
+                                  title="Delete table"
+                                >
+                                  <Trash class="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </ContextMenuTrigger>
+                        
+                        <ContextMenuContent class="w-56 bg-popover border-border">
+                          <ContextMenuItem 
+                            @select="copyAllTableData(conn, table)"
+                            class="text-foreground hover:bg-muted focus:bg-muted"
+                          >
+                            Copy All Data
+                          </ContextMenuItem>
+                          <ContextMenuItem 
+                            @select="startRenameTable(conn, table)"
+                            class="text-foreground hover:bg-muted focus:bg-muted"
+                          >
+                            Rename Table
+                          </ContextMenuItem>
+                          <ContextMenuItem 
+                            @select="$emit('sanitize-table', conn, table)"
+                            class="text-foreground hover:bg-muted focus:bg-muted"
+                          >
+                            Sanitize Table
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </li>
+                  </ul>
+
+                  <div v-else class="text-xs text-muted-foreground space-y-2">
+                    <p>No tables or collections available yet.</p>
+                    <button
+                      @click="handleDeleteConnection(conn)"
+                      class="text-red-600 dark:text-red-400 hover:underline text-xs"
+                    >
+                      Delete this connection
+                    </button>
+                  </div>
+                </article>
+              </ContextMenuTrigger>
+              
+              <ContextMenuContent class="w-56 bg-popover border-border">
+                <ContextMenuItem 
+                  @select="refreshSchemas()"
+                  class="text-foreground hover:bg-muted focus:bg-muted"
                 >
-                  Delete this connection
-                </button>
-              </div>
-            </article>
+                  <RefreshCw class="w-4 h-4 mr-2" />
+                  Refresh Schema
+                </ContextMenuItem>
+                <ContextMenuItem 
+                  @select="handleDeleteConnection(conn)"
+                  class="text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <Trash class="w-4 h-4 mr-2" />
+                  Delete Connection
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           </div>
           <p v-else class="text-xs text-muted-foreground px-2">
             Select a connection to browse its schema.
@@ -1396,6 +1418,7 @@ onBeforeUnmount(() => {
             @click="confirmDeleteConnection"
             class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
           >
+          Delete Connection
           </button>
         </DialogFooter>
       </DialogContent>

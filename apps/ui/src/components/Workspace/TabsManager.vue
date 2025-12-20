@@ -7,7 +7,18 @@ export interface Tab {
   id: string;
   label: string;
   type: 'chat' | 'query' | 'table';
-  data?: any; // Generic data holder for session state
+  data?: {
+      tableName?: string;
+      connection?: any;
+      provider?: string;
+      headers?: string[];
+      schemaMode?: string;
+      versions?: Array<{ version: number; table: string; created_at: string; reason?: string }>;
+      currentVersion?: number;
+      originalTable?: string;
+      content?: string; // For query/chat
+      [key: string]: any;
+  }; 
 }
 
 const props = defineProps<{

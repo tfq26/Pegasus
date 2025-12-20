@@ -3,6 +3,20 @@ import path from 'path';
 import { parseXML } from './xmlParser.js';
 import AdmZip from 'adm-zip';
 
+// Helper to convert Excel column letter to index (A=0, B=1, Z=25, AA=26, etc.)
+function columnLetterToIndex(letter) {
+    let index = 0;
+    for (let i = 0; i < letter.length; i++) {
+        index = index * 26 + (letter.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
+    }
+    return index - 1;
+}
+
+// Helper to extract column letter from cell reference (e.g., "A1" -> "A", "AB23" -> "AB")
+function getCellColumn(cellRef) {
+    return cellRef.replace(/[0-9]/g, '');
+}
+
 export async function parseExcel(filePath) {
     const tempDir = path.join(path.dirname(filePath), 'temp_' + path.basename(filePath, '.xlsx'));
 
@@ -19,11 +33,24 @@ export async function parseExcel(filePath) {
             const sharedStringsXml = await fs.readFile(sharedStringsPath, 'utf-8');
             const parsedShared = parseXML(sharedStringsXml);
             // Structure usually: <sst><si><t>Value</t></si>...</sst>
-            // My parser might output: { sst: { si: [ { t: { _text: "Value" } }, ... ] } }
+            // Handle both simple text and rich text (multiple <t> nodes)
 
             if (parsedShared.sst && parsedShared.sst.si) {
                 const items = Array.isArray(parsedShared.sst.si) ? parsedShared.sst.si : [parsedShared.sst.si];
-                sharedStrings = items.map(item => item.t?._text || item.t || '');
+                sharedStrings = items.map(item => {
+                    // Handle simple text: <si><t>Value</t></si>
+                    if (item.t) {
+                        if (typeof item.t === 'string') return item.t;
+                        if (item.t._text) return item.t._text;
+                        return '';
+                    }
+                    // Handle rich text: <si><r><t>Part1</t></r><r><t>Part2</t></r></si>
+                    if (item.r) {
+                        const rNodes = Array.isArray(item.r) ? item.r : [item.r];
+                        return rNodes.map(r => r.t?._text || r.t || '').join('');
+                    }
+                    return '';
+                });
             }
         } catch (e) {
             console.warn('No shared strings found or failed to parse', e.message);
@@ -52,9 +79,7 @@ export async function parseExcel(filePath) {
             });
         }
 
-        // Map rId to filename using _rels/workbook.xml.rels if needed, 
-        // but usually rId1 -> worksheets/sheet1.xml is standard enough for a simple parser?
-        // Actually, it's safer to read the rels.
+        // Map rId to filename using _rels/workbook.xml.rels
         const relsPath = path.join(tempDir, 'xl', '_rels', 'workbook.xml.rels');
         const relsXml = await fs.readFile(relsPath, 'utf-8');
         const parsedRels = parseXML(relsXml);
@@ -89,37 +114,92 @@ export async function parseExcel(filePath) {
                     ? parsedSheet.worksheet.sheetData.row
                     : [parsedSheet.worksheet.sheetData.row];
 
-                // Extract headers from first row?
-                // Let's just return array of objects.
-                // We need to handle headers. Assuming first row is header.
-
                 let headers = [];
+                let maxColumns = 0;
 
+                // First pass: determine max columns
+                rowNodes.forEach((rowNode) => {
+                    const cells = rowNode.c ? (Array.isArray(rowNode.c) ? rowNode.c : [rowNode.c]) : [];
+
+                    cells.forEach(cell => {
+                        if (cell._attributes && cell._attributes.r) {
+                            const colLetter = getCellColumn(cell._attributes.r);
+                            const colIndex = columnLetterToIndex(colLetter);
+                            maxColumns = Math.max(maxColumns, colIndex + 1);
+                        }
+                    });
+                });
+
+                // Second pass: extract data with smart header detection
                 rowNodes.forEach((rowNode, rowIndex) => {
                     const cells = rowNode.c ? (Array.isArray(rowNode.c) ? rowNode.c : [rowNode.c]) : [];
-                    const rowData = {};
-                    const rowValues = [];
+                    const rowValues = new Array(maxColumns).fill(''); // Pre-fill with empty strings
 
-                    cells.forEach((cell, cellIndex) => {
-                        // cell._attributes.r is the cell reference e.g. "A1"
-                        // cell._attributes.t is type (s = shared string)
-                        // cell.v._text is the value (index if shared string)
+                    cells.forEach(cell => {
+                        let value = cell.v?._text || cell.v || '';
 
-                        let value = cell.v?._text || cell.v;
+                        // Resolve shared string reference
                         if (cell._attributes && cell._attributes.t === 's') {
-                            value = sharedStrings[parseInt(value)];
+                            const index = parseInt(value);
+                            value = sharedStrings[index] || '';
                         }
 
-                        rowValues.push(value);
+                        // Get column index from cell reference
+                        if (cell._attributes && cell._attributes.r) {
+                            const colLetter = getCellColumn(cell._attributes.r);
+                            const colIndex = columnLetterToIndex(colLetter);
+                            rowValues[colIndex] = value;
+                        }
                     });
 
-                    if (rowIndex === 0) {
-                        headers = rowValues;
+                    // Smart header detection: Find row with multiple meaningful column names
+                    if (headers.length === 0) {
+                        const nonEmptyCount = rowValues.filter(v => v && v.toString().trim() !== '').length;
+                        const hasMultipleColumns = nonEmptyCount >= 3; // At least 3 columns with data
+
+                        // Check if this looks like a header row
+                        const looksLikeHeader = rowValues.some(v =>
+                            v && (
+                                v.toString().toLowerCase().includes('name') ||
+                                v.toString().toLowerCase().includes('amount') ||
+                                v.toString().toLowerCase().includes('date') ||
+                                v.toString().toLowerCase().includes('value') ||
+                                v.toString().toLowerCase().includes('return') ||
+                                v.toString().toLowerCase().includes('folio') ||
+                                v.toString().toLowerCase().includes('since') ||
+                                v.toString().toLowerCase().includes('nav') ||
+                                v.toString().toLowerCase().includes('gain') ||
+                                v.toString().toLowerCase().includes('loss')
+                            )
+                        );
+
+                        if (hasMultipleColumns && looksLikeHeader) {
+                            // Clean up headers: remove extra spaces, handle multi-word headers
+                            console.log('[ExcelParser] Raw header values before cleaning:', rowValues);
+                            headers = rowValues.map((h, i) => {
+                                if (!h || h.toString().trim() === '') {
+                                    console.log(`[ExcelParser] Column ${i} has empty header, naming as Unknown Column ${i}`);
+                                    return `Unknown Column ${i}`;
+                                }
+                                // Clean the header text
+                                let cleaned = h.toString().trim();
+                                // Remove special characters but keep spaces, dots, parentheses, percent
+                                cleaned = cleaned.replace(/[^\w\s\.\(\)%]/g, '');
+                                // Replace multiple spaces with single space
+                                cleaned = cleaned.replace(/\s+/g, ' ');
+                                return cleaned || `Unknown Column ${i}`;
+                            });
+                            console.log('[ExcelParser] Found headers:', headers);
+                        }
                     } else {
-                        headers.forEach((header, i) => {
-                            rowData[header] = rowValues[i];
-                        });
-                        rows.push(rowData);
+                        // Skip completely empty rows
+                        if (rowValues.some(v => v !== '')) {
+                            const rowData = {};
+                            headers.forEach((header, i) => {
+                                rowData[header] = rowValues[i] || '';
+                            });
+                            rows.push(rowData);
+                        }
                     }
                 });
             }

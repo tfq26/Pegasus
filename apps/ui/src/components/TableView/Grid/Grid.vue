@@ -39,14 +39,17 @@ import { RealtimeSync } from '../Engine/RealtimeSync';
 
 const props = defineProps<{
   engine: Engine;
-  mode?: 'read' | 'write'; // Chat mode = AI input, Write mode = Excel formulas
+  mode?: 'read' | 'write';
   isAIMode?: boolean;
   autoExecuteMode?: boolean;
   privateMode?: boolean;
+  versions?: Array<{ version: number; table: string; created_at: string }>;
+  currentVersion?: number;
 }>();
 
 const emit = defineEmits<{
-  'save-query': [query: string, type: 'formula']
+  'save-query': [query: string, type: 'formula'];
+  'version-change': [version: number];
 }>();
 
 
@@ -1446,6 +1449,24 @@ onUnmounted(() => {
     
     <!-- Toolbar -->
     <div class="flex items-center gap-1 px-3 py-1 border-b border-border bg-muted/30">
+        <!-- Version Dropdown -->
+        <div v-if="props.versions && props.versions.length > 0" class="flex items-center gap-2 mr-4 border-r pr-4 border-border/50">
+            <span class="text-xs text-muted-foreground font-medium">Version:</span>
+            <select 
+                :value="props.currentVersion" 
+                @change="(e) => emit('version-change', Number((e.target as HTMLSelectElement).value))"
+                class="h-7 text-xs bg-background border border-border rounded px-2 min-w-[100px] outline-none focus:ring-1 focus:ring-primary"
+            >
+                <!-- Original is implicit if not in versions array, but we assume versions array contains all selectable options or we handle it -->
+                <option v-for="v in props.versions" :key="v.version" :value="v.version">
+                    v{{ v.version }} ({{ new Date(v.created_at).toLocaleDateString() }})
+                </option>
+            </select>
+             <span v-if="props.currentVersion" class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Active
+            </span>
+        </div>
+
         <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent font-bold text-foreground" @click="toggleStyle('bold')" title="Bold">B</button>
         <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent italic text-foreground" @click="toggleStyle('italic')" title="Italic">I</button>
         <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent underline text-foreground" @click="toggleStyle('underline')" title="Underline">U</button>

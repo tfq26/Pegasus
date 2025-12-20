@@ -15,6 +15,7 @@
       @select-chat="handleSelectChat"
       @create-chat="handleCreateChat"
       @load-query="handleLoadQuery"
+      @sanitize-table="handleSanitizeFixed"
     />
     <button
       v-if="!sidebarOpen"
@@ -177,7 +178,7 @@ import { QUERY_API_URL, generateAIQuery, analyzeResults, getAIModels, fetchSetti
   recommendVisualization,
   fetchQueries,
   saveQuery,
-  analyzeTableSanitization
+  sanitizeTable as apiSanitizeTable
 } from '@/lib/api'
 import { useProgress } from '@/lib/progress'
 import { db } from '@/lib/local-db'
@@ -938,7 +939,14 @@ const handleAIGenerate = async () => {
     // Pass chat history if available, otherwise empty array
     // @ts-ignore
     const history = typeof chatHistory !== 'undefined' ? chatHistory.value : []
-    const aiResponse = await generateAIQuery(userPrompt, selectedConnectionId.value, history)
+    // Get active table from workspace if available
+    let activeTable = undefined;
+    if (workspaceRef.value && typeof workspaceRef.value.getActiveTable === 'function') {
+        const table = workspaceRef.value.getActiveTable();
+        if (table) activeTable = table;
+    }
+
+    const aiResponse = await generateAIQuery(userPrompt, selectedConnectionId.value, history, activeTable)
     
     // Check if this is a multi-step response
     if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
@@ -1548,20 +1556,22 @@ const handleSanitizeFixed = async (conn: ConnectionEntry, table: string) => {
   
   const { startOperation, finishOperation, failOperation } = useProgress()
   const opId = `sanitize-analyze-${Date.now()}`
-  startOperation(opId, `Analyzing ${table}`)
+  startOperation(opId, `Sanitizing ${table}...`)
   
-  toast.info(`Analyzing table '${table}'...`)
+  toast.info(`Sanitizing table '${table}'...`)
 
   try {
-    const issues = await analyzeTableSanitization(conn.id, table)
+    const result = await apiSanitizeTable(table)
     finishOperation(opId)
 
-    if (!issues || issues.length === 0) {
-      toast.success('No issues found by AI.')
-      return
+    if (result.success) {
+         toast.success(`Sanitization successful!`, {
+             description: `Fixed ${result.issuesFixed} issues. Created version ${result.version}.`,
+             duration: 5000
+         })
+    } else {
+         toast.info("Sanitization completed without changes.")
     }
-    sanitizeIssues.value = issues
-    sanitizeDialogVisible.value = true
   } catch (e: any) {
     failOperation(opId, e.message)
     toast.error('Failed to analyze table for sanitization', {
@@ -1582,7 +1592,15 @@ const handleSanitize = async () => {
         if (match && match[1]) {
             table = match[1]
         }
-    } else if (mode.value === 'spreadsheet' && selectedConnection.value?.sqlite?.tables?.length) {
+    }
+
+    // Fallback: Check active table in Workspace
+    if (!table && workspaceRef.value && typeof workspaceRef.value.getActiveTable === 'function') {
+         const active = workspaceRef.value.getActiveTable()
+         if (active) table = active
+    }
+
+    if (!table && mode.value === 'spreadsheet' && selectedConnection.value?.sqlite?.tables?.length) {
         // Fallback for spreadsheet mode
         const tables = selectedConnection.value.sqlite.tables;
         if (tables && tables.length > 0) {
@@ -1599,24 +1617,28 @@ const handleSanitize = async () => {
     
     const { startOperation, finishOperation, failOperation } = useProgress()
     const opId = `sanitize-analyze-${Date.now()}`
-    startOperation(opId, `Analyzing ${table}`)
+    startOperation(opId, `Sanitizing ${table}...`)
     
-    toast.info(`Analyzing table '${table}'...`)
+    toast.info(`Sanitizing table '${table}'...`)
     
     try {
-        const result = await analyzeTableSanitization(selectedConnectionId.value || '', table)
+        const result = await apiSanitizeTable(table)
         finishOperation(opId)
         
-        // Handle both raw array or object wrapper
-        const issues = Array.isArray(result) ? result : (result?.issues || [])
-        
-        if (!issues || issues.length === 0) {
-             toast.success("No issues found! Data looks clean.")
-             return
+        if (result.success) {
+             toast.success(`Sanitization successful!`, {
+                 description: `Fixed ${result.issuesFixed} issues. Created version ${result.version}.`,
+                 duration: 5000
+             })
+             
+             // Emit event to refresh workspace/grid if possible
+             // For now, we trust the user will see the toast.
+             // Ideally we might want to switch to the new table version automatically?
+             // But Chat.vue doesn't control the workspace tabs directly.
+        } else {
+             toast.info("No issues found or sanitization completed without changes.")
         }
-        
-        sanitizeIssues.value = issues
-        sanitizeDialogVisible.value = true
+
         
     } catch (e: any) {
         console.error('[Sanitize] Frontend error:', e)

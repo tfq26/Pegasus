@@ -126,6 +126,26 @@ EXAMPLES:
       }
 
 
+      // Add Semantic Context if available
+      if (context.semanticContext) {
+        const sc = context.semanticContext;
+        if (sc.domain || (sc.columns && sc.columns.length > 0)) {
+          schemaPresentation += `\n\nSEMANTIC UNDERSTANDING (Use this to resolve ambiguity):\n`;
+          if (sc.domain) {
+            schemaPresentation += `Domain: ${sc.domain.domain || 'N/A'}\n`;
+          }
+          if (sc.columns && sc.columns.length > 0) {
+            schemaPresentation += `Column Semantics:\n`;
+            sc.columns.forEach(col => {
+              schemaPresentation += `  - "${col.column_name}"`;
+              if (col.semantic_name) schemaPresentation += ` means "${col.semantic_name}"`;
+              if (col.description) schemaPresentation += ` (${col.description})`;
+              schemaPresentation += `\n`;
+            });
+          }
+        }
+      }
+
       formatInstructions = `
 IMPORTANT - ${dialect.toUpperCase()} Query Format:
 You can return a single SQL query OR a JSON object for complex requests.
@@ -168,8 +188,9 @@ When users ask "how many X", they typically want to see the actual data, not jus
 
 AMBIGUITY & JOINS:
 1. If the request requires data from MULTIPLE tables (JOIN), you MUST verify that the join is logical.
-2. If the join is ambiguous (e.g. multiple ways to join), return a JSON object with "ambiguous": true.
-3. If the user asks for something that could be in multiple tables (e.g. "users" could mean "users" table or "admin_users" table), return "ambiguous": true.
+2. USE SEMANTIC UNDERSTANDING: If a column name is not an exact match but is a strong semantic match based on the "Column Semantics" section (e.g. "Fund" user term matches "scheme_name" column), assumes it is correct.
+3. Only return "ambiguous": true if there are MULTIPLE EQUALLY LIKELY conflicting candidates that cannot be resolved by context.
+4. If the user asks for something that could be in multiple tables (e.g. "users" could mean "users" table or "admin_users" table), return "ambiguous": true.
 
 AMBIGUOUS RESPONSE FORMAT (JSON):
 {

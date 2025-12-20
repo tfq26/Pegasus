@@ -7,6 +7,14 @@ import Grid from '../TableView/Grid/Grid.vue';
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import { toast } from 'vue-sonner';
 
+// Interface for version history
+interface TableVersion {
+    version: number;
+    table: string;
+    created_at: string;
+    reason?: string;
+}
+
 // Props from parent (Chat.vue)
 const props = defineProps<{
   mode: 'chat' | 'write' | 'spreadsheet';
@@ -324,7 +332,7 @@ const getEngineForTab = (tabId: string) => {
                  engine.beginBatch();
                  engine.clear(); // Ensure clean state
                  
-                 const headers = tab.data.headers || [];
+                 const headers = tab?.data?.headers || [];
                  let dataStartsAtRow = 1;
                  let injectHeaders = true;
 
@@ -598,6 +606,47 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         const schemaMode = isColumnLetters ? 'column-letters' : 'named-headers';
         console.log('[Workspace] Detected schema mode:', schemaMode);
 
+        // 3b. Fetch Versions History
+        let history: any = { original_table: tableName, current_version: 1, versions: [] };
+        try {
+            console.log('[Workspace] Fetching version history...');
+            const vRes = await fetch(`${baseUrl}/api/table/${tableName}/versions`, {
+                 credentials: 'include'
+            });
+            if (vRes.ok) {
+                 history = await vRes.json();
+            }
+        } catch (e) {
+            console.warn('[Workspace] Failed to fetch versions:', e);
+        }
+
+        // Prepare available versions list (Original + Sanitized)
+        // If we are currently on original (version 0-ish), current_version from backend relies on metadata current pointer.
+        // We want strict list for UI.
+        const uiVersions = [];
+        if (history.original_table) {
+            uiVersions.push({ 
+                version: 0, 
+                table: history.original_table, 
+                created_at: new Date().toISOString(), // Fallback
+                reason: 'Original Upload'
+            });
+        }
+        if (history.versions && Array.isArray(history.versions)) {
+            uiVersions.push(...history.versions);
+        }
+        
+        // Determine current effective version
+        // If tableName == original_table -> 0
+        // Else find in versions
+        let currentUiVersion = 0;
+        if (tableName === history.original_table) {
+            currentUiVersion = 0;
+        } else {
+            const match = history.versions?.find((v: any) => v.table === tableName);
+            if (match) currentUiVersion = match.version;
+        }
+
         // 4. Create Tab
         const newId = String(Date.now());
         const newTab = {
@@ -609,7 +658,10 @@ const openTable = async (tableName: string, connection: any, provider: string) =
                 connection,
                 provider,
                 headers,
-                schemaMode
+                schemaMode,
+                versions: uiVersions,
+                currentVersion: currentUiVersion,
+                originalTable: history.original_table
             }
         };
         tabs.value.push(newTab);
@@ -668,6 +720,57 @@ const openTable = async (tableName: string, connection: any, provider: string) =
     }
 };
 
+const handleVersionChange = async (tabId: string, version: number) => {
+    const tab = tabs.value.find(t => t.id === tabId);
+    if (!tab || !tab.data || !tab.data.versions) return;
+
+    const targetVersion = tab.data.versions.find((v: any) => v.version === version);
+    if (!targetVersion) {
+        toast.error('Version not found');
+        return;
+    }
+
+    const newTableName = targetVersion.table;
+    if (newTableName === tab.data.tableName) return; // No change
+
+    console.log(`[Workspace] Switching tab ${tabId} to v${version} (${newTableName})`);
+    
+    // Update local state
+    tab.data.currentVersion = version;
+    tab.data.tableName = newTableName;
+    tab.label = formatTableName(newTableName); // Optional: update label if we want vN in name
+    
+    const engine = getEngineForTab(tabId);
+    
+    // We need to update engine source. But we also need correct headers for the new table.
+    // Version switching implies schema might be same, but auto-sanitization might have renamed columns!
+    // So we MUST reload schema too.
+    // The `refreshTableData` function calls fetchTableData which gets schema + query.
+    // But `refreshTableData` uses `engine.sourceTable`.
+    
+    // Explicitly cast strings to correct type union or generic string if needed
+    engine.setSource(
+        newTableName, 
+        tab.data.connection, 
+        [], 
+        tab.data.provider, 
+        (tab.data.schemaMode as 'named-headers' | 'column-letters' | undefined)
+    ); 
+    
+    // Force refresh
+    await refreshTableData(engine);
+    
+    // Update tab headers from engine (since refreshTableData fetches them)
+    // Actually refreshTableData updates engine source with new headers.
+    // We should update tab.data.headers too for consistency.
+    tab.data.headers = engine.columnNames; 
+    
+    toast.success(`Switched to version ${version === 0 ? 'Original' : 'v' + version}`);
+};
+
+// ... existing findOrCreateSheetTab ...
+
+
 // Method to find or create sheet tab (returns true if already exists)
 const findOrCreateSheetTab = (tableName: string): boolean => {
   const sheetLabel = formatTableName(tableName);
@@ -724,6 +827,14 @@ const getActiveQueryContent = () => {
     return tab.data?.content || '';
   }
   return '';
+};
+
+const getActiveTable = () => {
+  const tab = tabs.value.find(t => t.id === activeTabId.value);
+  if (tab && tab.type === 'table' && tab.data?.tableName) {
+    return tab.data.tableName;
+  }
+  return null;
 };
 
 // Method to manually refresh the current table
@@ -793,7 +904,8 @@ defineExpose({
   refreshCurrentTable,
   exportCurrentTable,
   getEngineForTab,
-  activeTabId
+  activeTabId,
+  getActiveTable
 });
 
 
@@ -809,6 +921,7 @@ defineExpose({
       @add="onAddTab"
     />
     
+
     <!-- Editor Content Area -->
     <div class="flex-1 overflow-hidden">
       <template v-for="tab in tabs" :key="tab.id">
@@ -824,7 +937,10 @@ defineExpose({
             :is-a-i-mode="props.aiMode"
             :auto-execute-mode="props.autoExecute"
             :private-mode="props.privateMode"
+            :versions="(tab.data?.versions as TableVersion[])"
+            :current-version="tab.data?.currentVersion"
             @save-query="(query, type) => emit('save-query', query, type)"
+            @version-change="(v) => handleVersionChange(tab.id, v)"
           />
           
           <!-- Chat/Query Editor -->

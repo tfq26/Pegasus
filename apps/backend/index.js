@@ -68,7 +68,7 @@ import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
-import { analyzeForSanitization } from "./ai/sanitizer.js"
+import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import {
   EXPERIMENTAL_FEATURES,
   initExperimentalTables,
@@ -199,10 +199,33 @@ app.post("/upload", async (c) => {
     await fs.writeFile(tempFilePath, Buffer.from(await file.arrayBuffer()))
 
     let data = {}
+    let excelMapping = null; // Store AI interpretation for later use
 
     try {
       if (fileType === 'xlsx') {
-        data = await parseExcel(tempFilePath)
+        // Use XML-based AI interpretation for robust Excel parsing
+        console.log('[Upload] Using XML-based AI Excel interpretation...');
+        try {
+          const { interpretExcelFromXML } = await import('./ai/xmlExcelInterpreter.js');
+          const xmlResult = await interpretExcelFromXML(tempFilePath);
+
+          if (xmlResult && xmlResult.data && xmlResult.data.length > 0) {
+            console.log(`[Upload] XML AI interpretation successful: ${xmlResult.data.length} rows`);
+            // Get sheet name from original parser or use default
+            const parsedExcel = await parseExcel(tempFilePath);
+            const sheetName = Object.keys(parsedExcel)[0] || 'Sheet1';
+            data = { [sheetName]: xmlResult.data };
+            excelMapping = xmlResult.mapping;
+          } else {
+            // Fallback to original parser if XML interpretation fails
+            console.warn('[Upload] XML interpretation returned no data, using original parser');
+            data = await parseExcel(tempFilePath);
+          }
+        } catch (xmlError) {
+          console.error('[Upload] XML interpretation error:', xmlError.message);
+          console.warn('[Upload] Falling back to original parser');
+          data = await parseExcel(tempFilePath);
+        }
       } else if (fileType === 'xml') {
         const xmlContent = await fs.readFile(tempFilePath, 'utf-8')
         const parsed = parseXML(xmlContent)
@@ -228,68 +251,43 @@ app.post("/upload", async (c) => {
       await fs.unlink(tempFilePath).catch(e => console.error("Failed to delete temp file:", e))
     }
 
-    const createdTables = []
+
 
     // 1. Insert Metadata into Uploads DB (SurrealDB)
     // We explicitly define `id` to ensure we can reference it easily
+    // We store the RAW file content as base64 to keep it in the single DB.
+    const fileBuffer = await file.arrayBuffer();
+    const base64Content = Buffer.from(fileBuffer).toString('base64');
+
     await db.create(uploadId, {
       user_id: userId ? `user:${userId}` : null,
       filename: fileName,
       size: fileSize,
       format: fileType,
       visibility: 'private',
-      created_at: new Date()
+      created_at: new Date(),
+      file_data: base64Content, // Store raw file
+      excel_mapping: excelMapping // Store AI interpretation if available
     });
 
     // 2. Create tables and insert data into SurrealDB
+    const createdTables = [];
     for (const [rawTableName, rows] of Object.entries(data)) {
       if (!rows || rows.length === 0) continue
 
       // Sanitize table name for SurrealDB
-      // SurrealDB tables are best as snake_case alphanumeric
       const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-      // Prefix with 'data_uploadId_' to isolate
-      const uniqueTableName = `data_${uploadUuid}_${safeTableName}`;
+      // Base ID: uploads:uuid_tablename
+      const baseTableId = `data_${uploadUuid}_${safeTableName}`;
 
-      // Define schema for the table
-      // Get all unique column names from the data
-      const columnNames = new Set();
-      rows.forEach(row => {
-        Object.keys(row).forEach(key => columnNames.add(key));
-      });
+      // --- A. Create ORIGINAL Table ---
+      console.log(`[Upload] Creating original table: ${baseTableId}`);
+      await createTableAndInsertData(baseTableId, rows);
 
-      console.log(`[Upload] Defining schema for ${uniqueTableName} with ${columnNames.size} columns`);
+      // --- B. Auto-Sanitize ---
 
-      // Define each field as flexible to allow any data type (numbers, strings, etc.)
-      for (const colName of columnNames) {
-        try {
-          await db.query(`DEFINE FIELD \`${colName}\` ON TABLE ${uniqueTableName} FLEXIBLE PERMISSIONS FULL;`);
-        } catch (e) {
-          console.warn(`[Upload] Failed to define field ${colName}:`, e.message);
-        }
-      }
 
-      // Also define _row_order for maintaining row order
-      await db.query(`DEFINE FIELD _row_order ON TABLE ${uniqueTableName} TYPE option<number> PERMISSIONS FULL;`);
-
-      // Batch Insert with row_order
-      const chunkSize = 500
-      for (let i = 0; i < rows.length; i += chunkSize) {
-        const chunk = rows.slice(i, i + chunkSize)
-
-        // Ensure data keys are safe and add row_order
-        const safeChunk = chunk.map((row, idx) => {
-          const newRow = { _row_order: i + idx };
-          for (const key in row) {
-            newRow[key] = row[key];
-          }
-          return newRow;
-        });
-
-        await db.insert(uniqueTableName, safeChunk);
-      }
-
-      createdTables.push(uniqueTableName)
+      createdTables.push(baseTableId);
     }
 
     return c.json({
@@ -431,6 +429,10 @@ app.get("/api/users/search", async (c) => {
       return c.json({ users: [] })
     }
 
+    // Debug: Check total user count
+    const [totalUsers] = await db.query(`SELECT count() as total FROM user GROUP ALL`);
+    console.log(`[User Search] Total users in database: ${totalUsers?.[0]?.total || 0}`);
+
     // SurrealDB Search
     // Note: Use CONTAINS or string functions.
     // 'users' table is now 'user' table.
@@ -441,21 +443,26 @@ app.get("/api/users/search", async (c) => {
 
     const [users] = await db.query(`
         SELECT 
-            string::split(id, ':')[1] as id, 
+            string::split(<string>id, ':')[1] as id, 
             email, 
             first_name, 
             last_name, 
             profile_picture_url 
         FROM user 
-        WHERE (email CONTAINS $q 
-           OR first_name CONTAINS $q 
-           OR last_name CONTAINS $q)
+        WHERE (string::lowercase(email) CONTAINS string::lowercase($q)
+           OR string::lowercase(first_name) CONTAINS string::lowercase($q)
+           OR string::lowercase(last_name) CONTAINS string::lowercase($q))
         AND id != $user
         LIMIT 5;
     `, {
       q: query,
       user: `user:${payload.sub}`
     });
+
+    console.log(`[User Search] Query: "${query}", Found: ${users?.length || 0} users`);
+    if (users && users.length > 0) {
+      console.log('[User Search] Results:', users.map(u => u.email));
+    }
 
     return c.json({ users })
   } catch (e) {
@@ -1175,3 +1182,29 @@ serve({
   fetch: app.fetch,
   port
 });
+
+// Helper to create table and insert data (refactored to avoid duplication)
+async function createTableAndInsertData(tableName, rows) {
+  // Define schema
+  const columnNames = new Set();
+  rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)));
+
+  for (const colName of columnNames) {
+    try {
+      await db.query(`DEFINE FIELD \`${colName}\` ON TABLE ${tableName} FLEXIBLE PERMISSIONS FULL;`);
+    } catch (e) { }
+  }
+  await db.query(`DEFINE FIELD _row_order ON TABLE ${tableName} TYPE option<number> PERMISSIONS FULL;`);
+
+  // Batch Insert
+  const chunkSize = 500;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const safeChunk = chunk.map((row, idx) => {
+      const newRow = { _row_order: i + idx };
+      for (const key in row) newRow[key] = row[key];
+      return newRow;
+    });
+    await db.insert(tableName, safeChunk);
+  }
+}

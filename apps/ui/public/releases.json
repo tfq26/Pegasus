@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.5.4",
+            "releaseDate": "December 20, 2025",
+            "title": "Shared Dashboards & Excel Parsing Improvements",
+            "description": "Introducing a dedicated view for shared dashboards and robust improvements to Excel file parsing and user search.",
+            "changelogFile": "v0.5.4.json",
+            "isLatest": true
+        },
+        {
             "version": "0.5.3",
             "releaseDate": "December 19, 2024",
             "title": "Dashboard Elements & Privacy Controls",
             "description": "Major dashboard enhancements introducing rich text blocks, file attachments, and comprehensive privacy controls with a powerful markdown editor.",
             "changelogFile": "v0.5.3.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.5.2",

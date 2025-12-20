@@ -3,6 +3,7 @@ import { getCookie } from "hono/cookie"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { aiClient } from "../../ai/AIClient.js"
+import { interpretDataset } from "../../ai/sanitizer.js"
 import { adapters } from "../../adapters/index.js"
 import { analyzeForSanitization } from "../../ai/sanitizer.js"
 
@@ -453,7 +454,7 @@ chat.post("/ai/generate", async (c) => {
             else userId = resolvedId
         }
 
-        const { prompt, connectionId: rawConnId, context } = await c.req.json()
+        const { prompt, connectionId: rawConnId, context, activeTable } = await c.req.json()
         let connectionId = rawConnId;
         if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
 
@@ -496,6 +497,8 @@ chat.post("/ai/generate", async (c) => {
         // For robust refactor, we should extract schema fetching to a Service. 
         // Implementing inline similar to original for now.
 
+        let semanticContext = null;
+
         try {
             await adapter.connect()
             const allTables = await adapter.listCollections()
@@ -505,16 +508,124 @@ chat.post("/ai/generate", async (c) => {
             if (typeof adapter.getSchema === 'function') {
                 schemaInfo.detailedSchema = await adapter.getSchema() // simple approach
             }
+
+            // Debug: Log activeTable and schema info
+            console.log(`[Chat] DEBUG - activeTable: "${activeTable}"`);
+            console.log(`[Chat] DEBUG - schemaInfo.tables:`, schemaInfo.tables);
+            console.log(`[Chat] DEBUG - includes check: ${schemaInfo.tables && schemaInfo.tables.includes(activeTable)}`);
+
+            // On-the-fly Interpretation for Raw Tables (while adapter is still connected)
+            if (activeTable && schemaInfo.tables && schemaInfo.tables.includes(activeTable)) {
+                console.log(`[Chat] Checking for semantic metadata for ${activeTable}...`);
+                try {
+                    // Try to find metadata for this table
+                    const [metaResult] = await db.query(
+                        `SELECT * FROM sanitization_metadata WHERE original_table = $t OR original_table = $orig LIMIT 1`,
+                        { t: activeTable, orig: `${activeTable}_original` }
+                    );
+
+                    if (metaResult && metaResult[0]) {
+                        const meta = metaResult[0];
+                        console.log(`[Chat] Found semantic metadata for ${activeTable}`);
+
+                        // Find the version object for the active table
+                        let versionObj = (meta.versions || []).find(v => v.table === activeTable);
+
+                        // Fallback to latest version if not found specific match
+                        if (!versionObj && meta.versions && meta.versions.length > 0) {
+                            versionObj = meta.versions[meta.versions.length - 1];
+                        }
+
+                        if (versionObj && versionObj.semantic_context) {
+                            semanticContext = versionObj.semantic_context;
+                        }
+                    } else {
+                        // No metadata found - do on-the-fly interpretation using RAW FILE
+                        console.log(`[Chat] No metadata found for ${activeTable}, attempting raw file interpretation...`);
+
+                        // Extract upload ID from table name (format: data_{uuid}_{name})
+                        const uuidMatch = activeTable.match(/^data_([a-f0-9-]+)_/);
+                        if (uuidMatch) {
+                            const uploadId = `uploads:${uuidMatch[1]}`;
+                            console.log(`[Chat] Fetching raw file from ${uploadId}...`);
+
+                            try {
+                                // Fetch the upload record with raw file data
+                                const [uploadResult] = await db.query(`SELECT file_data, filename, format FROM ${uploadId}`);
+                                const upload = uploadResult && uploadResult[0];
+
+                                if (upload && upload.file_data) {
+                                    console.log(`[Chat] Found raw file: ${upload.filename} (${upload.format})`);
+
+                                    // Decode base64 file data
+                                    const fileBuffer = Buffer.from(upload.file_data, 'base64');
+
+                                    // Parse the file to get original structure
+                                    const { parseFile } = await import('../../utils/fileParser.js');
+                                    const parsedData = await parseFile(fileBuffer, upload.filename);
+
+                                    if (parsedData && parsedData.length > 0) {
+                                        console.log(`[Chat] Parsed ${parsedData.length} rows from raw file`);
+
+                                        // Interpret the raw data
+                                        const interpretation = await interpretDataset(activeTable, parsedData.slice(0, 20));
+                                        if (interpretation && interpretation.domain) {
+                                            semanticContext = {
+                                                domain: interpretation.domain,
+                                                columns: interpretation.columns
+                                            };
+                                            console.log(`[Chat] Raw file interpretation successful: ${interpretation.domain.domain}`);
+
+                                            // Async: Persist this metadata for future use
+                                            (async () => {
+                                                try {
+                                                    const [exists] = await db.query(`SELECT id FROM sanitization_metadata WHERE original_table = $t LIMIT 1`, { t: activeTable });
+                                                    if (!exists || exists.length === 0) {
+                                                        await db.create('sanitization_metadata', {
+                                                            original_table: activeTable,
+                                                            logical_name: activeTable.replace(/^data_[^_]+_/, ''),
+                                                            current_version: 0,
+                                                            versions: [{
+                                                                version: 0,
+                                                                table: activeTable,
+                                                                created_at: new Date(),
+                                                                reason: 'On-the-fly Raw File Interpretation',
+                                                                semantic_context: semanticContext
+                                                            }]
+                                                        });
+                                                        console.log(`[Chat] Persisted raw file metadata for ${activeTable}`);
+                                                    }
+                                                } catch (err) {
+                                                    console.warn(`[Chat] Failed to persist metadata:`, err);
+                                                }
+                                            })();
+                                        }
+                                    }
+                                } else {
+                                    console.warn(`[Chat] No raw file data found in ${uploadId}`);
+                                }
+                            } catch (err) {
+                                console.warn(`[Chat] Raw file interpretation failed:`, err);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Chat] Semantic context fetch/interpretation failed:`, e);
+                }
+            }
+
         } catch (e) {
             console.warn("Schema fetch failed", e)
         } finally {
             try { await adapter.disconnect() } catch (e) { }
         }
 
+
         const aiContext = {
             dialect: provider,
             schema: schemaInfo,
-            previousContext: context
+            previousContext: context,
+            semanticContext
         }
 
         // Fetch user settings
@@ -649,8 +760,12 @@ chat.post("/ai/generate", async (c) => {
                 const p = JSON.parse(generatedQuery);
                 if (p.query) {
                     generatedQuery = p.query;
-                } else if (!p.ambiguous) {
-                    return c.json({ error: "AI returned an invalid query format (JSON). See console for details." }, 400);
+                } else if (p.ambiguous) {
+                    // Return the ambiguity object directly to the frontend for handling
+                    return c.json(p);
+                } else if (p.choices) {
+                    // Fallback if ambiguous flag is missing but structure looks like one
+                    return c.json({ ambiguous: true, ...p });
                 }
             } catch (e) { }
         }

@@ -92,9 +92,9 @@ export class AIClient {
         return provider.generateTitle(messages)
     }
 
-    async generateText(prompt, modelId) {
+    async generateText(prompt, modelId, options = {}) {
         const provider = this.getProviderForModel(modelId)
-        const result = await provider.generateContent([{ role: 'user', content: prompt }])
+        const result = await provider.generateContent([{ role: 'user', content: prompt }], options)
         return result.text
     }
 
