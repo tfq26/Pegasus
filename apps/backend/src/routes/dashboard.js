@@ -37,7 +37,20 @@ const upsertUser = async (payload) => {
             });
             console.log(`[Dashboard] User updated: ${payload.email}`)
         } else {
-            // User doesn't exist, create
+            // User doesn't exist by ID. Check if email is taken by another ID (stale record/collision)
+            const [emailCheck] = await db.query(`SELECT id FROM user WHERE email = $email`, { email: payload.email });
+
+            if (emailCheck && emailCheck.length > 0) {
+                const staleId = emailCheck[0].id;
+                console.warn(`[Dashboard] Email collision detected. Email ${payload.email} is held by ${staleId}, but current user is ${userRecordId}. Archiving old email.`);
+
+                // Archive the old user's email to free it up
+                await db.query(`UPDATE ${staleId} SET email = $archivedEmail`, {
+                    archivedEmail: `archived_${Date.now()}_${payload.email}`
+                });
+            }
+
+            // Now safely create the new user
             await db.query(`
                 CREATE ${userRecordId} CONTENT {
                     email: $email,
@@ -318,7 +331,7 @@ dashboard.get("/dashboards/shared", async (c) => {
                 dashboard.owner.email as owner_email,
                 dashboard.owner as owner_id
             FROM dashboard_permission 
-            WHERE user = $user
+            WHERE user = type::thing($user)
             ORDER BY created_at DESC;
         `, {
             user: userRecId

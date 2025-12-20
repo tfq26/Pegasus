@@ -562,7 +562,9 @@ watch(activeTab, async (val) => {
     try {
       sharedDashboards.value = await fetchSharedDashboards()
     } catch (e) {
-      toast.error('Failed to load shared dashboards')
+      console.error('Failed to load shared dashboards:', e)
+      // Fallback to empty list, don't show toast to user
+      sharedDashboards.value = []
     } finally {
       isLoadingShared.value = false
     }
