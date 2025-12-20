@@ -228,34 +228,11 @@
     </Dialog>
 
     <!-- Share Modal -->
-    <Dialog v-model:open="showShareModal">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Share Dashboard</DialogTitle>
-          <DialogDescription>
-            Anyone with this link will be able to view this dashboard.
-          </DialogDescription>
-        </DialogHeader>
-        <div class="flex items-center space-x-2">
-          <div class="grid flex-1 gap-2">
-            <label for="link" class="sr-only">Link</label>
-            <input
-              id="link"
-              :value="shareUrl"
-              readonly
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
-          <button 
-            @click="copyShareLink"
-            class="px-3 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md"
-          >
-            <span v-if="copied" class="text-green-500">Copied!</span>
-            <span v-else>Copy</span>
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <ShareDialog
+      v-model:open="showShareModal"
+      :dashboard-id="dashboardToShare?.id || null" 
+      :public-link="shareUrl"
+    />
 
     <!-- Rename Modal -->
     <Dialog v-model:open="showRenameModal">
@@ -542,6 +519,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
+import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
 import { toast } from 'vue-sonner'
 import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 
@@ -641,6 +619,7 @@ const isImporting = ref(false)
 const showShareModal = ref(false)
 const shareUrl = ref('')
 const copied = ref(false)
+const dashboardToShare = ref<any>(null)
 
 // Rename Modal State
 const showRenameModal = ref(false)
@@ -792,6 +771,7 @@ const confirmDelete = async () => {
 }
 
 const handleShare = async (dashboard: any) => {
+  dashboardToShare.value = dashboard
   try {
     const token = await store.generateShareLink(dashboard.id)
     shareUrl.value = `${window.location.origin}/shared/dashboard/${token}`

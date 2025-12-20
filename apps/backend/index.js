@@ -1175,13 +1175,31 @@ if (process.env.NEON_DATABASE_URL) {
   console.log('Skipping weekly digest cron job - NEON_DATABASE_URL not configured')
 }
 
+// Initialize Dashboard Chat Schema
+try {
+  await db.query(`
+    DEFINE TABLE dashboard_message SCHEMAFULL;
+    DEFINE FIELD dashboard ON TABLE dashboard_message TYPE record<dashboard>;
+    DEFINE FIELD user ON TABLE dashboard_message TYPE record<user>;
+    DEFINE FIELD content ON TABLE dashboard_message TYPE string;
+    DEFINE FIELD created_at ON TABLE dashboard_message TYPE datetime DEFAULT time::now();
+  `);
+  console.log('[Schema] dashboard_message table defined');
+} catch (e) {
+  console.error('[Schema] Failed to define dashboard_message:', e.message);
+}
+
 // Start Server
+import { initSocketServer } from "./src/socket.js"
+
 console.log(`Pegasus query gateway running on http://localhost:${port}`)
 
-serve({
+const server = serve({
   fetch: app.fetch,
   port
 });
+
+initSocketServer(server, allowedOrigins);
 
 // Helper to create table and insert data (refactored to avoid duplication)
 async function createTableAndInsertData(tableName, rows) {

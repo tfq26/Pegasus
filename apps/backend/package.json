@@ -1,5 +1,6 @@
 {
   "name": "backend",
+  "version": "0.6.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -29,6 +30,7 @@
     "node-cron": "^4.2.1",
     "pg": "^8.16.3",
     "resend": "^6.5.2",
+    "socket.io": "^4.8.1",
     "stripe": "^20.0.0",
     "surrealdb": "^1.0.2"
   }

@@ -68,9 +68,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, nextTick } from 'vue'
+import { ref, watch, computed, onMounted, nextTick, defineAsyncComponent } from 'vue'
 // @ts-ignore: ignore missing .vue module declaration
-import CodeEditor from './CodeEditor.vue'
+const CodeEditor = defineAsyncComponent(() => import('./CodeEditor.vue'))
 
 const props = defineProps<{ 
   mode: 'chat' | 'write'

@@ -55,19 +55,33 @@
         <button
           v-if="currentDashboard"
           @click="showAddElementDialog = true"
-          class="px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
+          class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
+          title="Add Element"
         >
           <Plus class="w-4 h-4" />
-          Add Element
+          <span class="hidden sm:inline">Add Element</span>
         </button>
+
+        <button
+          @click="showChat = !showChat"
+          class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
+          :class="{ 'bg-muted text-foreground': showChat }"
+          title="Chat"
+        >
+          <MessageSquare class="w-4 h-4" />
+          <span class="hidden sm:inline">Chat</span>
+        </button>
+        
+        <CollaboratorAvatars :collaborators="collaborators" class="mr-2 hidden sm:flex" />
         
         <button
           v-if="currentDashboard"
           @click="handleSave"
-          class="px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition flex items-center gap-2 shadow-sm"
+          class="p-2 sm:px-3 sm:py-1.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition flex items-center gap-2 shadow-sm"
+          title="Save"
         >
           <Save class="w-4 h-4" />
-          Save
+          <span class="hidden sm:inline">Save</span>
         </button>
         
         <!-- Three Dots Menu -->
@@ -147,14 +161,64 @@
       </div>
     </header>
 
-    <!-- Main Grid -->
-    <div 
-      class="flex-1 overflow-auto p-4 relative transition-colors duration-300"
-      :class="{ 'bg-grid-pattern': showGrid }"
-      :style="gridStyle"
-    >
-      <div v-if="isLoading" class="flex items-center justify-center h-full">
+    <!-- Main Content Area with potential Sidebar -->
+    <div class="flex-1 overflow-hidden flex relative relative-container">
+      
+
+      
+      <!-- Chat Sidebar (Right) - Desktop: Relative, Mobile: Fixed Drawer -->
+      <div 
+        class="border-l border-border z-30 shadow-xl transition-all duration-300 bg-card fixed inset-y-0 right-0 w-[320px] sm:relative sm:w-[320px] sm:bg-card"
+        :class="[
+          showChat ? 'translate-x-0' : 'translate-x-full sm:hidden'
+        ]"
+        v-if="showChat"
+      >
+        <DashboardChat 
+          :messages="chatMessages" 
+          @close="showChat = false"
+          @send="handleSendMessage"
+        />
+      </div>
+      
+      <!-- Backdrop for mobile chat -->
+      <div 
+        v-if="showChat && !isDesktop" 
+        class="fixed inset-0 bg-background/80 backdrop-blur-sm z-20 sm:hidden"
+        @click="showChat = false"
+      ></div>
+
+      <!-- Main Grid Container -->
+      <div 
+        class="flex-1 h-full overflow-auto relative transition-colors duration-300"
+        ref="dashboardContainer"
+        :class="{ 'bg-grid-pattern': showGrid }"
+        :style="gridStyle"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
+      >
+        <!-- Live Cursors Overlay -->
+        <LiveCursors :cursors="cursors" />
+
+        <div v-if="isLoading" class="flex items-center justify-center h-full">
+
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+
+      <!-- Mobile Stack View -->
+      <div v-if="!isDesktop && currentDashboard && layout.length" class="flex flex-col gap-4 p-4 pb-20">
+        <DashboardElement
+          v-for="item in layout"
+          :key="item.i"
+          :element="getElement(item.i)"
+          :is-locked="isLocked"
+          :is-mobile="true"
+          @remove="removeElement(item.i)"
+          @edit-element="handleEditElement(getElement(item.i)!)"
+          @edit-query="handleEditQuery(getElement(item.i)!)"
+          @view-query="handleViewQuery(getElement(item.i)!)"
+          @download="downloadFile(getElement(item.i)!)"
+        />
       </div>
 
       <DraggableGrid
@@ -171,110 +235,17 @@
         @layout-updated="onLayoutUpdated"
       >
         <template #item="{ item }">
-          <ContextMenu>
-            <ContextMenuTrigger>
-              <div 
-                class="dashboard-card w-full h-full flex flex-col bg-card border border-border shadow-sm"
-                :class="{ 'pointer-events-none': isLocked }"
-              >
-                <!-- Card Content -->
-                <div class="card-content">
-                  <div class="card-header">
-                    <div class="card-title-section">
-                      <!-- Combined Drag/Delete Handle -->
-                      <div 
-                        v-if="!isLocked"
-                        class="transition-all duration-200 rounded-md p-1 flex items-center justify-center"
-                        :class="[
-                          isCtrlPressed 
-                            ? 'bg-destructive/10 text-destructive cursor-pointer hover:bg-destructive/20' 
-                            : 'drag-handle cursor-move text-muted-foreground hover:text-primary hover:bg-primary/10'
-                        ]"
-                        :title="isCtrlPressed ? 'Click to remove' : 'Drag to move'"
-                        @click.stop="isCtrlPressed ? removeElement(item.i) : null"
-                      >
-                        <!-- Delete Icon -->
-                        <svg v-if="isCtrlPressed" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                        </svg>
-                        <!-- Drag Icon -->
-                        <svg v-else width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M7 2a2 2 0 10.001 4.001A2 2 0 007 2zm0 6a2 2 0 10.001 4.001A2 2 0 007 8zm0 6a2 2 0 10.001 4.001A2 2 0 007 14zm6-8a2 2 0 10-.001-4.001A2 2 0 0013 6zm0 2a2 2 0 10.001 4.001A2 2 0 0013 8zm0 6a2 2 0 10.001 4.001A2 2 0 0013 14z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 class="card-title text-foreground font-semibold text-sm">{{ getElement(item.i)?.title }}</h3>
-                        <p class="card-subtitle text-xs text-muted-foreground truncate max-w-[200px]">{{ getElement(item.i)?.query }}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="card-body relative overflow-hidden">
-                    <ChartRenderer 
-                      v-if="getElement(item.i) && getElement(item.i)!.type !== 'stat' && getElement(item.i)!.type !== 'text' && getElement(item.i)!.type !== 'file' && getElement(item.i)!.config" 
-                      :type="getElement(item.i)!.type" 
-                      :data="getElement(item.i)!.config.data" 
-                      :options="{ ...getElement(item.i)!.config.options, maintainAspectRatio: false, responsive: true }"
-                      :customization="getElement(item.i)!.customization"
-                      class="w-full h-full"
-                    />
-                    <ChartRenderer 
-                      v-else-if="getElement(item.i) && getElement(item.i)!.type === 'stat' && getElement(item.i)!.config" 
-                      :type="getElement(item.i)!.type" 
-                      :data="getElement(item.i)!.config" 
-                      :options="{ label: getElement(item.i)!.title }"
-                      :customization="getElement(item.i)!.customization"
-                      class="w-full h-full"
-                    />
-
-                    <!-- Text Element -->
-                    <div 
-                      v-else-if="getElement(item.i)?.type === 'text'" 
-                      class="p-4 h-full overflow-auto prose dark:prose-invert text-sm max-w-none"
-                    >
-                       <div v-html="renderMarkdown(getElement(item.i)!.config.content)"></div>
-                    </div>
-
-                    <!-- File Element -->
-                    <div 
-                      v-else-if="getElement(item.i)?.type === 'file'" 
-                      class="flex flex-col items-center justify-center h-full p-4"
-                    >
-                       <File class="w-12 h-12 text-primary mb-2" />
-                       <div class="text-sm font-medium text-center">{{ getElement(item.i)!.config.fileName }}</div>
-                       <div class="text-xs text-muted-foreground">{{ formatSize(getElement(item.i)!.config.fileSize) }}</div>
-                       <button 
-                         class="mt-4 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition" 
-                         @click="downloadFile(getElement(item.i)!)"
-                       >
-                         Download
-                       </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-              <ContextMenuItem @select="handleEditElement(getElement(item.i)!)">
-                <Settings class="w-4 h-4 mr-2" />
-                Edit Element
-              </ContextMenuItem>
-              <ContextMenuSeparator class="bg-border" />
-              <ContextMenuItem @select="handleEditQuery(getElement(item.i)!)">
-                <Pencil class="w-4 h-4 mr-2" />
-                Edit Query
-              </ContextMenuItem>
-              <ContextMenuItem @select="handleViewQuery(getElement(item.i)!)">
-                <Code class="w-4 h-4 mr-2" />
-                View Query
-              </ContextMenuItem>
-              <ContextMenuSeparator class="bg-border" />
-              <ContextMenuItem @select="removeElement(item.i)" class="text-destructive focus:text-destructive focus:bg-destructive/10">
-                <Trash2 class="w-4 h-4 mr-2" />
-                Delete
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
+          <DashboardElement
+            :element="getElement(item.i)"
+            :is-locked="isLocked"
+            :is-ctrl-pressed="isCtrlPressed"
+            :is-mobile="false"
+            @remove="removeElement(item.i)"
+            @edit-element="handleEditElement(getElement(item.i)!)"
+            @edit-query="handleEditQuery(getElement(item.i)!)"
+            @view-query="handleViewQuery(getElement(item.i)!)"
+            @download="downloadFile(getElement(item.i)!)"
+          />
         </template>
       </DraggableGrid>
 
@@ -478,6 +449,7 @@
       @save="handleSaveElement"
     />
   </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -486,13 +458,16 @@ import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
-import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import CodeEditor from '@/components/Chat/CodeEditor.vue'
 import ElementEditorWrapper from '@/components/Dashboard/ElementEditorWrapper.vue'
 import AddElementDialog from '@/components/Dashboard/AddElementDialog.vue'
 import AddTextDialog from '@/components/Dashboard/AddTextDialog.vue'
 import AddFileDialog from '@/components/Dashboard/AddFileDialog.vue'
 import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
+import DashboardChat from '@/components/Dashboard/DashboardChat.vue'
+import LiveCursors from '@/components/Dashboard/LiveCursors.vue'
+import CollaboratorAvatars from '@/components/Dashboard/CollaboratorAvatars.vue'
+import { useCollaboration } from '@/composables/useCollaboration'
 import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import {
@@ -525,10 +500,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, File, Lock, Globe } from 'lucide-vue-next'
-import MarkdownIt from 'markdown-it'
-
-const md = new MarkdownIt()
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send } from 'lucide-vue-next'
+import DashboardElement from '@/components/Dashboard/DashboardElement.vue'
 
 defineOptions({ name: 'DashboardPage' })
 
@@ -537,15 +510,64 @@ const route = useRoute()
 const store = useDashboardStore()
 const { dashboards, currentDashboard, isLoading } = storeToRefs(store)
 
-const renderMarkdown = (content: string) => md.render(content || '')
+import { useMediaQuery } from '@vueuse/core'
 
-const formatSize = (bytes: number) => {
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+const isDesktop = useMediaQuery('(min-width: 640px)')
+
+const { 
+  joinDashboard, 
+  leaveDashboard, 
+  emitCursorMove, 
+  sendChatMessage,
+  collaborators,
+  cursors,
+  chatMessages
+} = useCollaboration()
+
+const showChat = ref(false)
+const dashboardContainer = ref<HTMLElement | null>(null)
+
+// Watch for dashboard changes to join/leave rooms
+watch(() => currentDashboard.value?.id, (newId, oldId) => {
+  if (oldId) leaveDashboard(oldId)
+  if (newId) joinDashboard(newId)
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (currentDashboard.value?.id) {
+    leaveDashboard(currentDashboard.value.id)
+  }
+})
+
+// Cursor Handling
+const onMouseMove = (e: MouseEvent) => {
+  if (!dashboardContainer.value || !currentDashboard.value) return
+  
+  // Calculate relative position within the scrollable container
+  // Assuming the overlay is absolute positioned 0,0 relative to this container
+  // We want coordinates relative to the top-left of the content area.
+  
+  // However, e.layerX/Y can be tricky with nested elements.
+  // Best to use client coordinates minus container rect, plus scroll.
+  const rect = dashboardContainer.value.getBoundingClientRect()
+  const x = e.clientX - rect.left + dashboardContainer.value.scrollLeft
+  const y = e.clientY - rect.top + dashboardContainer.value.scrollTop
+  
+  // Throttle this in real app, but raw for now
+  emitCursorMove(currentDashboard.value.id, x, y)
 }
+
+const onMouseLeave = () => {
+    // Optionally signal cursor left
+}
+
+const handleSendMessage = (content: string) => {
+  if (currentDashboard.value) {
+    sendChatMessage(currentDashboard.value.id, content)
+  }
+}
+
+
 
 const downloadFile = (element: any) => {
   if (!element.config?.fileId) {

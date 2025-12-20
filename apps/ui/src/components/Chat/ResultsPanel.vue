@@ -43,7 +43,8 @@ const size = ref(400) // Default size in pixels
 const isResizing = ref(false)
 const isMaximized = ref(false)
 const activeTab = ref<'results' | 'messages' | 'history'>('results')
-import ExcelEditor from '@/components/Excel/ExcelEditor.vue'
+import { defineAsyncComponent } from 'vue'
+const ExcelEditor = defineAsyncComponent(() => import('@/components/Excel/ExcelEditor.vue'))
 
 const viewMode = ref<'table' | 'json' | 'excel'>('table')
 

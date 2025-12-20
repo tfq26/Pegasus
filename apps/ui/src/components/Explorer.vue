@@ -481,35 +481,49 @@ const statusLabel = (state?: ConnectionSchemaState) => {
 
 const refreshSchemas = async () => {
   if (typeof window === 'undefined') return
-  const next: Record<string, ConnectionSchemaState> = {}
+
+  // Do NOT clear existing schemas to prevent flickering
+  // Instead, mark them as reloading if they exist, or initialize new ones
+  const next = { ...connectionSchemas.value }
 
   props.connections.forEach((conn) => {
-    next[conn.id] = {
-      status: 'loading',
-      tables: [],
+    if (!next[conn.id]) {
+        // Only initialize if not already present
+        next[conn.id] = {
+            status: 'loading',
+            tables: [],
+        }
+    } else {
+        // Keep existing data but perhaps show a subtle loading state if we wanted
+        // For now, allow silent refresh or keep 'connected' until done
     }
   })
 
+  // Update ref to ensure new connections appear immediately
   connectionSchemas.value = next
 
   await Promise.all(
     props.connections.map(async (conn) => {
       try {
         const schema = await fetchConnectionSchema(conn)
+        
+        // Update in place
         connectionSchemas.value[conn.id] = {
           status: 'connected',
           tables: schema.tables,
           databases: schema.databases,
           tableMetadata: schema.tableMetadata,
         }
+        
         // cache top-level tables so we can restore after DB-scoped views
         dbTablesCache.value[conn.id] = dbTablesCache.value[conn.id] || {}
         dbTablesCache.value[conn.id]!['__root'] = schema.tables
       } catch (error) {
         connectionSchemas.value[conn.id] = {
           status: 'error',
-          tables: [],
+          tables: connectionSchemas.value[conn.id]?.tables || [], // Keep old tables if failed? Or clear? safely clear or keep
           error: error instanceof Error ? error.message : 'Unable to reach database',
+          databases: connectionSchemas.value[conn.id]?.databases // Keep databases if we had them
         }
       }
     }),

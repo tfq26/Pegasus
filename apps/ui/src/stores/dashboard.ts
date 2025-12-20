@@ -28,6 +28,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const isLoading = ref(false)
     const error = ref<string | null>(null)
 
+    const isSaving = ref(false)
+
     const loadDashboards = async () => {
         isLoading.value = true
         error.value = null
@@ -40,8 +42,20 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
-    const selectDashboard = async (id: string) => {
-        isLoading.value = true
+    const selectDashboard = async (id: string, forceRefresh = false) => {
+        // If we already have the dashboard and not forcing refresh, just set it
+        const existing = dashboards.value.find(d => d.id === id)
+        if (existing && !forceRefresh) {
+            currentDashboard.value = existing
+        }
+
+        // Always fetch fresh data in background if we strictly want consistency, 
+        // but for "optimistic" feel, we show what we have immediately.
+        // If we don't have it, we must load.
+        if (!existing || forceRefresh) {
+            isLoading.value = true
+        }
+
         error.value = null
         try {
             const dashboard = await fetchDashboard(id)
@@ -50,6 +64,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
             const index = dashboards.value.findIndex(d => d.id === id)
             if (index !== -1) {
                 dashboards.value[index] = { ...dashboards.value[index], ...dashboard }
+            } else {
+                dashboards.value.push(dashboard)
             }
         } catch (e: any) {
             error.value = e.message
@@ -64,7 +80,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         try {
             const { id } = await createDashboard(title, { layout: [], elements: [] })
             await loadDashboards()
-            await selectDashboard(id)
+            // We can just fetch the single new dashboard instead of reloading all, but loadDashboards is fine for now
+            await selectDashboard(id, true)
             return id
         } catch (e: any) {
             error.value = e.message
@@ -76,11 +93,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
     const saveCurrentDashboard = async () => {
         if (!currentDashboard.value) return
-        isLoading.value = true
+        // Use isSaving instead of isLoading to prevent UI blocking
+        isSaving.value = true
 
-        console.log('[DashboardStore] saveCurrentDashboard called')
-        console.log('[DashboardStore] currentDashboard:', currentDashboard.value)
-        console.log('[DashboardStore] cover_image on currentDashboard:', (currentDashboard.value as any).cover_image)
+        console.log('[DashboardStore] saveCurrentDashboard called (background)')
 
         const payload = {
             title: currentDashboard.value.title,
@@ -90,17 +106,16 @@ export const useDashboardStore = defineStore('dashboard', () => {
             }
         }
 
-        console.log('[DashboardStore] Update payload:', payload)
-
         try {
             await updateDashboard(currentDashboard.value.id, payload)
-            console.log('[DashboardStore] Dashboard updated successfully')
+            console.log('[DashboardStore] Dashboard saved successfully')
         } catch (e: any) {
-            console.error('[DashboardStore] Update failed:', e)
+            console.error('[DashboardStore] Save failed:', e)
             error.value = e.message
+            // TODO: Revert local changes? For now just notify error.
             throw e
         } finally {
-            isLoading.value = false
+            isSaving.value = false
         }
     }
 
@@ -131,26 +146,23 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
 
     const addElementToDashboard = async (dashboardId: string, element: any) => {
-        isLoading.value = true
-        try {
-            // Find the dashboard
-            let dashboard = dashboards.value.find(d => d.id === dashboardId)
+        // Optimistic update: Add to local state first
+        isSaving.value = true // Use isSaving to show activity but not block
 
-            // If not in list or we need fresh data, fetch it
+        try {
+            // Use local state if available to be instant
+            let dashboard = currentDashboard.value && currentDashboard.value.id === dashboardId
+                ? currentDashboard.value
+                : dashboards.value.find(d => d.id === dashboardId)
+
             if (!dashboard) {
+                // Fallback to fetch if not found locally at all (rare if user is on the page)
+                isLoading.value = true
                 dashboard = await fetchDashboard(dashboardId) as Dashboard
-            } else {
-                // We should probably fetch fresh data anyway to avoid conflicts, 
-                // but for now let's trust the local state if we have it, 
-                // or maybe just fetch to be safe? 
-                // Let's fetch to be safe and ensure we have the latest 'data' blob
-                dashboard = await fetchDashboard(dashboardId) as Dashboard
+                isLoading.value = false
             }
 
             if (!dashboard) throw new Error('Dashboard not found')
-
-            console.log('[DashboardStore] Adding element to dashboard:', dashboardId)
-            console.log('[DashboardStore] Current dashboard data:', dashboard.data)
 
             // Ensure data exists
             const currentData = dashboard.data || { layout: [], elements: [] }
@@ -171,36 +183,14 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 i: newId
             }
 
-            // Add element
+            // Create updated data object
             const updatedData = {
                 ...currentData,
                 layout: [...currentLayout, newLayoutItem],
                 elements: [...(currentData.elements || []), { ...element, id: newId }]
             }
 
-            console.log('[DashboardStore] Updated data:', updatedData)
-
-            // Update backend
-            await updateDashboard(dashboardId, {
-                data: updatedData
-            })
-            console.log('[DashboardStore] Backend update completed')
-
-            // Update local state
-            const index = dashboards.value.findIndex(d => d.id === dashboardId)
-            if (index !== -1) {
-                const existing = dashboards.value[index]!
-                dashboards.value[index] = {
-                    id: existing.id,
-                    title: existing.title,
-                    data: updatedData,
-                    is_public: existing.is_public,
-                    share_token: existing.share_token,
-                    updated_at: existing.updated_at
-                }
-            }
-
-            // If it's the current dashboard, update that too
+            // apply optimistic update to currentDashboard
             if (currentDashboard.value?.id === dashboardId) {
                 currentDashboard.value = {
                     ...currentDashboard.value,
@@ -208,11 +198,36 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 }
             }
 
+            // apply optimistic update to list
+            const index = dashboards.value.findIndex(d => d.id === dashboardId)
+            if (index !== -1) {
+                const existing = dashboards.value[index]
+                if (existing) {
+                    dashboards.value[index] = {
+                        ...existing,
+                        data: updatedData
+                    }
+                }
+            }
+
+            console.log('[DashboardStore] Optimistic update applied. Syncing to backend...')
+
+            // Sync to backend
+            await updateDashboard(dashboardId, {
+                data: updatedData
+            })
+            console.log('[DashboardStore] Backend sync completed')
+
         } catch (e: any) {
             error.value = e.message
+            // If failed, we should ideally revert the optimistic update
+            // For now, reloading the dashboard is a safe recovery
+            if (currentDashboard.value?.id === dashboardId) {
+                await selectDashboard(dashboardId, true)
+            }
             throw e
         } finally {
-            isLoading.value = false
+            isSaving.value = false
         }
     }
 
@@ -279,6 +294,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         dashboards,
         currentDashboard,
         isLoading,
+        isSaving,
         error,
         loadDashboards,
         selectDashboard,

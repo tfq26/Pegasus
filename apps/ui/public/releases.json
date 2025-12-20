@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.6.0",
+            "releaseDate": "December 20, 2025",
+            "title": "Real-time Collaboration & Performance",
+            "description": "A major update introducing real-time collaboration features (Chat, Live Cursors) and significant performance optimizations for a fluid experience.",
+            "changelogFile": "v0.6.0.json",
+            "isLatest": true
+        },
+        {
             "version": "0.5.4",
             "releaseDate": "December 20, 2025",
             "title": "Shared Dashboards & Excel Parsing Improvements",
             "description": "Introducing a dedicated view for shared dashboards and robust improvements to Excel file parsing and user search.",
             "changelogFile": "v0.5.4.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.5.3",
