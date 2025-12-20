@@ -142,6 +142,28 @@ const temperatureValue = computed({
       Enable AI code suggestions
     </label>
 
+    <div class="pt-4 border-t border-border">
+      <h3 class="text-foreground font-medium mb-3">Chat History Management</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm text-foreground mb-2 block">Auto-delete chats after</label>
+          <select 
+            v-model="props.settings.chatAutoDeleteDays"
+            class="w-full px-3 py-2 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:border-primary"
+          >
+            <option :value="1">1 day</option>
+            <option :value="7">7 days</option>
+            <option :value="30">30 days (default)</option>
+            <option :value="90">90 days</option>
+            <option :value="0">Never</option>
+          </select>
+          <p class="text-muted-foreground text-xs mt-1">
+            Automatically delete chats older than the selected period. Set to "Never" to keep all chats.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <div class="pt-6 border-t border-border">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-foreground font-medium">Available Models</h3>
@@ -159,16 +181,21 @@ const temperatureValue = computed({
         <div 
           v-for="model in filteredModels" 
           :key="model.id"
-          class="p-3 rounded-lg border border-border bg-card flex items-start justify-between group hover:border-primary/50 transition-colors"
+          @click="selectModel(model.id)"
+          class="p-3 rounded-lg border border-border bg-card flex items-start justify-between group transition-all cursor-pointer"
+          :class="isModelActive(model.id) 
+            ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/20' 
+            : 'hover:border-primary/50 hover:bg-accent'"
         >
-          <div class="flex items-start gap-3">
+          <div class="flex items-start gap-3 flex-1">
             <Checkbox 
               :model-value="isModelEnabled(model.id)"
               @update:model-value="(v: boolean) => toggleModelEnabled(model.id, v)"
+              @click.stop
               :disabled="isModelActive(model.id)"
               class="mt-1 accent-violet-600"
             />
-            <div>
+            <div class="flex-1">
               <div class="font-medium text-foreground text-sm flex items-center gap-2">
                 {{ model.name }}
                 <span 
@@ -193,16 +220,6 @@ const temperatureValue = computed({
               </div>
             </div>
           </div>
-          <button
-            @click="selectModel(model.id)"
-            class="px-3 py-1.5 rounded text-xs font-medium transition-colors"
-            :class="isModelActive(model.id) 
-              ? 'bg-primary/10 text-primary border border-primary/20 cursor-default' 
-              : 'bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground border border-border'"
-            :disabled="isModelActive(model.id)"
-          >
-            {{ isModelActive(model.id) ? 'Selected' : 'Select' }}
-          </button>
         </div>
         <div v-if="filteredModels.length === 0" class="text-center py-8 text-muted-foreground text-sm">
           No models found matching "{{ searchQuery }}"

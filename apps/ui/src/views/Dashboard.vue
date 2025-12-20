@@ -1,112 +1,66 @@
 <template>
   <div class="w-full h-full flex flex-col text-foreground">
     <!-- Header -->
-    <header class="flex items-center justify-between gap-4 px-6 py-2 border-b border-border bg-background/50 backdrop-blur-sm z-10">
-      <div class="flex items-center gap-4">
-        <div class="flex items-center gap-2">
-          <button 
-            @click="router.push('/dashboard')"
-            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
-            title="Back to Dashboards"
-          >
-            <ArrowLeft class="w-5 h-5" />
-          </button>
-          <h1 class="text-lg font-bold text-primary">{{ currentDashboard?.title || 'Dashboard' }}</h1>
-          <span v-if="isShared" class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
-            Read Only Preview
-          </span>
-          <span v-if="currentDashboard" class="text-muted-foreground">/</span>
-          <!-- Dashboard Selector -->
-          <Select v-if="!isLoading" :model-value="currentDashboard?.id" @update:model-value="handleDashboardChange">
-            <SelectTrigger class="w-[200px] h-8">
-              <SelectValue placeholder="Select Dashboard" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="d in dashboards" :key="d.id" :value="d.id">
-                {{ d.title }}
-              </SelectItem>
-              <SelectSeparator />
-              <div class="p-1">
-                <button
-                  @click.stop="handleCreateDashboard"
-                  class="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                >
-                  <Plus class="w-4 h-4" />
-                  New Dashboard
-                </button>
-              </div>
-            </SelectContent>
-          </Select>
-        </div>
+    <header class="border-b border-border bg-card/80 backdrop-blur-md px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+      <div class="flex items-center gap-3">
+        <button 
+          @click="router.push('/dashboard')"
+          class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition"
+          title="Back to Dashboards"
+        >
+          <ArrowLeft class="w-5 h-5" />
+        </button>
+        <h1 class="text-lg font-bold text-primary">{{ currentDashboard?.title || 'Dashboard' }}</h1>
+        <span v-if="isShared" class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
+          Read Only Preview
+        </span>
+        <span v-if="currentDashboard" class="text-muted-foreground">/</span>
+        <!-- Dashboard Selector -->
+        <Select v-if="!isLoading" :model-value="currentDashboard?.id" @update:model-value="handleDashboardChange">
+          <SelectTrigger class="w-[200px] h-8">
+            <SelectValue placeholder="Select Dashboard" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="d in dashboards" :key="d.id" :value="d.id">
+              {{ d.title }}
+            </SelectItem>
+            <SelectSeparator />
+            <div class="p-1">
+              <button
+                @click.stop="handleCreateDashboard"
+                class="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+              >
+                <Plus class="w-4 h-4" />
+                New Dashboard
+              </button>
+            </div>
+          </SelectContent>
+        </Select>
         
-        <!-- Layout Controls -->
-        <div class="flex items-center gap-2 px-3 py-1 bg-muted/50 rounded-lg border border-border">
-          <!-- Role Badge -->
-          <div v-if="currentDashboard && userRole" class="px-2 py-1 rounded text-xs font-medium"
-            :class="{
-              'bg-primary/10 text-primary': userRole === 'owner',
-              'bg-blue-500/10 text-blue-500': userRole === 'editor',
-              'bg-emerald-500/10 text-emerald-500': userRole === 'viewer'
-            }"
-          >
-            {{ userRole.charAt(0).toUpperCase() + userRole.slice(1) }}
-          </div>
-          
-          <div v-if="currentDashboard && userRole" class="w-px h-4 bg-border"></div>
-          
-          <button
-            @click="isCompact = !isCompact"
-            class="p-1.5 rounded hover:bg-muted transition text-xs flex items-center gap-1.5"
-            :class="isCompact ? 'text-primary' : 'text-muted-foreground'"
-            title="Toggle Compact Mode"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M2 2h12v4H2V2zm0 6h12v6H2V8z" opacity="0.8"/>
-            </svg>
-            Compact
-          </button>
-          
-          <div class="w-px h-4 bg-border"></div>
-          
-          <button
-            @click="showGrid = !showGrid"
-            class="p-1.5 rounded hover:bg-muted transition text-xs flex items-center gap-1.5"
-            :class="showGrid ? 'text-primary' : 'text-muted-foreground'"
-            title="Toggle Grid"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M2 2h12v12H2V2zm1 1v10h10V3H3z" opacity="0.8"/>
-            </svg>
-            Grid
-          </button>
-          
-          <div class="w-px h-4 bg-border"></div>
-          
-          <button
-            @click="isLocked = !isLocked"
-            class="p-1.5 rounded hover:bg-muted transition text-xs flex items-center gap-1.5"
-            :class="isLocked ? 'text-amber-500' : 'text-muted-foreground'"
-            title="Lock Layout"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path v-if="isLocked" d="M8 1a4 4 0 00-4 4v2H3v8h10V7h-1V5a4 4 0 00-4-4zm0 2a2 2 0 012 2v2H6V5a2 2 0 012-2z"/>
-              <path v-else d="M11 5V4a3 3 0 00-6 0v1H4v9h8V5h-1zm-1 0H6V4a2 2 0 014 0v1z"/>
-            </svg>
-            {{ isLocked ? 'Locked' : 'Unlocked' }}
-          </button>
+        <!-- Role Badge - Moved here -->
+        <div v-if="currentDashboard && userRole" class="px-2 py-1 rounded text-xs font-medium"
+          :class="{
+            'bg-primary/10 text-primary': userRole === 'owner',
+            'bg-blue-500/10 text-blue-500': userRole === 'editor',
+            'bg-emerald-500/10 text-emerald-500': userRole === 'viewer'
+          }"
+        >
+          {{ userRole.charAt(0).toUpperCase() + userRole.slice(1) }}
         </div>
       </div>
-
-      <!-- Actions -->
+      
+      <!-- Actions Menu - Right Side -->
       <div class="flex items-center gap-2" v-if="!isShared">
+        <!-- Add Element Button -->
         <button
           v-if="currentDashboard"
-          @click="handleShare"
-          class="px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition flex items-center gap-2"
+          @click="showAddElementDialog = true"
+          class="px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
         >
-          <Share2 class="w-4 h-4" />
-          Share
+          <Plus class="w-4 h-4" />
+          Add Element
         </button>
+        
         <button
           v-if="currentDashboard"
           @click="handleSave"
@@ -115,22 +69,81 @@
           <Save class="w-4 h-4" />
           Save
         </button>
-        <button
-          v-if="currentDashboard"
-          @click="handleRename"
-          class="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition"
-          title="Rename Dashboard"
-        >
-          <Pencil class="w-4 h-4" />
-        </button>
-        <button
-          v-if="currentDashboard"
-          @click="handleDeleteDashboard"
-          class="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition"
-          title="Delete Dashboard"
-        >
-          <Trash2 class="w-4 h-4" />
-        </button>
+        
+        <!-- Three Dots Menu -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button
+              class="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition"
+              title="Dashboard Options"
+            >
+              <MoreVertical class="w-4 h-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-56">
+            <!-- View Options -->
+            <div class="px-2 py-1.5 text-sm font-semibold">View Options</div>
+            <DropdownMenuSeparator />
+            
+            <DropdownMenuItem @click="isCompact = !isCompact" class="cursor-pointer">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="mr-2">
+                <path d="M2 2h12v4H2V2zm0 6h12v6H2V8z" opacity="0.8"/>
+              </svg>
+              <span>Compact Mode</span>
+              <span v-if="isCompact" class="ml-auto text-primary">✓</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuItem @click="showGrid = !showGrid" class="cursor-pointer">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="mr-2">
+                <path d="M2 2h12v12H2V2zm1 1v10h10V3H3z" opacity="0.8"/>
+              </svg>
+              <span>Show Grid</span>
+              <span v-if="showGrid" class="ml-auto text-primary">✓</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuItem @click="isLocked = !isLocked" class="cursor-pointer">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="mr-2">
+                <path v-if="isLocked" d="M8 1a4 4 0 00-4 4v2H3v8h10V7h-1V5a4 4 0 00-4-4zm0 2a2 2 0 012 2v2H6V5a2 2 0 012-2z"/>
+                <path v-else d="M11 5V4a3 3 0 00-6 0v1H4v9h8V5h-1zm-1 0H6V4a2 2 0 014 0v1z"/>
+              </svg>
+              <span>{{ isLocked ? 'Unlock Layout' : 'Lock Layout' }}</span>
+              <span v-if="isLocked" class="ml-auto text-amber-500">🔒</span>
+            </DropdownMenuItem>
+            
+            <!-- Dashboard Actions -->
+            <DropdownMenuSeparator />
+            <div class="px-2 py-1.5 text-sm font-semibold">Dashboard Actions</div>
+            <DropdownMenuSeparator />
+            
+            <DropdownMenuItem @click="handleShare" class="cursor-pointer">
+              <Share2 class="w-4 h-4 mr-2" />
+              <span>Share Dashboard</span>
+            </DropdownMenuItem>
+            
+            <!-- Privacy Toggle - Owner Only -->
+            <DropdownMenuItem 
+              v-if="currentDashboard?.access_level === 'owner'"
+              @click="showPrivacyDialog = true" 
+              class="cursor-pointer"
+            >
+              <Lock v-if="!currentDashboard.is_public" class="w-4 h-4 mr-2" />
+              <Globe v-else class="w-4 h-4 mr-2" />
+              <span>{{ currentDashboard.is_public ? 'Make Private' : 'Make Public' }}</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuItem @click="handleRename" class="cursor-pointer">
+              <Pencil class="w-4 h-4 mr-2" />
+              <span>Rename Dashboard</span>
+            </DropdownMenuItem>
+            
+            <DropdownMenuSeparator />
+            
+            <DropdownMenuItem @click="handleDeleteDashboard" class="cursor-pointer text-destructive focus:text-destructive">
+              <Trash2 class="w-4 h-4 mr-2" />
+              <span>Delete Dashboard</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
 
@@ -198,7 +211,7 @@
 
                   <div class="card-body relative overflow-hidden">
                     <ChartRenderer 
-                      v-if="getElement(item.i) && getElement(item.i)!.type !== 'stat' && getElement(item.i)!.config" 
+                      v-if="getElement(item.i) && getElement(item.i)!.type !== 'stat' && getElement(item.i)!.type !== 'text' && getElement(item.i)!.type !== 'file' && getElement(item.i)!.config" 
                       :type="getElement(item.i)!.type" 
                       :data="getElement(item.i)!.config.data" 
                       :options="{ ...getElement(item.i)!.config.options, maintainAspectRatio: false, responsive: true }"
@@ -213,6 +226,30 @@
                       :customization="getElement(item.i)!.customization"
                       class="w-full h-full"
                     />
+
+                    <!-- Text Element -->
+                    <div 
+                      v-else-if="getElement(item.i)?.type === 'text'" 
+                      class="p-4 h-full overflow-auto prose dark:prose-invert text-sm max-w-none"
+                    >
+                       <div v-html="renderMarkdown(getElement(item.i)!.config.content)"></div>
+                    </div>
+
+                    <!-- File Element -->
+                    <div 
+                      v-else-if="getElement(item.i)?.type === 'file'" 
+                      class="flex flex-col items-center justify-center h-full p-4"
+                    >
+                       <File class="w-12 h-12 text-primary mb-2" />
+                       <div class="text-sm font-medium text-center">{{ getElement(item.i)!.config.fileName }}</div>
+                       <div class="text-xs text-muted-foreground">{{ formatSize(getElement(item.i)!.config.fileSize) }}</div>
+                       <button 
+                         class="mt-4 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition" 
+                         @click="downloadFile(getElement(item.i)!)"
+                       >
+                         Download
+                       </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -369,8 +406,73 @@
       </DialogContent>
     </Dialog>
 
+    <!-- Privacy Toggle Dialog -->
+    <Dialog v-model:open="showPrivacyDialog">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {{ currentDashboard?.is_public ? 'Make Dashboard Private?' : 'Make Dashboard Public?' }}
+          </DialogTitle>
+          <DialogDescription>
+            <template v-if="currentDashboard?.is_public">
+              <p class="mb-3">
+                Making this dashboard private will:
+              </p>
+              <ul class="list-disc list-inside space-y-1 text-sm mb-3">
+                <li>Remove access for all collaborators</li>
+                <li>Disable the public sharing link</li>
+                <li>Make the dashboard only visible to you</li>
+              </ul>
+              <p class="text-amber-500 font-medium text-sm">
+                ⚠️ This action will immediately revoke access for all current users.
+              </p>
+            </template>
+            <template v-else>
+              <p>
+                Making this dashboard public will allow anyone with the link to view it.
+                You can still control who can edit it.
+              </p>
+            </template>
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex justify-end gap-2 pt-4">
+          <button 
+            @click="showPrivacyDialog = false"
+            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
+          >
+            Cancel
+          </button>
+          <button 
+            @click="confirmPrivacyChange"
+            :class="currentDashboard?.is_public ? 'bg-destructive hover:bg-destructive/90' : 'bg-primary hover:bg-primary/90'"
+            class="px-3 py-2 text-sm font-medium text-white rounded-md"
+          >
+            {{ currentDashboard?.is_public ? 'Make Private' : 'Make Public' }}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Add Element Dialog -->
+    <AddElementDialog
+      v-model:open="showAddElementDialog"
+      @select="handleAddElementSelect"
+    />
+
+    <!-- Add Text Dialog -->
+    <AddTextDialog
+      v-model:open="showTextDialog"
+      @save="handleAddTextElement"
+    />
+
+    <!-- Add File Dialog -->
+    <AddFileDialog
+      v-model:open="showFileDialog"
+      @save="handleAddFileElement"
+    />
+
     <!-- Element Editor Modal -->
-    <DashboardElementEditor
+    <ElementEditorWrapper
       v-model:open="showEditModal"
       :element="editingElementForModal"
       @save="handleSaveElement"
@@ -386,8 +488,12 @@ import { useDashboardStore } from '@/stores/dashboard'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
 import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import CodeEditor from '@/components/Chat/CodeEditor.vue'
-import DashboardElementEditor from '@/components/Dashboard/DashboardElementEditor.vue'
+import ElementEditorWrapper from '@/components/Dashboard/ElementEditorWrapper.vue'
+import AddElementDialog from '@/components/Dashboard/AddElementDialog.vue'
+import AddTextDialog from '@/components/Dashboard/AddTextDialog.vue'
+import AddFileDialog from '@/components/Dashboard/AddFileDialog.vue'
 import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
+import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import {
   ContextMenu,
@@ -412,7 +518,17 @@ import {
   SelectValue,
   SelectSeparator,
 } from '@/components/ui/select'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings } from 'lucide-vue-next'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, File, Lock, Globe } from 'lucide-vue-next'
+import MarkdownIt from 'markdown-it'
+
+const md = new MarkdownIt()
 
 defineOptions({ name: 'DashboardPage' })
 
@@ -420,6 +536,26 @@ const router = useRouter()
 const route = useRoute()
 const store = useDashboardStore()
 const { dashboards, currentDashboard, isLoading } = storeToRefs(store)
+
+const renderMarkdown = (content: string) => md.render(content || '')
+
+const formatSize = (bytes: number) => {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const downloadFile = (element: any) => {
+  if (!element.config?.fileId) {
+    toast.error('File not found')
+    return
+  }
+  toast.info(`Downloading ${element.config.fileName}...`)
+  const url = getFileDownloadUrl(element.config.fileId)
+  window.open(url, '_blank')
+}
 
 // Layout State
 const isCompact = ref(false)
@@ -435,6 +571,9 @@ watch(isShared, (shared) => {
 
 // Query Modal State
 const showQueryModal = ref(false)
+const showAddElementDialog = ref(false)
+const showTextDialog = ref(false)
+const showFileDialog = ref(false)
 const editingElement = ref<any>(null)
 const editingQuery = ref('')
 
@@ -446,6 +585,9 @@ const editingElementForModal = ref<any>(null)
 const showShareModal = ref(false)
 const shareUrl = ref('')
 const copied = ref(false)
+
+// Privacy Dialog State
+const showPrivacyDialog = ref(false)
 
 // Rename Modal State
 const showRenameModal = ref(false)
@@ -568,6 +710,31 @@ const confirmRename = async () => {
   showRenameModal.value = false
 }
 
+const confirmPrivacyChange = async () => {
+  if (!currentDashboard.value) return
+  
+  try {
+    const makingPrivate = currentDashboard.value.is_public
+    
+    // Update privacy via API
+    await updateDashboardPrivacy(currentDashboard.value.id, !currentDashboard.value.is_public)
+    
+    // Update local state
+    currentDashboard.value.is_public = !currentDashboard.value.is_public
+    
+    // Also remove share token if making private
+    if (makingPrivate) {
+      currentDashboard.value.share_token = null
+    }
+    
+    toast.success(makingPrivate ? 'Dashboard is now private' : 'Dashboard is now public')
+    showPrivacyDialog.value = false
+  } catch (e) {
+    console.error('Privacy change error:', e)
+    toast.error('Failed to update privacy settings')
+  }
+}
+
 const handleShare = async () => {
   if (!currentDashboard.value) return
   try {
@@ -628,6 +795,78 @@ const saveQueryChanges = async () => {
 const handleEditElement = (element: any) => {
   editingElementForModal.value = element
   showEditModal.value = true
+}
+
+const handleAddElementSelect = (type: 'visualization' | 'table' | 'text' | 'file') => {
+  if (type === 'visualization' || type === 'table') {
+    // Redirect to query builder with return context
+    // We pass dashboardId so the query builder knows where to add the result
+    router.push({ 
+      path: '/query', 
+      query: { 
+        mode: 'write',
+        dashboardId: currentDashboard.value?.id 
+      } 
+    })
+  } else if (type === 'text') {
+    showTextDialog.value = true
+  } else if (type === 'file') {
+    showFileDialog.value = true
+  }
+}
+
+const handleAddTextElement = async (data: { title: string, content: string }) => {
+  if (!currentDashboard.value) return
+  
+  const element = {
+    type: 'text',
+    title: data.title,
+    config: { content: data.content },
+    w: 6, h: 4 // default size
+  }
+
+  try {
+    await store.addElementToDashboard(currentDashboard.value.id, element)
+    toast.success('Text block added')
+  } catch (e) {
+    toast.error('Failed to add text block')
+  }
+}
+
+const handleAddFileElement = async (data: { file: File, title: string }) => {
+  if (!currentDashboard.value) return
+  
+  // Check 200MB limit
+  if (data.file.size > 200 * 1024 * 1024) {
+    toast.error('File exceeds 200MB limit')
+    return
+  }
+
+  try {
+    toast.info('Uploading file...')
+    
+    // Upload file to backend
+    const uploadResult = await uploadDashboardFile(currentDashboard.value.id, data.file)
+    
+    // Add element with file info
+    const element = {
+      type: 'file',
+      title: data.title || data.file.name,
+      config: {
+        fileId: uploadResult.fileId,
+        fileName: uploadResult.fileName,
+        fileSize: uploadResult.fileSize,
+        fileType: uploadResult.fileType
+      },
+      w: 4, h: 3
+    }
+    
+    await store.addElementToDashboard(currentDashboard.value.id, element)
+    toast.success('File uploaded successfully')
+  } catch (e) {
+    console.error('File upload error:', e)
+    toast.error('Failed to upload file')
+  }
 }
 
 const handleSaveElement = async (updatedElement: any) => {

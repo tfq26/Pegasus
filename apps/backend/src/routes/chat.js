@@ -270,23 +270,83 @@ chat.post("/chats/:id/messages", async (c) => {
         if (!updated || !updated[0]) return c.json({ error: "Chat not found" }, 404)
         const chatData = updated[0];
 
-        // Background Task: Auto-label chat
-        if (chatData.title === 'New Chat' && chatData.messages.length >= 2) {
-            (async () => {
+        // Background Task: Auto-label chat based on first user message
+        // Trigger when we have at least 2 messages (user + assistant)
+        if (chatData.title === 'New Chat' && chatData.messages && chatData.messages.length >= 2) {
+            console.log('[Chat] Auto-labeling chat with', chatData.messages.length, 'messages')
+
+            // Run in background without blocking the response
+            setImmediate(async () => {
                 try {
                     const newTitle = await aiClient.generateTitle(chatData.messages)
-                    if (newTitle) {
-                        await db.query(`UPDATE ${chatId} SET title = $title`, { title: newTitle })
+                    if (newTitle && newTitle.trim() && newTitle !== 'New Chat') {
+                        console.log('[Chat] Generated title:', newTitle)
+                        await db.query(`UPDATE ${chatId} SET title = $title`, { title: newTitle.trim() })
+                    } else {
+                        console.log('[Chat] Generated title was empty or invalid:', newTitle)
                     }
                 } catch (e) {
-                    console.error("[AI] Failed to auto-label chat:", e)
+                    console.error("[Chat] Failed to auto-label chat:", e)
                 }
-            })()
+            })
         }
 
         return c.json({ id: newMessage.id })
     } catch (e) {
         return c.json({ error: "Failed to send message" }, 500)
+    }
+})
+
+// Delete a single chat
+chat.delete("/chats/:id", async (c) => {
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let chatId = c.req.param("id")
+        if (!chatId.includes(':')) chatId = `chat:${chatId}`
+
+        console.log(`[Chat] Deleting chat: ${chatId} for user: ${userId}`)
+
+        // Delete only if owned by user
+        const result = await db.query(`
+            DELETE ${chatId} WHERE user = $user RETURN BEFORE;
+        `, { user: `user:${userId}` });
+
+        if (!result || !result[0] || result[0].length === 0) {
+            return c.json({ error: "Chat not found or unauthorized" }, 404)
+        }
+
+        console.log(`[Chat] Successfully deleted chat: ${chatId}`)
+        return c.json({ success: true })
+    } catch (e) {
+        console.error("[Chat] Delete error:", e)
+        return c.json({ error: "Failed to delete chat" }, 500)
+    }
+})
+
+// Delete all chats for a user
+chat.delete("/chats", async (c) => {
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+
+        console.log(`[Chat] Deleting all chats for user: ${userId}`)
+
+        const result = await db.query(`
+            DELETE chat WHERE user = $user;
+        `, { user: `user:${userId}` });
+
+        console.log(`[Chat] Deleted all chats for user: ${userId}`)
+        return c.json({ success: true, deleted: result[0]?.length || 0 })
+    } catch (e) {
+        console.error("[Chat] Delete all error:", e)
+        return c.json({ error: "Failed to delete chats" }, 500)
     }
 })
 

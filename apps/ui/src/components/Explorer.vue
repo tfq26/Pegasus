@@ -86,6 +86,26 @@ const formatTableName = (tableName: string, connectionId?: string): string => {
   return tableName
 }
 
+// Helper to safely format dates
+const formatDate = (timestamp: any) => {
+  if (!timestamp) return 'Never'
+  
+  try {
+    // Handle Unix timestamp (number)
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp * 1000).toLocaleDateString()
+    }
+    // Handle ISO string or other date formats
+    if (typeof timestamp === 'string') {
+      return new Date(timestamp).toLocaleDateString()
+    }
+    // Fallback
+    return new Date(timestamp).toLocaleDateString()
+  } catch (e) {
+    return 'Invalid date'
+  }
+}
+
 const isAddConnectionModalOpen = ref(false)
 
 const handleConnectionSelect = (value: string) => {
@@ -94,6 +114,73 @@ const handleConnectionSelect = (value: string) => {
     // Don't change selection yet
   } else {
     emit('update:selectedConnectionId', value)
+  }
+}
+
+// Chat deletion state
+const deleteChatDialogOpen = ref(false)
+const chatToDelete = ref<any>(null)
+const clearAllChatsDialogOpen = ref(false)
+
+const handleDeleteChat = (chat: any) => {
+  chatToDelete.value = chat
+  deleteChatDialogOpen.value = true
+}
+
+const confirmDeleteChat = async () => {
+  if (!chatToDelete.value) return
+  
+  try {
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/chats/${chatToDelete.value.id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to delete chat')
+    }
+    
+    toast.success(`Deleted chat "${chatToDelete.value.title}"`)
+    
+    // Emit event to parent to refresh chats
+    emit('select-chat', '') // Deselect if this was selected
+    window.location.reload() // Refresh to update chat list
+    
+    deleteChatDialogOpen.value = false
+    chatToDelete.value = null
+  } catch (error) {
+    toast.error('Failed to delete chat', {
+      description: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
+const handleClearAllChats = () => {
+  clearAllChatsDialogOpen.value = true
+}
+
+const confirmClearAllChats = async () => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/chats`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Failed to clear chats')
+    }
+    
+    const result = await response.json()
+    toast.success(`Cleared ${result.deleted || 'all'} chats`)
+    
+    clearAllChatsDialogOpen.value = false
+    window.location.reload() // Refresh to update chat list
+  } catch (error) {
+    toast.error('Failed to clear chats', {
+      description: error instanceof Error ? error.message : String(error)
+    })
   }
 }
 
@@ -1018,21 +1105,43 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
+
       <template v-else-if="activeTab === 'chats'">
         <div class="px-2 space-y-3">
-          <button @click="emit('create-chat')" class="w-full py-2 px-4 bg-primary hover:bg-primary/90 rounded-lg text-primary-foreground text-sm font-medium transition-colors shadow-lg shadow-primary/20">
-            + New Chat
-          </button>
-          <div v-if="props.chats && props.chats.length > 0" class="space-y-2">
-            <div
-              v-for="chat in props.chats"
-              :key="chat.id"
-              @click="emit('select-chat', chat.id)"
-              :class="['p-3 rounded-lg cursor-pointer transition-colors text-sm border', props.selectedChatId === chat.id ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border hover:bg-muted text-muted-foreground']"
+          <div class="flex gap-2">
+            <button @click="emit('create-chat')" class="flex-1 py-2 px-4 bg-primary hover:bg-primary/90 rounded-lg text-primary-foreground text-sm font-medium transition-colors shadow-lg shadow-primary/20">
+              + New Chat
+            </button>
+            <button 
+              v-if="props.chats && props.chats.length > 0"
+              @click="handleClearAllChats" 
+              class="py-2 px-3 bg-destructive/10 hover:bg-destructive/20 rounded-lg text-destructive text-sm font-medium transition-colors border border-destructive/20"
+              title="Clear all chats"
             >
-              <div class="font-medium truncate">{{ chat.title }}</div>
-              <div class="text-xs text-muted-foreground/70 mt-1">{{ new Date(chat.updated_at * 1000).toLocaleDateString() }}</div>
-            </div>
+              Clear All
+            </button>
+          </div>
+          <div v-if="props.chats && props.chats.length > 0" class="space-y-2">
+            <ContextMenu v-for="chat in props.chats" :key="chat.id">
+              <ContextMenuTrigger class="w-full">
+                <div
+                  @click="emit('select-chat', chat.id)"
+                  :class="['p-3 rounded-lg cursor-pointer transition-colors text-sm border', props.selectedChatId === chat.id ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border hover:bg-muted text-muted-foreground']"
+                >
+                  <div class="font-medium truncate">{{ chat.title }}</div>
+                  <div class="text-xs text-muted-foreground/70 mt-1">{{ formatDate(chat.updated_at) }}</div>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent class="w-48 bg-popover border-border">
+                <ContextMenuItem 
+                  @select="handleDeleteChat(chat)"
+                  class="text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <Trash class="w-4 h-4 mr-2" />
+                  Delete Chat
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           </div>
           <div v-else class="text-center text-muted-foreground text-sm py-8">
             No chats yet. Start a new conversation!
@@ -1287,7 +1396,60 @@ onBeforeUnmount(() => {
             @click="confirmDeleteConnection"
             class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
           >
-            Delete Connection
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    
+    <!-- Delete Chat Dialog -->
+    <Dialog v-model:open="deleteChatDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Chat</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete "{{ chatToDelete?.title }}"? 
+            This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2">
+          <button
+            @click="deleteChatDialogOpen = false"
+            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmDeleteChat"
+            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+          >
+            Delete Chat
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    
+    <!-- Clear All Chats Dialog -->
+    <Dialog v-model:open="clearAllChatsDialogOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Clear All Chats</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete ALL chats? 
+            This will permanently delete all your chat history and cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2">
+          <button
+            @click="clearAllChatsDialogOpen = false"
+            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            @click="confirmClearAllChats"
+            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+          >
+            Clear All Chats
           </button>
         </DialogFooter>
       </DialogContent>

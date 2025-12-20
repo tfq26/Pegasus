@@ -62,4 +62,5 @@ export type SettingsModel = {
   csvDelimiter?: ',' | ';' | '\t'
   confirmDestructive?: boolean
   notifications?: boolean
+  chatAutoDeleteDays?: number
 }

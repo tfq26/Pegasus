@@ -55,6 +55,7 @@ const initSchema = async () => {
             DEFINE FIELD title ON TABLE dashboard TYPE string;
             DEFINE FIELD owner ON TABLE dashboard TYPE record<user>;
             DEFINE FIELD is_public ON TABLE dashboard TYPE bool DEFAULT false;
+            DEFINE FIELD cover_image ON TABLE dashboard TYPE string;
             DEFINE FIELD created_at ON TABLE dashboard TYPE datetime DEFAULT time::now();
             DEFINE FIELD updated_at ON TABLE dashboard TYPE datetime DEFAULT time::now();
         `);

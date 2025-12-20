@@ -8,7 +8,7 @@
           Read Only Preview
         </span>
         <span v-if="dashboard" class="text-xs text-muted-foreground">
-          Last updated: {{ new Date(dashboard.updated_at * 1000).toLocaleDateString() }}
+          Last updated: {{ formatDate(dashboard.updated_at) }}
         </span>
       </div>
       
@@ -126,6 +126,26 @@ const elementsMap = computed(() => {
 })
 
 const getElement = (id: string) => elementsMap.value.get(id)
+
+// Helper to safely format dates
+const formatDate = (timestamp: any) => {
+  if (!timestamp) return 'Never'
+  
+  try {
+    // Handle Unix timestamp (number)
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp * 1000).toLocaleDateString()
+    }
+    // Handle ISO string or other date formats
+    if (typeof timestamp === 'string') {
+      return new Date(timestamp).toLocaleDateString()
+    }
+    // Fallback
+    return new Date(timestamp).toLocaleDateString()
+  } catch (e) {
+    return 'Invalid date'
+  }
+}
 
 onMounted(async () => {
   const token = route.params.token as string

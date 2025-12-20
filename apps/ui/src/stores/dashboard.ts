@@ -19,6 +19,7 @@ export interface Dashboard {
     is_public: boolean
     share_token: string | null
     updated_at: number
+    access_level?: 'owner' | 'editor' | 'viewer' | null
 }
 
 export const useDashboardStore = defineStore('dashboard', () => {
@@ -76,12 +77,26 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const saveCurrentDashboard = async () => {
         if (!currentDashboard.value) return
         isLoading.value = true
+
+        console.log('[DashboardStore] saveCurrentDashboard called')
+        console.log('[DashboardStore] currentDashboard:', currentDashboard.value)
+        console.log('[DashboardStore] cover_image on currentDashboard:', (currentDashboard.value as any).cover_image)
+
+        const payload = {
+            title: currentDashboard.value.title,
+            data: {
+                ...currentDashboard.value.data,
+                cover_image: (currentDashboard.value as any).cover_image
+            }
+        }
+
+        console.log('[DashboardStore] Update payload:', payload)
+
         try {
-            await updateDashboard(currentDashboard.value.id, {
-                title: currentDashboard.value.title,
-                data: currentDashboard.value.data
-            })
+            await updateDashboard(currentDashboard.value.id, payload)
+            console.log('[DashboardStore] Dashboard updated successfully')
         } catch (e: any) {
+            console.error('[DashboardStore] Update failed:', e)
             error.value = e.message
             throw e
         } finally {
@@ -151,8 +166,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
             const newLayoutItem = {
                 x: 0,
                 y: y,
-                w: 6,
-                h: 8,
+                w: element.w || 6,
+                h: element.h || 8,
                 i: newId
             }
 
@@ -187,7 +202,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
             // If it's the current dashboard, update that too
             if (currentDashboard.value?.id === dashboardId) {
-                currentDashboard.value.data = updatedData
+                currentDashboard.value = {
+                    ...currentDashboard.value,
+                    data: updatedData
+                }
             }
 
         } catch (e: any) {

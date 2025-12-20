@@ -307,7 +307,7 @@ export async function getAIModels() {
     throw new Error(body.error ?? 'Failed to list models')
   }
 
-  return body // Now returns array directly
+  return body.models || []
 }
 
 export async function fetchSettings() {
@@ -485,6 +485,17 @@ export async function updateDashboard(id: string, updates: { title?: string, dat
     body: JSON.stringify(updates)
   })
   if (!response.ok) throw new Error('Failed to update dashboard')
+  return await response.json()
+}
+
+export async function updateDashboardPrivacy(id: string, isPublic: boolean) {
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}/privacy`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ is_public: isPublic })
+  })
+  if (!response.ok) throw new Error('Failed to update privacy settings')
   return await response.json()
 }
 
@@ -667,5 +678,22 @@ export async function getUsageStats() {
   })
   if (!response.ok) throw new Error('Failed to fetch usage stats')
   return await response.json()
+}
+
+export async function uploadDashboardFile(dashboardId: string, file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/files`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  })
+  if (!response.ok) throw new Error('Failed to upload file')
+  return await response.json()
+}
+
+export function getFileDownloadUrl(fileId: string) {
+  return `${QUERY_API_URL}/files/${fileId}`
 }
 

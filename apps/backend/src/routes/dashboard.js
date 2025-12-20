@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { getCookie } from "hono/cookie"
 import { verify } from "hono/jwt"
 import { WorkOS } from "@workos-inc/node"
+import crypto from "crypto"
 import { db } from "../../db/surreal.js"
 
 const dashboard = new Hono()
@@ -203,6 +204,7 @@ dashboard.get("/dashboards", async (c) => {
             title, 
             is_public, 
             owner,
+            cover_image,
             created_at,
             updated_at
         FROM dashboard 
@@ -239,12 +241,14 @@ dashboard.post("/dashboards", async (c) => {
         CREATE dashboard CONTENT {
             title: $title,
             owner: type::thing('user', $owner_id),
+            cover_image: $cover_image,
             created_at: time::now(),
             updated_at: time::now()
         };
     `, {
             title,
-            owner_id: userId
+            owner_id: userId,
+            cover_image: data?.cover_image || ''
         });
 
         console.log('[Dashboard] DB Create Result:', JSON.stringify(created));
@@ -328,8 +332,10 @@ dashboard.get("/dashboards/:id", async (c) => {
 
         // 3. Fetch Elements
         const [elements] = await db.query(`
-        SELECT * FROM dashboard_element WHERE dashboard = $id;
-    `, { id });
+        SELECT * FROM dashboard_element WHERE dashboard = ${id};
+    `);
+        console.log(`[Dashboard] Fetched ${elements.length} elements for dashboard:`, id)
+        console.log('[Dashboard] Elements:', elements)
 
         // 4. Construct Response
         const layout = elements.map(el => {
@@ -370,67 +376,123 @@ dashboard.put("/dashboards/:id", async (c) => {
 
         const { title, data } = await c.req.json()
 
-        // 1. Update Title
-        if (title) {
+        console.log('[Dashboard] Update request for:', id)
+        console.log('[Dashboard] Title:', title)
+        console.log('[Dashboard] Data:', data)
+        console.log('[Dashboard] cover_image in data:', data?.cover_image)
+
+        // 1. Update Title and Cover Image
+        if (title || data?.cover_image !== undefined) {
             try {
-                await db.query(`
-            UPDATE ${id} SET title = $title, updated_at = time::now()
-            WHERE owner = $user 
-               OR (SELECT role FROM dashboard_permission WHERE user=$user AND dashboard=$parent.id)[0] IN ['editor', 'owner'];
-        `, { title, user: `user:${userId}` });
-            } catch (e) { }
+                const updates = []
+                const params = { user: `user:${userId}` }
+
+                if (title) {
+                    updates.push('title = $title')
+                    params.title = title
+                    console.log('[Dashboard] Will update title to:', title)
+                }
+
+                if (data?.cover_image !== undefined) {
+                    updates.push('cover_image = $cover_image')
+                    params.cover_image = data.cover_image
+                    console.log('[Dashboard] Will update cover_image to:', data.cover_image)
+                }
+
+                updates.push('updated_at = time::now()')
+
+                const query = `
+            UPDATE ${id} SET ${updates.join(', ')}
+            WHERE owner = type::thing('user', $userId)
+               OR (SELECT role FROM dashboard_permission WHERE user=type::thing('user', $userId) AND dashboard=$parent.id)[0] IN ['editor', 'owner'];
+        `
+                console.log('[Dashboard] Update query:', query)
+                console.log('[Dashboard] Update params:', params)
+                console.log('[Dashboard] User ID:', userId)
+
+                const result = await db.query(query, { ...params, userId });
+                console.log('[Dashboard] Update result:', result)
+            } catch (e) {
+                console.error('[Dashboard] Update error:', e)
+            }
         }
 
         // 2. Update Elements (Granular Sync simulated)
         if (data && data.elements) {
             const [existing] = await db.query(`SELECT id FROM dashboard_element WHERE dashboard = ${id}`);
-            const existingIds = new Set(existing.map(e => e.id.toString().split(':')[1]));
+            console.log('[Dashboard] Existing elements from DB:', existing)
+
+            // Extract just the UUID part from RecordId objects or strings
+            const existingIds = new Set(existing.map(e => {
+                const idStr = typeof e.id === 'string' ? e.id : e.id.toString()
+                let uuid = idStr.includes(':') ? idStr.split(':')[1] : idStr
+                // Remove angle brackets if present (SurrealDB wraps UUIDs with hyphens)
+                uuid = uuid.replace(/[⟨⟩]/g, '')
+                return uuid
+            }));
+
+            console.log('[Dashboard] Existing element IDs:', Array.from(existingIds))
             const incomingIds = new Set();
 
+            console.log(`[Dashboard] Processing ${data.elements.length} elements...`)
             for (const el of data.elements) {
                 const elId = el.id;
+                console.log(`[Dashboard] Element ${elId} (${el.type}) - processing...`)
                 incomingIds.add(elId);
                 const ui_layout = data.layout?.find(l => l.i === elId || l.i === `dashboard_element:${elId}`);
 
                 if (existingIds.has(elId)) {
+                    console.log(`[Dashboard] Element ${elId} exists. Updating...`)
                     // UPDATE
-                    await db.query(`
-                UPDATE dashboard_element:${elId} MERGE {
+                    try {
+                        await db.query(`
+                UPDATE type::thing('dashboard_element', $elId) MERGE {
                     title: $title,
                     config: $config,
                     query: $query,
                     ui_layout: $layout
-                } WHERE created_by = $user 
-                   OR dashboard.owner = $user
-                   OR (dashboard IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user=$user AND role='owner'));
+                } WHERE created_by = type::thing('user', $userId) 
+                   OR dashboard.owner = type::thing('user', $userId)
+                   OR (dashboard IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user=type::thing('user', $userId) AND role='owner'));
             `, {
-                        title: el.title,
-                        config: el.config,
-                        query: el.query,
-                        layout: ui_layout || {},
-                        user: `user:${userId}`
-                    });
+                            elId: elId,
+                            userId: userId,
+                            title: el.title,
+                            config: el.config,
+                            query: el.query || null,
+                            layout: ui_layout || {}
+                        });
+                    } catch (err) {
+                        console.error(`[Dashboard] Update failed for ${elId}:`, err)
+                    }
                 } else {
+                    console.log(`[Dashboard] Element ${elId} is NEW. Creating...`)
                     // CREATE
-                    await db.query(`
-                CREATE dashboard_element:${elId} CONTENT {
-                    dashboard: ${id},
-                    type: $type,
-                    title: $title,
-                    config: $config,
-                    query: $query,
-                    created_by: $user,
-                    ui_layout: $layout,
-                    created_at: time::now()
-                };
-            `, {
-                        type: el.type,
-                        title: el.title,
-                        config: el.config,
-                        query: el.query,
-                        layout: ui_layout || {},
-                        user: `user:${userId}`
-                    });
+                    try {
+                        const createResult = await db.query(`
+                    CREATE type::thing('dashboard_element', $elId) CONTENT {
+                        dashboard: ${id},
+                        type: $type,
+                        title: $title,
+                        config: $config,
+                        query: $query,
+                        created_by: type::thing('user', $userId),
+                        ui_layout: $layout,
+                        created_at: time::now()
+                    };
+                `, {
+                            elId: elId,
+                            userId: userId,
+                            type: el.type,
+                            title: el.title,
+                            config: el.config,
+                            query: el.query || null,
+                            layout: ui_layout || {}
+                        });
+                        console.log(`[Dashboard] Created element ${elId}:`, JSON.stringify(createResult, null, 2))
+                    } catch (err) {
+                        console.error(`[Dashboard] Create failed for ${elId}:`, err)
+                    }
                 }
             }
 
@@ -438,11 +500,11 @@ dashboard.put("/dashboards/:id", async (c) => {
             for (const oldId of existingIds) {
                 if (!incomingIds.has(oldId)) {
                     await db.query(`
-                DELETE dashboard_element:${oldId} 
-                WHERE created_by = $user
-                   OR dashboard.owner = $user
-                   OR (dashboard IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user=$user AND role='owner'));
-            `, { user: `user:${userId}` });
+                DELETE type::thing('dashboard_element', $oldId) 
+                WHERE created_by = type::thing('user', $userId)
+                   OR dashboard.owner = type::thing('user', $userId)
+                   OR (dashboard IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user=type::thing('user', $userId) AND role='owner'));
+            `, { oldId: oldId, userId: userId });
                 }
             }
         }
@@ -450,6 +512,59 @@ dashboard.put("/dashboards/:id", async (c) => {
         return c.json({ ok: true })
     } catch (e) {
         return c.json({ error: "Failed to update dashboard" }, 500)
+    }
+})
+
+// Privacy update endpoint
+dashboard.put("/dashboards/:id/privacy", async (c) => {
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let id = c.req.param("id")
+        if (!id.includes(':')) id = `dashboard:${id}`
+
+        const { is_public } = await c.req.json()
+
+        console.log(`[Dashboard] Updating privacy for ${id} to is_public=${is_public}`)
+
+        // Only owner can change privacy
+        const [checkResult] = await db.query(`
+            SELECT * FROM ${id} WHERE owner = type::thing('user', $userId);
+        `, { userId })
+
+        if (!checkResult || checkResult.length === 0) {
+            return c.json({ error: "Only the owner can change privacy settings" }, 403)
+        }
+
+        // If making private, remove all permissions and share token
+        if (!is_public) {
+            console.log(`[Dashboard] Making private - removing all permissions for ${id}`)
+
+            // Delete all permissions for this dashboard
+            await db.query(`
+                DELETE dashboard_permission WHERE dashboard = ${id};
+            `)
+
+            // Update dashboard: set private and remove share token
+            await db.query(`
+                UPDATE ${id} SET is_public = false, share_token = NONE, updated_at = time::now()
+                WHERE owner = type::thing('user', $userId);
+            `, { userId })
+        } else {
+            // Making public
+            await db.query(`
+                UPDATE ${id} SET is_public = true, updated_at = time::now()
+                WHERE owner = type::thing('user', $userId);
+            `, { userId })
+        }
+
+        console.log(`[Dashboard] Privacy updated successfully for ${id}`)
+        return c.json({ ok: true, is_public })
+    } catch (e) {
+        console.error('[Dashboard] Privacy update error:', e)
+        return c.json({ error: "Failed to update privacy settings" }, 500)
     }
 })
 
@@ -481,29 +596,51 @@ dashboard.delete("/dashboards/:id", async (c) => {
 })
 
 dashboard.post("/dashboards/:id/share", async (c) => {
+    console.log('[Dashboard] ===== SHARE ENDPOINT HIT =====')
     const token = getCookie(c, "session")
+    console.log('[Dashboard] Session token present:', !!token)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
+        console.log('[Dashboard] Raw ID from params:', id)
         if (!id.includes(':')) id = `dashboard:${id}`
 
-        const shareToken = crypto.randomUUID()
+        console.log('[Dashboard] Share request for:', id, 'by user:', userId)
 
-        // Using 'dashboard' table instead of 'dashboards_v2' for consistency
-        // Note: SQL args must use Surreal param syntax if using .query, but .execute uses $param
-        await db.query(`
-      UPDATE ${id} SET share_token = COALESCE(share_token, $token), is_public = true 
-      WHERE owner = $user;
-    `, { token: shareToken, user: `user:${userId}` });
+        // First, check if share_token already exists
+        const [existing] = await db.query(`SELECT share_token FROM ${id} WHERE owner = type::thing('user', $userId)`, { userId });
 
-        const [rs] = await db.query(`SELECT share_token FROM ${id} WHERE owner = $user`, { user: `user:${userId}` });
+        console.log('[Dashboard] Existing dashboard:', JSON.stringify(existing, null, 2))
 
-        if (!rs || !rs[0]) return c.json({ error: "Failed to share or unauthorized" }, 403)
+        let shareToken;
+        if (existing && existing[0] && existing[0].share_token) {
+            // Use existing token
+            shareToken = existing[0].share_token;
+            console.log('[Dashboard] Using existing share token:', shareToken)
+        } else {
+            // Generate new token
+            shareToken = crypto.randomUUID();
+            console.log('[Dashboard] Generated new share token:', shareToken)
+        }
 
-        return c.json({ token: rs[0].share_token })
+        // Update dashboard to set share_token and make it public
+        console.log('[Dashboard] About to execute UPDATE query...')
+        const updateResult = await db.query(`
+      UPDATE ${id} SET share_token = $shareToken, is_public = true 
+      WHERE owner = type::thing('user', $userId);
+    `, { shareToken, userId });
+
+        console.log('[Dashboard] Share update result:', JSON.stringify(updateResult, null, 2))
+
+        console.log('[Dashboard] Share successful, token:', shareToken)
+        return c.json({ token: shareToken })
     } catch (e) {
+        console.error('[Dashboard] ===== SHARE ERROR =====')
+        console.error('[Dashboard] Error type:', e.constructor.name)
+        console.error('[Dashboard] Error message:', e.message)
+        console.error('[Dashboard] Error stack:', e.stack)
         return c.json({ error: "Failed to share dashboard" }, 500)
     }
 })
@@ -645,6 +782,102 @@ dashboard.get("/shared/dashboard/:token", async (c) => {
         return c.json({ dashboard: responseDashboard })
     } catch (e) {
         return c.json({ error: "Failed to fetch shared dashboard" }, 500)
+    }
+})
+
+// File upload endpoint
+dashboard.post("/dashboards/:dashboardId/files", async (c) => {
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const dashboardId = c.req.param("dashboardId")
+        const fullDashboardId = dashboardId.includes(':') ? dashboardId : `dashboard:${dashboardId}`
+
+        // Parse multipart form data
+        const formData = await c.req.formData()
+        const file = formData.get('file')
+
+        if (!file || !(file instanceof File)) {
+            return c.json({ error: "No file provided" }, 400)
+        }
+
+        // Check file size (200MB limit)
+        if (file.size > 200 * 1024 * 1024) {
+            return c.json({ error: "File exceeds 200MB limit" }, 400)
+        }
+
+        // Convert file to base64 for storage (simple approach)
+        const arrayBuffer = await file.arrayBuffer()
+        const base64 = Buffer.from(arrayBuffer).toString('base64')
+
+        // Create file record
+        const fileId = crypto.randomUUID()
+
+        const [result] = await db.query(`
+            CREATE type::thing('dashboard_file', $fileId) CONTENT {
+                dashboard: ${fullDashboardId},
+                file_name: $fileName,
+                file_size: $fileSize,
+                file_type: $fileType,
+                file_data: $fileData,
+                uploaded_by: type::thing('user', $userId),
+                created_at: time::now()
+            };
+        `, {
+            fileId,
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            fileData: base64,
+            userId
+        })
+
+        console.log(`[Dashboard] File uploaded: ${fileId} (${file.name}, ${file.size} bytes)`)
+
+        return c.json({
+            fileId,
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type
+        })
+    } catch (e) {
+        console.error('[Dashboard] File upload error:', e)
+        return c.json({ error: "Failed to upload file" }, 500)
+    }
+})
+
+// File download endpoint
+dashboard.get("/files/:fileId", async (c) => {
+    try {
+        const fileId = c.req.param("fileId")
+
+        const [result] = await db.query(`
+            SELECT * FROM type::thing('dashboard_file', $fileId);
+        `, { fileId })
+
+        if (!result || result.length === 0) {
+            return c.json({ error: "File not found" }, 404)
+        }
+
+        const fileRecord = result[0]
+
+        // Convert base64 back to buffer
+        const buffer = Buffer.from(fileRecord.file_data, 'base64')
+
+        // Return file with proper headers
+        return new Response(buffer, {
+            headers: {
+                'Content-Type': fileRecord.file_type || 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${fileRecord.file_name}"`,
+                'Content-Length': buffer.length.toString()
+            }
+        })
+    } catch (e) {
+        console.error('[Dashboard] File download error:', e)
+        return c.json({ error: "Failed to download file" }, 500)
     }
 })
 

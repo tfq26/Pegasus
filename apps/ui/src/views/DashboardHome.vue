@@ -83,14 +83,21 @@
             >
               <!-- Card Preview -->
               <div class="aspect-[3/2] bg-muted/30 border border-border rounded-lg overflow-hidden relative transition-all hover:border-primary hover:shadow-md">
-                <!-- Mock Preview Content -->
-                <div class="absolute inset-4 opacity-50 grayscale group-hover:grayscale-0 transition-all duration-500">
-                  <div class="w-full h-full grid grid-cols-2 gap-2">
-                    <div class="bg-background rounded shadow-sm"></div>
-                    <div class="bg-background rounded shadow-sm col-span-1 row-span-2"></div>
-                    <div class="bg-background rounded shadow-sm"></div>
-                  </div>
+                <!-- Cover Image -->
+                <div 
+                  v-if="dashboard.cover_image"
+                  class="absolute inset-0 transition-all duration-500"
+                  :style="getCoverImageStyle(dashboard.cover_image)"
+                >
+                  <!-- Overlay gradient for better text readability -->
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
                 </div>
+                
+                <!-- Fallback gradient if no cover image -->
+                <div 
+                  v-else
+                  class="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5"
+                ></div>
 
                 <!-- Role Badges -->
                 <div class="absolute top-2 left-2 flex gap-1 z-10">
@@ -140,7 +147,7 @@
                 <h3 class="font-medium truncate text-sm group-hover:text-primary transition-colors">{{ dashboard.title }}</h3>
                 <div class="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                   <LayoutDashboard class="w-3 h-3" />
-                  <span>Opened {{ new Date(dashboard.updated_at * 1000).toLocaleDateString() }}</span>
+                  <span>Opened {{ formatDate(dashboard.updated_at) }}</span>
                 </div>
               </div>
             </div>
@@ -236,6 +243,68 @@
               placeholder="Enter dashboard name"
               class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
+          </div>
+          
+          <!-- Cover Image Picker -->
+          <div class="space-y-2">
+            <label class="text-sm font-medium">Cover Image</label>
+            <div class="space-y-3">
+              <!-- Stock Gradients -->
+              <div class="grid grid-cols-6 gap-2">
+                <button
+                  v-for="stock in stockImages.slice(0, 12)"
+                  :key="stock.id"
+                  type="button"
+                  @click="renameCoverImage = stock.id"
+                  :class="[
+                    'aspect-square rounded-md border-2 transition-all',
+                    renameCoverImage === stock.id 
+                      ? 'border-primary ring-2 ring-primary/20 scale-105' 
+                      : 'border-transparent hover:border-primary/50'
+                  ]"
+                  :style="{ background: stock.gradient }"
+                  :title="stock.name"
+                ></button>
+              </div>
+              
+              <!-- Custom Upload -->
+              <input
+                type="file"
+                ref="renameCoverImageInput"
+                @change="handleRenameCoverImageUpload"
+                accept="image/*"
+                class="hidden"
+              />
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  @click="renameCoverImageInput?.click()"
+                  class="flex-1 px-3 py-2 text-sm border border-dashed border-border hover:border-primary rounded-md transition-colors flex items-center justify-center gap-2"
+                >
+                  <Upload class="w-4 h-4" />
+                  Upload Custom Image
+                </button>
+                <button
+                  v-if="renameCoverImage"
+                  type="button"
+                  @click="renameCoverImage = ''"
+                  class="px-3 py-2 text-sm border border-border hover:border-destructive hover:text-destructive rounded-md transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              
+              <!-- Preview -->
+              <div 
+                v-if="renameCoverImage"
+                class="aspect-[3/2] rounded-md border border-border overflow-hidden"
+                :style="getCoverImageStyle(renameCoverImage)"
+              >
+                <div class="h-full flex items-end p-4 bg-gradient-to-t from-black/60 to-transparent">
+                  <p class="text-white font-medium">{{ renameTitle || 'Dashboard Preview' }}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="flex justify-end gap-2">
@@ -419,7 +488,8 @@ import {
   Download,
   Lock,
   Globe,
-  X
+  X,
+  Upload,
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -436,6 +506,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { toast } from 'vue-sonner'
+import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 
 const router = useRouter()
 const store = useDashboardStore()
@@ -443,6 +514,44 @@ const { dashboards, isLoading } = storeToRefs(store)
 
 const searchQuery = ref('')
 const sortBy = ref('updated')
+
+// Helper to get cover image style (gradient or URL)
+const getCoverImageStyle = (coverImage: string) => {
+  if (!coverImage) return {}
+  
+  // Check if it's a stock gradient ID
+  if (coverImage.startsWith('gradient-')) {
+    const gradient = getStockImageGradient(coverImage)
+    return { background: gradient }
+  }
+  
+  // Otherwise treat as custom image URL
+  return {
+    backgroundImage: `url(${coverImage})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center'
+  }
+}
+
+// Helper to safely format dates
+const formatDate = (timestamp: any) => {
+  if (!timestamp) return 'Never'
+  
+  try {
+    // Handle Unix timestamp (number)
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp * 1000).toLocaleDateString()
+    }
+    // Handle ISO string or other date formats
+    if (typeof timestamp === 'string') {
+      return new Date(timestamp).toLocaleDateString()
+    }
+    // Fallback
+    return new Date(timestamp).toLocaleDateString()
+  } catch (e) {
+    return 'Invalid date'
+  }
+}
 
 // Import State
 const showImportModal = ref(false)
@@ -458,6 +567,33 @@ const copied = ref(false)
 const showRenameModal = ref(false)
 const renameTitle = ref('')
 const dashboardToRename = ref<any>(null)
+const renameCoverImage = ref('')
+const renameCoverImageInput = ref<HTMLInputElement | null>(null)
+
+const handleRenameCoverImageUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData
+    })
+    
+    if (!response.ok) throw new Error('Upload failed')
+    
+    const data = await response.json()
+    renameCoverImage.value = data.url
+    toast.success('Image uploaded successfully')
+  } catch (error) {
+    toast.error('Failed to upload image')
+  }
+}
 
 // Delete Modal State
 const showDeleteModal = ref(false)
@@ -551,20 +687,44 @@ const openDashboard = (id: string) => {
 const handleRename = (dashboard: any) => {
   dashboardToRename.value = dashboard
   renameTitle.value = dashboard.title
+  renameCoverImage.value = dashboard.cover_image || ''
   showRenameModal.value = true
 }
 
 const confirmRename = async () => {
   if (!renameTitle.value.trim() || !dashboardToRename.value) return
   
+  console.log('[DashboardHome] confirmRename called')
+  console.log('[DashboardHome] Dashboard to rename:', dashboardToRename.value)
+  console.log('[DashboardHome] New title:', renameTitle.value)
+  console.log('[DashboardHome] Current cover_image on dashboard:', dashboardToRename.value.cover_image)
+  console.log('[DashboardHome] Selected cover_image:', renameCoverImage.value)
+  
   try {
     await store.selectDashboard(dashboardToRename.value.id)
+    console.log('[DashboardHome] Dashboard selected, currentDashboard:', store.currentDashboard)
+    
     store.currentDashboard!.title = renameTitle.value.trim()
+    
+    // Update cover image if changed
+    if (renameCoverImage.value !== dashboardToRename.value.cover_image) {
+      console.log('[DashboardHome] Cover image changed, updating from', dashboardToRename.value.cover_image, 'to', renameCoverImage.value)
+      ;(store.currentDashboard as any).cover_image = renameCoverImage.value
+      console.log('[DashboardHome] After setting, currentDashboard.cover_image:', (store.currentDashboard as any).cover_image)
+    } else {
+      console.log('[DashboardHome] Cover image unchanged')
+    }
+    
+    console.log('[DashboardHome] About to save dashboard:', store.currentDashboard)
     await store.saveCurrentDashboard()
-    toast.success('Dashboard renamed successfully')
+    console.log('[DashboardHome] Dashboard saved successfully')
+    
+    toast.success('Dashboard updated successfully')
     showRenameModal.value = false
+    renameCoverImage.value = ''
   } catch (e) {
-    toast.error('Failed to rename dashboard')
+    console.error('[DashboardHome] Failed to update dashboard:', e)
+    toast.error('Failed to update dashboard')
   }
 }
 

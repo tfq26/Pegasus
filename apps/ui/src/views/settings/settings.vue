@@ -156,6 +156,7 @@ const settings = ref<SettingsModel>({
   slackConnected: false,
   azureConnected: true,
   enabledModels: [],
+  chatAutoDeleteDays: 30,
 })
 
 const savedConnections = ref<ConnectionEntry[]>([])
