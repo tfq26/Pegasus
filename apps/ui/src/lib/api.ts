@@ -10,6 +10,21 @@ const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
 
 export const QUERY_API_URL = derivedApiUrl
 
+// Helper to get auth headers with token from localStorage
+function getAuthHeaders(): HeadersInit {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json'
+  }
+
+  // Add Authorization header if we have a token in localStorage
+  const token = localStorage.getItem('auth_token')
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  return headers
+}
+
 export type TableQueryOptions = {
   entry: ConnectionEntry
   table: string
@@ -465,6 +480,7 @@ export async function saveQuery(query: string, source: 'user' | 'ai', status: 's
 // Dashboard V2 API (Multi-dashboard)
 export async function fetchDashboards() {
   const response = await fetch(`${QUERY_API_URL}/dashboards`, {
+    headers: getAuthHeaders(),
     credentials: 'include',
     cache: 'no-store'
   })
@@ -475,6 +491,7 @@ export async function fetchDashboards() {
 
 export async function fetchSharedDashboards() {
   const response = await fetch(`${QUERY_API_URL}/dashboards/shared`, {
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
   if (!response.ok) throw new Error('Failed to fetch shared dashboards')
@@ -485,7 +502,7 @@ export async function fetchSharedDashboards() {
 export async function createDashboard(title: string, data: any) {
   const response = await fetch(`${QUERY_API_URL}/dashboards`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ title, data })
   })
@@ -495,6 +512,7 @@ export async function createDashboard(title: string, data: any) {
 
 export async function fetchDashboard(id: string) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
+    headers: getAuthHeaders(),
     credentials: 'include',
     cache: 'no-store'
   })
@@ -506,7 +524,7 @@ export async function fetchDashboard(id: string) {
 export async function updateDashboard(id: string, updates: { title?: string, data?: any }) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(updates)
   })
@@ -517,7 +535,7 @@ export async function updateDashboard(id: string, updates: { title?: string, dat
 export async function updateDashboardPrivacy(id: string, isPublic: boolean) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${id}/privacy`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ is_public: isPublic })
   })
@@ -528,6 +546,7 @@ export async function updateDashboardPrivacy(id: string, isPublic: boolean) {
 export async function deleteDashboard(id: string) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
     method: 'DELETE',
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
   if (!response.ok) throw new Error('Failed to delete dashboard')
@@ -537,6 +556,7 @@ export async function deleteDashboard(id: string) {
 export async function shareDashboard(id: string) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${id}/share`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
   if (!response.ok) throw new Error('Failed to share dashboard')
@@ -553,6 +573,7 @@ export async function fetchSharedDashboard(token: string) {
 
 export async function searchUsers(query: string) {
   const response = await fetch(`${QUERY_API_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
   if (!response.ok) throw new Error('Failed to search users')
@@ -563,7 +584,7 @@ export async function searchUsers(query: string) {
 export async function inviteUserToDashboard(dashboardId: string, email: string) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/share/invite`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ email })
   })
@@ -576,6 +597,7 @@ export async function inviteUserToDashboard(dashboardId: string, email: string) 
 
 export async function fetchDashboardPermissions(dashboardId: string) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/permissions`, {
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
   if (!response.ok) throw new Error('Failed to fetch permissions')
@@ -586,6 +608,7 @@ export async function fetchDashboardPermissions(dashboardId: string) {
 export async function removeDashboardPermission(dashboardId: string, email: string) {
   const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/permissions/${email}`, {
     method: 'DELETE',
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
   if (!response.ok) throw new Error('Failed to remove user')
