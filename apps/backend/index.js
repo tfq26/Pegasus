@@ -1113,7 +1113,7 @@ app.post("/feedback", async (c) => {
 
 
 app.get("/usage", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {

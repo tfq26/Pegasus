@@ -60,6 +60,8 @@ export const prefetchRoute = (path: string) => {
 export const usePrefetch = () => {
     const handleMouseEnter = (e: Event) => {
         const target = e.target as HTMLElement
+        // Safety check: only Element nodes have closest()
+        if (!target || typeof target.closest !== 'function') return
         const anchor = target.closest('a[href^="/"]') as HTMLAnchorElement | null
         if (anchor) {
             prefetchRoute(anchor.getAttribute('href') || '')

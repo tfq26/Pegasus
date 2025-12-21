@@ -723,7 +723,7 @@ export async function getSubscriptionStatus() {
 export async function getUsageStats() {
   const response = await fetch(`${QUERY_API_URL}/usage`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
   })
   if (!response.ok) throw new Error('Failed to fetch usage stats')
