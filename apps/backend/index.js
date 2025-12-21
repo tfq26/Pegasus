@@ -327,6 +327,7 @@ app.post("/create-checkout-session", async (c) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer_email: payload.email,
+      allow_promotion_codes: true,
       line_items: [
         {
           price: priceId,
