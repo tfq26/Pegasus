@@ -16,7 +16,7 @@
         :transition="starLayer1Transition"
       >
         <div
-          class="absolute bg-transparent rounded-full"
+          class="absolute bg-transparent rounded-lg"
           :style="{
             width: '1px',
             height: '1px',
@@ -24,7 +24,7 @@
           }"
         />
         <div
-          class="absolute bg-transparent rounded-full top-[2000px]"
+          class="absolute bg-transparent rounded-lg top-[2000px]"
           :style="{
             width: '1px',
             height: '1px',
@@ -40,7 +40,7 @@
         :transition="starLayer2Transition"
       >
         <div
-          class="absolute bg-transparent rounded-full"
+          class="absolute bg-transparent rounded-lg"
           :style="{
             width: '2px',
             height: '2px',
@@ -48,7 +48,7 @@
           }"
         />
         <div
-          class="absolute bg-transparent rounded-full top-[2000px]"
+          class="absolute bg-transparent rounded-lg top-[2000px]"
           :style="{
             width: '2px',
             height: '2px',
@@ -64,7 +64,7 @@
         :transition="starLayer3Transition"
       >
         <div
-          class="absolute bg-transparent rounded-full"
+          class="absolute bg-transparent rounded-lg"
           :style="{
             width: '3px',
             height: '3px',
@@ -72,7 +72,7 @@
           }"
         />
         <div
-          class="absolute bg-transparent rounded-full top-[2000px]"
+          class="absolute bg-transparent rounded-lg top-[2000px]"
           :style="{
             width: '3px',
             height: '3px',

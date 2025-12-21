@@ -1,9 +1,5 @@
 <template>
-  <!-- Mobile Version -->
-  <MobileFeedback v-if="isMobile" />
-
-  <!-- Desktop Version -->
-  <div v-else class="w-full min-h-full bg-background">
+  <div class="w-full min-h-full bg-background">
     <div class="max-w-4xl mx-auto p-6 sm:p-10 space-y-8">
       
       <!-- Header -->
@@ -128,8 +124,6 @@ import { ref, computed } from 'vue'
 import { submitFeedback } from '@/lib/api'
 import { toast } from 'vue-sonner'
 import { Send } from 'lucide-vue-next'
-import { useMobileDetection } from '@/composables/useMobileDetection'
-import MobileFeedback from './mobile/MobileFeedback.vue'
 import {
   Select,
   SelectContent,
@@ -139,8 +133,6 @@ import {
 } from '@/components/ui/select'
 
 defineOptions({ name: 'FeedbackPage' })
-
-const { isMobile } = useMobileDetection()
 
 const form = ref({
   featureCategory: '',

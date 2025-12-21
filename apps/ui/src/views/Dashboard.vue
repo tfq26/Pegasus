@@ -11,7 +11,7 @@
           <ArrowLeft class="w-5 h-5" />
         </button>
         <h1 class="text-lg font-bold text-primary">{{ currentDashboard?.title || 'Dashboard' }}</h1>
-        <span v-if="isShared" class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
+        <span v-if="isShared" class="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
           Read Only Preview
         </span>
         <span v-if="currentDashboard" class="text-muted-foreground">/</span>
@@ -205,24 +205,8 @@
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
 
-      <!-- Mobile Stack View -->
-      <div v-if="!isDesktop && currentDashboard && layout.length" class="flex flex-col gap-4 p-4 pb-20">
-        <DashboardElement
-          v-for="item in layout"
-          :key="item.i"
-          :element="getElement(item.i)"
-          :is-locked="isLocked"
-          :is-mobile="true"
-          @remove="removeElement(item.i)"
-          @edit-element="handleEditElement(getElement(item.i)!)"
-          @edit-query="handleEditQuery(getElement(item.i)!)"
-          @view-query="handleViewQuery(getElement(item.i)!)"
-          @download="downloadFile(getElement(item.i)!)"
-        />
-      </div>
-
       <DraggableGrid
-        v-else-if="currentDashboard"
+        v-if="currentDashboard"
         v-model:items="layout"
         :cols="12"
         :row-height="30"
@@ -239,7 +223,7 @@
             :element="getElement(item.i)"
             :is-locked="isLocked"
             :is-ctrl-pressed="isCtrlPressed"
-            :is-mobile="false"
+            :is-mobile="isPhone || isTablet"
             @remove="removeElement(item.i)"
             @edit-element="handleEditElement(getElement(item.i)!)"
             @edit-query="handleEditQuery(getElement(item.i)!)"
@@ -510,8 +494,11 @@ const route = useRoute()
 const store = useDashboardStore()
 const { dashboards, currentDashboard, isLoading } = storeToRefs(store)
 
+import Navbar from '@/components/Navbar.vue'
 import { useMediaQuery } from '@vueuse/core'
+import { useMobileDetection } from '@/composables/useMobileDetection'
 
+const { isPhone, isTablet } = useMobileDetection()
 const isDesktop = useMediaQuery('(min-width: 640px)')
 
 const { 
@@ -1124,23 +1111,25 @@ const handleKeyUp = (e: KeyboardEvent) => {
 <style scoped>
 /* Dashboard Card Styles */
 .dashboard-card {
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  border-radius: 1rem;
+  border-radius: 0.25rem;
+  box-shadow: var(--shadow-sm);
+  background-color: var(--card);
 }
 
 .dashboard-card:hover {
-  border-color: oklch(var(--color-primary) / 0.6);
-  box-shadow: 0 10px 15px -3px oklch(var(--color-primary) / 0.2), 0 4px 6px -2px oklch(var(--color-primary) / 0.1);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
 }
 
 .card-content {
-  padding: 1rem;
+  padding: 0.75rem;
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .card-header {
@@ -1170,7 +1159,7 @@ const handleKeyUp = (e: KeyboardEvent) => {
 :deep(.vue-grid-item.vue-grid-placeholder) {
   background: oklch(var(--color-primary) / 0.15) !important;
   border: 2px dashed oklch(var(--color-primary) / 0.5) !important;
-  border-radius: 1rem;
+  border-radius: 0.25rem;
   opacity: 1;
 }
 

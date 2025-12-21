@@ -103,14 +103,14 @@ const emit = defineEmits<{
         title="Text Color"
       >
         <Type class="w-4 h-4" />
-        <div class="h-0.5 w-3 bg-foreground absolute bottom-1 left-1.5 rounded-full"></div>
+        <div class="h-0.5 w-3 bg-foreground absolute bottom-1 left-1.5 rounded-lg"></div>
       </button>
       <button 
         class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground relative group"
         title="Fill Color"
       >
         <PaintBucket class="w-4 h-4" />
-        <div class="h-0.5 w-3 bg-transparent border border-foreground/50 absolute bottom-1 left-1.5 rounded-full"></div>
+        <div class="h-0.5 w-3 bg-transparent border border-foreground/50 absolute bottom-1 left-1.5 rounded-lg"></div>
       </button>
     </div>
   </div>

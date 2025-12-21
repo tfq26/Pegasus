@@ -72,6 +72,10 @@
         <section v-if="activeTab === 'experimental'" class="fade-section">
           <ExperimentalSettings />
         </section>
+
+        <section v-if="activeTab === 'analytics'" class="fade-section">
+           <AnalyticsTab />
+        </section>
       </div>
 
       <!-- Sticky Footer Action Bar -->
@@ -106,18 +110,25 @@ import ViewTab from './ViewTab.vue'
 import IntegrationsTab from './IntegrationsTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
 import ExperimentalSettings from './ExperimentalSettings.vue'
+import AnalyticsTab from './AnalyticsTab.vue'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { fetchConnectionSchema, QUERY_API_URL } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
+import { useMobileDetection } from '@/composables/useMobileDetection'
+import { useRouter } from 'vue-router'
 
 defineOptions({ name: 'SettingsPage' })
+
+const router = useRouter()
+const { isPhone } = useMobileDetection()
 
 const tabs = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
   { id: 'database', label: 'Database Connections' },
   { id: 'integrations', label: 'Linked Accounts' },
+  { id: 'analytics', label: 'Analytics & Logs' },
   { id: 'experimental', label: 'Experimental' },
 ]
 
@@ -481,6 +492,12 @@ const saveSettings = async () => {
 }
 
 onMounted(async () => {
+  if (isPhone.value) {
+    toast.error('Settings are only available on desktop devices.')
+    router.replace('/profile')
+    return
+  }
+
   loadConnections()
   window.addEventListener('pegasus:connections-updated', loadConnections)
   

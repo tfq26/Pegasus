@@ -24,7 +24,7 @@
         <!-- Import Button -->
         <button 
           @click="showImportModal = true"
-          class="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition"
+          class="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition"
           title="Import Dashboard"
         >
           <Download class="w-5 h-5" />
@@ -128,22 +128,22 @@
 
                 <!-- Role Badges -->
                 <div class="absolute top-2 left-2 flex gap-1 z-10">
-                  <span v-if="dashboard.access_role === 'owner'" class="bg-primary/90 text-primary-foreground px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm">
+                  <span v-if="dashboard.access_role === 'owner'" class="bg-primary/90 text-primary-foreground px-2 py-0.5 rounded-lg text-[10px] font-medium shadow-sm backdrop-blur-sm">
                     Owner
                   </span>
-                  <span v-else-if="dashboard.access_role === 'editor'" class="bg-blue-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm">
+                  <span v-else-if="dashboard.access_role === 'editor'" class="bg-blue-500/90 text-white px-2 py-0.5 rounded-lg text-[10px] font-medium shadow-sm backdrop-blur-sm">
                     Editor
                   </span>
-                  <span v-else-if="dashboard.access_role === 'read' || dashboard.access_role === 'viewer'" class="bg-emerald-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm">
+                  <span v-else-if="dashboard.access_role === 'read' || dashboard.access_role === 'viewer'" class="bg-emerald-500/90 text-white px-2 py-0.5 rounded-lg text-[10px] font-medium shadow-sm backdrop-blur-sm">
                     Viewer
                   </span>
-                  <span v-if="dashboard.is_public" class="bg-orange-500/90 text-white px-2 py-0.5 rounded-full text-[10px] font-medium shadow-sm backdrop-blur-sm border border-border/20">
+                  <span v-if="dashboard.is_public" class="bg-orange-500/90 text-white px-2 py-0.5 rounded-lg text-[10px] font-medium shadow-sm backdrop-blur-sm border border-border/20">
                     Public
                   </span>
                 </div>
                 
                 <!-- Shared Indicator -->
-                <div v-if="dashboard.is_shared" class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                <div v-if="dashboard.is_shared" class="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
                   <Users class="w-3 h-3" />
                   <span>Shared by {{ dashboard.owner?.first_name }}</span>
                 </div>

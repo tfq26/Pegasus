@@ -270,11 +270,11 @@ const openAddDialog = () => {
                 <div class="relative flex h-2.5 w-2.5">
                   <span
                     v-if="props.connectionStatusFor(conn.id)?.status === 'connected'"
-                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
+                    class="animate-ping absolute inline-flex h-full w-full rounded-lg bg-emerald-400 opacity-75"
                   ></span>
                   <span
                     :class="[
-                      'relative inline-flex rounded-full h-2.5 w-2.5',
+                      'relative inline-flex rounded-lg h-2.5 w-2.5',
                       props.statusDotClasses(props.connectionStatusFor(conn.id)?.status)
                     ]"
                   ></span>
@@ -307,7 +307,7 @@ const openAddDialog = () => {
 
     <!-- Empty State -->
     <div v-else class="flex flex-col items-center justify-center py-24 px-4 text-center rounded-2xl border border-dashed border-border bg-muted/20">
-      <div class="p-4 rounded-full bg-muted mb-4">
+      <div class="p-4 rounded-lg bg-muted mb-4">
         <Database class="w-8 h-8 text-muted-foreground" />
       </div>
       <h3 class="text-lg font-semibold text-foreground mb-2">No connections yet</h3>
@@ -350,7 +350,7 @@ const openAddDialog = () => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #44403c;
-  border-radius: 2px;
+  border-radius: 0.5px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #57534e;

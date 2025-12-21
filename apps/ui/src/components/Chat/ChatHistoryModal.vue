@@ -59,7 +59,7 @@ const formatTime = (ts: number) => {
         >
           <!-- Avatar -->
           <div 
-            class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border mt-1"
+            class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border mt-1"
             :class="msg.role === 'user' ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-muted border-border text-muted-foreground'"
           >
             <User v-if="msg.role === 'user'" class="w-4 h-4" />

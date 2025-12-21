@@ -1,24 +1,29 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
-const isMobile = ref(false)
+const isPhone = ref(false)
+const isTablet = ref(false)
+const isDesktop = ref(false)
 
-const checkMobile = () => {
-    // Check if viewport width is mobile-sized
+const checkLayout = () => {
     const width = window.innerWidth
-    isMobile.value = width < 768 // Tailwind's md breakpoint
+    isPhone.value = width < 640
+    isTablet.value = width >= 640 && width < 1024
+    isDesktop.value = width >= 1024
 }
 
 export function useMobileDetection() {
     onMounted(() => {
-        checkMobile()
-        window.addEventListener('resize', checkMobile)
+        checkLayout()
+        window.addEventListener('resize', checkLayout)
     })
 
     onUnmounted(() => {
-        window.removeEventListener('resize', checkMobile)
+        window.removeEventListener('resize', checkLayout)
     })
 
     return {
-        isMobile
+        isPhone,
+        isTablet,
+        isDesktop
     }
 }

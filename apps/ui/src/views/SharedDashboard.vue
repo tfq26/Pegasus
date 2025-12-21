@@ -4,7 +4,7 @@
     <header class="flex items-center justify-between gap-4 px-6 py-4 border-b border-border bg-background/50 backdrop-blur-sm z-10">
       <div class="flex items-center gap-4">
         <h1 class="text-lg font-bold text-primary">{{ dashboard?.title || 'Shared Dashboard' }}</h1>
-        <span class="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
+        <span class="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
           Read Only Preview
         </span>
         <span v-if="dashboard" class="text-xs text-muted-foreground">
@@ -182,7 +182,7 @@ const handleImport = async () => {
 .dashboard-card {
   transition: all 0.2s ease;
   overflow: hidden;
-  border-radius: 1rem;
+  border-radius: 0.25rem;
 }
 
 .card-content {

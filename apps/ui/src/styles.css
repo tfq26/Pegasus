@@ -16,40 +16,51 @@
   --color-stone-800: #252527;
   --color-stone-900: #151517;
 
-  --color-violet-50: #f4e6ff;
-  --color-violet-100: #e0b8ff;
-  --color-violet-200: #cc8aff;
-  --color-violet-300: #b85cff;
-  --color-violet-400: #a42eff;
-  --color-violet-500: #4d00b3;
-  /* Pegasus accent */
-  --color-violet-600: #3f0091;
-  --color-violet-700: #310070;
-  --color-violet-800: #23004e;
-  --color-violet-900: #15002d;
+  /* Professional Deep Indigo-Purple */
+  --color-violet-50: oklch(0.95 0.02 285);
+  --color-violet-100: oklch(0.9 0.04 285);
+  --color-violet-200: oklch(0.8 0.08 285);
+  --color-violet-300: oklch(0.7 0.12 285);
+  --color-violet-400: oklch(0.6 0.15 285);
+  --color-violet-500: oklch(0.45 0.15 285);
+  --color-violet-600: oklch(0.35 0.12 285);
+  --color-violet-700: oklch(0.25 0.1 285);
+  --color-violet-800: oklch(0.15 0.08 285);
+  --color-violet-900: oklch(0.1 0.05 285);
 
-  /* Optional semantic tokens */
-  --color-bg-base: var(--color-stone-950);
-  --color-bg-surface: var(--color-stone-900);
-  --color-text-base: var(--color-stone-100);
+  --color-bg-base: var(--background);
+  --color-bg-surface: var(--card);
+  --color-text-base: var(--foreground);
   --color-accent: var(--color-violet-500);
+
+  /* Micro-shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
 @layer base {
   html {
-    @apply bg-[--color-bg-base] text-[--color-text-base];
+    @apply bg-background text-foreground;
+    font-family: 'Geist', sans-serif;
+  }
+
+  code,
+  pre {
+    font-family: 'Geist Mono', monospace;
   }
 
   a {
-    @apply text-[--color-accent] hover:text-[--color-violet-400];
+    @apply text-primary hover:text-primary/80;
   }
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 1px);
+  --radius-md: calc(var(--radius) - 0.5px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 1px);
+  --radius-2xl: calc(var(--radius) + 2px);
+  --radius-3xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -85,16 +96,16 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.15625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.141 0.005 285.823);
   --card: oklch(0.98 0 0);
   --card-foreground: oklch(0.141 0.005 285.823);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.55 0.2 285);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
+  --primary: oklch(0.45 0.15 285);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.98 0 0);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
   --muted-foreground: oklch(0.552 0.016 285.938);
@@ -127,9 +138,9 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.141 0.005 285.823);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.65 0.2 285);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.274 0.006 286.033);
+  --primary: oklch(0.45 0.15 285);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.18 0.005 285.823);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.274 0.006 286.033);
   --muted-foreground: oklch(0.705 0.015 286.067);

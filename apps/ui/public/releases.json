@@ -9,12 +9,20 @@
             "isLatest": false
         },
         {
+            "version": "0.7.0",
+            "releaseDate": "December 21, 2025",
+            "title": "Pro Subscriptions, Performance & AI Chat",
+            "description": "A major release enabling Pro subscriptions with Stripe, McMaster-Carr style performance tuning, and a complete overhaul of the AI Chat interface.",
+            "changelogFile": "v0.7.0.json",
+            "isLatest": true
+        },
+        {
             "version": "0.6.3",
             "releaseDate": "December 21, 2025",
             "title": "Pro Subscription & Error Handling",
             "description": "Introduced Stripe-powered Pro subscriptions with higher AI limits, and improved system-wide error handling.",
             "changelogFile": "v0.6.3.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.6.1",

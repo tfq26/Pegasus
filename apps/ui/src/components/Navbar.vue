@@ -1,19 +1,20 @@
 <template>
   <nav
-    class="w-full border-b border-border bg-background/90 backdrop-blur-md text-foreground shadow-md shadow-black/5 dark:shadow-black/20 fixed top-0 z-50 transition-colors duration-300"
+    class="w-full border-b border-border bg-background text-foreground shadow-sm fixed top-0 z-50 transition-all duration-300"
   >
-    <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 h-16">
       <!-- Left: Logo -->
       <RouterLink to="/" class="flex items-center gap-3 group">
         <img
           src="/pegasus-purple.svg"
           alt="Pegasus Logo"
-          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
+          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110 shadow-lg shadow-primary/20 rounded-full"
         />
+        <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block">Pegasus</span>
       </RouterLink>
 
       <!-- Center: Desktop Links -->
-      <div class="hidden md:flex items-center gap-8">
+      <div class="hidden sm:flex items-center gap-8">
         <RouterLink
           v-for="link in links"
           :key="link.to"
@@ -30,27 +31,26 @@
 
       <!-- Right: Mobile Toggle + Profile -->
       <div class="flex items-center gap-4">
-        <ThemeToggle />
-        
-        <!-- Mobile Toggle -->
+
         <button
           @click="mobileOpen = true"
-          class="md:hidden text-muted-foreground hover:text-foreground transition"
+          class="sm:hidden p-2.5 rounded-md hover:bg-muted/50 active:bg-muted transition-colors text-foreground"
+          aria-label="Open menu"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
+          <Menu class="h-6 w-6" />
         </button>
 
         <!-- Global Progress Bar -->
-        <GlobalProgressBar />
+        <GlobalProgressBar v-if="!isPhone" />
 
         <!-- Profile -->
-        <div ref="dropdownRef" class="relative">
+        <div v-if="!isPhone" ref="dropdownRef" class="relative">
           <!-- Loading State -->
-          <div v-if="isLoading" class="flex items-center gap-2 rounded-full border border-border bg-muted/50 px-3 py-1">
-            <div class="h-7 w-7 rounded-full bg-muted animate-pulse"></div>
+          <div
+            v-if="isLoading"
+            class="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1"
+          >
+            <div class="h-7 w-7 rounded-lg bg-muted animate-pulse"></div>
             <div class="hidden sm:block h-4 w-16 bg-muted rounded animate-pulse"></div>
           </div>
 
@@ -58,11 +58,9 @@
           <RouterLink
             v-else-if="!user"
             to="/login"
-            class="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
+            class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
           >
-            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-            </svg>
+            <LogIn class="h-5 w-5" />
             <span class="hidden sm:inline font-medium">Login</span>
           </RouterLink>
 
@@ -70,57 +68,67 @@
           <button
             v-else
             @click="toggleDropdown"
-            class="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
+            class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
           >
             <img
               :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
               alt="Profile"
-              class="h-7 w-7 rounded-full object-cover transition-all"
-              :class="isPro ? 'border-2 border-purple-500 ring-2 ring-purple-500/20' : 'border border-border'"
+              class="h-7 w-7 rounded-lg object-cover transition-all"
+              :class="isPro ? 'border-2 border-primary ring-2 ring-primary/20' : 'border border-border'"
             />
             <span class="hidden sm:inline font-medium flex items-center gap-1">
               {{ user.firstName || 'User' }}
-              <span v-if="isPro" class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800">
+              <span
+                v-if="isPro"
+                class="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase border border-primary/20"
+              >
                 PRO
               </span>
             </span>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-              stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
-            </svg>
+            <ChevronDown
+              class="h-4 w-4 transition-transform duration-200"
+              :class="{ 'rotate-180': showDropdown }"
+            />
           </button>
 
           <!-- Dropdown -->
-          <transition name="fade">
+          <transition name="dropdown-fade">
             <div
               v-if="showDropdown && user"
-              class="absolute right-0 top-12 w-48 rounded-xl border border-border bg-popover shadow-lg shadow-black/10 dark:shadow-black/30 py-2 z-50"
+              class="absolute right-0 top-12 w-48 rounded-xl border border-border bg-popover shadow-lg shadow-black/10 dark:shadow-black/30 py-2 z-50 overflow-hidden"
             >
+              <div class="px-4 py-2 border-b border-border mb-1 sm:hidden">
+                <p class="text-xs font-bold text-foreground truncate">
+                  {{ user.firstName }} {{ user.lastName }}
+                </p>
+                <p class="text-[10px] text-muted-foreground truncate">{{ user.email }}</p>
+              </div>
               <RouterLink
-                to="/profile"
-                class="block w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                v-for="item in dropdownItems"
+                :key="item.to"
+                :to="item.to"
+                class="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
                 @click="showDropdown = false"
               >
-                View Profile
+                <component :is="item.icon" class="w-4 h-4" />
+                {{ item.label }}
               </RouterLink>
-              <RouterLink
-                to="/settings"
-                class="block w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
-                @click="showDropdown = false"
+              <div class="h-px bg-border my-1"></div>
+              <button
+                @click="toggleTheme"
+                class="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
               >
-                Settings
-              </RouterLink>
-              <RouterLink
-                to="/support"
-                class="block w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
-                @click="showDropdown = false"
-              >
-                Support
-              </RouterLink>
+                <Sun v-if="currentIcon === 'sun'" class="w-4 h-4" />
+                <Moon v-else-if="currentIcon === 'moon'" class="w-4 h-4" />
+                <Monitor v-else class="w-4 h-4" />
+                <span>Theme: {{ mode }}</span>
+              </button>
+              <div class="h-px bg-border my-1"></div>
               <button
                 @click="handleLogout"
-                class="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition"
+                class="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition"
               >
+                <LogOut class="w-4 h-4" />
                 Logout
               </button>
             </div>
@@ -129,84 +137,195 @@
       </div>
     </div>
 
-    <!-- Backdrop -->
-    <transition name="fade">
-      <div
-        v-if="mobileOpen"
-        class="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
-        @click="mobileOpen = false"
-      ></div>
-    </transition>
+    <!-- Mobile Menu Overlay -->
+    <div class="sm:hidden">
+      <!-- Backdrop -->
+      <transition name="fade">
+        <div
+          v-if="mobileOpen"
+          class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          @click="mobileOpen = false"
+        ></div>
+      </transition>
 
-    <!-- Drawer -->
-    <transition name="slide">
-      <aside
-        v-if="mobileOpen"
-        class="fixed top-0 left-0 z-50 h-full w-64 bg-background border-r border-border p-6 flex flex-col gap-6 shadow-lg"
-      >
-        <div class="flex items-center justify-between mb-4">
-          <span class="text-lg font-semibold text-primary">Pegasus</span>
-          <button @click="mobileOpen = false" class="text-muted-foreground hover:text-foreground">
-            ✕
-          </button>
-        </div>
+      <!-- Drawer Panel -->
+      <transition name="slide">
+        <aside
+          v-if="mobileOpen"
+          class="fixed right-0 top-0 z-50 h-full w-[86%] max-w-[360px]
+                 bg-card border-l border-border shadow-2xl
+                 px-5 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]
+                 flex flex-col"
+          role="dialog"
+          aria-modal="true"
+        >
+          <!-- Handle -->
+          <div class="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted"></div>
 
-        <div class="flex flex-col gap-4">
-          <RouterLink
-            v-for="link in links"
-            :key="link.to"
-            :to="link.to"
-            class="text-sm font-medium text-muted-foreground hover:text-foreground transition"
-            active-class="text-primary font-semibold"
-            @click="mobileOpen = false"
-          >
-            {{ link.label }}
-          </RouterLink>
-        </div>
+          <!-- Header -->
+          <div class="flex items-center justify-between mb-6">
+            <RouterLink to="/" class="flex items-center gap-2" @click="mobileOpen = false">
+              <img src="/pegasus-purple.svg" class="h-7 w-7" />
+              <span class="text-sm font-bold tracking-tight text-foreground">Pegasus</span>
+            </RouterLink>
 
-        <div class="mt-auto border-t border-border pt-4">
-          <RouterLink
-            to="/settings"
-            class="block text-sm text-muted-foreground hover:text-foreground transition mb-2"
-            @click="mobileOpen = false"
-          >
-            Settings
-          </RouterLink>
-          <RouterLink
-            to="/support"
-            class="block text-sm text-muted-foreground hover:text-foreground transition mb-2"
-            @click="mobileOpen = false"
-          >
-            Support
-          </RouterLink>
-          <button
-            @click="handleLogout"
-            class="w-full text-left text-sm text-destructive hover:text-destructive/80 transition"
-          >
-            Logout
-          </button>
-        </div>
-      </aside>
-    </transition>
+            <button
+              @click="mobileOpen = false"
+              class="p-2 rounded-lg hover:bg-muted transition text-muted-foreground"
+              aria-label="Close menu"
+            >
+              <X class="h-5 w-5" />
+            </button>
+          </div>
+
+          <!-- Navigation -->
+          <nav class="space-y-2 flex-1 overflow-y-auto min-h-0 py-2">
+            <RouterLink
+              v-for="link in filteredLinks"
+              :key="link.to"
+              :to="link.to"
+              class="group flex items-center gap-3 p-3 rounded-xl border border-transparent
+                     hover:bg-muted/60 hover:border-border transition flex-shrink-0"
+              active-class="bg-muted/70 border-border text-foreground"
+              @click="mobileOpen = false"
+            >
+              <component
+                :is="link.icon"
+                class="w-4 h-4 text-muted-foreground group-[.router-link-active]:text-primary"
+              />
+              <div class="flex-1">
+                <div class="text-xs font-bold uppercase tracking-widest text-foreground">
+                  {{ link.label }}
+                </div>
+                <div class="text-[10px] text-muted-foreground leading-tight">
+                  {{ link.to }}
+                </div>
+              </div>
+              <ArrowRight class="w-4 h-4 text-primary opacity-0 group-hover:opacity-100 transition" />
+            </RouterLink>
+          </nav>
+
+          <!-- Footer -->
+          <div class="mt-auto pt-5 border-t border-border space-y-3 flex-shrink-0">
+            <template v-if="user">
+              <div class="flex items-center gap-3 px-1">
+                <img
+                  :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
+                  class="w-11 h-11 rounded-xl border border-border bg-muted object-cover"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-foreground truncate">
+                      {{ user.firstName }} {{ user.lastName }}
+                    </span>
+                    <span
+                      v-if="isPro"
+                      class="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase border border-primary/20"
+                    >
+                      PRO
+                    </span>
+                  </div>
+                  <div class="text-[10px] text-muted-foreground truncate">
+                    {{ user.email }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex flex-col gap-2">
+                <RouterLink
+                  to="/profile"
+                  class="flex items-center justify-center gap-2 p-3 rounded-xl border border-border bg-background
+                         text-foreground font-bold text-[10px] uppercase tracking-widest transition hover:bg-muted"
+                  @click="mobileOpen = false"
+                >
+                  <User class="w-3.5 h-3.5" />
+                  Profile
+                </RouterLink>
+              </div>
+
+              <button
+                @click="handleLogout"
+                class="w-full flex items-center justify-center gap-2 p-3 rounded-xl
+                       border border-destructive/20 bg-destructive/5 text-destructive
+                       font-bold text-[10px] uppercase tracking-widest transition hover:bg-destructive/10"
+              >
+                <LogOut class="w-3.5 h-3.5" />
+                Logout
+              </button>
+            </template>
+
+            <template v-else>
+              <RouterLink
+                to="/login"
+                class="w-full flex items-center justify-center gap-2 p-3 rounded-xl
+                       bg-primary text-primary-foreground
+                       font-bold text-[10px] uppercase tracking-widest transition hover:opacity-90"
+                @click="mobileOpen = false"
+              >
+                <LogIn class="w-3.5 h-3.5" />
+                Sign In to System
+              </RouterLink>
+            </template>
+          </div>
+        </aside>
+      </transition>
+    </div>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useMobileDetection } from '@/composables/useMobileDetection'
+import { useColorMode } from '@vueuse/core'
 import { getSubscriptionStatus } from '@/lib/api'
-import ThemeToggle from './ThemeToggle.vue'
 import GlobalProgressBar from './GlobalProgressBar.vue'
+import {
+  Home,
+  Info,
+  LayoutDashboard,
+  MessageSquare,
+  User,
+  Settings,
+  CircleHelp,
+  LogOut,
+  LogIn,
+  ChevronDown,
+  Menu,
+  X,
+  ArrowRight,
+  Sun,
+  Moon,
+  Monitor
+} from 'lucide-vue-next'
 
 defineOptions({ name: 'AppNavbar' })
 
+const route = useRoute()
+const { isPhone } = useMobileDetection()
 const { user, isLoading, fetchUser, logout } = useAuth()
 
 const links = [
-  { to: '/', label: 'Home' },
-  { to: '/about', label: 'About' },
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/query', label: 'Query' },
+  { to: '/', label: 'Home', icon: Home },
+  { to: '/about', label: 'About', icon: Info },
+  // { to: '/releases', label: 'Releases', icon: Info },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/query', label: 'Query', icon: MessageSquare }
+]
+
+const filteredLinks = computed(() => {
+  if (isPhone.value) {
+    // Show only Home, About, and Releases on mobile
+    return links.filter((link) => ['Home', 'About', 'Releases'].includes(link.label))
+  }
+  return links
+})
+
+const dropdownItems = [
+  { to: '/profile', label: 'Profile', icon: User },
+  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/support', label: 'Support', icon: CircleHelp }
 ]
 
 const showDropdown = ref(false)
@@ -221,6 +340,30 @@ const handleLogout = () => {
   mobileOpen.value = false
   logout()
 }
+
+// Theme toggle
+const mode = useColorMode({
+  emitAuto: true,
+  selector: 'html',
+  attribute: 'class',
+  storageKey: 'pegasus-theme',
+})
+
+const toggleTheme = () => {
+  if (mode.value === 'auto') {
+    mode.value = 'light'
+  } else if (mode.value === 'light') {
+    mode.value = 'dark'
+  } else {
+    mode.value = 'auto'
+  }
+}
+
+const currentIcon = computed(() => {
+  if (mode.value === 'auto') return 'monitor'
+  if (mode.value === 'dark') return 'moon'
+  return 'sun'
+})
 
 // Close dropdown when clicking outside
 const handleClickOutside = (e: MouseEvent) => {
@@ -237,6 +380,8 @@ const checkSubscription = async () => {
     } catch (e) {
       console.error('Failed to check subscription', e)
     }
+  } else {
+    isPro.value = false
   }
 }
 
@@ -246,36 +391,60 @@ onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
 })
 
+// Re-check subscription when user changes
 watch(user, () => {
   checkSubscription()
 })
 
-onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
+// Close drawer on route change
+watch(
+  () => route.fullPath,
+  () => {
+    mobileOpen.value = false
+  }
+)
+
+// Lock body scroll when drawer is open
+watch(mobileOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+  document.body.style.overflow = ''
+})
 </script>
 
 <style scoped>
-a.router-link-active span,
-a:hover span {
-  width: 100%;
-  opacity: 1;
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: all 0.2s ease;
 }
+.dropdown-fade-enter-from,
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
 .fade-enter-active,
 .fade-leave-active {
-  transition: all 0.25s ease;
+  transition: opacity 0.3s ease;
 }
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translateY(-5px);
 }
+
 .slide-enter-active,
 .slide-leave-active {
-  transition: all 0.3s ease;
+  transition: transform 0.25s ease;
 }
-.slide-enter-from {
-  transform: translateX(-100%);
-}
+.slide-enter-from,
 .slide-leave-to {
-  transform: translateX(-100%);
+  transform: translateX(105%);
+}
+.slide-enter-to,
+.slide-leave-from {
+  transform: translateX(0);
 }
 </style>

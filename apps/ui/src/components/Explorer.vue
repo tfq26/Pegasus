@@ -14,6 +14,9 @@ import {
   Edit,
   Trash,
   Minus,
+  X,
+  Sparkles,
+  Loader2,
 } from 'lucide-vue-next'
 import Pagination from '@/components/ui/pagination/Pagination.vue'
 import JsonViewer from '@/components/JsonViewer.vue'
@@ -22,6 +25,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
+  ContextMenuSeparator,
 } from '@/components/ui/context-menu'
 import {
   Select,
@@ -43,7 +47,7 @@ import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import { updateConnection as apiUpdateConnection } from '@/lib/api'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema, fetchTableEntries, fetchTableCount } from '@/lib/api'
+import { fetchConnectionSchema, fetchTableEntries, fetchTableCount, deleteChat, clearAllChats } from '@/lib/api'
 
 const props = defineProps<{
   connections: ConnectionEntry[]
@@ -106,15 +110,14 @@ const formatDate = (timestamp: any) => {
   }
 }
 
-const isAddConnectionModalOpen = ref(false)
+const addConnectionModalOpen = ref(false)
 
-const handleConnectionSelect = (value: string) => {
-  if (value === 'add-new') {
-    isAddConnectionModalOpen.value = true
-    // Don't change selection yet
-  } else {
-    emit('update:selectedConnectionId', value)
+const handleConnectionSelect = (id: string) => {
+  if (id === 'add-new') {
+    addConnectionModalOpen.value = true
+    return
   }
+  emit('update:selectedConnectionId', id)
 }
 
 // Chat deletion state
@@ -131,15 +134,7 @@ const confirmDeleteChat = async () => {
   if (!chatToDelete.value) return
   
   try {
-    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/chats/${chatToDelete.value.id}`, {
-      method: 'DELETE',
-      credentials: 'include',
-    })
-    
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Failed to delete chat')
-    }
+    await deleteChat(chatToDelete.value.id)
     
     toast.success(`Deleted chat "${chatToDelete.value.title}"`)
     
@@ -162,17 +157,7 @@ const handleClearAllChats = () => {
 
 const confirmClearAllChats = async () => {
   try {
-    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/chats`, {
-      method: 'DELETE',
-      credentials: 'include',
-    })
-    
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Failed to clear chats')
-    }
-    
-    const result = await response.json()
+    const result = await clearAllChats()
     toast.success(`Cleared ${result.deleted || 'all'} chats`)
     
     clearAllChatsDialogOpen.value = false
@@ -216,6 +201,20 @@ type ViewerState = {
   hasMore: boolean
   error: string
   total?: number
+}
+
+const getProviderColor = (provider: string) => {
+  switch (provider?.toLowerCase()) {
+    case 'postgres': return '#336791'
+    case 'mongodb': return '#4DB33D'
+    case 'sqlite': return '#003B57'
+    case 'surrealdb': return '#FF00A0'
+    default: return '#71717a'
+  }
+}
+
+const handleTableClick = (conn: ConnectionEntry, table: string) => {
+   emit('edit-table', conn, table)
 }
 
 const sidebarTabs = ['data', 'chats', 'queries'] as const
@@ -922,574 +921,584 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full text-sm select-none">
-    <div class="flex border-b border-border">
-      <button
-        v-for="tab in sidebarTabs"
-        :key="tab"
-        @click="activeTab = tab"
-        class="flex-1 py-2 text-center capitalize transition-colors"
-        :class="[
-          activeTab === tab
-            ? 'bg-muted/50 text-primary font-semibold border-b-2 border-primary'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/20'
-        ]"
-      >
-        {{ tab }}
-      </button>
-    </div>
+  <div class="flex flex-col h-full text-sm select-none bg-[#0a0a0b] text-stone-100 relative">
+    <!-- Tab Navigation (Modern Pill Style) -->
+    <div class="p-4 flex-shrink-0">
+      <div class="flex p-1 bg-stone-900/60 backdrop-blur-md rounded-xl border border-stone-800/50 relative">
+        <div 
+          class="absolute inset-y-1 bg-stone-800/80 rounded-lg shadow-lg transition-all duration-300 ease-out z-0"
+          :style="{ 
+            width: `${100 / sidebarTabs.length}%`, 
+            left: `${(sidebarTabs.indexOf(activeTab) * 100) / sidebarTabs.length}%` 
+          }"
+        ></div>
 
-    <div class="flex-1 overflow-y-auto p-2 space-y-3">
-      <template v-if="activeTab === 'data'">
-        <div class="space-y-3">
-          <!-- Connection Selector -->
-          <div class="px-1">
-            <Select :model-value="selectedConnectionId" @update:model-value="handleConnectionSelect">
-              <SelectTrigger class="w-full h-9 text-xs bg-background border-border text-foreground">
-                <SelectValue placeholder="Select a connection" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="add-new" class="text-primary font-medium cursor-pointer">
-                  <div class="flex items-center gap-2">
-                    <Plus class="w-3 h-3" />
-                    <span>Add New Connection</span>
-                  </div>
-                </SelectItem>
-                <SelectSeparator />
-                <SelectItem v-if="connections.length === 0" value="no-connections" disabled>
-                  <span class="text-muted-foreground">No databases found</span>
-                </SelectItem>
-                <template v-else>
-                  <SelectItem
-                    v-for="conn in connections"
-                    :key="conn.id"
-                    :value="conn.id"
-                  >
-                    <div class="flex items-center gap-2">
-                      <Database class="w-3 h-3 text-muted-foreground" />
-                      <span class="font-medium text-foreground">{{ conn.nickname }}</span>
-                      <!-- <span class="text-[10px] text-muted-foreground uppercase ml-auto">{{ conn.provider }}</span> -->
-                    </div>
-                  </SelectItem>
-                </template>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <!-- Selected Connection Schema -->
-          <div v-if="selectedConnectionId && connections.find(c => c.id === selectedConnectionId)" class="space-y-3">
-            <ContextMenu
-              v-for="conn in [connections.find(c => c.id === selectedConnectionId)!]"
-              :key="conn.id"
-            >
-              <ContextMenuTrigger class="w-full">
-                <article
-                  class="rounded-md border border-border bg-card p-3 space-y-2"
-                >
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <p class="font-semibold text-foreground">{{ conn.nickname }}</p>
-                      <p class="text-xs text-muted-foreground">{{ conn.provider.toUpperCase() }}</p>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span :class="['h-2 w-2 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
-                      <span>{{ statusLabel(schemaFor(conn.id)) }}</span>
-                      <span class="text-[11px] text-muted-foreground">{{ schemaFor(conn.id)?.tables.length ?? 0 }} items</span>
-                    </div>
-                  </div>
-                  <p v-if="schemaFor(conn.id)?.status === 'error'" class="text-xs text-destructive">
-                    {{ schemaFor(conn.id)?.error }}
-                  </p>
-
-                  <!-- If the schema includes discovered databases and the saved connection has no specific database, show databases to expand -->
-                  <div v-if="schemaFor(conn.id)?.databases && conn.provider === 'mongodb' && !(conn.mongodb && conn.mongodb.database)">
-                    <ul class="space-y-1">
-                      <li
-                        v-for="db in schemaFor(conn.id)?.databases"
-                        :key="`${conn.id}-db-${db}`"
-                        class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary flex items-center justify-between"
-                      >
-                        <div class="flex items-center gap-2">
-                          <button @click="loadTablesForDatabase(conn, db)" class="flex items-center gap-2 text-left">
-                            <span
-                              class="text-muted-foreground transition-transform"
-                              :style="{ transform: expandedDbByConn[conn.id] === db ? 'rotate(90deg)' : 'rotate(0deg)' }"
-                            >
-                              ▸
-                            </span>
-                            <div class="flex flex-col">
-                              <span class="font-medium text-foreground truncate">{{ db }}</span>
-                              <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Database</span>
-                            </div>
-                          </button>
-                        </div>
-                        <div class="text-xs text-muted-foreground">{{ expandedDbByConn[conn.id] === db ? 'Showing' : 'Expand' }}</div>
-                      </li>
-                    </ul>
-                    <p class="text-xs text-muted-foreground mt-2">Select a database to list its collections.</p>
-                  </div>
-
-                  <!-- Otherwise show tables/collections (either from a DB-scoped probe or legacy schema) -->
-                  <ul v-else-if="schemaFor(conn.id)?.tables.length" class="space-y-1">
-                    <li
-                      v-for="table in schemaFor(conn.id)?.tables"
-                      :key="`${conn.id}-${table}`"
-                    >
-                      <ContextMenu>
-                        <ContextMenuTrigger class="w-full">
-                          <div class="group rounded-md border border-border bg-muted/30 px-3 py-2 transition hover:border-primary">
-                            <div class="flex items-center justify-between gap-2">
-                              <div class="flex flex-col flex-1 min-w-0">
-                                <input
-                                  v-if="renamingTable?.oldName === table && renamingTable?.conn.id === conn.id"
-                                  v-model="renamingTable.newName"
-                                  @keyup.enter="confirmRename"
-                                  @keyup.escape="cancelRename"
-                                  @blur="confirmRename"
-                                  class="font-medium text-foreground bg-muted border border-primary rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                  @click.stop
-                                />
-                                <span v-else class="font-medium text-foreground truncate">{{ formatTableName(table, conn.id) }}</span>
-                                <span class="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
-                                  {{ conn.provider === 'mongodb' ? 'Collection' : 'Table' }}
-                                </span>
-                              </div>
-                              <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
-                                <button
-                                  @click.stop="openViewer(conn, table)"
-                                  class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
-                                  title="View entries"
-                                >
-                                  <Eye class="w-4 h-4" />
-                                </button>
-                                <button
-                                  @click.stop="handleEditTable(conn, table)"
-                                  class="rounded-md border border-border p-2 text-muted-foreground hover:text-primary hover:border-primary hover:bg-muted transition-colors"
-                                  title="Edit values"
-                                >
-                                  <Edit class="w-4 h-4" />
-                                </button>
-                                <button
-                                  @click.stop="handleDeleteTable(conn, table)"
-                                  class="rounded-md border border-border p-2 text-muted-foreground hover:text-destructive hover:border-destructive hover:bg-muted transition-colors"
-                                  title="Delete table"
-                                >
-                                  <Trash class="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </ContextMenuTrigger>
-                        
-                        <ContextMenuContent class="w-56 bg-popover border-border">
-                          <ContextMenuItem 
-                            @select="copyAllTableData(conn, table)"
-                            class="text-foreground hover:bg-muted focus:bg-muted"
-                          >
-                            Copy All Data
-                          </ContextMenuItem>
-                          <ContextMenuItem 
-                            @select="startRenameTable(conn, table)"
-                            class="text-foreground hover:bg-muted focus:bg-muted"
-                          >
-                            Rename Table
-                          </ContextMenuItem>
-                          <ContextMenuItem 
-                            @select="$emit('sanitize-table', conn, table)"
-                            class="text-foreground hover:bg-muted focus:bg-muted"
-                          >
-                            Sanitize Table
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    </li>
-                  </ul>
-
-                  <div v-else class="text-xs text-muted-foreground space-y-2">
-                    <p>No tables or collections available yet.</p>
-                    <button
-                      @click="handleDeleteConnection(conn)"
-                      class="text-red-600 dark:text-red-400 hover:underline text-xs"
-                    >
-                      Delete this connection
-                    </button>
-                  </div>
-                </article>
-              </ContextMenuTrigger>
-              
-              <ContextMenuContent class="w-56 bg-popover border-border">
-                <ContextMenuItem 
-                  @select="refreshSchemas()"
-                  class="text-foreground hover:bg-muted focus:bg-muted"
-                >
-                  <RefreshCw class="w-4 h-4 mr-2" />
-                  Refresh Schema
-                </ContextMenuItem>
-                <ContextMenuItem 
-                  @select="handleDeleteConnection(conn)"
-                  class="text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
-                >
-                  <Trash class="w-4 h-4 mr-2" />
-                  Delete Connection
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          </div>
-          <p v-else class="text-xs text-muted-foreground px-2">
-            Select a connection to browse its schema.
-          </p>
-        </div>
-      </template>
-
-
-      <template v-else-if="activeTab === 'chats'">
-        <div class="px-2 space-y-3">
-          <div class="flex gap-2">
-            <button @click="emit('create-chat')" class="flex-1 py-2 px-4 bg-primary hover:bg-primary/90 rounded-lg text-primary-foreground text-sm font-medium transition-colors shadow-lg shadow-primary/20">
-              + New Chat
-            </button>
-            <button 
-              v-if="props.chats && props.chats.length > 0"
-              @click="handleClearAllChats" 
-              class="py-2 px-3 bg-destructive/10 hover:bg-destructive/20 rounded-lg text-destructive text-sm font-medium transition-colors border border-destructive/20"
-              title="Clear all chats"
-            >
-              Clear All
-            </button>
-          </div>
-          <div v-if="props.chats && props.chats.length > 0" class="space-y-2">
-            <ContextMenu v-for="chat in props.chats" :key="chat.id">
-              <ContextMenuTrigger class="w-full">
-                <div
-                  @click="emit('select-chat', chat.id)"
-                  :class="['p-3 rounded-lg cursor-pointer transition-colors text-sm border', props.selectedChatId === chat.id ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border hover:bg-muted text-muted-foreground']"
-                >
-                  <div class="font-medium truncate">{{ chat.title }}</div>
-                  <div class="text-xs text-muted-foreground/70 mt-1">{{ formatDate(chat.updated_at) }}</div>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent class="w-48 bg-popover border-border">
-                <ContextMenuItem 
-                  @select="handleDeleteChat(chat)"
-                  class="text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
-                >
-                  <Trash class="w-4 h-4 mr-2" />
-                  Delete Chat
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          </div>
-          <div v-else class="text-center text-muted-foreground text-sm py-8">
-            No chats yet. Start a new conversation!
-          </div>
-        </div>
-      </template>
-
-      <template v-else>
-        <div class="px-2 space-y-3">
-          <h2 class="py-1 font-semibold text-primary">Past Queries</h2>
-          <div v-if="props.queryHistory && props.queryHistory.length > 0" class="space-y-1">
-            <div
-              v-for="q in props.queryHistory"
-              :key="q.id"
-              @click="() => { console.log('Explorer: clicked query', q.query); emit('load-query', q.query) }"
-              class="flex items-center justify-between p-2 rounded-md hover:bg-muted/70 cursor-pointer transition"
-            >
-              <div class="flex items-center gap-2 truncate flex-1 min-w-0">
-                <span
-                  v-if="q.source === 'ai'"
-                  class="inline-block w-4 h-4 bg-primary rounded-sm flex-shrink-0"
-                  title="Generated by Pegasus AI"
-                ></span>
-                <span class="truncate text-foreground text-xs font-mono">
-                  {{ q.query }}
-                </span>
-              </div>
-              <span class="text-[10px] text-muted-foreground ml-2 flex-shrink-0">
-                {{ new Date(q.timestamp).toLocaleTimeString() }}
-              </span>
-            </div>
-          </div>
-          <div v-else class="text-center text-muted-foreground text-sm py-8">
-            No queries yet. Run a query to see it here!
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <div
-      v-if="viewer.open"
-      class="fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4 py-6"
-      @click.self="closeViewer"
-    >
-      <div class="relative max-w-[95vw] w-full max-h-[70vh] h-[70vh] overflow-hidden flex flex-col rounded-lg border border-border bg-background p-6 shadow-2xl">
-        <div class="flex items-center justify-between flex-shrink-0 mb-4">
-          <div>
-            <p class="text-lg font-semibold text-foreground">Entries in {{ formatTableName(viewer.table, viewer.connection?.id) }}</p>
-            <p class="text-xs text-muted-foreground">{{ viewer.connection?.nickname }}</p>
-          </div>
-          <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-muted-foreground">Text Size:</span>
-              <button 
-                @click="decreaseViewerZoom" 
-                class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-                :disabled="viewerZoomLevel === 0"
-              >
-                <Minus class="w-4 h-4" />
-              </button>
-              <button 
-                @click="increaseViewerZoom" 
-                class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-                :disabled="viewerZoomLevel === viewerZoomClasses.length - 1"
-              >
-                <Plus class="w-4 h-4" />
-              </button>
-            </div>
-            <button
-              @click="closeViewer"
-              class="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-
-        <div class="flex-1 flex flex-col min-h-0 space-y-3">
-          <!-- Search Box -->
-          <div class="flex items-center gap-2 px-1">
-            <div class="relative flex-1">
-              <Search class="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="Search in table..."
-                class="w-full pl-8 pr-3 py-1.5 text-xs rounded border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
-            <span v-if="searchQuery" class="text-xs text-muted-foreground whitespace-nowrap">
-              {{ filteredAndSortedRows.length }} of {{ viewerDataRows.length }} rows
-            </span>
-          </div>
-          
-          <div v-if="viewer.loading" class="text-xs text-muted-foreground">Loading rows…</div>
-          <div v-else-if="viewer.error" class="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            {{ viewer.error }}
-          </div>
-          <div v-else-if="viewer.entries.length" class="flex-1 overflow-auto rounded-md border border-border bg-muted/30">
-            <ContextMenu>
-              <ContextMenuTrigger class="w-full">
-                <table :class="['w-full table-auto text-foreground', viewerTextSizeClass]">
-                  <thead class="text-left text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                    <tr>
-                      <th class="px-2 py-1 sticky top-0 bg-muted w-8"></th>
-                      <th
-                        v-for="col in viewerColumns"
-                        :key="col"
-                        @click="toggleSort(col)"
-                        class="px-2 py-1 sticky top-0 bg-muted cursor-pointer hover:bg-muted/80 transition-colors select-none group"
-                        :class="{ 'text-primary font-semibold': sortColumn === col }"
-                      >
-                        <div class="flex items-center gap-1">
-                          <span>{{ col }}</span>
-                          <span class="opacity-0 group-hover:opacity-100 transition-opacity" :class="{ '!opacity-100': sortColumn === col }">
-                            <span v-if="sortColumn === col && sortDirection === 'asc'">↑</span>
-                            <span v-else-if="sortColumn === col && sortDirection === 'desc'">↓</span>
-                            <span v-else class="text-muted-foreground/50">↕</span>
-                          </span>
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template v-for="(entry, index) in filteredAndSortedRows" :key="`row-${index}`">
-                      <!-- Main row -->
-                      <tr
-                        :class="[
-                          'border-t border-border transition-colors',
-                          selectedRows.has(index) 
-                            ? 'bg-primary/20 hover:bg-primary/30' 
-                            : 'hover:bg-muted/30'
-                        ]"
-                        @click="(e) => { 
-                          if (!e.defaultPrevented) {
-                            toggleRowSelection(index, e)
-                          }
-                        }"
-                      >
-                        <td class="px-2 py-1 align-top">
-                          <button 
-                            @click.stop="toggleRowExpansion(index)"
-                            class="text-muted-foreground hover:text-foreground p-0.5 rounded"
-                          >
-                            <component :is="expandedRows.has(index) ? ChevronDown : ChevronRight" class="w-3 h-3" />
-                          </button>
-                        </td>
-                        <td
-                          v-for="col in viewerColumns"
-                          :key="col"
-                          class="px-2 py-1 align-top max-w-[200px] truncate"
-                          :title="String(entry[col])"
-                        >
-                          <span v-if="isJsonValue(entry[col])" class="font-mono text-[10px] text-blue-400">
-                            {{ formatCellValue(entry[col]) }}
-                          </span>
-                          <span v-else>
-                            {{ formatCellValue(entry[col]) }}
-                          </span>
-                        </td>
-                      </tr>
-                      <!-- Expanded row details -->
-                      <tr v-if="expandedRows.has(index)" class="bg-muted/10">
-                        <td :colspan="viewerColumns.length + 1" class="px-4 py-2">
-                          <JsonViewer :data="entry" :text-size="viewerTextSizeClass" />
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
-              </ContextMenuTrigger>
-              <ContextMenuContent class="w-56 bg-popover border-border">
-                <ContextMenuItem @select="copySelectedRows" class="text-foreground hover:bg-muted focus:bg-muted">
-                  Copy Selected Rows
-                </ContextMenuItem>
-                <ContextMenuItem @select="copyAllRows" class="text-foreground hover:bg-muted focus:bg-muted">
-                  Copy All Rows
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          </div>
-          <div v-else class="text-xs text-muted-foreground">No entries found.</div>
-          
-          <Pagination
-            :page="viewer.page"
-            :has-prev="viewer.page > 1"
-            :has-next="viewer.hasMore"
-            :total-pages="viewer.total ? Math.ceil(viewer.total / viewer.limit) : undefined"
-            @page-change="loadViewerPage"
-          />
-          <div class="flex items-center gap-4 text-xs text-muted-foreground">
-            <span v-if="selectedRows.size > 0" class="text-primary font-medium">
-              {{ selectedRows.size }} selected
-            </span>
-            <span>
-              Showing up to {{ viewer.limit }} rows per page
-            </span>
-          </div>
-        </div>
+        <button
+          v-for="tab in sidebarTabs"
+          :key="tab"
+          @click="activeTab = tab"
+          class="flex-1 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all relative z-10"
+          :class="[
+            activeTab === tab ? 'text-stone-100' : 'text-stone-500 hover:text-stone-300'
+          ]"
+        >
+          {{ tab === 'data' ? 'Sources' : (tab === 'chats' ? 'History' : 'Log') }}
+        </button>
       </div>
     </div>
 
-    <AddConnectionModal
-      v-model:open="isAddConnectionModalOpen"
-    />
-    
-    <!-- Delete Confirmation Dialog -->
+    <!-- Active Tab Content -->
+    <div class="flex-1 overflow-y-auto px-4 pb-6 space-y-6 scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
+      
+      <!-- DATA TAB -->
+      <template v-if="activeTab === 'data'">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between px-1">
+            <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Connections</h3>
+            <button 
+              @click="addConnectionModalOpen = true"
+              class="p-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-white hover:bg-stone-800 transition-all"
+            >
+              <Plus class="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div class="space-y-3">
+            <div v-if="connections.length === 0" class="py-12 text-center space-y-4">
+              <div class="w-12 h-12 rounded-2xl bg-stone-900 border border-stone-800 flex items-center justify-center mx-auto">
+                <Database class="w-6 h-6 text-stone-700" />
+              </div>
+              <p class="text-xs text-stone-500">No databases connected yet.</p>
+              <button @click="addConnectionModalOpen = true" class="text-xs font-bold text-violet-400 hover:text-violet-300">
+                Connect your first database
+              </button>
+            </div>
+
+            <div
+              v-for="conn in connections"
+              :key="conn.id"
+              class="group relative"
+            >
+              <div 
+                v-if="selectedConnectionId === conn.id"
+                class="absolute -inset-1 bg-gradient-to-r from-violet-600/10 to-fuchsia-600/10 blur-md rounded-xl"
+              ></div>
+
+              <article
+                @click="handleConnectionSelect(conn.id)"
+                class="relative cursor-pointer rounded-xl border p-3 transition-all duration-300 overflow-hidden"
+                :class="[
+                  selectedConnectionId === conn.id 
+                    ? 'bg-stone-900/90 border-violet-500/30 ring-1 ring-violet-500/10' 
+                    : 'bg-stone-900/40 border-stone-800/80 hover:border-stone-700 hover:bg-stone-900/60'
+                ]"
+              >
+                <div class="flex items-start justify-between relative z-10">
+                  <div class="flex items-center gap-3">
+                    <div 
+                      class="w-8 h-8 rounded-lg flex items-center justify-center border transition-all"
+                      :class="[
+                        selectedConnectionId === conn.id 
+                          ? 'bg-violet-500/10 border-violet-500/20 text-violet-400 shadow-[0_0_15px_-5px_theme(colors.violet.500)]' 
+                          : 'bg-stone-800/50 border-stone-700/50 text-stone-500 group-hover:text-stone-300 group-hover:border-stone-600'
+                      ]"
+                    >
+                      <Database class="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p class="font-semibold text-stone-200 group-hover:text-white transition-colors truncate max-w-[120px]">{{ conn.nickname }}</p>
+                      <div class="flex items-center gap-2 mt-0.5">
+                        <span class="text-[9px] font-bold uppercase tracking-widest text-stone-500">{{ conn.provider }}</span>
+                        <div class="w-1 h-1 rounded-full bg-stone-700"></div>
+                        <div class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest" :class="schemaFor(conn.id)?.status === 'error' ? 'text-rose-500' : 'text-stone-500'">
+                          <span :class="['h-1.5 w-1.5 rounded-full', statusDotClasses(schemaFor(conn.id)?.status)]"></span>
+                          {{ statusLabel(schemaFor(conn.id)) }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex flex-col items-end gap-1">
+                    <button 
+                      @click.stop="handleDeleteConnection(conn)"
+                      class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-stone-800 text-stone-600 hover:text-rose-400 transition-all"
+                    >
+                      <Trash class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Table List (Inline) -->
+                <div v-if="selectedConnectionId === conn.id" class="mt-4 pt-4 border-t border-stone-800/50 space-y-1 max-h-[400px] overflow-y-auto pr-1">
+                  <div 
+                    v-for="table in schemaFor(conn.id)?.tables" 
+                    :key="table"
+                    class="block"
+                  >
+                    <ContextMenu>
+                      <ContextMenuTrigger class="flex-1 flex items-center justify-between">
+                        <div 
+                          class="flex items-center justify-between p-2 rounded-lg hover:bg-violet-500/5 group/table transition-all border border-transparent hover:border-violet-500/10 w-full cursor-pointer"
+                          @click="handleTableClick(conn, table)"
+                        >
+                          <div class="flex items-center gap-2 overflow-hidden">
+                            <Table class="w-3.5 h-3.5 text-stone-600 group-hover/table:text-violet-400 shrink-0" />
+                            <span class="truncate text-stone-400 group-hover/table:text-stone-200 transition-colors">
+                              {{ formatTableName(table, conn.id) }}
+                            </span>
+                          </div>
+                          
+                          <div class="flex items-center gap-1 opacity-0 group-hover/table:opacity-100 translate-x-1 group-hover/table:translate-x-0 transition-all">
+                            <button 
+                              @click.stop="openViewer(conn, table)" 
+                              class="p-1 hover:text-violet-400 text-stone-500 transition-colors"
+                              title="Preview Data"
+                            >
+                              <Eye class="w-3 h-3" />
+                            </button>
+                            <button 
+                              @click.stop="emit('edit-table', conn, table)" 
+                              class="p-1 hover:text-white text-stone-500 transition-colors"
+                              title="Open in Editor"
+                            >
+                              <Edit class="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent class="w-48 bg-[#0a0a0b] border-stone-800 text-stone-100">
+                         <ContextMenuItem @select="openViewer(conn, table)">
+                            Preview Data
+                         </ContextMenuItem>
+                         <ContextMenuItem @select="emit('edit-table', conn, table)">
+                            Open in Editor
+                         </ContextMenuItem>
+                         <ContextMenuSeparator class="bg-stone-800 my-1" />
+                         <ContextMenuItem @select="startRenameTable(conn, table)">
+                            Rename Table...
+                         </ContextMenuItem>
+                         <ContextMenuItem @select="handleDeleteTable(conn, table)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                            Delete Table
+                         </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- CHATS TAB -->
+      <template v-else-if="activeTab === 'chats'">
+        <div class="space-y-6">
+          <div class="flex items-center justify-between px-1">
+            <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Session History</h3>
+            <div class="flex gap-2">
+              <button 
+                @click="emit('create-chat')"
+                class="p-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-violet-400 hover:bg-stone-800 transition-all"
+                title="New Session"
+              >
+                <Plus class="w-3.5 h-3.5" />
+              </button>
+              <button 
+                v-if="props.chats?.length"
+                @click="handleClearAllChats"
+                class="p-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-rose-400 hover:bg-stone-800 transition-all"
+                title="Clear All"
+              >
+                <Trash class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <div v-if="!props.chats?.length" class="py-12 text-center space-y-3">
+              <div class="w-10 h-10 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center mx-auto opacity-50">
+                <Search class="w-5 h-5 text-stone-700" />
+              </div>
+              <p class="text-[10px] font-bold uppercase tracking-widest text-stone-600">No session history</p>
+            </div>
+
+            <div
+              v-for="chat in props.chats"
+              :key="chat.id"
+              @click="emit('select-chat', chat.id)"
+              class="group relative cursor-pointer px-4 py-3 rounded-xl border transition-all duration-300"
+              :class="[
+                props.selectedChatId === chat.id 
+                  ? 'bg-violet-500/5 border-violet-500/20 text-stone-100 shadow-[0_0_20px_-10px_theme(colors.violet.500)]' 
+                  : 'bg-stone-900/40 border-stone-800/80 hover:border-stone-700 hover:bg-stone-900/60 text-stone-400'
+              ]"
+            >
+              <div class="flex justify-between items-start gap-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium truncate group-hover:text-stone-100 transition-colors">{{ chat.title }}</p>
+                  <p class="text-[10px] font-bold uppercase tracking-tighter text-stone-600 mt-1">{{ formatDate(chat.updated_at) }}</p>
+                </div>
+                <button 
+                  @click.stop="handleDeleteChat(chat)"
+                  class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-stone-800 text-stone-500 hover:text-rose-400 transition-all"
+                >
+                  <Trash class="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- QUERIES TAB -->
+      <template v-else>
+        <div class="space-y-6">
+          <div class="px-1">
+            <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Query History</h3>
+          </div>
+
+          <div class="space-y-2">
+            <div v-if="!props.queryHistory?.length" class="py-12 text-center">
+              <p class="text-[10px] font-bold uppercase tracking-widest text-stone-600 opacity-50">No recent queries</p>
+            </div>
+
+            <div
+              v-for="q in props.queryHistory"
+              :key="q.id"
+              @click="emit('load-query', q.query)"
+              class="group cursor-pointer p-3 rounded-xl bg-stone-900/40 border border-stone-800/80 hover:border-stone-700 hover:bg-stone-900/60 transition-all"
+            >
+              <div class="flex items-center gap-3">
+                <div 
+                  class="w-6 h-6 rounded flex items-center justify-center shrink-0"
+                  :class="q.source === 'ai' ? 'bg-violet-500/10 text-violet-400' : 'bg-stone-800 text-stone-500'"
+                >
+                  <Sparkles v-if="q.source === 'ai'" class="w-3 h-3" />
+                  <Database v-else class="w-3 h-3" />
+                </div>
+                <div class="flex-1 min-w-0 overflow-hidden">
+                  <p class="text-xs font-mono truncate text-stone-400 group-hover:text-stone-200 transition-colors">{{ q.query }}</p>
+                  <p class="text-[9px] text-stone-600 mt-1 uppercase tracking-tighter font-bold">
+                    {{ new Date(q.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Viewer Overflow -->
+    <Transition name="fade">
+      <div
+        v-if="viewer.open"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/80 backdrop-blur-md p-4 sm:p-8"
+        @click.self="closeViewer"
+      >
+        <div class="relative w-full max-w-6xl h-full max-h-[85vh] overflow-hidden flex flex-col rounded-[32px] border border-stone-800 bg-[#0a0a0b] shadow-2xl">
+          <!-- Viewer Header -->
+          <div class="p-6 sm:px-8 border-b border-stone-800 flex items-center justify-between bg-stone-900/20">
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 p-0.5 shadow-lg shadow-violet-500/10">
+                <div class="w-full h-full bg-[#0a0a0b] rounded-[14px] flex items-center justify-center">
+                  <Table class="w-6 h-6 text-violet-400" />
+                </div>
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-white">{{ formatTableName(viewer.table, viewer.connection?.id) }}</h3>
+                <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">{{ viewer.connection?.nickname }} / {{ viewer.total ?? '...' }} Records</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <div class="flex items-center bg-stone-900/60 rounded-xl p-1 border border-stone-800/50">
+                <button 
+                  @click="decreaseViewerZoom" 
+                  class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-white disabled:opacity-20 transition-all"
+                  :disabled="viewerZoomLevel === 0"
+                >
+                  <Minus class="w-4 h-4" />
+                </button>
+                <div class="h-4 w-[1px] bg-stone-800 mx-1"></div>
+                <button 
+                  @click="increaseViewerZoom" 
+                  class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-white disabled:opacity-20 transition-all"
+                  :disabled="viewerZoomLevel === viewerZoomClasses.length - 1"
+                >
+                  <Plus class="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                @click="closeViewer"
+                class="w-10 h-10 rounded-full flex items-center justify-center bg-stone-900 border border-stone-800 text-stone-400 hover:text-white transition-all shadow-xl"
+              >
+                <X class="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Viewer Content -->
+          <div class="flex-1 overflow-hidden flex flex-col bg-stone-950/30">
+            <!-- Toolbar -->
+            <div class="px-8 py-4 border-b border-stone-800 flex items-center gap-4 bg-[#0a0a0b]">
+              <div class="relative flex-1 group">
+                <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-600 transition-colors group-focus-within:text-violet-500" />
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Filter data..."
+                  class="w-full pl-10 pr-4 py-2 bg-stone-900/50 border border-stone-800 rounded-xl text-sm text-stone-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
+                />
+              </div>
+              <div v-if="searchQuery" class="text-[10px] font-bold uppercase tracking-widest text-violet-400">
+                {{ filteredAndSortedRows.length }} matches
+              </div>
+            </div>
+
+            <!-- Table -->
+            <div class="flex-1 overflow-auto px-8 py-6 scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
+              <div v-if="viewer.loading" class="h-full flex flex-col items-center justify-center py-20 space-y-4">
+                <Loader2 class="w-8 h-8 text-violet-500 animate-spin" />
+                <p class="text-xs font-bold uppercase tracking-widest text-stone-600">Reading records...</p>
+              </div>
+              <div v-else-if="viewer.error" class="p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-400 text-sm">
+                {{ viewer.error }}
+              </div>
+              <table v-else-if="viewer.entries.length" class="w-full border-separate border-spacing-0">
+                <thead>
+                  <tr class="text-left">
+                    <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 w-10"></th>
+                    <th
+                      v-for="col in viewerColumns"
+                      :key="col"
+                      @click="toggleSort(col)"
+                      class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div class="flex items-center gap-2">
+                        {{ col }}
+                        <span v-if="sortColumn === col" class="text-violet-400">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template v-for="(entry, index) in filteredAndSortedRows" :key="`row-${index}`">
+                    <tr 
+                      @click="toggleRowSelection(index, $event)"
+                      class="group/row transition-colors hover:bg-stone-900/40"
+                      :class="selectedRows.has(index) ? 'bg-violet-500/10' : ''"
+                    >
+                      <td class="px-4 py-3 border-b border-stone-800/50">
+                        <button @click.stop="toggleRowExpansion(index)" class="text-stone-700 hover:text-violet-400 transition-colors">
+                          <ChevronDown v-if="expandedRows.has(index)" class="w-3.5 h-3.5" />
+                          <ChevronRight v-else class="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                      <td
+                        v-for="col in viewerColumns"
+                        :key="col"
+                        class="px-4 py-3 border-b border-stone-800/50 text-xs font-medium text-stone-400 group-hover/row:text-stone-100 max-w-[200px] truncate transition-colors"
+                      >
+                         {{ formatCellValue(entry[col]) }}
+                      </td>
+                    </tr>
+                    <tr v-if="expandedRows.has(index)">
+                      <td :colspan="viewerColumns.length + 1" class="p-6 bg-stone-900/20 border-b border-stone-800/50">
+                        <JsonViewer :data="entry" :text-size="viewerTextSizeClass" />
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <div v-else class="py-20 text-center text-stone-600 font-bold uppercase tracking-widest text-xs">
+                No entries found
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-8 py-4 border-t border-stone-800 bg-stone-900/10 flex items-center justify-between">
+              <div class="flex items-center gap-6">
+                <span v-if="selectedRows.size" class="text-[10px] font-bold uppercase tracking-widest text-violet-400 bg-violet-500/10 px-2 py-1 rounded">
+                  {{ selectedRows.size }} selected
+                </span>
+                <span class="text-[10px] font-bold uppercase tracking-widest text-stone-600">
+                  Showing {{ viewer.entries.length }} records
+                </span>
+              </div>
+
+              <div class="flex items-center gap-4">
+                <Pagination
+                  :page="viewer.page"
+                  :has-prev="viewer.page > 1"
+                  :has-next="viewer.hasMore"
+                  @page-change="loadViewerPage"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Modals -->
+    <AddConnectionModal v-model:open="addConnectionModalOpen" />
+
+    <!-- Delete Table Dialog -->
     <Dialog v-model:open="deleteDialogOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete Table</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to permanently delete "{{ tableToDelete ? formatTableName(tableToDelete.table, tableToDelete.conn.id) : '' }}"?
-            This action cannot be undone.
-          </DialogDescription>
+      <DialogContent class="bg-[#0a0a0b] border-stone-800 text-stone-100 max-w-sm rounded-[32px]">
+        <DialogHeader class="items-center text-center p-6 space-y-4">
+          <div class="w-16 h-16 rounded-3xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+            <Trash class="w-8 h-8" />
+          </div>
+          <div>
+            <DialogTitle class="text-xl font-bold">Delete Table</DialogTitle>
+            <DialogDescription class="text-stone-500 mt-2">
+              Are you sure you want to permanently delete "{{ tableToDelete ? formatTableName(tableToDelete.table, tableToDelete.conn.id) : '' }}"? This action is irreversible.
+            </DialogDescription>
+          </div>
         </DialogHeader>
-        <DialogFooter class="gap-2">
-          <button
-            @click="deleteDialogOpen = false"
-            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            Cancel
+        <DialogFooter class="px-6 pb-6 pt-2 flex flex-col gap-2">
+          <button @click="confirmDelete" class="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all">
+            Confirm Deletion
           </button>
-          <button
-            @click="confirmDelete"
-            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
-          >
-            Delete
+          <button @click="deleteDialogOpen = false" class="w-full py-3 rounded-2xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white font-bold transition-all">
+            Cancel
           </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    
+
     <!-- Delete Connection Dialog -->
     <Dialog v-model:open="deleteConnectionDialogOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete Connection</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete the connection "{{ connectionToDelete?.nickname }}"? 
-            This action cannot be undone.
-          </DialogDescription>
+      <DialogContent class="bg-[#0a0a0b] border-stone-800 text-stone-100 max-w-sm rounded-[32px]">
+        <DialogHeader class="items-center text-center p-6 space-y-4">
+          <div class="w-16 h-16 rounded-3xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+            <Database class="w-8 h-8" />
+          </div>
+          <div>
+            <DialogTitle class="text-xl font-bold">Delete Connection</DialogTitle>
+            <DialogDescription class="text-stone-500 mt-2">
+              Remove "{{ connectionToDelete?.nickname }}"? You'll need to reconnect it later to access its data.
+            </DialogDescription>
+          </div>
         </DialogHeader>
-        <DialogFooter class="gap-2">
-          <button
-            @click="deleteConnectionDialogOpen = false"
-            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            Cancel
+        <DialogFooter class="px-6 pb-6 pt-2 flex flex-col gap-2">
+          <button @click="confirmDeleteConnection" class="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all">
+            Remove Connection
           </button>
-          <button
-            @click="confirmDeleteConnection"
-            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
-          >
-          Delete Connection
+          <button @click="deleteConnectionDialogOpen = false" class="w-full py-3 rounded-2xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white font-bold transition-all">
+            Cancel
           </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    
-    <!-- Delete Chat Dialog -->
+
+    <!-- Chat/Clear All Dialogs (Omitted for brevity, but I'll add them if needed) -->
     <Dialog v-model:open="deleteChatDialogOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete Chat</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete "{{ chatToDelete?.title }}"? 
-            This action cannot be undone.
-          </DialogDescription>
+      <DialogContent class="bg-[#0a0a0b] border-stone-800 text-stone-100 max-w-sm rounded-[32px]">
+        <DialogHeader class="items-center text-center p-6 space-y-4">
+          <div class="w-16 h-16 rounded-3xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+            <Trash class="w-8 h-8" />
+          </div>
+          <div>
+            <DialogTitle class="text-xl font-bold">Delete Session</DialogTitle>
+            <DialogDescription class="text-stone-500 mt-2">
+              Are you sure you want to delete "{{ chatToDelete?.title }}"?
+            </DialogDescription>
+          </div>
         </DialogHeader>
-        <DialogFooter class="gap-2">
-          <button
-            @click="deleteChatDialogOpen = false"
-            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            Cancel
+        <DialogFooter class="px-6 pb-6 pt-2 flex flex-col gap-2">
+          <button @click="confirmDeleteChat" class="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all">
+            Delete Session
           </button>
-          <button
-            @click="confirmDeleteChat"
-            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
-          >
-            Delete Chat
+          <button @click="deleteChatDialogOpen = false" class="w-full py-3 rounded-2xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white font-bold transition-all">
+            Cancel
           </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    
-    <!-- Clear All Chats Dialog -->
+
     <Dialog v-model:open="clearAllChatsDialogOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Clear All Chats</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete ALL chats? 
-            This will permanently delete all your chat history and cannot be undone.
-          </DialogDescription>
+      <DialogContent class="bg-[#0a0a0b] border-stone-800 text-stone-100 max-w-sm rounded-[32px]">
+        <DialogHeader class="items-center text-center p-6 space-y-4">
+          <div class="w-16 h-16 rounded-3xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+            <Trash class="w-8 h-8" />
+          </div>
+          <div>
+            <DialogTitle class="text-xl font-bold">Clear All History</DialogTitle>
+            <DialogDescription class="text-stone-500 mt-2">
+              This will wipe ALL your analysis sessions permanently.
+            </DialogDescription>
+          </div>
         </DialogHeader>
-        <DialogFooter class="gap-2">
-          <button
-            @click="clearAllChatsDialogOpen = false"
-            class="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
+        <DialogFooter class="px-6 pb-6 pt-2 flex flex-col gap-2">
+          <button @click="confirmClearAllChats" class="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all">
+            Wipe Everything
+          </button>
+          <button @click="clearAllChatsDialogOpen = false" class="w-full py-3 rounded-2xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white font-bold transition-all">
             Cancel
           </button>
-          <button
-            @click="confirmClearAllChats"
-            class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
-          >
-            Clear All Chats
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Rename Table Dialog -->
+    <Dialog :open="!!renamingTable" @update:open="(val) => !val && cancelRename()">
+      <DialogContent class="bg-[#0a0a0b] border-stone-800 text-stone-100 max-w-sm rounded-[32px]">
+        <DialogHeader class="items-center text-center p-6 space-y-4">
+          <div class="w-16 h-16 rounded-3xl bg-violet-500/10 flex items-center justify-center text-violet-400">
+            <Edit class="w-8 h-8" />
+          </div>
+          <div>
+            <DialogTitle class="text-xl font-bold">Rename Table</DialogTitle>
+            <DialogDescription class="text-stone-500 mt-2">
+              Update the name for "{{ renamingTable?.oldName }}"
+            </DialogDescription>
+          </div>
+        </DialogHeader>
+        <div class="px-6 pb-2">
+           <input 
+             v-if="renamingTable"
+             v-model="renamingTable.newName"
+             @keydown.enter="confirmRename"
+             @keydown.esc="cancelRename"
+             type="text" 
+             placeholder="New Table Name" 
+             class="w-full bg-stone-900 border border-stone-800 rounded-xl px-4 py-3 text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/50 transition-all font-mono text-sm"
+           />
+        </div>
+        <DialogFooter class="px-6 pb-6 pt-2 flex flex-col gap-2">
+          <button @click="confirmRename" class="w-full py-3 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-bold transition-all">
+            Update Name
+          </button>
+          <button @click="cancelRename" class="w-full py-3 rounded-2xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white font-bold transition-all">
+            Cancel
           </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #1c1c1e;
+  border-radius: 20px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #2c2c2e;
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.expand-enter-active, .expand-leave-active { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); max-height: 400px; opacity: 1; }
+.expand-enter-from, .expand-leave-to { max-height: 0; opacity: 0; overflow: hidden; }
+</style>

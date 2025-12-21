@@ -8,7 +8,7 @@
     </div>
 
     <div v-if="loading" class="text-center py-8">
-      <div class="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+      <div class="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-lg mx-auto"></div>
     </div>
 
     <div v-else-if="!hasAccess" class="p-6 rounded-lg border border-border bg-muted/50">
@@ -25,7 +25,7 @@
           <div class="flex-1">
             <div class="flex items-center gap-2 mb-1">
               <h3 class="font-semibold text-foreground">{{ feature.name }}</h3>
-              <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-600 border border-amber-500/20">
+              <span class="px-2 py-0.5 rounded-lg text-xs bg-amber-500/10 text-amber-600 border border-amber-500/20">
                 Experimental
               </span>
             </div>

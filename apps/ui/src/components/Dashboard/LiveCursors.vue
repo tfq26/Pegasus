@@ -21,7 +21,7 @@
       
       <!-- User Label -->
       <div 
-        class="bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shadow-sm"
+        class="bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-lg font-medium whitespace-nowrap shadow-sm"
       >
         {{ cursor.user?.firstName || 'Guest' }}
       </div>

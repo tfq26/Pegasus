@@ -246,7 +246,7 @@ onUnmounted(() => {
     <div class="flex-1 overflow-hidden relative w-full h-full">
       <div v-if="!hfInstance && data.length > 0" class="flex items-center justify-center h-full text-muted-foreground">
         <div class="flex flex-col items-center gap-2">
-            <span class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+            <span class="w-4 h-4 border-2 border-primary border-t-transparent rounded-lg animate-spin"></span>
              <span>Initializing spreadsheet engine...</span>
         </div>
       </div>

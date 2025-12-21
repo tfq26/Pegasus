@@ -194,9 +194,23 @@ function checkIfModifiesData(targetColumn, spreadsheetData, isOverwrite) {
     return isOverwrite === true;
 }
 
+// Helper to get token from cookie or header
+const getAuthToken = (c) => {
+    // Try cookie first
+    let token = getCookie(c, "session")
+    // Fallback to Authorization header
+    if (!token) {
+        const authHeader = c.req.header("Authorization")
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7)
+        }
+    }
+    return token
+}
+
 // Chat Routes
 chat.get("/chats", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -214,7 +228,7 @@ chat.get("/chats", async (c) => {
 })
 
 chat.post("/chats", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -251,7 +265,7 @@ chat.post("/chats", async (c) => {
 })
 
 chat.get("/chats/:id", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -275,7 +289,7 @@ chat.get("/chats/:id", async (c) => {
 })
 
 chat.post("/chats/:id/messages", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -342,7 +356,7 @@ chat.post("/chats/:id/messages", async (c) => {
 
 // Delete a single chat
 chat.delete("/chats/:id", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -372,7 +386,7 @@ chat.delete("/chats/:id", async (c) => {
 
 // Delete all chats for a user
 chat.delete("/chats", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -395,7 +409,7 @@ chat.delete("/chats", async (c) => {
 
 // AI Routes
 chat.post("/ai/generate-formula", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -455,7 +469,7 @@ chat.post("/ai/generate-formula", async (c) => {
 })
 
 chat.post("/ai/analyze-formula-error", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -493,7 +507,7 @@ Return JSON:
 })
 
 chat.post("/ai/generate", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -889,7 +903,7 @@ chat.post("/ai/generate", async (c) => {
 })
 
 chat.post("/ai/recommend-visualization", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { query, results, previousConfig, suggestedChartType } = await c.req.json()
@@ -916,7 +930,7 @@ chat.post("/ai/recommend-visualization", async (c) => {
 })
 
 chat.post("/ai/analyze", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { question, results, query } = await c.req.json()
@@ -970,7 +984,7 @@ chat.post("/ai/analyze", async (c) => {
 })
 
 chat.post("/ai/spreadsheet-command", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { command, data } = await c.req.json()
@@ -1020,7 +1034,7 @@ Return ONLY a valid JSON object:
 })
 
 chat.post("/ai/sanitize/analyze", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { tableName, schema } = await c.req.json()
@@ -1032,7 +1046,7 @@ chat.post("/ai/sanitize/analyze", async (c) => {
 })
 
 chat.get("/ai/models", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const models = await aiClient.listModels()

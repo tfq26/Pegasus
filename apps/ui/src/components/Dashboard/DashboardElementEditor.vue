@@ -116,7 +116,7 @@
         <div class="mt-3 text-xs text-muted-foreground flex items-center justify-between">
           <span>Last updated: {{ lastPreviewUpdate }}</span>
           <div class="flex items-center gap-1">
-            <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+            <div class="w-2 h-2 rounded-lg bg-green-500 animate-pulse"></div>
             <span>Live</span>
           </div>
         </div>

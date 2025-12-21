@@ -596,7 +596,7 @@ const processFile = async (file: File) => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #44403c;
-  border-radius: 2px;
+  border-radius: 0.5px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #57534e;

@@ -28,7 +28,7 @@
         <div class="flex items-center gap-2" :class="{ 'flex-row-reverse': isCurrentUser(msg.user.id) }">
           <!-- Avatar -->
           <div 
-            class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold border border-border overflow-hidden"
+            class="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-[10px] font-bold border border-border overflow-hidden"
             :title="msg.user.email"
           >
              <img v-if="msg.user.profilePictureUrl" :src="msg.user.profilePictureUrl" class="w-full h-full object-cover">

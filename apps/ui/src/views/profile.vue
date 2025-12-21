@@ -28,7 +28,7 @@
       <div class="flex flex-col items-center mb-6">
         <img
           :src="typedUser.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${typedUser.email}`"
-          class="h-24 w-24 rounded-full border border-primary mb-3 object-cover"
+          class="h-24 w-24 rounded-lg border border-primary mb-3 object-cover"
           alt="User Avatar"
         />
         <h2 class="text-xl font-semibold text-primary">{{ typedUser.firstName }} {{ typedUser.lastName }}</h2>
@@ -50,7 +50,7 @@
             <button 
               @click="handleSyncSubscription"
               :disabled="syncing"
-              class="text-xs bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-1.5 rounded-full font-medium transition-all disabled:opacity-50"
+              class="text-xs bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-1.5 rounded-lg font-medium transition-all disabled:opacity-50"
               title="Sync subscription status from Stripe"
             >
               {{ syncing ? 'Syncing...' : '↻ Sync' }}
@@ -59,14 +59,14 @@
             <button 
               v-if="subscriptionTier === 'free'"
               @click="handleUpgrade"
-              class="text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-full font-medium transition-all shadow-lg shadow-violet-900/20"
+              class="text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-lg font-medium transition-all shadow-lg shadow-violet-900/20"
             >
               Upgrade to Pro
             </button>
             <button 
               v-else
               @click="handleManageSubscription"
-              class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground px-3 py-1.5 rounded-full font-medium transition-all"
+              class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground px-3 py-1.5 rounded-lg font-medium transition-all"
             >
               Manage Subscription
             </button>
@@ -85,7 +85,7 @@
             <span class="text-muted-foreground">AI Tokens Used</span>
             <span class="font-medium">{{ usageStats.tokens.toLocaleString() }}</span>
           </div>
-          <div class="h-2 w-full bg-secondary rounded-full overflow-hidden">
+          <div class="h-2 w-full bg-secondary rounded-lg overflow-hidden">
             <div class="h-full bg-primary" :style="{ width: Math.min((usageStats.tokens / 100000) * 100, 100) + '%' }"></div>
           </div>
           <p class="text-[10px] text-muted-foreground text-right">Target: 100k / month</p>
@@ -96,7 +96,7 @@
             <span class="text-muted-foreground">Storage Used</span>
             <span class="font-medium">{{ usageStats.storageFormatted }}</span>
           </div>
-          <div class="h-2 w-full bg-secondary rounded-full overflow-hidden">
+          <div class="h-2 w-full bg-secondary rounded-lg overflow-hidden">
             <div class="h-full bg-blue-500" :style="{ width: Math.min((usageStats.storage / (500 * 1024 * 1024)) * 100, 100) + '%' }"></div>
           </div>
           <p class="text-[10px] text-muted-foreground text-right">Limit: 500 MB</p>

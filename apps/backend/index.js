@@ -44,6 +44,7 @@ app.route('/connections', connectionRoutes)
 app.route('/api', tableRoutes)
 // Mount Chat/AI Routes
 app.route('/', chatRoutes)
+app.route('/operations', operationRoutes)
 
 
 
@@ -60,6 +61,7 @@ import { dashboardRoutes } from "./src/routes/dashboard.js"
 import { connectionRoutes } from "./src/routes/connection.js"
 import { tableRoutes } from "./src/routes/table.js"
 import { chatRoutes } from "./src/routes/chat.js"
+import { operationRoutes } from "./src/routes/operations.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"

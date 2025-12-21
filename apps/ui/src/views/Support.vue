@@ -26,10 +26,10 @@
               <div class="flex items-start justify-between gap-4">
                 <div class="flex-1">
                   <div class="flex items-center gap-3 mb-2">
-                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                    <span class="px-3 py-1 rounded-lg text-xs font-bold bg-primary/10 text-primary border border-primary/20">
                       v{{ release.version }}
                     </span>
-                    <span v-if="release.isLatest" class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
+                    <span v-if="release.isLatest" class="px-2 py-0.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
                       Latest
                     </span>
                     <span class="text-sm text-muted-foreground">{{ release.releaseDate }}</span>

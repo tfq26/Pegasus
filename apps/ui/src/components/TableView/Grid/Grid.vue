@@ -1425,7 +1425,7 @@ onUnmounted(() => {
         
         <!-- Loading spinner for AI mode -->
         <div v-if="isProcessingAI" class="absolute right-2 top-1/2 -translate-y-1/2">
-          <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-lg animate-spin"></div>
         </div>
         
         <!-- Autocomplete Dropdown -->
@@ -1532,10 +1532,10 @@ onUnmounted(() => {
       <!-- Follow Status Badge -->
       <div 
         v-if="followedUserId"
-        class="fixed bottom-6 right-6 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 cursor-pointer hover:bg-primary/90"
+        class="fixed bottom-6 right-6 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 cursor-pointer hover:bg-primary/90"
         @click="stopFollowing"
       >
-        <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+        <div class="w-2 h-2 bg-green-400 rounded-lg animate-pulse"></div>
         <span class="text-sm font-medium">Following {{ props.engine.presence.get(followedUserId)?.userName || 'User' }}</span>
         <X class="w-4 h-4 ml-1" />
       </div>

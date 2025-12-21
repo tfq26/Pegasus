@@ -1,113 +1,112 @@
 ```html
 <template>
-  <div class="w-full bg-background flex flex-col">
+  <div class="w-full bg-background flex flex-col min-h-screen">
     <div class="flex-1">
-      <div class="max-w-7xl mx-auto p-6 sm:p-10 space-y-8">
+      <div class="max-w-6xl mx-auto p-4 sm:p-8 space-y-12">
         
-        <!-- Hero Card with Black Hole -->
-        <div class="relative w-full h-[400px] rounded-3xl overflow-hidden shadow-2xl border border-border/50 bg-black/5 dark:bg-black/20">
+        <!-- Hero Section -->
+        <div class="relative w-full h-[320px] rounded-sm overflow-hidden border border-border/50 bg-muted/20">
           <BlackHoleBackground class="absolute inset-0">
-            <div class="relative z-10 h-full flex flex-col items-center justify-center text-center p-6">
-              <!-- <div
-                class="w-24 h-24 mb-6 flex items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-lg shadow-primary/20 backdrop-blur-sm ring-1 ring-primary/20"
-              >
-                <img
-                  src="/pegasus-white.svg"
-                  alt="Pegasus Logo"
-                  class="w-12 h-12 dark:invert-0 invert"
-                />
-              </div> -->
-              
-              <h1 class="text-4xl md:text-6xl font-bold text-foreground tracking-tight mb-4 drop-shadow-md dark:text-primary">
+            <div class="relative z-10 h-full flex flex-col items-center justify-center text-center px-6">
+              <h1 class="text-4xl md:text-5xl font-bold text-foreground tracking-tight mb-3">
                 Pegasus
               </h1>
-              <p class="text-lg md:text-xl text-primary font-medium max-w-xl mx-auto dark:text-primary">
-                Insight with Intelligence and Ease, built to make your data soar.
+              <div class="h-1 w-12 bg-primary/40 rounded-full mb-4"></div>
+              <p class="text-base md:text-lg text-muted-foreground font-medium max-w-2xl mx-auto">
+                Advanced Intelligence for Enterprise Data Management
               </p>
             </div>
           </BlackHoleBackground>
         </div>
 
         <!-- Main Content -->
-        <div class="max-w-7xl mx-auto space-y-12 px-4">
-          <!-- Mission Statement -->
-          <div class="text-center space-y-6">
-            <p class="text-xl text-primary font-medium leading-relaxed dark:text-primary">
-              The next generation of data management — where security, insight, and AI
-              converge into one seamless, collaborative workspace.
-            </p>
-            <p class="text-muted-foreground leading-relaxed max-w-2xl mx-auto dark:text-primary">
-              Inspired by the workflow of data management tools and enhanced
-              through powerful AI inference and analysis, Pegasus bridges performance, awareness, and
-              intelligence. It enables resource visualization, data exploration, 
-              and real-time collaboration inside a fast, responsive, and simple interface.
-            </p>
-          </div>
-
-          <!-- Features Grid -->
-          <div>
-            <!-- <h2 class="text-2xl font-bold text-foreground mb-6 text-center">Key Features</h2> -->
-            <div class="grid md:grid-cols-2 gap-6">
-              <div
-                v-for="(feature, index) in features"
-                :key="index"
-                @click="openFeatureModal(feature)"
-                class="group p-6 rounded-2xl bg-card hover:bg-accent/50 border border-border hover:border-primary/30 transition-all duration-300 shadow-sm hover:shadow-md cursor-pointer"
-              >
-                <div class="flex items-start gap-4">
-                  <div class="p-3 rounded-xl bg-primary/10 text-primary shrink-0 group-hover:scale-110 transition-transform duration-300">
-                    <component :is="feature.icon" class="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 class="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
-                      {{ feature.title }}
-                    </h3>
-                    <p class="text-muted-foreground text-sm leading-relaxed">
-                      {{ feature.description }}
-                    </p>
-                    <p class="text-xs text-primary mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      Click to learn more →
-                    </p>
-                  </div>
+        <div class="space-y-16">
+          <!-- Mission & Vision -->
+          <div class="grid md:grid-cols-2 gap-12 items-start text-left">
+            <div class="space-y-4">
+              <h2 class="text-xs font-bold uppercase tracking-widest text-primary/70">The Mission</h2>
+              <p class="text-xl font-medium leading-relaxed text-foreground">
+                Where security, insight, and AI converge into one seamless, collaborative workspace.
+              </p>
+            </div>
+            <div class="space-y-4">
+              <p class="text-sm text-muted-foreground leading-relaxed">
+                Inspired by high-performance data management systems and enhanced through powerful AI inference, 
+                Pegasus bridges the gap between raw information and actionable intelligence. 
+                We provide a fast, technical, yet intuitive interface for resource visualization and real-time collaboration.
+              </p>
+              <div class="flex items-center gap-6 pt-2">
+                <div class="flex flex-col">
+                  <span class="text-xl font-bold text-foreground">100%</span>
+                  <span class="text-[10px] uppercase tracking-wider text-muted-foreground">Secure</span>
+                </div>
+                <div class="h-8 w-px bg-border"></div>
+                <div class="flex flex-col">
+                  <span class="text-xl font-bold text-foreground">Real-time</span>
+                  <span class="text-[10px] uppercase tracking-wider text-muted-foreground">Analytics</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- About Page Footer -->
-          <!-- <div class="border-t border-border pt-8 text-center space-y-4">
-            <p class="text-lg text-muted-foreground italic font-serif">
-              “Making system management effortless through data, AI, and cloud.”
-            </p>
-          </div> -->
+          <!-- Features Section -->
+          <section class="space-y-8">
+            <div class="flex items-center gap-4">
+              <h2 class="text-lg font-bold tracking-tight text-foreground">Core Capabilities</h2>
+              <div class="flex-1 h-px bg-border/60"></div>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-4">
+              <div
+                v-for="(feature, index) in features"
+                :key="index"
+                @click="openFeatureModal(feature)"
+                class="group p-5 rounded-sm bg-card border border-border hover:border-primary/40 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer flex flex-col items-start gap-4"
+              >
+                <div class="p-2.5 rounded-sm bg-primary/5 text-primary border border-primary/10 group-hover:bg-primary/10 transition-colors">
+                  <component :is="feature.icon" class="w-5 h-5" />
+                </div>
+                <div class="space-y-2">
+                  <h3 class="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                    {{ feature.title }}
+                  </h3>
+                  <p class="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                    {{ feature.description }}
+                  </p>
+                </div>
+                <div class="mt-auto pt-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
+                  Detailed view <ArrowRight class="w-3 h-3" />
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
 
-    <!-- Footer (same as Home page) -->
     <AppFooter />
 
     <!-- Feature Detail Modal -->
     <Dialog v-model:open="showFeatureModal">
-      <DialogContent class="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle class="flex items-center gap-3 text-2xl">
-            <component :is="selectedFeature?.icon" class="w-8 h-8 text-primary" />
+      <DialogContent class="sm:max-w-xl bg-background border border-border rounded-sm shadow-2xl">
+        <DialogHeader class="border-b border-border pb-6">
+          <DialogTitle class="flex items-center gap-3 text-xl font-bold">
+            <div class="p-2 rounded-sm bg-primary/10 text-primary border border-primary/20">
+              <component :is="selectedFeature?.icon" class="w-6 h-6" />
+            </div>
             {{ selectedFeature?.title }}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription class="text-muted-foreground text-sm mt-2">
             {{ selectedFeature?.description }}
           </DialogDescription>
         </DialogHeader>
-        <div class="space-y-4 py-4">
-          <div v-for="(detail, index) in selectedFeature?.details" :key="index" class="space-y-2">
-            <h4 class="font-semibold text-foreground flex items-center gap-2">
-              <span class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
-                {{ index + 1 }}
-              </span>
+        <div class="grid gap-6 py-6 overflow-y-auto max-h-[60vh] custom-scrollbar px-1">
+          <div v-for="(detail, index) in selectedFeature?.details" :key="index" class="relative pl-6 space-y-1">
+            <div class="absolute left-0 top-1.5 w-1.5 h-1.5 rounded-full bg-primary/40"></div>
+            <h4 class="text-sm font-bold text-foreground">
               {{ detail.subtitle }}
             </h4>
-            <p class="text-muted-foreground text-sm leading-relaxed pl-8">
+            <p class="text-xs text-muted-foreground leading-relaxed">
               {{ detail.content }}
             </p>
           </div>
@@ -128,8 +127,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { MessageSquare, LayoutDashboard, Database, Activity } from 'lucide-vue-next'
-
+import { MessageSquare, LayoutDashboard, Database, Activity, ArrowRight } from 'lucide-vue-next'
 
 defineOptions({ name: 'AboutView' })
 
@@ -145,146 +143,109 @@ const features = [
   {
     icon: MessageSquare,
     title: 'AI Query Automation',
-    description:
-      'Intelligent query generation and optimization powered by advanced AI models.',
+    description: 'Intelligent query generation and optimization powered by advanced AI models.',
     details: [
       {
         subtitle: 'Natural Language to SQL',
-        content: 'Simply describe what data you need in plain English, and Pegasus will generate optimized SQL queries automatically. No need to remember complex syntax or table structures.'
+        content: 'Simply describe what data you need in plain English, and Pegasus will generate optimized SQL queries automatically.'
       },
       {
         subtitle: 'Context-Aware Suggestions',
-        content: 'The AI understands your database schema and query history to provide intelligent autocomplete suggestions and query improvements as you type.'
+        content: 'The AI understands your database schema and query history to provide intelligent autocomplete suggestions.'
       },
       {
         subtitle: 'Query Optimization',
-        content: 'Automatically analyzes and optimizes your queries for better performance, suggesting indexes and identifying potential bottlenecks before execution.'
-      },
-      {
-        subtitle: 'Multi-Table Intelligence',
-        content: 'When queries involve multiple tables, Pegasus prompts you for clarification to ensure accurate JOIN operations and data relationships.'
+        content: 'Automatically analyzes and optimizes your queries for better performance.'
       }
     ]
   },
   {
     icon: Database,
     title: 'Intelligent Data Import',
-    description:
-      'Instantly convert JSON, CSV, and Excel files into queryable database tables.',
+    description: 'Instantly convert JSON, CSV, and Excel files into queryable database tables.',
     details: [
       {
-        subtitle: 'Drag & Drop Simplicity',
-        content: 'Upload complete datasets just by dragging files into the app. Pegasus handles the parsing, schema detection, and import process automatically.'
-      },
-      {
         subtitle: 'Smart Schema Detection',
-        content: 'Automatically identifies data types, headers, and structures from your files, ensuring your data is stored correctly and efficiently.'
+        content: 'Automatically identifies data types, headers, and structures from your files ensuring data is stored correctly.'
       },
       {
-        subtitle: 'Excel & JSON Support',
-        content: 'Native support for complex Excel spreadsheets and nested JSON files. Preview and verify your data structure before importing.'
-      },
-      {
-        subtitle: 'Instant Querying',
-        content: 'Imported files become fully fully-featured database tables immediately, ready to be queried with SQL or visualized in dashboards.'
+        subtitle: 'Multi-Format Support',
+        content: 'Native support for complex Excel spreadsheets and nested JSON files.'
       }
     ]
   },
   {
     icon: LayoutDashboard,
     title: 'Visual Data Explorer',
-    description:
-      'A powerful, spreadsheet-like interface to view, search, and edit your data directly.',
+    description: 'A powerful, spreadsheet-like interface to view, search, and edit your data directly.',
     details: [
       {
         subtitle: 'Inline Editing',
-        content: 'Edit database records directly in the grid view, just like a spreadsheet. Changes are validated and synced to your database in real-time.'
+        content: 'Edit database records directly in the grid view with real-time sync.'
       },
       {
         subtitle: 'Advanced Filtering',
-        content: 'Sort, search, and filter your data across millions of rows with high-performance client-side and server-side operations.'
-      },
-      {
-        subtitle: 'Smart Headers',
-        content: 'Automatically detects and manages table headers, allowing you to rename columns and restructure your view without altering the underlying data.'
-      },
-      {
-        subtitle: 'Schema Management',
-        content: 'View and modify table schemas, rename tables, and manage data types through an intuitive visual interface.'
+        content: 'Sort, search, and filter your data across millions of rows with high performance.'
       }
     ]
   },
   {
     icon: LayoutDashboard,
     title: 'Interactive Dashboards',
-    description:
-      'Turn your query results into beautiful, real-time visualizations in seconds.',
+    description: 'Turn your query results into beautiful, real-time visualizations in seconds.',
     details: [
       {
         subtitle: 'Smart Visualization',
-        content: 'Pegasus analyzes your data and automatically recommends the best chart types - whether it\'s bar charts, line graphs, pie charts, or stat cards.'
+        content: 'Pegasus recommends the best chart types - bar charts, line graphs, pie charts, or stat cards.'
       },
       {
         subtitle: 'Drag & Drop Layout',
-        content: 'Easily customize your dashboard layout with an intuitive drag-and-drop interface. Resize and organize your widgets exactly how you want them.'
-      },
-      {
-        subtitle: 'Real-Time Updates',
-        content: 'Dashboards auto-refresh to keep your insights current with live data from your connected databases.'
-      },
-      {
-        subtitle: 'Export & Share',
-        content: 'Generate shareable links (coming soon) or export your dashboard views to share insights with your team.'
+        content: 'Easily customize your dashboard layout with an intuitive drag-and-drop interface.'
       }
     ]
   },
   {
     icon: Database,
-    title: 'Universal Database Support',
-    description:
-      'Connect to any database provider with flexible, provider-agnostic architecture.',
+    title: 'Universal Connectivity',
+    description: 'Connect to any database provider with flexible, provider-agnostic architecture.',
     details: [
       {
         subtitle: 'Broad Compatibility',
-        content: 'Seamlessly connect to MongoDB, PostgreSQL, MySQL, SQLite, SurrealDB, and more. Each connection is managed independently.'
+        content: 'Connect to MongoDB, PostgreSQL, MySQL, SQLite, SurrealDB, and more.'
       },
       {
         subtitle: 'Live Schema Discovery',
-        content: 'Automatically detect databases, tables, and collections when you connect. For MongoDB, Pegasus previews sample documents to help you understand your data.'
-      },
-      {
-        subtitle: 'Secure Connections',
-        content: 'Support for SSL/TLS encryption, service principal authentication, and secure credential storage to ensure your data remains protected.'
-      },
-      {
-        subtitle: 'Connection Health',
-        content: 'Active monitoring of connection status with detailed error reporting and troubleshooting guidance to keep your integrations running smoothly.'
+        content: 'Automatically detect databases, tables, and collections upon connection.'
       }
     ]
   },
   {
     icon: Activity,
-    title: 'Real-Time Monitoring',
-    description:
-      'Observe live metrics, logs, and system health with dynamic visual feedback.',
+    title: 'Operational Monitoring',
+    description: 'Observe live metrics, logs, and system health with dynamic visual feedback.',
     details: [
       {
-        subtitle: 'Live Query Execution',
-        content: 'Watch your queries execute in real-time with progress indicators and streaming results. Cancel long-running queries with a single click.'
-      },
-      {
         subtitle: 'Performance Metrics',
-        content: 'Track query execution times, row counts, and resource usage to identify performance bottlenecks.'
+        content: 'Track query execution times, row counts, and resource usage.'
       },
       {
         subtitle: 'System Health',
-        content: 'Monitor the status of all your database connections at a glance, with automatic reconnection logic.'
-      },
-      {
-        subtitle: 'Activity History',
-        content: 'Keep a complete history of all queries and operations, making it easy to revisit past work or debug issues.'
+        content: 'Monitor the status of all your database connections at a glance.'
       }
     ]
   }
 ]
 </script>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+</style>

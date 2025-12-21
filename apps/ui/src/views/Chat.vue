@@ -27,6 +27,7 @@
     </button>
 
     <!-- Main content area with results panel -->
+    <!-- Main content area with results panel -->
     <div class="flex-1 flex overflow-hidden" :class="{ 'flex-col': resultsPanelPosition === 'bottom', 'flex-row': resultsPanelPosition === 'right' }">
       <!-- Editor workspace -->
       <section class="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
@@ -73,6 +74,7 @@
           :ai-mode="aiMode"
           :auto-execute="autoExecute"
           :private-mode="privateMode"
+          :is-thinking="isExecuting"
           @update:mode="mode = $event"
           @update:input="currentInput = $event"
           @submit="run"
@@ -91,7 +93,7 @@
         :last-query="lastQuery"
         :history="queryHistory"
         :loading="isExecuting"
-        :analysis="analysisResult"
+
         :is-analyzing="isAnalyzing"
         :ambiguity="ambiguity"
         @update:position="resultsPanelPosition = $event"
@@ -100,6 +102,7 @@
         @analyze="handleAnalyze"
         @resolve-ambiguity="handleResolveAmbiguity"
         @create-dashboard-element="handleCreateDashboardElement"
+        @open-spreadsheet="handleOpenSpreadsheet"
         @sanitize="handleSanitize"
         :has-recommendation="hasRecommendation"
         :settings="settings"
@@ -183,6 +186,7 @@ import { QUERY_API_URL, generateAIQuery, analyzeResults, getAIModels, fetchSetti
 import { useProgress } from '@/lib/progress'
 import { db } from '@/lib/local-db'
 import { generateKey, encryptData, decryptData } from '@/lib/crypto'
+import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
 
 const queryApiUrl = QUERY_API_URL
 const connections = ref<ConnectionEntry[]>([])
@@ -493,7 +497,7 @@ const writeInput = ref('')
 // Cancellation state
 const abortController = ref<AbortController | null>(null)
 const currentOpId = ref('')
-const { startOperation, finishOperation, failOperation, cancelOperation } = useProgress()
+const { operations, startOperation, finishOperation, failOperation, cancelOperation, withProgress, loadHistoryFromBackend } = useProgress()
 
 const handleCancelQuery = () => {
   if (abortController.value) {
@@ -539,7 +543,7 @@ const dashboardPreviewConfig = ref<any>(null)
 const hasRecommendation = ref(false)
 const settings = ref<any>(null)
 
-const handleCreateDashboardElement = async () => {
+const handleCreateDashboardElement = async (groupId?: string) => {
   if (hasRecommendation.value && dashboardPreviewConfig.value) {
     dashboardPreviewVisible.value = true
     return
@@ -547,12 +551,9 @@ const handleCreateDashboardElement = async () => {
 
   if (!queryResult.value || !lastQuery.value) return
   
-  const { startOperation, finishOperation, failOperation } = useProgress()
-  const opId = `chart-gen-${Date.now()}`
-  startOperation(opId, 'Generating Chart')
-  
-  toast.info('Generating chart recommendation...')
-  try {
+  await withProgress('Generating Chart', async () => {
+    toast.info('Generating chart recommendation...')
+    
     // Check for visualizable result from multi-step query
     let dataForVisualization = queryResult.value
     let suggestedChartType = null
@@ -571,16 +572,9 @@ const handleCreateDashboardElement = async () => {
       Array.isArray(dataForVisualization) ? dataForVisualization : [dataForVisualization],
       suggestedChartType
     )
-    finishOperation(opId)
     dashboardPreviewConfig.value = config
     dashboardPreviewVisible.value = true
-  } catch (e: any) {
-    console.error('Visualization recommendation failed:', e)
-    failOperation(opId, e.message || 'Failed to generate')
-    toast.error('Failed to generate recommendation', {
-      description: e instanceof Error ? e.message : String(e)
-    })
-  }
+  }, { category: 'ai', groupId })
 }
 
 const loadQueries = async () => {
@@ -858,7 +852,9 @@ const run = async () => {
         await db.conversations.put({ id: 'current', messages: encrypted, updatedAt: Date.now() })
         
         // Trigger post-query actions (Analysis & Dashboard)
-        handlePostQueryActions(payload, body.result)
+        // We skip explicit analysis for manual runs to avoid spamming chat with insights "again"
+        // unless the user specifically asks for it via a separate action.
+        handlePostQueryActions(payload, body.result, false, '', true)
       }
     } catch (error: any) {
       // Handle cancellation
@@ -920,38 +916,35 @@ const handleAIGenerate = async () => {
   }
 
   const userPrompt = chatInput.value.trim()
+  chatInput.value = '' // Clear input immediately
   
   // Show results panel immediately
   resultsPanelVisible.value = true
   
   isExecuting.value = true
   
-  const { startOperation, finishOperation, failOperation } = useProgress()
-  const opId = `ai-gen-${Date.now()}`
-  startOperation(opId, `Asking AI...`)
+  const gid = `chat-${Date.now()}`
   
-  try {
+  await withProgress('AI Query', async (update: any) => {
     // Check if user is explicitly asking for the query itself
     const wantsQueryOnly = /show\s+(me\s+)?(the\s+)?query|what\s+(is\s+)?the\s+query|generate\s+query/i.test(userPrompt)
     // Check if user explicitly wants a visualization
     const wantsVisualization = /visualize|chart|graph|plot|dashboard|histogram|pie/i.test(userPrompt)
     
-    // Check if referring to existing data ("visualize this", "chart it")
     const isReferenceToContext = /\b(this|it|results?|data)\b/i.test(userPrompt)
     
     // CASE 1: Visualize existing data
     if (wantsVisualization && isReferenceToContext && queryResult.value && lastQuery.value) {
-      finishOperation(opId)
-      
       // Add to chat history
       chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
       chatHistory.value.push({ role: 'assistant', content: 'Generating visualization based on the results...', timestamp: Date.now() })
       
       // Trigger visualization
-      isExecuting.value = false
-      await handleCreateDashboardElement()
+      await handleCreateDashboardElement(gid)
       return
     }
+    
+    update(10, 'Thinking...')
     
     // Pass chat history if available, otherwise empty array
     // @ts-ignore
@@ -965,6 +958,8 @@ const handleAIGenerate = async () => {
 
     const aiResponse = await generateAIQuery(userPrompt, selectedConnectionId.value, history, activeTable)
     
+    update(40, 'Executing...')
+
     // Check if this is a multi-step response
     if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
       // Multi-step response - aggregate results
@@ -1015,168 +1010,73 @@ const handleAIGenerate = async () => {
       }
       
       // Generate AI summary of results
+      update(80, 'Summarizing...')
       let aiSummary = ''
       try {
         console.log('[Chat] Generating AI summary for multi-step query...')
         toast.loading('Generating summary...', { id: 'ai-summary' })
         const { analyzeResults } = await import('@/lib/api')
         const flatResults = combinedResults.map(step => step.result).filter(r => r)
-        console.log('[Chat] Calling analyzeResults with:', { userPrompt, flatResults, combinedQuery })
         const summaryPrompt = wantsVisualization ? "Summarize these results" : userPrompt
         const analysisResponse = await analyzeResults(summaryPrompt, flatResults, combinedQuery)
         // Extract the answer field from the response object
         aiSummary = typeof analysisResponse === 'object' && analysisResponse.answer 
           ? analysisResponse.answer 
           : (typeof analysisResponse === 'string' ? analysisResponse : JSON.stringify(analysisResponse))
-        console.log('[Chat] AI Summary received:', aiSummary)
+        
+        // Sanitize the summary to prevent raw JSON dumps
+        aiSummary = sanitizeAIResponse(aiSummary)
         toast.dismiss('ai-summary')
       } catch (e) {
         toast.dismiss('ai-summary')
         console.error('[Chat] Failed to generate AI summary:', e)
-        // Create a better fallback summary
-        aiSummary = `I executed ${aiResponse.steps.length} step${aiResponse.steps.length > 1 ? 's' : ''} to answer your question:\n\n` +
-          combinedResults.map((step, idx) => {
-            let resultText = ''
-            if (step.error) {
-              resultText = `❌ Error: ${step.error}`
-            } else if (step.result?.rows !== undefined) {
-              resultText = `Result: ${typeof step.result.rows === 'number' ? step.result.rows.toLocaleString() : step.result.rows}`
-            } else if (Array.isArray(step.result)) {
-              resultText = `Found ${step.result.length} record${step.result.length !== 1 ? 's' : ''}`
-            }
-            return `${idx + 1}. ${step.explanation}\n   ${resultText}`
-          }).join('\n\n')
-        console.log('[Chat] Using fallback summary:', aiSummary)
+        aiSummary = `I executed ${aiResponse.steps.length} step${aiResponse.steps.length > 1 ? 's' : ''} to answer your question.`
+      }
+
+      if (aiSummary.trim().toLowerCase() === userPrompt.trim().toLowerCase()) {
+        aiSummary = "Protocol executed successfully. Refer to the Output panel for detailed insights."
       }
       
       const timestamp = Date.now()
-      
-      console.log('[Chat] Adding to chat history:', { userPrompt, aiSummary, timestamp })
       chatHistory.value.push({ role: 'user', content: userPrompt, timestamp })
       chatHistory.value.push({ role: 'assistant', content: aiSummary, timestamp })
-      console.log('[Chat] Chat history length:', chatHistory.value.length)
       
       if (selectedChatId.value) {
         await saveMessage(selectedChatId.value, 'user', userPrompt)
         await saveMessage(selectedChatId.value, 'ai', aiSummary)
-        
-        setTimeout(async () => {
-          try {
-            await loadChats()
-          } catch (e) {
-            console.error('Failed to refresh chat list:', e)
-          }
-        }, 2000)
       }
       
       // Add to query history
-      queryHistory.value.unshift({
-        id: crypto.randomUUID(),
-        query: combinedQuery,
-        timestamp,
-        source: 'ai',
-        status: 'success'
-      })
-      
-      // Show results (keep input for user reference)
-      resultsPanelVisible.value = true
-      
-      finishOperation(opId)
-      
-      toast.success('Multi-step query executed', {
-        description: `${aiResponse.steps.length} steps completed`,
-        position: 'top-right',
-      })
+      queryHistory.value.unshift({ query: combinedQuery, timestamp, source: 'ai', status: 'success' })
       
       // CASE 2: New query + Visualization requested (Multi-step)
       if (wantsVisualization) {
-        toast.info('Generating requested visualization...')
-        await handleCreateDashboardElement()
+        await handleCreateDashboardElement(gid)
       }
-      
       return
     }
     
-    // Single-step response (original logic)
+    // Single-step response
     const { query, usage } = aiResponse
-    
-    // Check for ambiguity or parse errors
-    let isAmbiguous = false
     let reasoning = ''
     try {
       const parsed = JSON.parse(query)
-      
-      // Check if this is a parse error response from the AI
-      if (parsed._parseError) {
-        reasoning = parsed.reasoning || ''
-        ambiguity.value = { reasoning }
-        throw new Error(parsed.error || 'AI generated invalid JSON')
-      }
-      
-      if (parsed.reasoning) {
-        reasoning = parsed.reasoning
-      }
-      
+      if (parsed.reasoning) reasoning = parsed.reasoning
       if (parsed.ambiguous) {
-        isAmbiguous = true
         ambiguity.value = parsed
         ambiguityDialogVisible.value = true
         return
       }
-    } catch (e) {
-      // If it's our custom error, re-throw it
-      if (e instanceof Error && e.message.includes('AI generated invalid JSON')) {
-        throw e
-      }
-      // Not JSON or not ambiguous, proceed as query
-    }
+    } catch (e) {}
 
     if (wantsQueryOnly) {
-      // User wants to see the query - switch to write mode
       writeInput.value = query
       mode.value = 'write'
-      toast.success('Query generated!')
     } else {
-      // Auto-execute the query and return results
-      if (!selectedConnection.value) {
-        toast.error('Connection not found')
-        return
-      }
-
-      queryError.value = ''
-      queryResult.value = null
-      ambiguity.value = null 
+      if (!selectedConnection.value) throw new Error('Connection not found')
+      
       lastQuery.value = query
-
-      if (!query || !query.trim()) {
-        throw new Error('AI generated an empty query')
-      }
-
-      // Check for SQL-style ambiguity comment
-      if (query.trim().startsWith('-- AMBIGUOUS:')) {
-        const message = query.replace('-- AMBIGUOUS:', '').trim()
-        ambiguity.value = {
-          ambiguity: message,
-          options: [], // SQL ambiguity usually doesn't provide structured options yet
-          reasoning: reasoning
-        }
-        return // Stop execution
-      }
-
-      // Prepare payload - strip reasoning if present to avoid DB errors
-      let queryPayload = query
-      if (reasoning) {
-        try {
-          const parsed = JSON.parse(query)
-          console.log('[Frontend] Original query with reasoning:', parsed)
-          delete parsed.reasoning
-          queryPayload = JSON.stringify(parsed)
-          console.log('[Frontend] Cleaned query payload:', queryPayload)
-        } catch (e) {
-          console.error('[Frontend] Failed to parse query:', e)
-        }
-      }
-
+      
       const response = await fetch(`${queryApiUrl}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1184,105 +1084,55 @@ const handleAIGenerate = async () => {
         body: JSON.stringify({
           provider: selectedConnection.value.provider,
           connection: buildConnectionPayload(selectedConnection.value),
-          query: queryPayload,
+          query: query,
           source: 'ai',
-          model: aiOptions.value.model,
-          tokens_used: usage ? (usage.promptTokens + usage.candidatesTokens) : 0
+          model: aiOptions.value.model
         }),
       })
 
       const body = await response.json()
-
-      if (!response.ok || body.error) {
-        // If error, set the reasoning in ambiguity object so it shows up in the error panel
-        if (reasoning) {
-          ambiguity.value = { reasoning }
-        }
-        throw new Error(body.error ?? 'Unable to execute query')
-      }
+      if (!response.ok || body.error) throw new Error(body.error ?? 'Query failed')
 
       queryResult.value = body.result ?? null
       
-      // Generate AI summary of results
-      let aiSummary = ''
-      try {
-        toast.loading('Generating summary...', { id: 'ai-summary' })
-        const { analyzeResults } = await import('@/lib/api')
-        const summaryPrompt = wantsVisualization ? "Summarize these results" : userPrompt
-        aiSummary = await analyzeResults(summaryPrompt, Array.isArray(body.result) ? body.result : [body.result], query)
-        toast.dismiss('ai-summary')
-      } catch (e) {
-        toast.dismiss('ai-summary')
-        console.error('Failed to generate AI summary:', e)
-        const resultCount = Array.isArray(body.result) ? body.result.length : 1
-        aiSummary = `Query executed successfully. Found ${resultCount} result${resultCount !== 1 ? 's' : ''}.`
-      }
+      update(80, 'Summarizing...')
+      const { analyzeResults } = await import('@/lib/api')
+      const summaryPrompt = wantsVisualization ? "Summarize these results" : userPrompt
+      const aiSummary = await analyzeResults(summaryPrompt, Array.isArray(body.result) ? body.result : [body.result], query)
       
+      const finalSummary = (aiSummary && (typeof aiSummary === 'string' ? aiSummary.trim().toLowerCase() : '') === userPrompt.trim().toLowerCase())
+        ? "Protocol executed successfully. Refer to the Output panel for detailed insights."
+        : sanitizeAIResponse(aiSummary);
+
       const timestamp = Date.now()
-      
       chatHistory.value.push({ role: 'user', content: userPrompt, timestamp })
-      chatHistory.value.push({ role: 'assistant', content: aiSummary, timestamp })
+      chatHistory.value.push({ role: 'assistant', content: finalSummary, timestamp })
       
       if (selectedChatId.value) {
         await saveMessage(selectedChatId.value, 'user', userPrompt)
-        await saveMessage(selectedChatId.value, 'ai', aiSummary)
-        
-        // Refresh chat list after a delay to show AI-generated title
-        // The backend generates the title asynchronously after the 2nd message
-        setTimeout(async () => {
-          try {
-            await loadChats()
-          } catch (e) {
-            console.error('Failed to refresh chat list:', e)
-          }
-        }, 2000) // 2 second delay to allow backend title generation
+        await saveMessage(selectedChatId.value, 'ai', finalSummary)
       }
       
-      // Update lastQuery for visualization
-      lastQuery.value = query
-      
-      // CASE 2: New query + Visualization requested (Single-step)
       if (wantsVisualization) {
-        toast.info('Generating requested visualization...')
-        await handleCreateDashboardElement()
+        await handleCreateDashboardElement(gid)
       }
       
-      // Add to query history
-      queryHistory.value.unshift({
-        id: crypto.randomUUID(),
-        query,
-        timestamp,
-        source: 'ai',
-        status: 'success'
-      })
-      
-      // Show results (keep input for user reference)
-      resultsPanelVisible.value = true
-      
-      finishOperation(opId)
-      
-      toast.success('Query executed', {
-        description: `${Array.isArray(body.result) ? body.result.length : 1} result${Array.isArray(body.result) && body.result.length !== 1 ? 's' : ''} returned`,
-        position: 'top-right',
-      })
-      
-      // Trigger post-query actions
-      handlePostQueryActions(query, body.result, wantsVisualization, userPrompt)
+      queryHistory.value.unshift({ query, timestamp, source: 'ai', status: 'success' })
+      handlePostQueryActions(query, body.result, wantsVisualization, userPrompt, true)
     }
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    queryError.value = message
-    failOperation(opId, message)
-    toast.error('Failed to execute', { description: message })
-  } finally {
-    isExecuting.value = false
-  }
+  }, { category: 'ai', groupId: gid })
+
+  isExecuting.value = false
 }
 
 // Update the function signature
-const handlePostQueryActions = async (query: string, results: any, autoPreview = false, userPrompt = '') => {
-  // 1. Auto-analyze
-  handleAnalyze()
+const handlePostQueryActions = async (query: string, results: any, autoPreview = false, userPrompt = '', skipAnalysis = false) => {
+  // 1. Auto-analyze (if not skipped)
+  // If skipped (because it came from AI generation), we rely on the main AI response.
+  // If NOT skipped (manual run), we generate an analysis message.
+  if (!skipAnalysis) {
+    handleAnalyze()
+  }
   
   // 2. Dashboard Recommendation
   hasRecommendation.value = false
@@ -1409,8 +1259,8 @@ const handlePostQueryActions = async (query: string, results: any, autoPreview =
         const chartType = (userPrompt && userPrompt.toLowerCase().includes('pie')) ? 'pie' : 'bar'
         
         // Extract actual data values
-        const labels = results.map(r => String(r[categoryCol]))
-        const dataValues = results.map(r => typeof r[totalCol] === 'number' ? r[totalCol] : parseFloat(r[totalCol]))
+        const labels = results.map((r: any) => String(r[categoryCol]))
+        const dataValues = results.map((r: any) => typeof r[totalCol] === 'number' ? r[totalCol] : parseFloat(r[totalCol]))
         
         const config = {
           type: chartType,
@@ -1635,26 +1485,28 @@ const detectVisualizationType = (results: any[]) => {
 }
 
 // Clear analysis when running new query
-watch(lastQuery, () => {
-  analysisResult.value = ''
-})
+
 const sanitizeDialogVisible = ref(false)
-const analysisResult = ref<any>(null)
+
 const isAnalyzing = ref(false)
 
 const handleAnalyze = async () => {
   if (!queryResult.value || !lastQuery.value) {
-    toast.error('No results to analyze')
+    // If we're manually triggering this, we might want to warn.
+    // But if called automatically, maybe silent fail is ok?
+    // Maintaining existing behavior:
+    console.log('No results to analyze')
     return
   }
 
   isAnalyzing.value = true
-  analysisResult.value = null
+  // analysisResult.value = null // Removed
 
   try {
     const { analyzeResults } = await import('@/lib/api')
     
     // Get the user's original question from chat input or use a generic prompt
+    // For manual queries, chatInput might be empty or irrelevant
     const userQuestion = chatInput.value || 'Analyze these query results'
     
     // Call the AI analysis API
@@ -1664,8 +1516,24 @@ const handleAnalyze = async () => {
       lastQuery.value
     )
     
-    analysisResult.value = analysis
-    toast.success('Analysis complete')
+    // analysisResult.value = analysis // Removed
+    
+    // Process the analysis result similar to how handleAIGenerate does it
+    let aiSummary = typeof analysis === 'object' && analysis.answer 
+          ? analysis.answer 
+          : (typeof analysis === 'string' ? analysis : JSON.stringify(analysis))
+        
+    aiSummary = sanitizeAIResponse(aiSummary)
+
+    // Push to Chat History
+    const timestamp = Date.now()
+    chatHistory.value.push({ role: 'assistant', content: aiSummary, timestamp })
+    
+    if (selectedChatId.value) {
+        await saveMessage(selectedChatId.value, 'ai', aiSummary)
+    }
+
+    toast.success('Analysis added to chat')
   } catch (error) {
     console.error('Failed to analyze results:', error)
     toast.error('Failed to analyze results', {
@@ -1751,6 +1619,24 @@ const handleSanitizeFixed = async (conn: ConnectionEntry, table: string) => {
     toast.error('Failed to analyze table for sanitization', {
       description: e.message
     })
+  }
+}
+
+const handleOpenSpreadsheet = async () => {
+  if (!queryResult.value || !Array.isArray(queryResult.value) || queryResult.value.length === 0) {
+    toast.warning('No data available to open in spreadsheet');
+    return;
+  }
+  
+  if (workspaceRef.value && typeof workspaceRef.value.loadTableData === 'function') {
+     const connection = selectedConnection.value
+     const provider = connection?.provider || 'sqlite'
+     const tableName = `Analysis ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+     
+     workspaceRef.value.loadTableData(tableName, queryResult.value, connection, provider)
+     toast.success('Opened results in spreadsheet')
+  } else {
+     toast.error('Workspace not ready')
   }
 }
 

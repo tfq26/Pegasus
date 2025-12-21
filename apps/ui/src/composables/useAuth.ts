@@ -1,7 +1,16 @@
 import { ref, onMounted } from 'vue'
 import { useFeatureFlags } from './useFeatureFlags'
 
-const user = ref(null)
+interface User {
+    id: string
+    email: string
+    firstName?: string
+    lastName?: string
+    profilePictureUrl?: string
+    subscription_tier?: string
+}
+
+const user = ref<User | null>(null)
 const isLoading = ref(true)
 
 const API_URL = import.meta.env.VITE_QUERY_API_URL || `${window.location.protocol}//${window.location.hostname}:3000`

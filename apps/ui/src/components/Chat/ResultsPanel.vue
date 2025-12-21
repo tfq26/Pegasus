@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { X, Maximize2, Minimize2, PanelBottom, PanelRight, LayoutDashboard } from 'lucide-vue-next'
+import { X, Maximize2, Minimize2, PanelBottom, PanelRight, LayoutDashboard, Table } from 'lucide-vue-next'
 import JsonViewer from '@/components/JsonViewer.vue'
 import ResultsTable from './ResultsTable.vue'
 import { toast } from 'vue-sonner'
@@ -35,11 +35,12 @@ const emit = defineEmits<{
   'analyze': []
   'resolve-ambiguity': [choice: string]
   'create-dashboard-element': []
+  'open-spreadsheet': []
   'sanitize': []
   'cancel': []
 }>()
 
-const size = ref(400) // Default size in pixels
+const size = ref(320) // Default size in pixels
 const isResizing = ref(false)
 const isMaximized = ref(false)
 const activeTab = ref<'results' | 'messages' | 'history'>('results')
@@ -145,7 +146,7 @@ const copyToClipboard = async (text: string) => {
 
 <template>
   <div
-    class="bg-background border-border flex flex-col relative transition-all duration-300 shrink-0"
+    class="bg-[#0a0a0b] border-stone-800/50 flex flex-col relative transition-all duration-300 shrink-0"
     :class="{
       'border-t': position === 'bottom' && visible,
       'border-l': position === 'right' && visible,
@@ -158,415 +159,273 @@ const copyToClipboard = async (text: string) => {
       minWidth: visible && position === 'right' ? '200px' : '0px',
       maxHeight: visible && position === 'bottom' ? '80vh' : undefined,
       maxWidth: visible && position === 'right' ? '80vw' : undefined,
-      overflow: visible ? 'hidden' : 'hidden', // Changed to hidden to let inner content scroll
       opacity: visible ? 1 : 0,
       pointerEvents: visible ? 'auto' : 'none',
-      display: visible ? 'flex' : 'none' // Force display none when hidden
+      display: visible ? 'flex' : 'none'
     }"
   >
+    <!-- Technical Grid Background -->
+    <div class="absolute inset-0 pointer-events-none z-0 opacity-[0.02]" 
+         style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 24px 24px;">
+    </div>
+
+    <!-- Thinking Progress Bar -->
+    <div v-if="props.loading" class="absolute top-0 left-0 right-0 h-[2px] bg-stone-900 z-[60] overflow-hidden">
+       <div class="h-full bg-violet-500 animate-[progress_1.5s_infinite_linear] shadow-[0_0_8px_theme(colors.violet.500)]" style="width: 30%"></div>
+    </div>
+
     <!-- Resize handle -->
     <div
-      class="absolute z-50 hover:bg-primary/50 transition-colors"
+      class="absolute z-50 hover:bg-violet-500/20 transition-all duration-300"
       :class="{
-        'top-0 left-0 right-0 h-1 cursor-ns-resize': position === 'bottom',
-        'top-0 bottom-0 left-0 w-1 cursor-ew-resize': position === 'right',
+        'top-0 left-0 right-0 h-1.5 cursor-ns-resize': position === 'bottom',
+        'top-0 bottom-0 left-0 w-1.5 cursor-ew-resize': position === 'right',
       }"
       @mousedown="startResize"
     />
 
-    <!-- Header -->
-    <div class="flex flex-wrap items-center justify-between px-3 py-2 border-b border-border bg-muted/30 gap-2 shrink-0">
-      <div class="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
-        <!-- Tabs -->
-        <button
-          v-for="tab in (['results', 'messages', 'history'] as const)"
-          :key="tab"
-          @click="activeTab = tab"
-          class="px-2.5 py-1 text-xs font-medium rounded transition-colors capitalize whitespace-nowrap"
-          :class="
-            activeTab === tab
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-          "
-        >
-          {{ tab }}
-        </button>
+    <!-- Header / Tab Bar -->
+    <div class="flex items-center justify-between px-4 py-1.5 bg-stone-900/40 backdrop-blur-md border-b border-stone-800/50 shrink-0 z-10">
+      <div class="flex items-center gap-6">
+        <!-- Modern Pill Tabs -->
+        <div class="flex p-0.5 bg-stone-950/50 rounded-lg border border-stone-800/50 relative overflow-hidden">
+          <button
+            v-for="tab in (['results', 'messages', 'history'] as const)"
+            :key="tab"
+            @click="activeTab = tab"
+            class="px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all relative z-10"
+            :class="
+              activeTab === tab
+                ? 'bg-stone-800 text-stone-100 shadow-sm'
+                : 'text-stone-500 hover:text-stone-300'
+            "
+          >
+             {{ tab === 'results' ? 'Output' : (tab === 'messages' ? 'Console' : 'Log') }}
+          </button>
+        </div>
+
+        <!-- View Mode (Table/JSON) -->
+        <div v-if="activeTab === 'results' && Array.isArray(result)" class="flex items-center gap-1.5 pl-4 border-l border-stone-800/50">
+          <button
+            @click="viewMode = 'table'"
+            class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
+            :class="viewMode === 'table' ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-stone-500 hover:text-stone-300'"
+          >
+            Tabular
+          </button>
+          <button
+            @click="viewMode = 'json'"
+            class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
+            :class="viewMode === 'json' ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-stone-500 hover:text-stone-300'"
+          >
+            Object
+          </button>
+        </div>
       </div>
 
-      <!-- View Mode Toggle (Table/JSON/Excel) - Only visible in Results tab -->
-      <div v-if="activeTab === 'results' && Array.isArray(result)" class="flex items-center bg-muted/50 rounded-md p-0.5 ml-2 border border-border">
-        <button
-          @click="viewMode = 'table'"
-          class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors"
-          :class="viewMode === 'table' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-          title="Table View"
-        >
-          Table
-        </button>
-        <button
-          @click="viewMode = 'json'"
-          class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors"
-          :class="viewMode === 'json' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-          title="JSON View"
-        >
-          JSON
-        </button>
-        <!-- <button
-          @click="viewMode = 'excel'"
-          class="px-2 py-0.5 text-[10px] font-medium rounded-sm transition-colors flex items-center gap-1"
-          :class="viewMode === 'excel' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-          title="Excel Editor"
-        >
-          <LayoutDashboard class="w-3 h-3" />
-          Excel
-        </button> -->
-      </div>
-
-      <div class="flex items-center gap-1 shrink-0 ml-auto">
+      <div class="flex items-center gap-3">
         <!-- Result count badge -->
-        <span
+        <div
           v-if="activeTab === 'results' && resultCount !== null"
-          class="hidden sm:inline-flex px-2 py-1 text-[10px] font-mono bg-primary/10 text-primary rounded whitespace-nowrap"
+          class="flex items-center gap-2 px-2 py-0.5 bg-stone-950 border border-stone-800/50 rounded-full"
         >
-          {{ resultCount }} {{ resultCount === 1 ? 'row' : 'rows' }}
-        </span>
+          <div class="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]"></div>
+          <span class="text-[10px] font-mono text-stone-400">
+            {{ resultCount.toLocaleString() }} records
+          </span>
+        </div>
 
-        <!-- Position toggle -->
-        <button
-          @click="togglePosition"
-          class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-          :title="`Move to ${position === 'bottom' ? 'right' : 'bottom'}`"
-        >
-          <PanelBottom v-if="position === 'right'" class="w-4 h-4" />
-          <PanelRight v-else class="w-4 h-4" />
-        </button>
+        <div class="h-4 w-px bg-stone-800 mx-1"></div>
 
-        <!-- Maximize toggle -->
-        <button
-          @click="toggleMaximize"
-          class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-          title="Toggle maximize"
-        >
-          <Minimize2 v-if="isMaximized" class="w-4 h-4" />
-          <Maximize2 v-else class="w-4 h-4" />
-        </button>
+        <!-- Utility Group -->
+        <div class="flex items-center gap-1">
+          <button
+            @click="togglePosition"
+            class="p-1.5 rounded-lg text-stone-500 hover:text-violet-400 hover:bg-stone-800/50 transition-all"
+            :title="`Dock to ${position === 'bottom' ? 'right' : 'bottom'}`"
+          >
+            <PanelBottom v-if="position === 'right'" class="w-3.5 h-3.5" />
+            <PanelRight v-else class="w-3.5 h-3.5" />
+          </button>
 
-        <!-- Close -->
-        <button
-          @click="emit('close')"
-          class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
-          title="Close panel"
-        >
-          <X class="w-4 h-4" />
-        </button>
+          <button
+            @click="toggleMaximize"
+            class="p-1.5 rounded-lg text-stone-500 hover:text-violet-400 hover:bg-stone-800/50 transition-all"
+          >
+            <Minimize2 v-if="isMaximized" class="w-3.5 h-3.5" />
+            <Maximize2 v-else class="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            @click="emit('close')"
+            class="p-1.5 rounded-lg text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Content -->
-    <div class="flex-1 overflow-auto p-4 min-h-0">
-      <!-- Results Tab -->
-      <div v-if="activeTab === 'results'" class="flex flex-col space-y-3">
-        <div v-if="loading" class="flex flex-col items-center justify-center py-8 text-muted-foreground gap-3">
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <span class="text-sm">Executing query...</span>
-          </div>
-          <button 
-            @click="emit('cancel')" 
-            class="px-3 py-1 rounded bg-destructive/10 text-destructive text-xs hover:bg-destructive/20 transition-colors"
-          >
-            Cancel Operation
-          </button>
+    <!-- Panel Content -->
+    <div class="flex-1 overflow-hidden relative z-10 flex flex-col">
+      <!-- Loading Overlay -->
+      <Transition name="fade">
+        <div v-if="loading" class="absolute inset-0 bg-[#0a0a0b]/60 backdrop-blur-[2px] z-[50] flex flex-col items-center justify-center space-y-4">
+           <div class="flex items-center gap-3 px-4 py-2 bg-stone-900 border border-stone-800 rounded-full shadow-2xl">
+              <Loader2 class="w-4 h-4 text-violet-400 animate-spin" />
+              <span class="text-[11px] font-black uppercase tracking-[0.2em] text-stone-200">Executing Data Protocol</span>
+           </div>
+           <button @click="emit('cancel')" class="text-[9px] font-bold uppercase tracking-widest text-stone-500 hover:text-rose-400 underline decoration-rose-400/30">
+              Abort Operation
+           </button>
         </div>
+      </Transition>
 
-        <div v-else-if="error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 space-y-3 relative group">
-          <button 
-            @click="copyToClipboard(error)"
-            class="absolute top-2 right-2 p-1.5 rounded bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors opacity-0 group-hover:opacity-100"
-            title="Copy error"
-          >
-            <Check v-if="copied" class="w-3 h-3" />
-            <Copy v-else class="w-3 h-3" />
-          </button>
-          <div class="flex items-start gap-2">
-            <div class="text-destructive text-sm font-mono whitespace-pre-wrap">{{ error }}</div>
-          </div>
-          
-          <!-- Show reasoning if available in the error context (passed via props or parsed from error) -->
-          <div 
-            v-if="ambiguity?.reasoning" 
-            class="text-xs text-muted-foreground border-t border-destructive/20 pt-2 cursor-pointer hover:text-foreground transition-colors"
-            @click="showReasoningDialog = true"
-          >
-            <span class="font-semibold text-foreground">AI Reasoning:</span> 
-            <span class="line-clamp-2">{{ ambiguity.reasoning }}</span>
-            <span class="text-[10px] text-primary mt-1 block">Click to view full log</span>
-          </div>
-        </div>
-
-        <div v-else-if="ambiguity" class="rounded-lg border border-amber-500/50 bg-amber-500/10 p-4">
-          <div class="flex items-start gap-3">
-            <div class="p-2 bg-amber-500/20 rounded-full">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-              </svg>
-            </div>
-            <div class="flex-1">
-              <h3 class="text-amber-500 font-medium mb-1">Clarification Needed</h3>
-              <p class="text-foreground text-sm mb-4">{{ ambiguity.message }}</p>
-              
-              <div class="space-y-2">
-                <button
-                  v-for="(choice, index) in ambiguity.choices"
-                  :key="index"
-                  @click="emit('resolve-ambiguity', choice)"
-                  class="w-full text-left px-4 py-3 rounded bg-muted/50 border border-border hover:border-amber-500/50 hover:bg-amber-500/10 transition-all group"
-                >
-                  <div class="flex items-center justify-between">
-                    <span class="text-sm text-foreground group-hover:text-amber-600 dark:group-hover:text-amber-400">{{ choice }}</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground group-hover:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="result" class="space-y-3">
-          <!-- Analysis Section -->
-          <div v-if="analysis" class="rounded-lg border border-primary/30 bg-primary/10 p-4">
-            <div class="flex items-center justify-between mb-2">
-              <div class="text-[10px] uppercase tracking-wider text-primary">AI Analysis</div>
-              <button 
-                @click="emit('analyze')" 
-                class="text-[10px] text-primary hover:text-primary/80 underline"
-                :disabled="isAnalyzing"
+      <div class="flex-1 overflow-auto">
+        <!-- Results View -->
+        <div v-if="activeTab === 'results'" class="h-full flex flex-col">
+          <div v-if="error" class="m-6 p-6 rounded-2xl border border-rose-500/20 bg-rose-500/5 relative group animate-in fade-in slide-in-from-top-4 duration-500">
+             <div class="flex items-start gap-4">
+               <div class="w-10 h-10 shrink-0 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
+                  <X class="w-5 h-5" />
+               </div>
+               <div class="flex-1 min-w-0">
+                  <h4 class="text-xs font-black uppercase tracking-widest text-rose-500 mb-2">Protocol Failure</h4>
+                  <p class="text-[13px] font-mono text-stone-300 break-words leading-relaxed">{{ error }}</p>
+               </div>
+             </div>
+             
+             <button 
+                @click="copyToClipboard(error)"
+                class="absolute top-4 right-4 p-2 rounded-lg bg-stone-900 border border-stone-800 text-stone-500 hover:text-stone-100 opacity-0 group-hover:opacity-100 transition-all"
               >
-                {{ isAnalyzing ? 'Regenerating...' : 'Regenerate' }}
+                <component :is="copied ? Check : Copy" class="w-3.5 h-3.5" />
               </button>
-            </div>
-            
-            <div v-if="analysis.extractedList && analysis.extractedList.length" class="mb-3">
-              <div class="text-xs font-semibold text-primary mb-1">Extracted Answer:</div>
-              <div class="flex flex-wrap gap-2">
-                <span 
-                  v-for="(item, idx) in analysis.extractedList" 
-                  :key="idx"
-                  class="px-2 py-1 rounded bg-primary/20 text-primary text-xs border border-primary/30"
-                >
-                  {{ item }}
-                </span>
-              </div>
-            </div>
-            
-            <div class="text-sm text-foreground leading-relaxed prose prose-invert prose-sm max-w-none dark:prose-invert prose-stone" v-html="renderMarkdown(analysis.answer || analysis.summary || analysis)"></div>
           </div>
 
-          <!-- Check if this is a multi-step result -->
-          <template v-if="Array.isArray(result) && result.length > 0 && result[0]?.explanation">
-            <!-- Multi-step results -->
-            <div v-for="(step, idx) in result" :key="idx" class="space-y-2">
-              <div class="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border border-border">
-                <div class="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
-                  {{ idx + 1 }}
-                </div>
-                <div class="text-sm text-foreground font-medium">{{ step.explanation }}</div>
-              </div>
-              
-              <div v-if="step.error" class="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
-                <div class="text-destructive text-sm font-mono">{{ step.error }}</div>
-              </div>
-              
-              <div v-else-if="step.result" class="rounded-lg border border-border overflow-hidden">
-                <!-- Check if this is a scalar result (e.g., from RETURN statement) -->
-                <div v-if="step.result.rows !== undefined && typeof step.result.rows === 'number'" 
-                     class="p-6 bg-gradient-to-br from-primary/5 to-primary/10">
-                  <div class="text-center">
-                    <div class="text-4xl font-bold text-primary mb-2">
-                      {{ (() => {
-                        const val = step.result.rows;
-                        const exp = step.explanation.toLowerCase();
-                        // Currency formatting for salary/price/cost/revenue
-                        if (exp.includes('salary') || exp.includes('price') || exp.includes('cost') || exp.includes('revenue') || exp.includes('amount')) {
-                          return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val);
-                        }
-                        // Percentage formatting
-                        if (exp.includes('percent') || exp.includes('rate')) {
-                          return `${val.toFixed(1)}%`;
-                        }
-                        // Default: number with thousand separators
-                        return val.toLocaleString('en-US');
-                      })() }}
-                    </div>
-                    <div class="text-xs text-muted-foreground uppercase tracking-wider">
-                      {{ step.explanation.toLowerCase().includes('average') ? 'Average' : 
-                         step.explanation.toLowerCase().includes('total') || step.explanation.toLowerCase().includes('sum') ? 'Total' :
-                         step.explanation.toLowerCase().includes('count') ? 'Count' : 'Result' }}
-                    </div>
-                  </div>
-                </div>
-                <!-- Array results (table view) -->
-                <ResultsTable 
-                  v-else-if="Array.isArray(step.result) && step.result.length > 0" 
-                  :data="step.result" 
-                  :settings="settings"
-                />
-                <!-- Other results (JSON view) -->
-                <div v-else class="p-4 text-sm text-muted-foreground">
-                  <JsonViewer :data="step.result" :max-depth="3" />
-                </div>
-              </div>
-            </div>
-          </template>
+          <div v-else-if="result" class="h-full flex flex-col p-3 space-y-3">
+            <!-- Analysis Insight -->
 
-          <!-- Single-step result (original logic) -->
-          <template v-else>
-            <div class="flex flex-wrap items-center justify-between mb-3 gap-2">
-              <div class="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">Query Results</div>
-              
-              <div class="flex flex-wrap items-center gap-2">
-                <!-- Analyze Button -->
-                <button
-                  v-if="!analysis"
-                  @click="emit('analyze')"
-                  :disabled="isAnalyzing"
-                  class="flex items-center gap-2 px-3 py-1.5 rounded bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  <div v-if="isAnalyzing" class="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>
-                  <span>{{ isAnalyzing ? 'Analyzing...' : 'Analyze with AI' }}</span>
-                </button>
 
-                <!-- Visualize Button -->
-                <button
-                  v-if="Array.isArray(result) && result.length > 0"
-                  @click="emit('create-dashboard-element')"
-                  class="flex items-center gap-2 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors whitespace-nowrap"
-                >
+            <!-- Toolbar (Visualize / Sanitize) -->
+            <div v-if="Array.isArray(result) && result.length > 0" class="flex items-center gap-3">
+               <button @click="emit('create-dashboard-element')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-950 hover:bg-white text-[9px] font-black uppercase tracking-widest transition-all shadow-xl shadow-stone-950/20">
                   <LayoutDashboard class="w-3 h-3" />
                   <span>Visualize</span>
-                </button>
-
-                <!-- Sanitize Button -->
-                <button
-                  v-if="Array.isArray(result) && result.length > 0"
-                  @click="emit('sanitize')"
-                  class="flex items-center gap-2 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors whitespace-nowrap"
-                  title="Clean up data quality issues"
-                >
-                  <div class="flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles w-3 h-3 mr-1"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-                    <span>Sanitize</span>
-                  </div>
-                </button>
-
-                <!-- View Toggle moved to header -->
-
-              </div>
+               </button>
+               <button @click="emit('open-spreadsheet')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-800 border border-stone-700 text-stone-300 hover:text-stone-100 hover:border-stone-600 text-[9px] font-black uppercase tracking-widest transition-all">
+                  <Table class="w-3 h-3" />
+                  <span>Spreadsheet</span>
+               </button>
+               <button @click="emit('sanitize')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-stone-100 hover:border-stone-700 text-[9px] font-black uppercase tracking-widest transition-all">
+                  <Sparkles class="w-3 h-3" />
+                  <span>Optimize</span>
+               </button>
             </div>
-            
-            <div class="flex-1 overflow-hidden min-h-0">
-              <ContextMenu>
-                <ContextMenuTrigger class="h-full w-full">
-                  <ResultsTable 
-                    v-if="viewMode === 'table' && Array.isArray(result)" 
-                    :data="result" 
-                    :settings="settings"
-                    class="h-full"
-                  />
-                  <ExcelEditor
-                    v-else-if="viewMode === 'excel' && Array.isArray(result)"
-                    :data="result"
-                    class="h-full"
-                  />
-                  <JsonViewer 
-                    v-else 
-                    :data="result" 
-                    :max-depth="10" 
-                    class="h-full overflow-auto"
-                  />
-                </ContextMenuTrigger>
-                <ContextMenuContent class="w-64 bg-popover border-border">
-                  <ContextMenuItem @select="emit('create-dashboard-element')" class="text-foreground hover:bg-muted focus:bg-muted">
-                    Create Dashboard Element
-                  </ContextMenuItem>
-                  <ContextMenuItem @select="emit('analyze')" class="text-foreground hover:bg-muted focus:bg-muted">
-                    Analyze Results
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
+
+            <!-- Data Output -->
+            <div class="flex-1 min-h-0 min-w-0 rounded-xl border border-stone-800/50 bg-stone-950/30 overflow-hidden shadow-inner">
+               <ResultsTable 
+                  v-if="viewMode === 'table' && Array.isArray(result)" 
+                  :data="result" 
+                  :settings="settings"
+                  class="h-full"
+                />
+                <JsonViewer 
+                  v-else 
+                  :data="result" 
+                  :max-depth="10" 
+                  class="h-full overflow-auto p-4"
+                />
             </div>
-          </template>
-        </div>
-        <div v-else class="flex items-center justify-center py-12 text-muted-foreground">
-          <div class="text-center">
-            <div class="text-sm">No results yet</div>
-            <div class="text-xs mt-1">Execute a query to see results here</div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else class="h-full flex flex-col items-center justify-center p-12 space-y-6">
+             <div class="relative">
+                <div class="absolute inset-0 bg-stone-800/20 blur-3xl rounded-full"></div>
+                <div class="relative w-16 h-16 rounded-2xl bg-stone-900 border border-stone-800 flex items-center justify-center transform rotate-12">
+                   <PanelBottom class="w-8 h-8 text-stone-700" />
+                </div>
+             </div>
+             <div class="text-center space-y-2">
+                <h4 class="text-sm font-black uppercase tracking-[0.2em] text-stone-400">System Ready</h4>
+                <p class="text-xs text-stone-600 max-w-[200px] leading-relaxed">Execute a protocol to view analytical output in this workspace.</p>
+             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Messages Tab -->
-      <div v-else-if="activeTab === 'messages'" class="text-muted-foreground text-sm">
-        <div class="text-center py-12">
-          <div>Messages panel</div>
-          <div class="text-xs mt-1">Query execution messages will appear here</div>
-        </div>
-      </div>
-
-      <!-- History Tab -->
-      <div v-else class="space-y-3">
-        <div v-if="!history || history.length === 0" class="text-center py-12 text-muted-foreground text-sm">
-          <div>Query history</div>
-          <div class="text-xs mt-1">Recent queries will appear here</div>
-        </div>
-        <div v-else class="space-y-2">
-          <div 
-            v-for="item in history" 
-            :key="item.id"
-            class="p-3 rounded-lg border border-border bg-muted/50 hover:border-muted-foreground/30 transition-colors"
-          >
-            <div class="flex items-center justify-between mb-2">
-              <div class="flex items-center gap-2">
-                <span 
-                  class="px-1.5 py-0.5 rounded text-[10px] font-medium border"
-                  :class="item.source === 'ai' 
-                    ? 'bg-primary/10 text-primary border-primary/20' 
-                    : 'bg-blue-500/10 text-blue-500 border-blue-500/20'"
-                >
-                  {{ item.source === 'ai' ? 'AI Generated' : 'Manual' }}
-                </span>
-                <span class="text-[10px] text-muted-foreground">
-                  {{ new Date(item.timestamp).toLocaleTimeString() }}
-                </span>
+        <!-- Console / History Tab Content (Simplified for now) -->
+        <div v-else-if="activeTab === 'messages'" class="p-8 h-full">
+           <!-- Console experience -->
+           <div class="h-full flex flex-col font-mono text-[11px] text-stone-500 space-y-2">
+              <div class="flex gap-2">
+                 <span class="text-emerald-500">[INFO]</span>
+                 <span>Pegasus Session Started</span>
               </div>
-              <span 
-                v-if="item.status === 'error'"
-                class="text-[10px] text-destructive"
-              >
-                Failed
-              </span>
-            </div>
-            <pre class="text-xs font-mono text-foreground whitespace-pre-wrap overflow-hidden text-ellipsis max-h-20">{{ item.query }}</pre>
-          </div>
+              <div class="flex gap-2">
+                 <span class="text-emerald-500">[INFO]</span>
+                 <span>Awaiting instruction input...</span>
+              </div>
+           </div>
         </div>
-      </div>
-    </div>
-    <!-- Reasoning Dialog -->
-    <div v-if="showReasoningDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" @click.self="showReasoningDialog = false">
-      <div class="bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col m-4">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 class="text-sm font-medium text-foreground">AI Reasoning Log</h3>
-          <button @click="showReasoningDialog = false" class="text-muted-foreground hover:text-foreground">
-            <X class="w-4 h-4" />
-          </button>
-        </div>
-        <div class="p-4 overflow-auto">
-          <pre class="text-xs font-mono text-foreground whitespace-pre-wrap leading-relaxed">{{ ambiguity?.reasoning }}</pre>
+
+        <div v-else class="p-6 space-y-4">
+           <h4 class="text-[10px] font-black uppercase tracking-widest text-stone-500 px-2">Operation Logs</h4>
+           <div v-if="!history || history.length === 0" class="py-12 text-center text-xs text-stone-600 italic">No historical data found.</div>
+           <div v-for="item in history" :key="item.id" class="p-4 rounded-xl border border-stone-900 bg-stone-900/20 hover:border-stone-800 transition-all cursor-pointer group">
+              <div class="flex items-center justify-between mb-2">
+                 <span class="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-stone-900 text-stone-500 group-hover:text-stone-300">
+                    {{ item.source }}
+                 </span>
+                 <span class="text-[10px] font-mono text-stone-700">
+                    {{ new Date(item.timestamp).toLocaleTimeString() }}
+                 </span>
+              </div>
+              <pre class="text-[12px] font-mono text-stone-400 whitespace-pre-wrap line-clamp-2 leading-relaxed">{{ item.query }}</pre>
+           </div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes progress {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+:deep(.prose p) {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+:deep(.prose ul), :deep(.prose ol) {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+:deep(.prose li) {
+  margin-top: 0.125rem;
+  margin-bottom: 0.125rem;
+}
+</style>
 ```

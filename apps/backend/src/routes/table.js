@@ -54,6 +54,20 @@ const upsertUser = async (payload) => {
     }
 }
 
+// Helper to get token from cookie or header
+const getAuthToken = (c) => {
+    // Try cookie first
+    let token = getCookie(c, "session")
+    // Fallback to Authorization header
+    if (!token) {
+        const authHeader = c.req.header("Authorization")
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7)
+        }
+    }
+    return token
+}
+
 table.post("/rename-table", async (c) => {
     try {
         const { connection, oldTableName, newTableName, provider } = await c.req.json()
@@ -65,7 +79,7 @@ table.post("/rename-table", async (c) => {
         })
 
         // Verify user session with JWT
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) {
             return c.json({ error: "Unauthorized" }, 401)
         }
@@ -277,7 +291,7 @@ table.post("/delete-table", async (c) => {
         })
 
         // Verify user session with JWT
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) {
             return c.json({ error: "Unauthorized" }, 401)
         }
@@ -446,7 +460,7 @@ table.post("/save-table-data", async (c) => {
         })
 
         // Verify user session with JWT
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) {
             return c.json({ error: "Unauthorized - No session" }, 401)
         }
@@ -654,7 +668,7 @@ table.post("/table/:tableName/schema", async (c) => {
         const tableName = c.req.param("tableName")
         const { connection, provider } = await c.req.json()
 
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
@@ -685,7 +699,7 @@ table.post("/table/:tableName/query", async (c) => {
 
         console.log(`[Query] Table: ${tableName}, Provider: ${provider}, Limit: ${limit}`);
 
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
@@ -740,7 +754,7 @@ table.post("/table/:tableName/operations", async (c) => {
 
         console.log(`[Operations] Received for ${provider} table ${tableName}, ${operations.length} operations`)
 
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         let userId;
         try {
@@ -964,7 +978,7 @@ table.post("/table/:tableName/sanitize", async (c) => {
         const tableName = c.req.param("tableName")
         console.log(`[Sanitize] Request for ${tableName}`)
 
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
@@ -1139,7 +1153,7 @@ async function createTableAndInsertData(tableName, rows) {
 table.get("/table/:tableName/versions", async (c) => {
     try {
         const tableName = c.req.param("tableName")
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
@@ -1184,7 +1198,7 @@ table.get("/table/:tableName/versions", async (c) => {
 table.get('/:tableName/interpret', async (c) => {
     try {
         const { tableName } = c.req.param()
-        const token = getCookie(c, "session")
+        const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
 
         let rows = []

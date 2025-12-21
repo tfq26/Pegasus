@@ -31,7 +31,7 @@
         >
           <div class="flex items-center gap-3 mb-2">
             <div 
-              class="w-3 h-3 rounded-full border border-border"
+              class="w-3 h-3 rounded-lg border border-border"
               :style="{ backgroundColor: getPointColor(index) }"
             />
             <span class="text-sm font-medium truncate flex-1">{{ point.label }}</span>

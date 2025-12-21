@@ -76,8 +76,22 @@ const upsertUser = async (payload) => {
     }
 }
 
+// Helper to get token from cookie or header
+const getAuthToken = (c) => {
+    // Try cookie first
+    let token = getCookie(c, "session")
+    // Fallback to Authorization header
+    if (!token) {
+        const authHeader = c.req.header("Authorization")
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7)
+        }
+    }
+    return token
+}
+
 connections.get("/", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -113,7 +127,7 @@ connections.get("/", async (c) => {
 })
 
 connections.post("/", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -167,7 +181,7 @@ connections.post("/", async (c) => {
 })
 
 connections.put("/:id", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -221,7 +235,7 @@ connections.put("/:id", async (c) => {
 })
 
 connections.delete("/:id", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {

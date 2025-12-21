@@ -127,7 +127,7 @@ watchEffect(() => {
         <!-- Chat Mode Controls -->
         <div v-if="mode === 'chat'" class="flex items-center gap-3">
           <div class="flex items-center gap-2">
-            <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Model</span>
+            <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Engine</span>
             <Select 
               :model-value="aiOptions.model"
               @update:model-value="updateAiOption('model', $event)"
@@ -161,22 +161,22 @@ watchEffect(() => {
             />
           </div>
 
-          <!-- Send Button -->
+          <!-- Run Button -->
           <button
             @click="emit('run')"
             :disabled="isExecuting"
             class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-wait ml-2"
           >
-            <Send v-if="!isExecuting" class="w-3.5 h-3.5" />
-            <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-            {{ isExecuting ? 'Sending...' : 'Send' }}
+            <Zap v-if="!isExecuting" class="w-3.5 h-3.5" />
+            <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
+            {{ isExecuting ? 'Running...' : 'Run' }}
           </button>
           
           <!-- Clear Button -->
           <button
             @click="emit('clear')"
             class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="Clear chat"
+            title="Reset history"
           >
             <Eraser class="w-3.5 h-3.5" />
           </button>
@@ -192,7 +192,7 @@ watchEffect(() => {
             title="Execute query (Ctrl+Enter)"
           >
             <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
-            <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+            <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
             {{ isExecuting ? 'Running...' : 'Run' }}
           </button>
 
@@ -214,7 +214,7 @@ watchEffect(() => {
             title="Generate query from natural language"
           >
             <Sparkles v-if="!isExecuting" class="w-3.5 h-3.5" />
-            <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+            <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
             {{ isExecuting ? 'Generating...' : 'Generate SQL' }}
           </button> -->
 
@@ -418,15 +418,15 @@ watchEffect(() => {
             :title="saveStatus === 'saved' ? 'Click to refresh data from database' : saveStatus === 'saving' ? 'Saving changes...' : 'Error saving - click to retry'"
           >
             <template v-if="saveStatus === 'saving'">
-              <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+              <span class="w-2 h-2 rounded-lg bg-yellow-500 animate-pulse"></span>
               <span class="text-muted-foreground">Saving...</span>
             </template>
             <template v-else-if="saveStatus === 'error'">
-              <span class="w-2 h-2 rounded-full bg-destructive"></span>
+              <span class="w-2 h-2 rounded-lg bg-destructive"></span>
               <span class="text-destructive">Error - Click to refresh</span>
             </template>
             <template v-else>
-              <span class="w-2 h-2 rounded-full bg-green-500"></span>
+              <span class="w-2 h-2 rounded-lg bg-green-500"></span>
               <span class="text-muted-foreground">Saved - Click to refresh</span>
             </template>
           </button>
@@ -462,23 +462,5 @@ watchEffect(() => {
       </div>
     </div>
 
-    <!-- Connection Info Bar (when connection selected) -->
-    <div
-      v-if="selectedConnection"
-      class="border-t border-border px-4 py-1.5 bg-muted/30 flex items-center justify-between text-[10px]"
-    >
-      <div class="flex items-center gap-4 text-muted-foreground">
-        <span>
-          <span class="text-muted-foreground/70">Connected:</span>
-          <span class="text-foreground ml-1">{{ selectedConnection.nickname }}</span>
-        </span>
-        <span v-if="selectedConnection.description" class="text-muted-foreground/70">
-          {{ selectedConnection.description }}
-        </span>
-      </div>
-      <div class="text-muted-foreground">
-        Ready
-      </div>
-    </div>
   </div>
 </template>

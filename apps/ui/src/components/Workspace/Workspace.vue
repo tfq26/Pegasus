@@ -23,6 +23,7 @@ const props = defineProps<{
   aiMode: boolean;
   autoExecute: boolean;
   privateMode?: boolean;
+  isThinking?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -324,7 +325,7 @@ const getEngineForTab = (tabId: string) => {
         
         // Reload data in background
         console.log('[Workspace] Background reloading data for restored tab');
-        fetchTableData(tab.data.tableName, tab.data.connection, tab.data.provider)
+        fetchTableData(tab.data.tableName as string, tab.data.connection, tab.data.provider as string)
             .then(({ rows }) => {
                  if (!rows || rows.length === 0) return;
                  console.log(`[Workspace] Reloaded ${rows.length} rows`);
@@ -949,6 +950,7 @@ defineExpose({
             :mode="tab.type === 'query' ? 'write' : 'chat'"
             :input="tab.type === 'query' ? (tab.data?.content || '') : input"
             :history="tab.type === 'chat' ? props.chatHistory : undefined"
+            :is-thinking="props.isThinking"
             @update:input="(val) => {
               if (tab.type === 'query') {
                 // Update tab-specific content
@@ -966,4 +968,4 @@ defineExpose({
     </div>
   </div>
 </template>
-```
+

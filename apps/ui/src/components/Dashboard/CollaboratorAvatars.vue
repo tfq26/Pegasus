@@ -7,7 +7,7 @@
       class="relative group"
       :title="collaborator.user.email"
     >
-      <div class="w-8 h-8 rounded-full border-2 border-background bg-muted flex items-center justify-center overflow-hidden text-xs font-medium text-foreground">
+      <div class="w-8 h-8 rounded-lg border-2 border-background bg-muted flex items-center justify-center overflow-hidden text-xs font-medium text-foreground">
         <img 
           v-if="collaborator.user.profilePictureUrl" 
           :src="collaborator.user.profilePictureUrl" 

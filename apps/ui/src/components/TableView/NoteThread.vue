@@ -38,7 +38,7 @@ const formatTime = (ts: number) => new Date(ts).toLocaleString()
             <div v-for="note in notes" :key="note.id" class="group relative bg-card border rounded-lg p-3 shadow-sm transition-all" :class="{'opacity-60': note.resolved}">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-1.5">
-                        <div class="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                        <div class="w-5 h-5 rounded-lg bg-primary/10 flex items-center justify-center">
                             <User class="w-3 h-3 text-primary" />
                         </div>
                         <span class="text-xs font-semibold">{{ note.author }}</span>

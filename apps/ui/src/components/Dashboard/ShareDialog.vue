@@ -28,7 +28,7 @@
                  class="px-3 py-2 text-sm hover:bg-muted cursor-pointer flex items-center gap-2"
                  @click="selectUser(user)"
                >
-                 <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary overflow-hidden">
+                 <div class="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary overflow-hidden">
                     <img v-if="user.profile_picture_url" :src="user.profile_picture_url" class="w-full h-full object-cover">
                     <span v-else>{{ user.first_name?.[0] || user.email[0] }}</span>
                  </div>
@@ -56,7 +56,7 @@
           <div v-else class="space-y-2 max-h-[150px] overflow-y-auto border border-border rounded-md p-2">
              <div class="flex items-center justify-between text-sm p-2 rounded-md bg-muted/30">
                 <div class="flex items-center gap-2">
-                   <div class="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                   <div class="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
                      You
                    </div>
                    <span>You <span class="text-muted-foreground">(Owner)</span></span>
@@ -69,7 +69,7 @@
 
              <div v-for="perm in permissions" :key="perm.email" class="flex items-center justify-between text-sm p-2 rounded-md hover:bg-muted/50 transition-colors">
                 <div class="flex items-center gap-2 overflow-hidden">
-                   <div class="w-6 h-6 min-w-[1.5rem] rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-500">
+                   <div class="w-6 h-6 min-w-[1.5rem] rounded-lg bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-500">
                      {{ perm.email[0].toUpperCase() }}
                    </div>
                    <span class="truncate" :title="perm.email">{{ perm.email }}</span>

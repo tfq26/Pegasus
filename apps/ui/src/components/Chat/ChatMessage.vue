@@ -74,7 +74,7 @@ const formatValue = (val: any) => {
     <!-- Results Part -->
     <div v-if="parsedContent.hasResults" class="mt-2">
       <div class="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-2">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+        <span class="w-1.5 h-1.5 rounded-lg bg-emerald-500"></span>
         Query Results
       </div>
       

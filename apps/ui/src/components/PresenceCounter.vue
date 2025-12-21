@@ -62,7 +62,7 @@ onUnmounted(async () => {
 <template>
   <div class="fixed bottom-4 left-4 p-2 bg-background/80 backdrop-blur border border-border rounded shadow text-xs font-mono">
     <div class="flex items-center gap-2">
-        <div class="w-2 h-2 rounded-full" :class="connected ? 'bg-green-500' : 'bg-red-500'"></div>
+        <div class="w-2 h-2 rounded-lg" :class="connected ? 'bg-green-500' : 'bg-red-500'"></div>
         <span>SurrealDB: {{ connected ? 'Connected' : 'Disconnected' }}</span>
     </div>
     <div v-if="connected" class="mt-1">

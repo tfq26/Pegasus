@@ -147,7 +147,7 @@ const formatSql = (template: string, tableName: string) => {
                         <div class="flex items-center justify-between">
                             <h4 class="font-medium flex items-center gap-2">
                                 {{ issue.description }}
-                                <span :class="['text-xs px-2 py-0.5 rounded-full font-medium', getRiskColor(issue.risk)]">
+                                <span :class="['text-xs px-2 py-0.5 rounded-lg font-medium', getRiskColor(issue.risk)]">
                                     {{ issue.risk ? issue.risk.toUpperCase() : 'UNKNOWN' }}
                                 </span>
                             </h4>

@@ -384,11 +384,31 @@ export async function fetchChatHistory(chatId: string) {
 export async function saveMessage(chatId: string, role: 'user' | 'ai', content: string) {
   const response = await fetch(`${QUERY_API_URL}/chats/${chatId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ role, content })
   })
   if (!response.ok) throw new Error('Failed to save message')
+  return await response.json()
+}
+
+export async function deleteChat(chatId: string) {
+  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to delete chat')
+  return await response.json()
+}
+
+export async function clearAllChats() {
+  const response = await fetch(`${QUERY_API_URL}/chats`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to clear chats')
   return await response.json()
 }
 
@@ -756,3 +776,31 @@ export function getFileDownloadUrl(fileId: string) {
   return `${QUERY_API_URL}/files/${fileId}`
 }
 
+export async function logOperationToBackend(data: any) {
+  const response = await fetch(`${QUERY_API_URL}/operations`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) throw new Error('Failed to log operation')
+  return response.json()
+}
+
+export async function fetchOperationHistory(limit = 50) {
+  const response = await fetch(`${QUERY_API_URL}/operations/history?limit=${limit}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch operation history')
+  return response.json()
+}
+
+export async function fetchOperationAnalytics(range = 'day') {
+  const response = await fetch(`${QUERY_API_URL}/operations/analytics?range=${range}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  })
+  if (!response.ok) throw new Error('Failed to fetch operation analytics')
+  return response.json()
+}

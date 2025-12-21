@@ -225,150 +225,181 @@ const copyCellValue = async (value: any) => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full bg-transparent">
+  <div class="flex flex-col h-full bg-transparent overflow-hidden">
     <ContextMenu>
       <ContextMenuTrigger class="w-full flex-1 flex flex-col min-h-0">
-        <div class="flex-1 overflow-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead class="bg-background sticky top-0 z-10 ring-1 ring-border/20">
-            <tr>
-              <th
-                v-for="col in columns"
-                :key="col"
-                class="px-4 py-2 font-medium text-muted-foreground border-b border-border/50 whitespace-nowrap bg-background/95 backdrop-blur-sm"
-              >
-                {{ col }}
-              </th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border/20">
-            <tr
-              v-for="(row, i) in paginatedData"
-              :key="i"
-              :class="[
-                'transition-colors cursor-pointer',
-                selectedRows.has((currentPage - 1) * pageSize + i) 
-                  ? 'bg-primary/10' 
-                  : 'hover:bg-muted/30'
-              ]"
-              @click="toggleRowSelection((currentPage - 1) * pageSize + i, $event)"
-            >
-              <td
-                v-for="col in columns"
-                :key="col"
-                class="px-4 py-2 text-foreground whitespace-nowrap max-w-[300px] overflow-hidden text-ellipsis"
-              >
-                <button 
-                  v-if="isObject(row[col])"
-                  @click.stop="openJsonModal(row[col])"
-                  class="flex items-center gap-1.5 px-2 py-1 rounded bg-muted hover:bg-primary hover:text-primary-foreground text-muted-foreground transition-colors text-[10px] font-medium"
+        <div class="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
+          <table class="w-full text-left text-[12px] border-collapse relative">
+            <thead class="sticky top-0 z-20">
+              <tr class="bg-stone-900/80 backdrop-blur-md">
+                <th
+                  v-for="col in columns"
+                  :key="col"
+                  class="px-5 py-2 font-black uppercase tracking-[0.1em] text-[10px] text-stone-500 border-b border-stone-800/50 whitespace-nowrap first:pl-6"
                 >
-                  <Braces class="w-3 h-3" />
-                  <span>View JSON</span>
-                </button>
-                <span v-else :title="formatValue(row[col], col)">
-                  {{ formatValue(row[col], col) }}
-                  <!-- Debug: show raw value if formatted is empty -->
-                  <span v-if="!formatValue(row[col], col) || formatValue(row[col], col) === '-'" class="text-xs text-red-500 ml-2">
-                    [{{ typeof row[col] }}: {{ JSON.stringify(row[col]) }}]
+                  {{ col }}
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-900">
+              <tr
+                v-for="(row, i) in paginatedData"
+                :key="i"
+                :class="[
+                  'transition-all duration-200 group/row',
+                  selectedRows.has((currentPage - 1) * pageSize + i) 
+                    ? 'bg-violet-500/10' 
+                    : 'hover:bg-stone-900/40'
+                ]"
+                @click="toggleRowSelection((currentPage - 1) * pageSize + i, $event)"
+              >
+                <td
+                  v-for="col in columns"
+                  :key="col"
+                  class="px-5 py-2 text-stone-300 whitespace-nowrap max-w-[400px] overflow-hidden text-ellipsis selection:bg-violet-500/30 first:pl-6"
+                >
+                  <button 
+                    v-if="isObject(row[col])"
+                    @click.stop="openJsonModal(row[col])"
+                    class="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-800 group-hover/row:border-stone-700 text-stone-500 hover:text-stone-100 transition-all text-[10px] font-bold uppercase tracking-wider"
+                  >
+                    <Braces class="w-3 h-3 text-violet-400" />
+                    <span>View Object</span>
+                  </button>
+                  <span v-else :title="formatValue(row[col], col)" class="font-normal font-sans">
+                    {{ formatValue(row[col], col) }}
                   </span>
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </ContextMenuTrigger>
       
-      <ContextMenuContent class="w-64 bg-popover border-border">
+      <ContextMenuContent class="w-64 bg-stone-950 border-stone-800 text-stone-100">
         <ContextMenuItem 
           v-if="selectedRows.size > 0"
           @select="copySelectedRows"
-          class="text-foreground hover:bg-muted focus:bg-muted"
+          class="hover:bg-stone-900 focus:bg-stone-900"
         >
-          Copy {{ selectedRows.size }} Selected Row{{ selectedRows.size > 1 ? 's' : '' }}
+          Copy Selected Records ({{ selectedRows.size }})
         </ContextMenuItem>
         <ContextMenuItem 
           @select="copyAllRows"
-          class="text-foreground hover:bg-muted focus:bg-muted"
+          class="hover:bg-stone-900 focus:bg-stone-900"
         >
-          Copy All Rows ({{ data.length }})
+          Copy Full Dataset ({{ data.length }})
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
 
-    <div class="flex items-center justify-between px-4 py-2 border-t border-border/30 text-xs text-muted-foreground bg-transparent mt-auto shrink-0">
-      <div class="flex items-center gap-4">
-        <span v-if="selectedRows.size > 0" class="text-primary font-medium">
-          {{ selectedRows.size }} selected
-        </span>
-        <span>{{ data.length }} total rows</span>
+    <!-- Analytical Footer -->
+    <div class="flex items-center justify-between px-6 py-3 border-t border-stone-800/50 text-[10px] bg-stone-900/20 mt-auto shrink-0">
+      <div class="flex items-center gap-6">
+        <div v-if="selectedRows.size > 0" class="flex items-center gap-2 px-3 py-1 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 font-bold uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
+           <div class="w-1 h-1 rounded-full bg-violet-400 shadow-[0_0_8px_theme(colors.violet.400)]"></div>
+           {{ selectedRows.size }} selected
+        </div>
+        <div class="flex items-center gap-2 text-stone-500 font-bold uppercase tracking-[0.2em]">
+           <span>Total Records: {{ data.length.toLocaleString() }}</span>
+        </div>
       </div>
 
-      <!-- Pagination Controls -->
-      <div class="flex items-center gap-2" v-if="totalPages > 1">
-        <button 
-          @click="currentPage--" 
-          :disabled="currentPage === 1"
-          class="p-1 rounded hover:bg-muted disabled:opacity-30"
-          title="Previous Page"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left"><path d="m15 18-6-6 6-6"/></svg>
-        </button>
-        <div class="flex items-center gap-1 mx-2">
-          <span class="font-medium text-foreground">{{ currentPage }}</span>
-          <span class="text-muted-foreground/50">/</span>
-          <span>{{ totalPages }}</span>
+      <!-- High-Precision Pagination -->
+      <div class="flex items-center gap-4" v-if="totalPages > 1">
+        <div class="flex items-center p-0.5 bg-stone-950 rounded-lg border border-stone-800">
+          <button 
+            @click="currentPage--" 
+            :disabled="currentPage === 1"
+            class="p-1 px-2 rounded-md hover:bg-stone-800 text-stone-500 disabled:opacity-20 transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div class="flex items-center gap-1.5 px-3">
+            <span class="font-black text-stone-200">{{ currentPage }}</span>
+            <span class="text-stone-700">/</span>
+            <span class="text-stone-500">{{ totalPages }}</span>
+          </div>
+          <button 
+            @click="currentPage++" 
+            :disabled="currentPage === totalPages"
+            class="p-1 px-2 rounded-md hover:bg-stone-800 text-stone-500 disabled:opacity-20 transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
         </div>
-        <button 
-          @click="currentPage++" 
-          :disabled="currentPage === totalPages"
-          class="p-1 rounded hover:bg-muted disabled:opacity-30"
-          title="Next Page"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>
-        </button>
-        
-        <div class="w-px h-3 bg-border mx-2"></div>
         
         <select 
           v-model="pageSize" 
-          class="bg-transparent border-none text-xs text-muted-foreground focus:ring-0 cursor-pointer hover:text-foreground"
+          class="bg-stone-950 border border-stone-800 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-stone-400 focus:ring-0 cursor-pointer hover:border-stone-700 transition-all outline-none"
         >
-          <option :value="10">10 / page</option>
-          <option :value="50">50 / page</option>
-          <option :value="100">100 / page</option>
-          <option :value="500">500 / page</option>
+          <option :value="10">10 PER PAGE</option>
+          <option :value="50">50 PER PAGE</option>
+          <option :value="100">100 PER PAGE</option>
+          <option :value="500">500 PER PAGE</option>
         </select>
       </div>
     </div>
 
     <Dialog v-model:open="isDialogOpen">
-      <DialogContent class="max-w-[95vw] w-full max-h-[90vh] h-[90vh] overflow-hidden flex flex-col bg-background border-border text-foreground">
-        <DialogHeader class="flex flex-row items-center justify-between border-b border-border/50 pb-2">
-          <DialogTitle>JSON View</DialogTitle>
-          <div class="flex items-center gap-2 mr-8">
-            <span class="text-xs text-muted-foreground">Text Size:</span>
-            <button 
-              @click="decreaseZoom" 
-              class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-              :disabled="zoomLevel === 0"
-            >
-              <Minus class="w-4 h-4" />
-            </button>
-            <button 
-              @click="increaseZoom" 
-              class="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50"
-              :disabled="zoomLevel === zoomClasses.length - 1"
-            >
-              <Plus class="w-4 h-4" />
-            </button>
-          </div>
-        </DialogHeader>
-        <div class="flex-1 overflow-auto p-4 bg-muted/30 rounded-md">
+      <DialogContent class="max-w-[95vw] w-full max-h-[90vh] h-[90vh] overflow-hidden flex flex-col bg-[#0a0a0b] border-stone-800 text-stone-100 rounded-[32px] p-0 shadow-2xl">
+        <div class="flex items-center justify-between px-8 py-6 border-b border-stone-800/50">
+           <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-400">
+                 <Braces class="w-6 h-6" />
+              </div>
+              <h3 class="text-lg font-black uppercase tracking-wider">Object Inspector</h3>
+           </div>
+           
+           <div class="flex items-center gap-4">
+              <div class="flex items-center p-1 bg-stone-900 rounded-xl border border-stone-800">
+                <button 
+                  @click="decreaseZoom" 
+                  class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-stone-100 disabled:opacity-20 transition-all"
+                  :disabled="zoomLevel === 0"
+                >
+                  <Minus class="w-4 h-4" />
+                </button>
+                <div class="w-px h-4 bg-stone-800"></div>
+                <button 
+                  @click="increaseZoom" 
+                  class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-stone-100 disabled:opacity-20 transition-all"
+                  :disabled="zoomLevel === zoomClasses.length - 1"
+                >
+                  <Plus class="w-4 h-4" />
+                </button>
+              </div>
+           </div>
+        </div>
+        <div class="flex-1 overflow-auto p-8 scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
           <JsonViewer :data="selectedData" :max-depth="5" :text-size="zoomClass" />
         </div>
       </DialogContent>
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #1c1c1e;
+  border-radius: 20px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #2c2c2e;
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2357534e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.5rem;
+}
+</style>
