@@ -1186,7 +1186,10 @@ try {
   `);
   console.log('[Schema] dashboard_message table defined');
 } catch (e) {
-  console.error('[Schema] Failed to define dashboard_message:', e.message);
+  // Ignore specific error if table already exists, otherwise log
+  if (!e.message.includes('already exists')) {
+    console.error('[Schema] Failed to define dashboard_message:', e.message);
+  }
 }
 
 // Start Server

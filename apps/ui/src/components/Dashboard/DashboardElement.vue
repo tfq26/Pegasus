@@ -9,10 +9,19 @@
         <div class="flex flex-col h-full">
           <div class="px-4 py-3 border-b border-border bg-card/50">
             <div class="flex items-center justify-between gap-2">
-              <div class="flex-1 min-w-0">
-                <h3 class="card-title text-foreground font-semibold text-sm truncate">{{ element?.title || 'Untitled' }}</h3>
-                <p class="card-subtitle text-xs text-muted-foreground truncate">{{ element?.query }}</p>
-              </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <div class="flex-1 min-w-0 cursor-help">
+                        <h3 class="card-title text-foreground font-semibold text-sm truncate">{{ element?.title || 'Untitled' }}</h3>
+                        <p class="card-subtitle text-xs text-muted-foreground truncate">{{ element?.query }}</p>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Created by: {{ element?.created_by || 'Unknown' }}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               
               <!-- Combined Drag/Delete Handle -->
               <div 
@@ -151,6 +160,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { Pencil, Trash2, Code, Settings, File, Move, MoreVertical } from 'lucide-vue-next'
 import { renderMarkdown } from '@/lib/markdown'
 

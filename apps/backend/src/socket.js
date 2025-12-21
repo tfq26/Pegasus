@@ -59,6 +59,26 @@ export function initSocketServer(server, allowedOrigins) {
                 socketId: s.id
             }));
             socket.emit("current_users", users);
+
+            // Fetch and emit chat history from dashboard.messages array
+            try {
+                // Normalize dashboard ID
+                const dashId = dashboardId.includes(':') ? dashboardId : `dashboard:${dashboardId}`;
+
+                // Fetch messages directly from dashboard document
+                const [dashboards] = await db.query(`SELECT messages FROM ${dashId}`);
+
+                if (dashboards && dashboards[0] && dashboards[0].messages) {
+                    console.log('[Socket.io] Chat history found:', dashboards[0].messages.length, 'messages');
+                    socket.emit("chat_history", dashboards[0].messages);
+                } else {
+                    console.log('[Socket.io] No chat history found for dashboard');
+                    socket.emit("chat_history", []);
+                }
+            } catch (e) {
+                console.error("[Socket.io] Failed to fetch chat history:", e);
+                socket.emit("chat_history", []);
+            }
         });
 
         socket.on("leave_dashboard", (dashboardId) => {
@@ -81,35 +101,47 @@ export function initSocketServer(server, allowedOrigins) {
         });
 
         socket.on("chat_message", async (data) => {
-            // data: { dashboardId, content }
+            // data: { dashboardId, content, parentId? (for threads) }
             const room = `dashboard:${data.dashboardId}`;
+
+            // Create message object with all user data embedded
             const message = {
                 id: crypto.randomUUID(),
-                user: socket.user,
+                user: {
+                    id: socket.user.id,
+                    email: socket.user.email,
+                    firstName: socket.user.firstName,
+                    lastName: socket.user.lastName,
+                    profilePictureUrl: socket.user.profilePictureUrl
+                },
                 content: data.content,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                parentId: data.parentId || null, // For threaded messages
+                replies: [] // Will hold reply IDs for thread organization
             };
 
-            // 1. Save to DB
+            // Save to dashboard.messages array
             try {
+                // Normalize dashboard ID
+                const dashId = data.dashboardId.includes(':')
+                    ? data.dashboardId
+                    : `dashboard:${data.dashboardId}`;
+
+                console.log('[Socket.io] Saving message to dashboard:', dashId);
+
+                // Use array_append to add to messages array (create if doesn't exist)
                 await db.query(`
-                    CREATE dashboard_message CONTENT {
-                        dashboard: type::thing('dashboard', $dashboardId),
-                        user: type::thing('user', $userId),
-                        content: $content,
-                        created_at: time::now()
-                    };
-                `, {
-                    dashboardId: data.dashboardId,
-                    userId: socket.user.id,
-                    content: data.content
-                });
+                    UPDATE ${dashId} SET 
+                        messages = array::append(messages ?? [], $message),
+                        updated_at = time::now();
+                `, { message });
+
+                console.log('[Socket.io] Message saved successfully to dashboard');
             } catch (e) {
                 console.error("[Socket.io] Failed to save message:", e);
-                // We might still broadcast it, or alert the user
             }
 
-            // 2. Broadcast to room
+            // Broadcast to room
             io.to(room).emit("new_message", message);
         });
 

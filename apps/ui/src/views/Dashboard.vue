@@ -80,8 +80,9 @@
           class="p-2 sm:px-3 sm:py-1.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition flex items-center gap-2 shadow-sm"
           title="Save"
         >
-          <Save class="w-4 h-4" />
-          <span class="hidden sm:inline">Save</span>
+          <Loader2 v-if="store.isSaving" class="w-4 h-4 animate-spin" />
+          <Save v-else class="w-4 h-4" />
+          <span class="hidden sm:inline">{{ store.isSaving ? 'Saving...' : 'Save' }}</span>
         </button>
         
         <!-- Three Dots Menu -->
@@ -166,13 +167,12 @@
       
 
       
-      <!-- Chat Sidebar (Right) - Desktop: Relative, Mobile: Fixed Drawer -->
+      <!-- Chat Sidebar (Right) - Overlay Mode -->
       <div 
-        class="border-l border-border z-30 shadow-xl transition-all duration-300 bg-card fixed inset-y-0 right-0 w-[320px] sm:relative sm:w-[320px] sm:bg-card"
+        class="border-l border-border z-50 shadow-xl transition-all duration-300 bg-card fixed top-[57px] bottom-0 right-0 w-[320px]"
         :class="[
-          showChat ? 'translate-x-0' : 'translate-x-full sm:hidden'
+          showChat ? 'translate-x-0' : 'translate-x-full'
         ]"
-        v-if="showChat"
       >
         <DashboardChat 
           :messages="chatMessages" 
@@ -500,7 +500,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send } from 'lucide-vue-next'
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard } from 'lucide-vue-next'
 import DashboardElement from '@/components/Dashboard/DashboardElement.vue'
 
 defineOptions({ name: 'DashboardPage' })
@@ -533,9 +533,26 @@ watch(() => currentDashboard.value?.id, (newId, oldId) => {
   if (newId) joinDashboard(newId)
 }, { immediate: true })
 
+let autoSaveInterval: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  // Auto-save every 5 minutes
+  autoSaveInterval = setInterval(() => {
+    if (currentDashboard.value && !store.isSaving) {
+      console.log('Triggering 5-minute auto-save')
+      store.saveCurrentDashboard().catch(err => {
+        console.error('Auto-save failed:', err)
+      })
+    }
+  }, 5 * 60 * 1000)
+})
+
 onBeforeUnmount(() => {
   if (currentDashboard.value?.id) {
     leaveDashboard(currentDashboard.value.id)
+  }
+  if (autoSaveInterval) {
+    clearInterval(autoSaveInterval)
   }
 })
 
@@ -663,8 +680,8 @@ const layout = computed({
 })
 
 const onLayoutUpdated = () => {
-  // Auto-save layout changes
-  handleSave()
+  // No longer auto-saving immediately on layout update
+  // We wait for the 5-minute interval or manual save
 }
 
 const handleDashboardChange = (id: string) => {

@@ -79,7 +79,13 @@ export function useCollaboration() {
         });
 
         socket.value.on('new_message', (message) => {
+            console.log('[Collaboration] New message received:', message);
             chatMessages.value.push(message);
+        });
+
+        socket.value.on('chat_history', (history) => {
+            console.log('[Collaboration] Chat history received:', history);
+            chatMessages.value = history;
         });
     };
 

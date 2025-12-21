@@ -4,8 +4,12 @@
     <!-- Header -->
     <div class="p-3 border-b border-border flex items-center justify-between">
       <h3 class="font-semibold text-sm">Chat</h3>
-      <button @click="$emit('close')" class="p-1 hover:bg-muted rounded text-muted-foreground">
-        <X class="w-4 h-4" />
+      <button 
+        @click="$emit('close')" 
+        class="p-2 hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors text-muted-foreground"
+        title="Close Chat"
+      >
+        <X class="w-5 h-5" />
       </button>
     </div>
 
@@ -32,7 +36,7 @@
           </div>
           
           <span class="text-xs text-muted-foreground">
-            {{ msg.user.firstName || msg.user.email.split('@')[0] }}
+            {{ msg.user.firstName || (msg.user.email ? msg.user.email.split('@')[0] : 'Unknown') }}
           </span>
           <span class="text-[10px] text-muted-foreground/60">
             {{ formatTime(msg.timestamp) }}
@@ -94,7 +98,8 @@ const isCurrentUser = (userId: string) => {
 
 const getInitials = (u: any) => {
   if (u.firstName && u.lastName) return (u.firstName[0] + u.lastName[0]).toUpperCase()
-  return u.email.substring(0, 2).toUpperCase()
+  if (u.email) return u.email.substring(0, 2).toUpperCase()
+  return '??'
 }
 
 const formatTime = (ts: string) => {

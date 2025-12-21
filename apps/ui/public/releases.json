@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.6.1",
+            "releaseDate": "December 20, 2025",
+            "title": "Chat Architecture & Visibility Hotfixes",
+            "description": "Hotfixes to improve the reliability of the new collaboration features, ensuring messages are saved correctly and the chat UI is fully accessible.",
+            "changelogFile": "v0.6.1.json",
+            "isLatest": true
+        },
+        {
             "version": "0.6.0",
             "releaseDate": "December 20, 2025",
             "title": "Real-time Collaboration & Performance",
             "description": "A major update introducing real-time collaboration features (Chat, Live Cursors) and significant performance optimizations for a fluid experience.",
             "changelogFile": "v0.6.0.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.5.4",
