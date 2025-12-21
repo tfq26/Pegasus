@@ -730,6 +730,15 @@ export async function getUsageStats() {
   return await response.json()
 }
 
+export async function syncSubscription() {
+  const response = await fetch(`${QUERY_API_URL}/sync-subscription`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+  })
+  return await response.json()
+}
+
 export async function uploadDashboardFile(dashboardId: string, file: File) {
   const formData = new FormData()
   formData.append('file', file)

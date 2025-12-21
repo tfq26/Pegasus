@@ -45,20 +45,32 @@
         <!-- Stripe subscription features commented out until implemented -->
         <div class="flex items-center justify-between pt-2 border-t border-border">
           <p><span class="font-medium text-muted-foreground">Plan:</span> <span class="capitalize text-primary font-semibold">{{ subscriptionTier }}</span></p>
-          <button 
-            v-if="subscriptionTier === 'free'"
-            @click="handleUpgrade"
-            class="text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-full font-medium transition-all shadow-lg shadow-violet-900/20"
-          >
-            Upgrade to Pro
-          </button>
-          <button 
-            v-else
-            @click="handleManageSubscription"
-            class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground px-3 py-1.5 rounded-full font-medium transition-all"
-          >
-            Manage Subscription
-          </button>
+          <div class="flex gap-2">
+            <!-- Sync button - uncomment if needed
+            <button 
+              @click="handleSyncSubscription"
+              :disabled="syncing"
+              class="text-xs bg-muted hover:bg-muted/80 text-muted-foreground px-3 py-1.5 rounded-full font-medium transition-all disabled:opacity-50"
+              title="Sync subscription status from Stripe"
+            >
+              {{ syncing ? 'Syncing...' : '↻ Sync' }}
+            </button>
+            -->
+            <button 
+              v-if="subscriptionTier === 'free'"
+              @click="handleUpgrade"
+              class="text-xs bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white px-3 py-1.5 rounded-full font-medium transition-all shadow-lg shadow-violet-900/20"
+            >
+              Upgrade to Pro
+            </button>
+            <button 
+              v-else
+              @click="handleManageSubscription"
+              class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground px-3 py-1.5 rounded-full font-medium transition-all"
+            >
+              Manage Subscription
+            </button>
+          </div>
         </div>
       </div>
 
@@ -107,7 +119,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { createCheckoutSession, createPortalSession, getSubscriptionStatus, getUsageStats } from '@/lib/api'
+import { createCheckoutSession, createPortalSession, getSubscriptionStatus, getUsageStats, syncSubscription } from '@/lib/api'
 import { toast } from 'vue-sonner'
 
 defineOptions({ name: 'ProfilePage' })
@@ -117,15 +129,27 @@ const { user, isLoading, fetchUser, logout } = useAuth()
 const typedUser = computed(() => user.value as any)
 const subscriptionTier = ref('free')
 const usageStats = ref({ tokens: 0, storage: 0, storageFormatted: '0 MB' })
+const syncing = ref(false)
 
 onMounted(async () => {
   await fetchUser()
   if (typedUser.value) {
+    // Auto-sync subscription from Stripe on page load
     try {
-      const status = await getSubscriptionStatus()
-      subscriptionTier.value = status.tier
+      syncing.value = true
+      const result = await syncSubscription()
+      if (result.tier) {
+        subscriptionTier.value = result.tier
+      }
     } catch (e) {
-      console.error('Failed to fetch subscription status', e)
+      console.error('Failed to sync subscription', e)
+      // Fallback to cached status
+      try {
+        const status = await getSubscriptionStatus()
+        subscriptionTier.value = status.tier
+      } catch {}
+    } finally {
+      syncing.value = false
     }
 
     try {
@@ -154,6 +178,23 @@ const handleManageSubscription = async () => {
     if (url) window.location.href = url
   } catch (e) {
     toast.error('Failed to open subscription portal')
+  }
+}
+
+const handleSyncSubscription = async () => {
+  syncing.value = true
+  try {
+    const result = await syncSubscription()
+    if (result.success) {
+      subscriptionTier.value = result.tier
+      toast.success(`Synced! Your plan: ${result.tier}`)
+    } else if (result.error) {
+      toast.error(result.error)
+    }
+  } catch (e) {
+    toast.error('Failed to sync subscription')
+  } finally {
+    syncing.value = false
   }
 }
 

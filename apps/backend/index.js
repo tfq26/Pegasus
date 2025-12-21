@@ -392,7 +392,9 @@ app.post("/webhook", async (c) => {
 
   try {
     event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
+    console.log(`[Webhook] Received event: ${event.type}`)
   } catch (err) {
+    console.error(`[Webhook] Signature verification failed:`, err.message)
     return c.json({ error: `Webhook Error: ${err.message}` }, 400)
   }
 
@@ -400,20 +402,28 @@ app.post("/webhook", async (c) => {
   switch (event.type) {
     case 'checkout.session.completed':
       const session = event.data.object
+      console.log(`[Webhook] Checkout completed for: ${session.customer_details?.email}`)
+      console.log(`[Webhook] Customer ID: ${session.customer}`)
+
       // Update user subscription status
-      // Match by email
-      await db.query(`
-          UPDATE user SET 
-             stripe_customer_id = $custId, 
-             subscription_tier = 'pro' 
-          WHERE email = $email;
-      `, {
-        custId: session.customer,
-        email: session.customer_details.email
-      });
+      try {
+        const result = await db.query(`
+            UPDATE user SET 
+               stripe_customer_id = $custId, 
+               subscription_tier = 'pro' 
+            WHERE email = $email;
+        `, {
+          custId: session.customer,
+          email: session.customer_details.email
+        });
+        console.log(`[Webhook] Updated user to Pro:`, result)
+      } catch (dbErr) {
+        console.error(`[Webhook] DB update failed:`, dbErr)
+      }
       break
     case 'customer.subscription.deleted':
       const subscription = event.data.object
+      console.log(`[Webhook] Subscription deleted for customer: ${subscription.customer}`)
       await db.query(`
           UPDATE user SET subscription_tier = 'free' 
           WHERE stripe_customer_id = $custId;
@@ -422,10 +432,61 @@ app.post("/webhook", async (c) => {
       });
       break
     default:
-      console.log(`Unhandled event type ${event.type}`)
+      console.log(`[Webhook] Unhandled event type: ${event.type}`)
   }
 
   return c.json({ received: true })
+})
+
+// Manual subscription sync - fetches status from Stripe and updates DB
+app.post("/sync-subscription", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const email = payload.email
+
+    console.log(`[Sync] Looking up customer for: ${email}`)
+
+    // Search for customer in Stripe by email
+    const customers = await stripe.customers.list({ email, limit: 1 })
+
+    if (!customers.data.length) {
+      return c.json({ error: "No Stripe customer found", tier: 'free' })
+    }
+
+    const customer = customers.data[0]
+    console.log(`[Sync] Found customer: ${customer.id}`)
+
+    // Check for active subscriptions
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customer.id,
+      status: 'active',
+      limit: 1
+    })
+
+    const tier = subscriptions.data.length > 0 ? 'pro' : 'free'
+    console.log(`[Sync] Subscription tier: ${tier}`)
+
+    // Update database
+    await db.query(`
+      UPDATE user SET 
+        stripe_customer_id = $custId,
+        subscription_tier = $tier
+      WHERE email = $email;
+    `, {
+      custId: customer.id,
+      tier,
+      email
+    })
+
+    console.log(`[Sync] Updated user ${email} to tier: ${tier}`)
+    return c.json({ success: true, tier, customerId: customer.id })
+  } catch (e) {
+    console.error(`[Sync] Error:`, e)
+    return c.json({ error: e.message }, 500)
+  }
 })
 
 // Auth Routes moved to src/routes/auth.js
