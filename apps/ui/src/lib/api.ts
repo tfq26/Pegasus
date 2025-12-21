@@ -449,11 +449,12 @@ export async function saveDashboardLayout(layout: any[]) {
   return await response.json()
 }
 // AI
-export async function recommendVisualization(query: string, results: any[], previousConfig: any = null) {
+export async function recommendVisualization(query: string, results: any[], previousConfig: any = null, suggestedChartType: string | null = null) {
   const response = await fetch(`${QUERY_API_URL}/ai/recommend-visualization`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, results, previousConfig }),
+    credentials: 'include',
+    body: JSON.stringify({ query, results, previousConfig, suggestedChartType }),
   })
   if (!response.ok) throw new Error('Failed to get recommendation')
   return response.json()

@@ -44,7 +44,7 @@
         </div>
         
         <div 
-          class="px-3 py-2 rounded-lg text-sm max-w-[85%] break-words"
+          class="px-3 py-2 rounded-sm text-sm max-w-[85%] break-words"
           :class="[
             isCurrentUser(msg.user.id) 
               ? 'bg-primary text-primary-foreground' 

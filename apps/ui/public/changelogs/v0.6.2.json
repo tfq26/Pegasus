@@ -1,0 +1,49 @@
+{
+    "version": "0.6.2",
+    "releaseDate": "December 20, 2025",
+    "title": "Visualization & Query Intelligence Upgrade",
+    "description": "A comprehensive update improving SurrealDB query generation, introducing client-side aggregation for complex metrics, and enhancing automatic chart visualization capabilities.",
+    "highlights": [
+        "Smarter SurrealDB Query Generation",
+        "Client-Side Data Aggregation",
+        "Enhanced Auto-Visualization"
+    ],
+    "sections": [
+        {
+            "category": "Query Intelligence",
+            "items": [
+                {
+                    "title": "SurrealDB Optimization",
+                    "description": "Major upgrades to how the AI generates queries for SurrealDB.",
+                    "details": [
+                        "**Real Sample Data**: The AI now inspects actual data values from your tables to generate precise queries with correct identifiers (e.g., specific supplier names).",
+                        "**Syntax Guardrails**: Implemented strict rules preventing the use of unsupported functions (like `array::sum`) and enforcing valid SurrealQL patterns.",
+                        "**Simplified Prompts**: Completely rewrote the AI instructions to focus on reliable, proven query patterns."
+                    ]
+                },
+                {
+                    "title": "Client-Side Aggregation",
+                    "description": "Smart handling of complex aggregation queries.",
+                    "details": [
+                        "**Hybrid Processing**: For operations not supported natively in single-step SurrealQL (like `SUM` by group), the system now intelligently fetches raw data and performs aggregation in the browser.",
+                        "**Automatic Detection**: The dashboard automatically detects when data needs to be grouped and summed, handling it transparently for the user."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Dashboard & Visualization",
+            "items": [
+                {
+                    "title": "Enhanced Visualization Logic",
+                    "description": "Improved how data is turned into charts.",
+                    "details": [
+                        "**Smart Heuristics**: Added new detection logic to identify aggregated data patterns (Category + Total) and automatically suggest the best chart type.",
+                        "**Robust Config Generation**: Fixed issues where chart configurations wouldn't render, ensuring generated configs match the exact expected format.",
+                        "**Aggressive Recommendations**: The AI is now more proactive in suggesting visualizations for suitable data, reducing 'null' responses."
+                    ]
+                }
+            ]
+        }
+    ]
+}

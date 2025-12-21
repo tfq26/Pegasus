@@ -190,7 +190,7 @@
 
       <!-- Main Grid Container -->
       <div 
-        class="flex-1 h-full overflow-auto relative transition-colors duration-300"
+        class="flex-1 h-full overflow-auto relative transition-colors duration-300 p-4"
         ref="dashboardContainer"
         :class="{ 'bg-grid-pattern': showGrid }"
         :style="gridStyle"
@@ -534,14 +534,37 @@ watch(() => currentDashboard.value?.id, (newId, oldId) => {
 }, { immediate: true })
 
 let autoSaveInterval: ReturnType<typeof setInterval> | null = null
+let debouncedSaveTimeout: ReturnType<typeof setTimeout> | null = null
+const DEBOUNCE_DELAY = 2000 // 2 seconds after last change
+
+// Debounced save function - saves 2 seconds after last change
+const debouncedSave = () => {
+  // Clear any existing timeout
+  if (debouncedSaveTimeout) {
+    clearTimeout(debouncedSaveTimeout)
+  }
+  
+  // Set new timeout
+  debouncedSaveTimeout = setTimeout(async () => {
+    if (currentDashboard.value && !store.isSaving) {
+      console.log('[Dashboard] Triggering debounced auto-save')
+      try {
+        await store.saveCurrentDashboard()
+        console.log('[Dashboard] Auto-saved successfully')
+      } catch (err) {
+        console.error('[Dashboard] Auto-save failed:', err)
+      }
+    }
+  }, DEBOUNCE_DELAY)
+}
 
 onMounted(() => {
-  // Auto-save every 5 minutes
+  // Auto-save every 5 minutes (backup save)
   autoSaveInterval = setInterval(() => {
     if (currentDashboard.value && !store.isSaving) {
-      console.log('Triggering 5-minute auto-save')
+      console.log('[Dashboard] Triggering 5-minute backup save')
       store.saveCurrentDashboard().catch(err => {
-        console.error('Auto-save failed:', err)
+        console.error('[Dashboard] Backup save failed:', err)
       })
     }
   }, 5 * 60 * 1000)
@@ -553,6 +576,9 @@ onBeforeUnmount(() => {
   }
   if (autoSaveInterval) {
     clearInterval(autoSaveInterval)
+  }
+  if (debouncedSaveTimeout) {
+    clearTimeout(debouncedSaveTimeout)
   }
 })
 
@@ -680,8 +706,8 @@ const layout = computed({
 })
 
 const onLayoutUpdated = () => {
-  // No longer auto-saving immediately on layout update
-  // We wait for the 5-minute interval or manual save
+  // Trigger debounced save - will save 2 seconds after last change
+  debouncedSave()
 }
 
 const handleDashboardChange = (id: string) => {

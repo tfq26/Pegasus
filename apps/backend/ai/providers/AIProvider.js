@@ -83,8 +83,8 @@ export class AIProvider {
     /**
      * Recommends a visualization type and config.
      */
-    async recommendVisualization(query, results, previousConfig = null) {
-        const prompt = VisualizationPrompts.buildVisualizationPrompt(query, results, previousConfig)
+    async recommendVisualization(query, results, previousConfig = null, suggestedChartType = null) {
+        const prompt = VisualizationPrompts.buildVisualizationPrompt(query, results, previousConfig, suggestedChartType)
         const messages = [{ role: 'user', content: prompt }]
 
         const response = await this.generateContent(messages, { json: true })

@@ -265,20 +265,22 @@ dashboard.post("/dashboards", async (c) => {
 
         const { title, data } = await c.req.json()
 
-        // Create Dashboard Record
+        // Create Dashboard Record with embedded data
         console.log('[Dashboard] Creating dashboard for user:', userId, 'Title:', title);
         const [created] = await db.query(`
         CREATE dashboard CONTENT {
             title: $title,
             owner: type::thing('user', $owner_id),
             cover_image: $cover_image,
+            data: $data,
             created_at: time::now(),
             updated_at: time::now()
         };
     `, {
             title,
             owner_id: userId,
-            cover_image: data?.cover_image || ''
+            cover_image: data?.cover_image || '',
+            data: data || { layout: [], elements: [] }
         });
 
         console.log('[Dashboard] DB Create Result:', JSON.stringify(created));
@@ -288,40 +290,13 @@ dashboard.post("/dashboards", async (c) => {
             throw new Error("DB creation failed");
         }
 
-        const dashboardId = created[0].id; // `dashboard:uuid`
-        console.log('[Dashboard] Created ID:', dashboardId);
-
-        // Create Elements (from initial data blob)
-        if (data && data.elements && Array.isArray(data.elements)) {
-            console.log('[Dashboard] Creating elements:', data.elements.length);
-            for (const el of data.elements) {
-                await db.query(`
-                 CREATE dashboard_element CONTENT {
-                     dashboard: $dashboard,
-                     type: $type,
-                     title: $title,
-                     config: $config,
-                     query: $query,
-                     created_by: $user,
-                     ui_layout: $layout,
-                     created_at: time::now()
-                 };
-             `, {
-                    dashboard: dashboardId,
-                    type: el.type,
-                    title: el.title,
-                    config: el.config,
-                    query: el.query,
-                    user: `user:${userId}`,
-                    layout: data.layout?.find(l => l.i === el.id) || {}
-                });
-            }
-        }
+        const dashboardId = created[0].id;
+        console.log('[Dashboard] Created dashboard with', data?.elements?.length || 0, 'elements');
 
         return c.json({ id: dashboardId })
     } catch (e) {
-        console.error('[Dashboard] Create Error:', e);
-        return c.json({ error: "Failed to create dashboard: " + e.message }, 500)
+        console.error('[Dashboard] Create error:', e)
+        return c.json({ error: "Failed to create dashboard" }, 500)
     }
 })
 
@@ -389,7 +364,7 @@ dashboard.get("/dashboards/:id", async (c) => {
 
         console.log(`[Dashboard] Fetching dashboard: ${id} for user: ${userId}`)
 
-        // 1. Fetch Dashboard Metadata & Access Level
+        // Fetch Dashboard with embedded data
         const [result] = await db.query(`
         SELECT 
             *,
@@ -398,12 +373,10 @@ dashboard.get("/dashboards/:id", async (c) => {
         FROM ${id};
     `, { userId });
 
-        console.log(`[Dashboard] Query result:`, result)
-
         if (!result || result.length === 0) return c.json({ error: "Dashboard not found" }, 404)
         const dashboard = result[0]
 
-        // 2. Check Permissions
+        // Check Permissions
         let role = null;
         if (dashboard.is_owner) role = 'owner';
         else if (dashboard.permission_role) role = dashboard.permission_role;
@@ -413,37 +386,64 @@ dashboard.get("/dashboards/:id", async (c) => {
             return c.json({ error: "Unauthorized" }, 403)
         }
 
-        // 3. Fetch Elements
-        const [elements] = await db.query(`
-        SELECT * FROM dashboard_element WHERE dashboard = ${id};
-    `);
-        console.log(`[Dashboard] Fetched ${elements.length} elements for dashboard:`, id)
-        console.log('[Dashboard] Elements:', elements)
-
-        // 4. Construct Response
-        const layout = elements.map(el => {
-            if (el.ui_layout) return { ...el.ui_layout, i: el.id };
-            return { i: el.id, x: 0, y: 0, w: 2, h: 2 };
-        })
-
         const cleanId = (rid) => rid.toString().split(':')[1] || rid.toString();
 
+        // Populate created_by names for elements
+        let elements = dashboard.data?.elements || [];
+        if (elements.length > 0) {
+            // Extract unique user IDs
+            const userIds = [...new Set(elements.map(e => e.created_by).filter(Boolean))];
+
+            if (userIds.length > 0) {
+                try {
+                    // Fetch user details
+                    // userIds are like ["user:xxx", "user:yyy"]
+                    // We need to fetch these records
+                    console.log('[Dashboard] Fetching creator details for:', userIds);
+
+                    // SurrealDB simple select for list of IDs
+                    // "SELECT id, first_name, last_name, email FROM user:xxx, user:yyy"
+                    const users = await db.query(`SELECT id, first_name, last_name, email FROM ${userIds.join(', ')}`);
+
+                    // Create map: "user:xxx" -> "John Doe"
+                    const userMap = {};
+                    if (users && users[0]) {
+                        users[0].forEach(u => {
+                            const name = (u.first_name && u.last_name)
+                                ? `${u.first_name} ${u.last_name}`
+                                : (u.email || 'Unknown');
+                            userMap[u.id] = name;
+                        });
+                    }
+
+                    // Replace ID with Name in the response (not DB)
+                    elements = elements.map(el => ({
+                        ...el,
+                        created_by: userMap[el.created_by] || 'Unknown'
+                    }));
+                } catch (err) {
+                    console.error('[Dashboard] Failed to fetch creator details:', err);
+                }
+            }
+        }
+
+        // Return dashboard with embedded data
         const responseDashboard = {
             ...dashboard,
             id: cleanId(dashboard.id),
             access_level: role || (dashboard.is_public ? 'viewer' : null),
             data: {
-                layout: layout.map(l => ({ ...l, i: cleanId(l.i) })),
-                elements: elements.map(el => ({
-                    ...el,
-                    id: cleanId(el.id),
-                    config: el.config,
-                }))
+                ...(dashboard.data || {}),
+                layout: dashboard.data?.layout || [],
+                elements: elements
             }
         };
 
+        console.log(`[Dashboard] Returning dashboard with ${responseDashboard.data.elements?.length || 0} elements`)
+
         return c.json({ dashboard: responseDashboard })
     } catch (e) {
+        console.error('[Dashboard] Fetch error:', e)
         return c.json({ error: "Failed to fetch dashboard" }, 500)
     }
 })
@@ -461,139 +461,42 @@ dashboard.put("/dashboards/:id", async (c) => {
 
         console.log('[Dashboard] Update request for:', id)
         console.log('[Dashboard] Title:', title)
-        console.log('[Dashboard] Data:', data)
-        console.log('[Dashboard] cover_image in data:', data?.cover_image)
+        console.log('[Dashboard] Data elements:', data?.elements?.length || 0)
+        console.log('[Dashboard] Data layout:', JSON.stringify(data?.layout, null, 2))
 
-        // 1. Update Title and Cover Image
-        if (title || data?.cover_image !== undefined) {
-            try {
-                const updates = []
-                const params = { user: `user:${userId}` }
+        // Build update query
+        const updates = []
+        const params = { userId }
 
-                if (title) {
-                    updates.push('title = $title')
-                    params.title = title
-                    console.log('[Dashboard] Will update title to:', title)
-                }
+        if (title) {
+            updates.push('title = $title')
+            params.title = title
+        }
 
-                if (data?.cover_image !== undefined) {
-                    updates.push('cover_image = $cover_image')
-                    params.cover_image = data.cover_image
-                    console.log('[Dashboard] Will update cover_image to:', data.cover_image)
-                }
+        if (data?.cover_image !== undefined) {
+            updates.push('cover_image = $cover_image')
+            params.cover_image = data.cover_image
+        }
 
-                updates.push('updated_at = time::now()')
+        if (data) {
+            updates.push('data = $data')
+            params.data = data
+        }
 
-                const query = `
+        updates.push('updated_at = time::now()')
+
+        const query = `
             UPDATE ${id} SET ${updates.join(', ')}
             WHERE owner = type::thing('user', $userId)
                OR (SELECT role FROM dashboard_permission WHERE user=type::thing('user', $userId) AND dashboard=$parent.id)[0] IN ['editor', 'owner'];
         `
-                console.log('[Dashboard] Update query:', query)
-                console.log('[Dashboard] Update params:', params)
-                console.log('[Dashboard] User ID:', userId)
 
-                const result = await db.query(query, { ...params, userId });
-                console.log('[Dashboard] Update result:', result)
-            } catch (e) {
-                console.error('[Dashboard] Update error:', e)
-            }
-        }
-
-        // 2. Update Elements (Granular Sync simulated)
-        if (data && data.elements) {
-            const [existing] = await db.query(`SELECT id FROM dashboard_element WHERE dashboard = ${id}`);
-            console.log('[Dashboard] Existing elements from DB:', existing)
-
-            // Extract just the UUID part from RecordId objects or strings
-            const existingIds = new Set(existing.map(e => {
-                const idStr = typeof e.id === 'string' ? e.id : e.id.toString()
-                let uuid = idStr.includes(':') ? idStr.split(':')[1] : idStr
-                // Remove angle brackets if present (SurrealDB wraps UUIDs with hyphens)
-                uuid = uuid.replace(/[⟨⟩]/g, '')
-                return uuid
-            }));
-
-            console.log('[Dashboard] Existing element IDs:', Array.from(existingIds))
-            const incomingIds = new Set();
-
-            console.log(`[Dashboard] Processing ${data.elements.length} elements...`)
-            for (const el of data.elements) {
-                const elId = el.id;
-                console.log(`[Dashboard] Element ${elId} (${el.type}) - processing...`)
-                incomingIds.add(elId);
-                const ui_layout = data.layout?.find(l => l.i === elId || l.i === `dashboard_element:${elId}`);
-
-                if (existingIds.has(elId)) {
-                    console.log(`[Dashboard] Element ${elId} exists. Updating...`)
-                    // UPDATE
-                    try {
-                        await db.query(`
-                UPDATE type::thing('dashboard_element', $elId) MERGE {
-                    title: $title,
-                    config: $config,
-                    query: $query,
-                    ui_layout: $layout
-                } WHERE created_by = type::thing('user', $userId) 
-                   OR dashboard.owner = type::thing('user', $userId)
-                   OR (dashboard IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user=type::thing('user', $userId) AND role='owner'));
-            `, {
-                            elId: elId,
-                            userId: userId,
-                            title: el.title,
-                            config: el.config,
-                            query: el.query || null,
-                            layout: ui_layout || {}
-                        });
-                    } catch (err) {
-                        console.error(`[Dashboard] Update failed for ${elId}:`, err)
-                    }
-                } else {
-                    console.log(`[Dashboard] Element ${elId} is NEW. Creating...`)
-                    // CREATE
-                    try {
-                        const createResult = await db.query(`
-                    CREATE type::thing('dashboard_element', $elId) CONTENT {
-                        dashboard: ${id},
-                        type: $type,
-                        title: $title,
-                        config: $config,
-                        query: $query,
-                        created_by: type::thing('user', $userId),
-                        ui_layout: $layout,
-                        created_at: time::now()
-                    };
-                `, {
-                            elId: elId,
-                            userId: userId,
-                            type: el.type,
-                            title: el.title,
-                            config: el.config,
-                            query: el.query || null,
-                            layout: ui_layout || {}
-                        });
-                        console.log(`[Dashboard] Created element ${elId}:`, JSON.stringify(createResult, null, 2))
-                    } catch (err) {
-                        console.error(`[Dashboard] Create failed for ${elId}:`, err)
-                    }
-                }
-            }
-
-            // DELETE
-            for (const oldId of existingIds) {
-                if (!incomingIds.has(oldId)) {
-                    await db.query(`
-                DELETE type::thing('dashboard_element', $oldId) 
-                WHERE created_by = type::thing('user', $userId)
-                   OR dashboard.owner = type::thing('user', $userId)
-                   OR (dashboard IN (SELECT VALUE dashboard FROM dashboard_permission WHERE user=type::thing('user', $userId) AND role='owner'));
-            `, { oldId: oldId, userId: userId });
-                }
-            }
-        }
+        const result = await db.query(query, params);
+        console.log('[Dashboard] Updated successfully')
 
         return c.json({ ok: true })
     } catch (e) {
+        console.error('[Dashboard] Update error:', e)
         return c.json({ error: "Failed to update dashboard" }, 500)
     }
 })

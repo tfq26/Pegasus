@@ -1,54 +1,61 @@
 export class VisualizationPrompts {
-    static buildVisualizationPrompt(query, results, previousConfig = null) {
-        let refinementContext = ''
-        if (previousConfig) {
-            refinementContext = `
+  static buildVisualizationPrompt(query, results, previousConfig = null, suggestedChartType = null) {
+    let refinementContext = ''
+    if (previousConfig) {
+      refinementContext = `
       PREVIOUS CONFIGURATION:
       ${JSON.stringify(previousConfig, null, 2)}
       
       The user wants to REFINE this visualization based on the new query/context.
       Keep the existing data mapping if possible, but apply requested changes (e.g. change type, color, labels).
       `
-        }
+    }
 
-        return `
-      You are a data visualization expert.
+    let chartTypeHint = ''
+    if (suggestedChartType) {
+      chartTypeHint = `
+      SUGGESTED CHART TYPE: "${suggestedChartType}"
+      The AI query generator has suggested this chart type based on the user's intent.
+      Use this type unless the data structure is incompatible.
+      `
+    }
+
+    return `
+      You are a data visualization expert. Your job is to recommend a chart configuration.
+      
       Query: ${query}
       Results (first 50 rows):
       ${JSON.stringify(results.slice(0, 50), null, 2)}
       
       ${refinementContext}
+      ${chartTypeHint}
 
-      Recommend a suitable dashboard visualization for these results.
+      ANALYZE THE DATA AND RECOMMEND A VISUALIZATION.
       
       SUPPORTED TYPES:
       - "stat": Single numeric value (KPI).
-      - "bar": Categorical comparisons.
+      - "bar": Categorical comparisons (BEST for grouped data with counts).
       - "line": Trends over time.
-      - "area": Volume trends over time (Line chart with fill: true).
-      - "scatter": Correlation between two variables (requires {x, y} data format).
-      - "pie": Part-to-whole (limit to < 8 slices).
-      - "doughnut": Part-to-whole (limit to < 8 slices).
+      - "pie": Part-to-whole (limit to < 8 slices). PERFECT for GROUP BY count() results.
+      - "doughnut": Same as pie but with hole in center.
       
       RULES:
-      1. If the data is a single number, use "stat".
-      2. If the data is a list of text, return null.
-      3. For "scatter", ensure data is mapped to [{x: val, y: val}, ...].
-      4. For "area", use type "line" and add "fill": true to the dataset config.
-      5. The "config" object must match Chart.js structure.
+      1. If the data has a category column and a count/number column, use "bar" or "pie".
+      2. Data like [{Supplier: "X", count: 5}, ...] is PERFECT for pie/bar charts.
+      3. For GROUP BY results, the category column is labels, the count column is data.
+      4. If data is a single number, use "stat".
+      5. ALWAYS return a valid config if the data has categories + numbers.
+      6. Only return null if the data is truly unsuitable (e.g., just a list of text).
       
-      Output JSON Schema:
+      OUTPUT FORMAT - Return ONLY valid JSON:
       {
-        "type": "bar" | "line" | "pie" | "doughnut" | "scatter" | "stat",
-        "title": "Chart Title",
+        "type": "pie",
+        "title": "Items by Supplier",
         "config": {
-           "labels": ["col_name"], 
+           "labels": ["Supplier"],
            "datasets": [{ 
-              "label": "Series Name", 
-              "data": ["col_name"],
-              "backgroundColor": "hex_color", // Optional
-              "borderColor": "hex_color", // Optional
-              "fill": boolean // True for Area charts
+              "label": "Count", 
+              "data": ["count"]
            }] 
         }
       }
@@ -56,14 +63,14 @@ export class VisualizationPrompts {
       For "stat" type:
       {
         "type": "stat",
-        "title": "Stat Title",
+        "title": "Total Count",
         "config": {
-           "value": "col_name", 
-           "label": "col_name" 
+           "value": "count", 
+           "label": "Items" 
         }
       }
       
-      If no visualization is suitable, return null.
+      IMPORTANT: The data you received IS suitable for visualization. Return a valid config, not null.
     `
-    }
+  }
 }

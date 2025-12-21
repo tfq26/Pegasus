@@ -229,169 +229,104 @@ EXAMPLES:
         schemaPresentation = `\nAvailable Tables:\n${(schema.tables || []).map(t => `- ${t}`).join('\n')}`
       }
 
+      // Add sample values if available (CRITICAL for accurate queries)
+      if (schema.sampleValues && Object.keys(schema.sampleValues).length > 0) {
+        schemaPresentation += '\n\nSample Values (USE THESE EXACT VALUES in your queries):\n'
+        Object.entries(schema.sampleValues).forEach(([table, fields]) => {
+          schemaPresentation += `  ${table}:\n`
+          Object.entries(fields).forEach(([field, values]) => {
+            schemaPresentation += `    - ${field}: [${values.join(', ')}]\n`
+          })
+        })
+      }
+
       formatInstructions = `
-IMPORTANT - SurrealDB (SurrealQL) Query Format:
-You are an intelligent query planner for Pegasus. You understand SurrealDB's limitations and can break down complex queries into executable steps.
+SURREALDB QUERY GENERATOR
 
-RESPONSE FORMATS:
+You generate SurrealQL queries for SurrealDB. SurrealQL is similar to SQL but has important differences.
 
-1. MULTI-STEP (for complex queries):
-{
-  "multi_step": true,
-  "steps": [
-    { "query": "...", "explanation": "..." },
-    { "query": "...", "explanation": "..." }
-  ]
-}
+RESPONSE FORMAT:
+- For simple queries: Return just the query string
+- For ambiguous requests: Return JSON with "ambiguous": true, "message": "...", "choices": [...]
 
-2. SINGLE QUERY (for simple queries):
-Just return the SurrealQL query string
+SURREALQL SYNTAX GUIDE:
 
-3. AMBIGUOUS:
-{
-  "ambiguous": true,
-  "message": "...",
-  "choices": [...]
-}
+1. BASIC QUERIES:
+   SELECT * FROM table_name LIMIT 100
+   SELECT column1, column2 FROM table_name WHERE condition LIMIT 100
+   SELECT * FROM table_name ORDER BY column DESC LIMIT 100
 
-TABLE NAME MATCHING:
-When the user mentions a table name, intelligently match it to available tables:
-- "employees" → "employee" (plural to singular)
-- "employee" → "employee" (exact match preferred)
-- "data_xxx_employees" → match if it contains "employee"
-- Be flexible with capitalization and common variations
-- If multiple tables match, prefer the shorter/simpler name
-- Example: User says "employees" and you see both "employee" and "data_abc_employees", use "employee"
+2. FILTERING:
+   WHERE column = 'value'
+   WHERE column > 100
+   WHERE column IN ['a', 'b', 'c']
+   WHERE string::lowercase(column) CONTAINS 'search' (case-insensitive search)
 
-SURREALDB LIMITATIONS YOU MUST WORK AROUND:
-âŒ NO aggregate functions in SELECT (AVG, SUM, COUNT, array_agg)
-âŒ NO GROUP BY with aggregations
-âŒ NO LET statements or variables
-âŒ NO WITH clauses
-âŒ NO window functions
-âŒ NO self-joins with aggregates
+3. GROUPING & COUNTING:
+   SELECT Supplier, count() FROM table_name GROUP BY Supplier
+   (Returns: [{Supplier: "X", count: 5}, {Supplier: "Y", count: 3}])
 
-âœ… WHAT WORKS:
-- Simple SELECT with WHERE, ORDER BY, LIMIT
-- RETURN with math::mean/sum/max/min on subquery arrays
-- Multiple independent queries executed in sequence
+4. AGGREGATIONS (use RETURN for sum/avg/min/max):
+   RETURN math::sum((SELECT VALUE type::number(Stock) FROM table_name))
+   RETURN math::mean((SELECT VALUE type::number(Price) FROM table_name))
 
-INTELLIGENT MULTI-STEP STRATEGY:
+5. DISTINCT VALUES:
+   SELECT column FROM table_name GROUP BY column
 
-For "average salary by department":
-Step 1: Get unique departments â†’ SELECT Department FROM employee GROUP BY Department
-Step 2: For EACH department, calculate average â†’ RETURN math::mean((SELECT VALUE type::number(Salary) FROM employee WHERE Department = 'Sales'))
-Step 3: Repeat for each department found in Step 1
+WHAT DOES NOT WORK (these will cause errors - NEVER use them):
+- SELECT DISTINCT column (use GROUP BY instead)
+- SUM(column), AVG(column) in SELECT clause
+- array::sum - THIS DOES NOT EXIST
+- array::group - THIS DOES NOT EXIST  
+- ARRAY::GROUP - THIS DOES NOT EXIST
+- $variable placeholders
+- AS aliases like "count() as Total"
+- Any aggregate function in SELECT except count()
 
-For "employees below their department average":
-Step 1: Get unique departments
-Step 2: Calculate average for each department
-Step 3: For each department, find employees below that average
-Step 4: Combine results with calculated differences
+FOR SUM/AVG BY GROUP:
+SurrealDB cannot do SUM by group in a single query. For "total stock by supplier":
+- Use count() instead: SELECT Supplier, count() FROM table GROUP BY Supplier
+- This shows NUMBER OF ITEMS per supplier, which is usually what users want for pie charts
 
-CONCRETE EXAMPLE - Complex Query:
-User: "Show employees in departments where average salary > 80000, but only those earning less than their dept average"
+VISUALIZATION QUERIES:
+When the user asks for a chart/visualization of grouped data:
+- Use: SELECT category_column, count() FROM table GROUP BY category_column
+- This returns data perfect for pie/bar charts: [{Category: "A", count: 10}, ...]
+- Mark the response with chart hints if needed
 
-YOUR RESPONSE:
-{
-  "multi_step": true,
-  "steps": [
-    {
-      "query": "SELECT Department FROM employee GROUP BY Department",
-      "explanation": "First, discover all unique departments"
-    },
-    {
-      "query": "RETURN math::mean((SELECT VALUE type::number(Salary) FROM employee WHERE Department = 'Sales'))",
-      "explanation": "Calculate average salary for Sales department"
-    },
-    {
-      "query": "RETURN math::mean((SELECT VALUE type::number(Salary) FROM employee WHERE Department = 'Engineering'))",
-      "explanation": "Calculate average salary for Engineering department"
-    },
-    {
-      "query": "RETURN math::mean((SELECT VALUE type::number(Salary) FROM employee WHERE Department = 'Management'))",
-      "explanation": "Calculate average salary for Management department"
-    },
-    {
-      "query": "SELECT * FROM employee WHERE Department = 'Management' AND type::number(Salary) < 120000 ORDER BY Salary DESC LIMIT 100",
-      "explanation": "Get Management employees below their department average (120000), if average > 80000"
-    }
-  ]
-}
+EXAMPLES:
 
-CONCRETE EXAMPLE - "How Many" Questions:
-User: "How many employees are from west coast cities?"
+User: "Show me all products"
+Response: SELECT * FROM inventory LIMIT 100
 
-IMPORTANT: When users ask "how many X", they want to see:
-1. The actual records/data
-2. The count is implied by the number of results
+User: "How many items per supplier?"
+Response: SELECT Supplier, count() FROM inventory GROUP BY Supplier
 
-YOUR RESPONSE (single query):
-SELECT * FROM employee WHERE City IN ['Los Angeles', 'San Francisco', 'Seattle', 'Portland', 'San Diego'] LIMIT 100
+User: "What's the total stock?"
+Response: RETURN math::sum((SELECT VALUE type::number(Stock) FROM inventory))
 
-NOT: SELECT count() FROM employee WHERE ... (too minimal, user wants to see the data)
-NOT: RETURN array::len(...) (too minimal, user wants to see the data)
-
-CONCRETE EXAMPLE - Company/Supplier Query:
-User: "How many products does TechCorp supply?"
-
-YOUR RESPONSE:
-SELECT * FROM inventory WHERE string::lowercase(Supplier) CONTAINS string::lowercase('TechCorp') LIMIT 100
-
-NOT: RETURN array::len(array::unique((SELECT VALUE Product FROM inventory WHERE ...)))
-
-CONCRETE EXAMPLE - Status/Enum Field Query:
-User: "Were there any cancelled orders?"
-
-YOUR RESPONSE:
-SELECT * FROM orders WHERE Status = 'cancelled' LIMIT 100
-
-OR (case-insensitive):
-SELECT * FROM orders WHERE string::lowercase(Status) = 'cancelled' LIMIT 100
-
-NOT: SELECT * FROM orders (missing WHERE clause - returns all orders, not just cancelled)
+User: "Show me products from TechCorp"
+Response: SELECT * FROM inventory WHERE Supplier = 'TechCorp' LIMIT 100
 
 RULES:
-1. ALWAYS use multi-step for queries involving:
-   - "average by", "sum by", "count by" (when grouped by categories)
-   - "below average", "above average"
-   - Multiple aggregations
-   - Filtering based on aggregated values
+1. Always include LIMIT unless doing aggregation
+2. Use the exact table names from the schema
+3. Match column names exactly (case-sensitive)
+4. For partial text search, use: string::lowercase(col) CONTAINS 'term'
+5. Return ONLY the query - no explanations, no simulated results
 
-2. For "how many X" questions:
-   - Return the actual records with SELECT * FROM ... WHERE ... LIMIT 100
-   - The user can see the count from the result set size
-   - Only use SELECT count() if the user explicitly asks for "just the count" or "only the number"
+IMPORTANT - SUM BY GROUP:
+SurrealDB cannot do SUM() with GROUP BY. For queries like "total stock by supplier":
+- Return ALL rows with the grouping column and numeric column
+- Example: SELECT Supplier, Stock FROM inventory LIMIT 100
+- The frontend will aggregate the data automatically
+- DO NOT try to use math::sum with GROUP BY
+- DO NOT return multi-step queries for this
 
-3. **CRITICAL**: For company/supplier/vendor/manufacturer names, use case-insensitive matching:
-   - Use: WHERE string::lowercase(Supplier) CONTAINS string::lowercase('TechCorp')
-   - This handles all case variations (TechCorp, techcorp, TECHCORP, etc.)
-   - Alternative: WHERE Supplier ~ '(?i)TechCorp' (case-insensitive regex)
-   - NOT: WHERE Supplier CONTAINS 'TechCorp' (case-sensitive)
-   - NOT: WHERE Supplier = 'TechCorp' (exact match only)
-
-4. AGGREGATION SYNTAX:
-   - Count (when needed): SELECT count() FROM table WHERE ... (returns single number)
-   - Average: RETURN math::mean((SELECT VALUE type::number(column) FROM table WHERE ...))
-   - Sum: RETURN math::sum((SELECT VALUE type::number(column) FROM table WHERE ...))
-   - Max: RETURN math::max((SELECT VALUE type::number(column) FROM table WHERE ...))
-   - Min: RETURN math::min((SELECT VALUE type::number(column) FROM table WHERE ...))
-
-3. SORTING:
-   - Use ORDER BY column NUMERIC for numeric sorting
-   - NEVER use ORDER BY type::number(column) - syntax error
-
-4. LIMITS:
-   - Always include LIMIT (default 100) unless aggregating
-
-5. FALLBACK:
-   If a query is genuinely impossible even with multi-step (e.g., requires true window functions):
-   {
-     "error": true,
-     "message": "This query requires advanced SQL features that Pegasus doesn't currently support. Try breaking it into simpler questions."
-   }
-
-CRITICAL: DO NOT include simulated results. Only return the query plan.
+EXAMPLE:
+User: "How much stock does each supplier provide?"
+Response: SELECT Supplier, Stock FROM inventory LIMIT 100
+(Frontend will group by Supplier and sum Stock values)
 `
     } else if (dialect === 'kusto') {
 

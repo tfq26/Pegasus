@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.6.2",
+            "releaseDate": "December 20, 2025",
+            "title": "Visualization & Query Intelligence Upgrade",
+            "description": "A comprehensive update improving SurrealDB query generation, introducing client-side aggregation for complex metrics, and enhancing automatic chart visualization capabilities.",
+            "changelogFile": "v0.6.2.json",
+            "isLatest": true
+        },
+        {
             "version": "0.6.1",
             "releaseDate": "December 20, 2025",
             "title": "Chat Architecture & Visibility Hotfixes",
             "description": "Hotfixes to improve the reliability of the new collaboration features, ensuring messages are saved correctly and the chat UI is fully accessible.",
             "changelogFile": "v0.6.1.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.6.0",

@@ -553,7 +553,24 @@ const handleCreateDashboardElement = async () => {
   
   toast.info('Generating chart recommendation...')
   try {
-    const config = await recommendVisualization(lastQuery.value, Array.isArray(queryResult.value) ? queryResult.value : [queryResult.value])
+    // Check for visualizable result from multi-step query
+    let dataForVisualization = queryResult.value
+    let suggestedChartType = null
+    
+    if ((window as any).__visualizableResult) {
+      dataForVisualization = (window as any).__visualizableResult
+      suggestedChartType = (window as any).__suggestedChartType
+      console.log('[Chart] Using visualizable result from multi-step query, chart type:', suggestedChartType)
+      // Clear the stored values
+      delete (window as any).__visualizableResult
+      delete (window as any).__suggestedChartType
+    }
+    
+    const config = await recommendVisualization(
+      lastQuery.value, 
+      Array.isArray(dataForVisualization) ? dataForVisualization : [dataForVisualization],
+      suggestedChartType
+    )
     finishOperation(opId)
     dashboardPreviewConfig.value = config
     dashboardPreviewVisible.value = true
@@ -954,12 +971,30 @@ const handleAIGenerate = async () => {
       const combinedResults: any[] = []
       const combinedQuery = aiResponse.steps.map((step: any) => step.query).join(';\n')
       
+      // Track visualizable step for chart creation
+      let visualizableResults: any[] = []
+      let suggestedChartType: string | null = null
+      
       for (const step of aiResponse.steps) {
         if (step.result) {
           combinedResults.push({
             explanation: step.explanation,
-            result: step.result
+            result: step.result,
+            visualizable: step.visualizable,
+            chart_type: step.chart_type
           })
+          
+          // Collect ALL visualizable step results
+          if (step.visualizable && step.result) {
+            // If result is an array, spread it; otherwise push as single item
+            if (Array.isArray(step.result)) {
+              visualizableResults.push(...step.result)
+            } else {
+              visualizableResults.push(step.result)
+            }
+            suggestedChartType = step.chart_type || suggestedChartType
+            console.log('[Chat] Found visualizable step:', step.explanation, 'Chart type:', suggestedChartType)
+          }
         } else if (step.error) {
           combinedResults.push({
             explanation: step.explanation,
@@ -971,6 +1006,13 @@ const handleAIGenerate = async () => {
       // Display combined results
       queryResult.value = combinedResults
       lastQuery.value = combinedQuery
+      
+      // Store visualization hints for chart creation
+      if (visualizableResults.length > 0) {
+        (window as any).__visualizableResult = visualizableResults;
+        (window as any).__suggestedChartType = suggestedChartType;
+        console.log('[Chat] Stored visualizable results for chart:', visualizableResults.length, 'items')
+      }
       
       // Generate AI summary of results
       let aiSummary = ''
@@ -1249,6 +1291,70 @@ const handlePostQueryActions = async (query: string, results: any, autoPreview =
     return
   }
 
+  // CLIENT-SIDE AGGREGATION: Detect if we need to group and sum
+  // Pattern: Multiple rows with a category column and a numeric column
+  if (results.length > 1) {
+    const firstRow = results[0]
+    const keys = Object.keys(firstRow).filter(k => !k.startsWith('_') && k !== 'id')
+    
+    // Check if we have exactly 2 relevant columns (category + value)
+    if (keys.length === 2) {
+      const col1 = keys[0]!
+      const col2 = keys[1]!
+      const col1Values = results.map(r => r[col1])
+      const col2Values = results.map(r => r[col2])
+      
+      // Check which column is the category (has repeats) and which is numeric
+      const col1Unique = new Set(col1Values).size
+      const col2Unique = new Set(col2Values).size
+      const col1IsNumeric = col1Values.every(v => !isNaN(parseFloat(v)))
+      const col2IsNumeric = col2Values.every(v => !isNaN(parseFloat(v)))
+      
+      let categoryCol: string | null = null
+      let valueCol: string | null = null
+      
+      // Determine which is category and which is value
+      if (col1Unique < results.length && col2IsNumeric) {
+        // col1 is category, col2 is value
+        categoryCol = col1
+        valueCol = col2
+      } else if (col2Unique < results.length && col1IsNumeric) {
+        // col2 is category, col1 is value
+        categoryCol = col2
+        valueCol = col1
+      }
+      
+      if (categoryCol && valueCol) {
+        console.log('[Dashboard] Detected aggregatable data:', categoryCol, 'x', valueCol)
+        
+        // Aggregate: Group by category, sum value
+        const aggregated = new Map<string, number>()
+        results.forEach(row => {
+          const category = String(row[categoryCol!])
+          const value = parseFloat(row[valueCol!])
+          aggregated.set(category, (aggregated.get(category) || 0) + value)
+        })
+        
+        // Convert to array format for charts
+        const aggregatedResults = Array.from(aggregated.entries()).map(([category, total]) => ({
+          [categoryCol!]: category,
+          [`Total_${valueCol}`]: total
+        }))
+        
+        console.log('[Dashboard] Aggregated results:', aggregatedResults)
+        
+        // Replace results with aggregated data for visualization AND update table display
+        results = aggregatedResults
+        queryResult.value = aggregatedResults
+        
+        toast.info('Data aggregated', {
+          description: `Grouped by ${col1}, summed ${col2}`,
+          position: 'top-right'
+        })
+      }
+    }
+  }
+
   // HEURISTIC: Check for single-value result (Stat Card)
   if (results.length === 1) {
     const row = results[0]
@@ -1282,6 +1388,74 @@ const handlePostQueryActions = async (query: string, results: any, autoPreview =
             })
         }
         return // Skip AI
+      }
+    }
+  }
+
+  // HEURISTIC: Detect aggregated data pattern (category + Total_X)
+  // This works even when user requests specific chart type
+  if (results.length > 1 && results.length < 20) {
+    const firstRow = results[0]
+    const keys = Object.keys(firstRow).filter(k => !k.startsWith('_') && k !== 'id')
+    
+    if (keys.length === 2) {
+      // Check if one column starts with "Total_" (our aggregation marker)
+      const totalCol = keys.find(k => k.startsWith('Total_'))
+      const categoryCol = keys.find(k => !k.startsWith('Total_'))
+      
+      if (totalCol && categoryCol) {
+        console.log('[Dashboard] Detected aggregated data pattern for visualization')
+        
+        const chartType = (userPrompt && userPrompt.toLowerCase().includes('pie')) ? 'pie' : 'bar'
+        
+        // Extract actual data values
+        const labels = results.map(r => String(r[categoryCol]))
+        const dataValues = results.map(r => typeof r[totalCol] === 'number' ? r[totalCol] : parseFloat(r[totalCol]))
+        
+        const config = {
+          type: chartType,
+          title: `${totalCol.replace('Total_', '')} by ${categoryCol}`,
+          config: {
+            data: {
+              labels,
+              datasets: [{
+                label: totalCol.replace('Total_', ''),
+                data: dataValues,
+                backgroundColor: [
+                  'hsl(0, 70%, 50%)',
+                  'hsl(120, 70%, 50%)',
+                  'hsl(240, 70%, 50%)',
+                  'hsl(60, 70%, 50%)',
+                  'hsl(300, 70%, 50%)',
+                ],
+                borderWidth: 1
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { display: chartType === 'pie' },
+                title: { display: false }
+              }
+            }
+          }
+        }
+        
+        dashboardPreviewConfig.value = config
+        hasRecommendation.value = true
+        
+        if (autoPreview) {
+          dashboardPreviewVisible.value = true
+        } else {
+          toast.success("Visualization available!", {
+            description: `Created ${chartType} chart`,
+            action: {
+              label: "Preview",
+              onClick: () => dashboardPreviewVisible.value = true
+            }
+          })
+        }
+        return
       }
     }
   }

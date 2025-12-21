@@ -82,9 +82,9 @@ export class AIClient {
         return models
     }
 
-    async recommendVisualization(query, results, previousConfig, modelId) {
+    async recommendVisualization(query, results, previousConfig, modelId, suggestedChartType) {
         const provider = this.getProviderForModel(modelId)
-        return provider.recommendVisualization(query, results, previousConfig)
+        return provider.recommendVisualization(query, results, previousConfig, suggestedChartType)
     }
 
     async generateTitle(messages, modelId) {

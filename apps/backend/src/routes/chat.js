@@ -509,6 +509,31 @@ chat.post("/ai/generate", async (c) => {
                 schemaInfo.detailedSchema = await adapter.getSchema() // simple approach
             }
 
+            // Fetch sample values for the active table (CRITICAL for accurate queries)
+            if (activeTable) {
+                try {
+                    const sampleRows = await adapter.query(`SELECT * FROM ${activeTable} LIMIT 10`)
+                    if (sampleRows && sampleRows.length > 0) {
+                        const sampleValues = {}
+                        sampleValues[activeTable] = {}
+
+                        // Extract unique values for each column (up to 5 per column)
+                        const columns = Object.keys(sampleRows[0])
+                        columns.forEach(col => {
+                            const uniqueVals = [...new Set(sampleRows.map(r => r[col]).filter(v => v != null))]
+                            if (uniqueVals.length > 0 && uniqueVals.length <= 10) {
+                                sampleValues[activeTable][col] = uniqueVals.slice(0, 5)
+                            }
+                        })
+
+                        schemaInfo.sampleValues = sampleValues
+                        console.log('[Chat] Fetched sample values:', JSON.stringify(sampleValues))
+                    }
+                } catch (e) {
+                    console.warn('[Chat] Failed to fetch sample values:', e.message)
+                }
+            }
+
             // Debug: Log activeTable and schema info
             console.log(`[Chat] DEBUG - activeTable: "${activeTable}"`);
             console.log(`[Chat] DEBUG - schemaInfo.tables:`, schemaInfo.tables);
@@ -727,7 +752,9 @@ chat.post("/ai/generate", async (c) => {
                             multiStepResult.push({
                                 explanation: step.explanation,
                                 query: stepQuery,
-                                result: stepRes
+                                result: stepRes,
+                                visualizable: step.visualizable || false,
+                                chart_type: step.chart_type || null
                             });
                         } catch (err) {
                             console.error(`[Chat] Step ${i + 1} execution failed: ${err.message}`);
@@ -806,7 +833,7 @@ chat.post("/ai/recommend-visualization", async (c) => {
     const token = getCookie(c, "session")
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
-        const { query, results, previousConfig } = await c.req.json()
+        const { query, results, previousConfig, suggestedChartType } = await c.req.json()
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
 
@@ -822,7 +849,7 @@ chat.post("/ai/recommend-visualization", async (c) => {
             }
         } catch (e) { }
 
-        const recommendation = await aiClient.recommendVisualization(query, results, previousConfig, activeModel)
+        const recommendation = await aiClient.recommendVisualization(query, results, previousConfig, activeModel, suggestedChartType)
         return c.json(recommendation)
     } catch (e) {
         return c.json({ error: e.message }, 500)

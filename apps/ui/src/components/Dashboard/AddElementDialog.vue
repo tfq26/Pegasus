@@ -12,7 +12,7 @@
         <!-- Visualization -->
         <button
           @click="selectType('visualization')"
-          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-lg hover:bg-muted/50 hover:border-primary/50 transition-all group"
+          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-sm hover:bg-muted/50 hover:border-primary/50 transition-all group"
         >
           <div class="p-3 rounded-full bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform">
             <BarChart2 class="w-8 h-8" />
@@ -26,7 +26,7 @@
         <!-- Table -->
         <button
           @click="selectType('table')"
-          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-lg hover:bg-muted/50 hover:border-primary/50 transition-all group"
+          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-sm hover:bg-muted/50 hover:border-primary/50 transition-all group"
         >
           <div class="p-3 rounded-full bg-emerald-500/10 text-emerald-500 group-hover:scale-110 transition-transform">
             <Table class="w-8 h-8" />
@@ -40,7 +40,7 @@
         <!-- Text Block -->
         <button
           @click="selectType('text')"
-          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-lg hover:bg-muted/50 hover:border-primary/50 transition-all group"
+          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-sm hover:bg-muted/50 hover:border-primary/50 transition-all group"
         >
           <div class="p-3 rounded-full bg-orange-500/10 text-orange-500 group-hover:scale-110 transition-transform">
             <Type class="w-8 h-8" />
@@ -54,7 +54,7 @@
         <!-- File Upload -->
         <button
           @click="selectType('file')"
-          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-lg hover:bg-muted/50 hover:border-primary/50 transition-all group"
+          class="flex flex-col items-center justify-center gap-3 p-6 border rounded-sm hover:bg-muted/50 hover:border-primary/50 transition-all group"
         >
           <div class="p-3 rounded-full bg-purple-500/10 text-purple-500 group-hover:scale-110 transition-transform">
             <FileUp class="w-8 h-8" />

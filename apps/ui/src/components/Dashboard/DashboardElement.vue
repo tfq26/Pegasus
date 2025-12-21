@@ -2,7 +2,7 @@
   <ContextMenu>
     <ContextMenuTrigger>
       <div 
-        class="dashboard-card w-full h-full flex flex-col bg-card border border-border shadow-sm rounded-lg overflow-hidden transition-all hover:shadow-md"
+        class="dashboard-card w-full h-full flex flex-col bg-card border border-border shadow-sm rounded-sm overflow-hidden transition-all hover:shadow-md"
         :class="{ 'pointer-events-none': isLocked && !isMobile }"
       >
         <!-- Card Content -->
@@ -12,7 +12,7 @@
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger as-child>
-                      <div class="flex-1 min-w-0 cursor-help">
+                      <div class="flex-1 min-w-0">
                         <h3 class="card-title text-foreground font-semibold text-sm truncate">{{ element?.title || 'Untitled' }}</h3>
                         <p class="card-subtitle text-xs text-muted-foreground truncate">{{ element?.query }}</p>
                       </div>
@@ -125,15 +125,19 @@
         <Settings class="w-4 h-4 mr-2" />
         Edit Element
       </ContextMenuItem>
-      <ContextMenuSeparator class="bg-border" />
-      <ContextMenuItem @select="$emit('edit-query')">
-        <Pencil class="w-4 h-4 mr-2" />
-        Edit Query
-      </ContextMenuItem>
-      <ContextMenuItem @select="$emit('view-query')">
-        <Code class="w-4 h-4 mr-2" />
-        View Query
-      </ContextMenuItem>
+      
+      <!-- Query Options (Only for Viz/Table) -->
+      <template v-if="element?.type !== 'text' && element?.type !== 'file'">
+        <ContextMenuSeparator class="bg-border" />
+        <ContextMenuItem @select="$emit('edit-query')">
+          <Pencil class="w-4 h-4 mr-2" />
+          Edit Query
+        </ContextMenuItem>
+        <ContextMenuItem @select="$emit('view-query')">
+          <Code class="w-4 h-4 mr-2" />
+          View Query
+        </ContextMenuItem>
+      </template>
       <ContextMenuSeparator class="bg-border" />
       <ContextMenuItem @select="$emit('remove')" class="text-destructive focus:text-destructive focus:bg-destructive/10">
         <Trash2 class="w-4 h-4 mr-2" />
