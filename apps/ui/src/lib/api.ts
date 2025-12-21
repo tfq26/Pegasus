@@ -657,7 +657,7 @@ export async function uploadFile(file: File) {
 export async function createCheckoutSession(priceId: string) {
   const response = await fetch(`${QUERY_API_URL}/create-checkout-session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ priceId })
   })
@@ -668,7 +668,7 @@ export async function createCheckoutSession(priceId: string) {
 export async function createPortalSession() {
   const response = await fetch(`${QUERY_API_URL}/create-portal-session`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
 
@@ -713,7 +713,7 @@ export async function updateConnection(connection: any) {
 export async function getSubscriptionStatus() {
   const response = await fetch(`${QUERY_API_URL}/subscription-status`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
   })
   if (!response.ok) throw new Error('Failed to fetch subscription status')

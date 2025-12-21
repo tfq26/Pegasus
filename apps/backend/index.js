@@ -304,8 +304,20 @@ app.post("/upload", async (c) => {
 })
 
 // Stripe Endpoints
+// Helper to get token from cookie or Authorization header
+const getAuthToken = (c) => {
+  let token = getCookie(c, "session")
+  if (!token) {
+    const authHeader = c.req.header("Authorization")
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7)
+    }
+  }
+  return token
+}
+
 app.post("/create-checkout-session", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -332,7 +344,7 @@ app.post("/create-checkout-session", async (c) => {
 })
 
 app.post("/create-portal-session", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -358,7 +370,7 @@ app.post("/create-portal-session", async (c) => {
 })
 
 app.get("/subscription-status", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
