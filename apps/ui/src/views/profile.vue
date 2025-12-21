@@ -43,7 +43,7 @@
           <span class="text-foreground font-medium">{{ typedUser.organizationName || 'None' }}</span>
         </p>
         <!-- Stripe subscription features commented out until implemented -->
-        <!-- <div class="flex items-center justify-between pt-2 border-t border-border">
+        <div class="flex items-center justify-between pt-2 border-t border-border">
           <p><span class="font-medium text-muted-foreground">Plan:</span> <span class="capitalize text-primary font-semibold">{{ subscriptionTier }}</span></p>
           <button 
             v-if="subscriptionTier === 'free'"
@@ -59,13 +59,13 @@
           >
             Manage Subscription
           </button>
-        </div> -->
+        </div>
       </div>
 
 
 
       <!-- Resource usage commented out until Stripe is implemented -->
-      <!-- <div class="space-y-4 text-sm text-foreground mb-6 border-t border-border pt-4">
+      <div class="space-y-4 text-sm text-foreground mb-6 border-t border-border pt-4">
         <h3 class="font-semibold text-foreground">Resource Usage</h3>
         
         <div class="space-y-2">
@@ -89,7 +89,7 @@
           </div>
           <p class="text-[10px] text-muted-foreground text-right">Limit: 500 MB</p>
         </div>
-      </div> -->
+      </div>
 
       <div class="flex gap-3">
         <button
@@ -140,7 +140,7 @@ onMounted(async () => {
 const handleUpgrade = async () => {
   try {
     // Replace with your actual Stripe Price ID
-    const priceId = 'price_1QchkPAnXkP3182s9QchkPAn' 
+    const priceId = 'price_1SgfIpGUiKevQtlewzMFASsm' 
     const { url } = await createCheckoutSession(priceId)
     if (url) window.location.href = url
   } catch (e) {

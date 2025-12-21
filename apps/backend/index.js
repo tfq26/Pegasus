@@ -766,7 +766,7 @@ app.post("/settings", async (c) => {
 })
 
 app.post("/query", async (c) => {
-  const { provider, connection, query, source = 'user', model = null } = await c.req.json()
+  const { provider, connection, query, source = 'user', model = null, tokens_used = 0 } = await c.req.json()
   console.log(`[Backend] Received query request for provider: ${provider}`)
 
   // Try to get user session for history
@@ -824,7 +824,8 @@ app.post("/query", async (c) => {
                   model: $model,
                   status: $status,
                   connection: $connection,
-   // Check indentreated_at: time::now()
+                  tokens_used: $tokens_used,
+                  created_at: time::now()
               };
           `, {
         user: `user:${userId}`,
@@ -832,7 +833,8 @@ app.post("/query", async (c) => {
         source,
         model,
         status,
-        connection: connection.id ? (connection.id.toString().includes(':') ? connection.id : `connection:${connection.id}`) : null
+        connection: connection.id ? (connection.id.toString().includes(':') ? connection.id : `connection:${connection.id}`) : null,
+        tokens_used: tokens_used || 0
       });
       console.log(`[DB] Saved query history for user ${userId} (Source: ${source})`)
     } catch (e) {

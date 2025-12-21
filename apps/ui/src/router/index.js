@@ -17,6 +17,7 @@ const router = createRouter({
     { path: '/support', component: () => import('../views/Support.vue') },
     { path: '/login', component: () => import('../views/Login.vue') },
     { path: '/workspace-test', component: () => import('../views/WorkspaceTest.vue') },
+    { path: '/error', component: () => import('../views/ErrorPage.vue') },
   ],
 })
 

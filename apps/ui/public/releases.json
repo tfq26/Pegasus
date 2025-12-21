@@ -6,6 +6,14 @@
             "title": "Visualization & Query Intelligence Upgrade",
             "description": "A comprehensive update improving SurrealDB query generation, introducing client-side aggregation for complex metrics, and enhancing automatic chart visualization capabilities.",
             "changelogFile": "v0.6.2.json",
+            "isLatest": false
+        },
+        {
+            "version": "0.6.3",
+            "releaseDate": "December 21, 2025",
+            "title": "Pro Subscription & Error Handling",
+            "description": "Introduced Stripe-powered Pro subscriptions with higher AI limits, and improved system-wide error handling.",
+            "changelogFile": "v0.6.3.json",
             "isLatest": true
         },
         {

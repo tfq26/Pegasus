@@ -75,9 +75,15 @@
             <img
               :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
               alt="Profile"
-              class="h-7 w-7 rounded-full border border-border object-cover"
+              class="h-7 w-7 rounded-full object-cover transition-all"
+              :class="isPro ? 'border-2 border-purple-500 ring-2 ring-purple-500/20' : 'border border-border'"
             />
-            <span class="hidden sm:inline font-medium">{{ user.firstName || 'User' }}</span>
+            <span class="hidden sm:inline font-medium flex items-center gap-1">
+              {{ user.firstName || 'User' }}
+              <span v-if="isPro" class="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800">
+                PRO
+              </span>
+            </span>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
               stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
@@ -186,8 +192,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { getSubscriptionStatus } from '@/lib/api'
 import ThemeToggle from './ThemeToggle.vue'
 import GlobalProgressBar from './GlobalProgressBar.vue'
 
@@ -205,6 +212,7 @@ const links = [
 const showDropdown = ref(false)
 const mobileOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const isPro = ref(false)
 
 const toggleDropdown = () => (showDropdown.value = !showDropdown.value)
 
@@ -221,10 +229,27 @@ const handleClickOutside = (e: MouseEvent) => {
   }
 }
 
-onMounted(() => {
-  fetchUser()
+const checkSubscription = async () => {
+  if (user.value) {
+    try {
+      const status = await getSubscriptionStatus()
+      isPro.value = status.tier === 'pro'
+    } catch (e) {
+      console.error('Failed to check subscription', e)
+    }
+  }
+}
+
+onMounted(async () => {
+  await fetchUser()
+  await checkSubscription()
   document.addEventListener('click', handleClickOutside)
 })
+
+watch(user, () => {
+  checkSubscription()
+})
+
 onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 </script>
 

@@ -80,6 +80,48 @@ const upsertUser = async (payload) => {
     }
 }
 
+// Helper to check AI quota
+// Helper to check AI quota
+const checkAiQuota = async (userId) => {
+    try {
+        const [userRecord] = await db.query(`SELECT subscription_tier FROM user:${userId}`);
+        const tier = userRecord[0]?.subscription_tier || 'free';
+
+        // Set limits: 900k for Pro, 100k for Free
+        const limit = tier === 'pro' ? 900000 : 100000;
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const [usageResult] = await db.query(`
+            SELECT math::sum(tokens_used) as total FROM query_history 
+            WHERE user = $user AND created_at >= $start
+        `, {
+            user: `user:${userId}`,
+            start: startOfMonth
+        });
+
+        const used = usageResult[0]?.total || 0;
+
+        if (used >= limit) {
+            console.log(`[Quota] User ${userId} (${tier}) exceeded limit: ${used}/${limit}`);
+            return {
+                allowed: false,
+                error: `Usage limit exceeded for ${tier} tier (${limit.toLocaleString()} tokens).`,
+                code: 'QUOTA_EXCEEDED',
+                tier,
+                limit,
+                used
+            };
+        }
+        return { allowed: true };
+    } catch (e) {
+        console.error("[Quota] Check failed:", e);
+        return { allowed: true }; // Fail open
+    }
+}
+
 // Helper to convert 0-based index to Excel column label (0 -> A, 25 -> Z, 26 -> AA)
 const colIndexToLabel = (index) => {
     let label = '';
@@ -357,6 +399,12 @@ chat.post("/ai/generate-formula", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
+        const payload = await verify(token, jwtSecret)
+        const quota = await checkAiQuota(payload.sub);
+        if (!quota.allowed) {
+            return c.json(quota, 403);
+        }
+
         const { request, spreadsheetData, model, autoExecute } = await c.req.json()
         const prompt = buildFormulaPrompt(request, spreadsheetData, autoExecute)
 
@@ -411,6 +459,12 @@ chat.post("/ai/analyze-formula-error", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
+        const payload = await verify(token, jwtSecret)
+        const quota = await checkAiQuota(payload.sub);
+        if (!quota.allowed) {
+            return c.json(quota, 403);
+        }
+
         const { context, model } = await c.req.json()
         const prompt = `
 You are an expert Excel formula debugger.
@@ -452,6 +506,11 @@ chat.post("/ai/generate", async (c) => {
             const parts = resolvedId.toString().split(':')
             if (parts.length > 1) userId = parts[1]
             else userId = resolvedId
+        }
+
+        const quota = await checkAiQuota(userId);
+        if (!quota.allowed) {
+            return c.json(quota, 403);
         }
 
         const { prompt, connectionId: rawConnId, context, activeTable } = await c.req.json()

@@ -29,6 +29,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "stripe": "^20.1.0",
     "surreal": "^0.3.7"
   }
 }

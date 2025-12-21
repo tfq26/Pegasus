@@ -10,7 +10,11 @@ import MobileFooter from './components/mobile/MobileFooter.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { useMobileDetection } from '@/composables/useMobileDetection'
 import { useAuth } from '@/composables/useAuth'
+import { usePrefetch } from '@/composables/usePrefetch'
 import 'vue-sonner/style.css'
+
+// Enable McMaster-Carr style link prefetching
+usePrefetch()
 
 const { isMobile } = useMobileDetection()
 const { fetchUser } = useAuth()
