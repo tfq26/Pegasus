@@ -3,20 +3,33 @@ import { MongoClient } from "mongodb"
 
 export class MongoAdapter extends DatabaseAdapter {
   async connect() {
-    this.client = new MongoClient(this.connection.url)
-    await this.client.connect()
+    try {
+      // Force IPv4 (family: 4) to avoid potential dual-stack issues across environments
+      this.client = new MongoClient(this.connection.url, {
+        family: 4,
+        serverSelectionTimeoutMS: 5000
+      })
+      await this.client.connect()
 
-    // Only set a specific DB if one was provided; otherwise leave null so we can enumerate DBs
-    if (this.connection && this.connection.database && typeof this.connection.database === 'string' && this.connection.database.trim()) {
-      this.db = this.client.db(this.connection.database)
-    } else {
-      this.db = null
-    }
-    // Only set a default collection if one was provided
-    if (this.connection && this.connection.collection && typeof this.connection.collection === 'string' && this.connection.collection.trim()) {
-      this.collection = this.db.collection(this.connection.collection)
-    } else {
-      this.collection = null
+      // Only set a specific DB if one was provided; otherwise leave null so we can enumerate DBs
+      if (this.connection && this.connection.database && typeof this.connection.database === 'string' && this.connection.database.trim()) {
+        this.db = this.client.db(this.connection.database)
+      } else {
+        this.db = null
+      }
+      // Only set a default collection if one was provided
+      if (this.connection && this.connection.collection && typeof this.connection.collection === 'string' && this.connection.collection.trim()) {
+        this.collection = this.db.collection(this.connection.collection)
+      } else {
+        this.collection = null
+      }
+    } catch (e) {
+      console.error('[Mongo] Connection failed:', e)
+      // Enhance error message for common SSL/IP whitelist issues
+      if (e.message && (e.message.includes('SSL') || e.message.includes('MongooseServerSelectionError') || e.message.includes('internal error'))) {
+        throw new Error(`MongoDB Connection Failed: ${e.message}. \nHint: This often happens if your IP is not whitelisted. For Vercel deployments, ensure "0.0.0.0/0" (Allow from Anywhere) is added to your MongoDB Network Access.`)
+      }
+      throw e
     }
   }
 

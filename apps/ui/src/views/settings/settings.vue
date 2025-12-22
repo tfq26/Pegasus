@@ -113,7 +113,7 @@ import ExperimentalSettings from './ExperimentalSettings.vue'
 import AnalyticsTab from './AnalyticsTab.vue'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema, QUERY_API_URL } from '@/lib/api'
+import { fetchConnectionSchema, QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
 import { useMobileDetection } from '@/composables/useMobileDetection'
 import { useRouter } from 'vue-router'
@@ -340,6 +340,8 @@ const summaryFor = (conn: ConnectionEntry) => {
 const loadConnections = async () => {
   try {
     const res = await fetch(`${QUERY_API_URL}/connections`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
       credentials: 'include'
     })
     
@@ -425,9 +427,7 @@ const updateConnection = async () => {
   try {
     const res = await fetch(`${QUERY_API_URL}/connections/${editingConnectionId.value}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: getAuthHeaders(),
       credentials: 'include',
       body: JSON.stringify(payload)
     })
@@ -453,6 +453,7 @@ const deleteConnection = async (id: string) => {
   try {
     const res = await fetch(`${QUERY_API_URL}/connections/${id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders(),
       credentials: 'include'
     })
     
@@ -473,9 +474,7 @@ const saveSettings = async () => {
   try {
     const res = await fetch(`${QUERY_API_URL}/settings`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: getAuthHeaders(),
       credentials: 'include',
       body: JSON.stringify(settings.value)
     })
@@ -503,6 +502,8 @@ onMounted(async () => {
   
   try {
     const res = await fetch(`${QUERY_API_URL}/settings`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
       credentials: 'include'
     })
     

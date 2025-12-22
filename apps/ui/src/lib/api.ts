@@ -11,7 +11,7 @@ const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
 export const QUERY_API_URL = derivedApiUrl
 
 // Helper to get auth headers with token from localStorage
-function getAuthHeaders(): HeadersInit {
+export function getAuthHeaders(): HeadersInit {
   const headers: HeadersInit = {
     'Content-Type': 'application/json'
   }
@@ -705,7 +705,7 @@ export async function saveConnection(connection: any) {
 
   const response = await fetch(`${QUERY_API_URL}/connections`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(connectionToSave)
   })
@@ -722,7 +722,7 @@ export async function updateConnection(connection: any) {
 
   const response = await fetch(`${QUERY_API_URL}/connections/${connection.id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(connectionToSave)
   })
