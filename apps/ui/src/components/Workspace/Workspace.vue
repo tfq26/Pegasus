@@ -53,7 +53,7 @@ watch(() => props.chatHistory, (newHistory) => {
       historyLength: newHistory.length 
     });
   }
-}, { deep: true });
+}, { deep: true, immediate: true });
 
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();

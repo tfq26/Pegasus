@@ -229,6 +229,11 @@ const copied = ref('')
 
 
 const displayedMessages = computed(() => {
+  console.log('[ChatEditor] Computing displayedMessages:', { 
+    mode: props.mode, 
+    historyLength: props.history?.length,
+    history: props.history 
+  })
   if (!props.history) return []
   // Filter out system messages (raw results) to keep the thread conversational
   const filtered = props.history.filter(m => m.role !== 'system')
