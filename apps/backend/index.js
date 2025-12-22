@@ -32,7 +32,9 @@ app.use("*", cors({
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
-  allowHeaders: ["Content-Type", "Authorization"]
+  allowHeaders: ["Content-Type", "Authorization"],
+  exposeHeaders: ["Content-Type", "Authorization"],
+  maxAge: 86400 // Cache preflight for 24 hours
 }))
 
 
