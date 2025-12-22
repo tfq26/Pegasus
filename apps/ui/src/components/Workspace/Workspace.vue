@@ -74,6 +74,16 @@ watch([tabs, activeTabId], () => {
   }
 }, { deep: true });
 
+// Sync chatHistory prop to active chat tab's data
+watch(() => props.chatHistory, (newHistory) => {
+  const activeTab = tabs.value.find(t => t.id === activeTabId.value);
+  if (activeTab && activeTab.type === 'chat' && newHistory) {
+    if (!activeTab.data) activeTab.data = {};
+    activeTab.data.chatHistory = newHistory;
+    console.log('[Workspace] Synced chatHistory to active tab:', { tabId: activeTab.id, historyLength: newHistory.length });
+  }
+}, { deep: true });
+
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
 const privateEngines = new Map<string, Engine>(); // Cache for private branches
