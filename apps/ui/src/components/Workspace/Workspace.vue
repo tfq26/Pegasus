@@ -881,7 +881,6 @@ defineExpose({
   refreshCurrentTable,
   exportCurrentTable,
   getEngineForTab,
-  activeTabId,
   getActiveTable
 });
 
