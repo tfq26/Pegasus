@@ -23,6 +23,8 @@ export function getAuthHeaders(): HeadersInit {
     headers['Authorization'] = `Bearer ${token}`
   }
 
+  console.log('[getAuthHeaders] Returning headers:', headers)
+
   return headers
 }
 
