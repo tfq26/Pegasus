@@ -47,7 +47,7 @@ export async function fetchConnectionSchema(entry: ConnectionEntry) {
   const connection = buildConnectionPayload(entry)
   const response = await fetch(`${QUERY_API_URL}/schema`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       provider: entry.provider,
       connection,
@@ -110,7 +110,7 @@ export async function fetchTableEntries({
 
   const response = await fetch(`${QUERY_API_URL}/query`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       provider,
       connection,
@@ -174,7 +174,7 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
 
   const response = await fetch(`${QUERY_API_URL}/query`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       provider,
       connection,
@@ -217,7 +217,7 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
 
   const response = await fetch(`${QUERY_API_URL}/ai/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(requestBody),
   })
@@ -245,6 +245,7 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
 export async function sanitizeTable(table: string) {
   const response = await fetch(`${QUERY_API_URL}/api/table/${table}/sanitize`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     credentials: 'include'
   })
 
@@ -309,7 +310,7 @@ export async function analyzeResults(question: string, results: any[], query: st
 export async function searchData(term: string, connectionId: string) {
   const response = await fetch(`${QUERY_API_URL}/ai/search`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({
       term,
@@ -329,7 +330,7 @@ export async function searchData(term: string, connectionId: string) {
 export async function getAIModels() {
   const response = await fetch(`${QUERY_API_URL}/ai/models`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
   })
 
@@ -344,6 +345,7 @@ export async function getAIModels() {
 
 export async function fetchSettings() {
   const response = await fetch(`${QUERY_API_URL}/settings`, {
+    headers: getAuthHeaders(),
     credentials: 'include',
   })
 
@@ -414,7 +416,10 @@ export async function clearAllChats() {
 
 // Dashboard API
 export async function fetchDashboardElements() {
-  const response = await fetch(`${QUERY_API_URL}/dashboard`, { credentials: 'include' })
+  const response = await fetch(`${QUERY_API_URL}/dashboard`, {
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
   if (!response.ok) throw new Error('Failed to fetch dashboard')
   const body = await response.json()
   return body.elements || []
@@ -423,7 +428,7 @@ export async function fetchDashboardElements() {
 export async function createDashboardElement(element: any) {
   const response = await fetch(`${QUERY_API_URL}/dashboard/elements`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(element)
   })
@@ -443,7 +448,7 @@ export async function deleteDashboardElement(id: string) {
 export async function updateDashboardElement(id: string, updates: any) {
   const response = await fetch(`${QUERY_API_URL}/dashboard/elements/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(updates)
   })
@@ -472,7 +477,7 @@ export async function saveDashboardLayout(layout: any[]) {
 export async function recommendVisualization(query: string, results: any[], previousConfig: any = null, suggestedChartType: string | null = null) {
   const response = await fetch(`${QUERY_API_URL}/ai/recommend-visualization`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ query, results, previousConfig, suggestedChartType }),
   })
@@ -490,7 +495,7 @@ export async function fetchQueries() {
 export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string) {
   const response = await fetch(`${QUERY_API_URL}/queries`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ query, source, status, connection_id: connectionId }),
   })
@@ -665,8 +670,13 @@ export async function uploadFile(file: File) {
   const formData = new FormData()
   formData.append('file', file)
 
+  const headers = getAuthHeaders()
+  // @ts-ignore
+  delete headers['Content-Type'] // Let fetch set boundary for FormData
+
   const response = await fetch(`${QUERY_API_URL}/upload`, {
     method: 'POST',
+    headers,
     credentials: 'include',
     body: formData
   })
@@ -763,8 +773,13 @@ export async function uploadDashboardFile(dashboardId: string, file: File) {
   const formData = new FormData()
   formData.append('file', file)
 
+  const headers = getAuthHeaders()
+  // @ts-ignore
+  delete headers['Content-Type']
+
   const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/files`, {
     method: 'POST',
+    headers,
     credentials: 'include',
     body: formData
   })
