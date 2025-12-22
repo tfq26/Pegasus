@@ -807,7 +807,9 @@ const getActiveQueryContent = () => {
 };
 
 const getActiveTable = () => {
-  const tab = workspaceStore.tabs.value.find(t => t.id === workspaceStore.activeTabId.value);
+  if (!workspaceStore.tabs?.value) return null;
+  
+  const tab = workspaceStore.tabs.value.find(t => t.id === workspaceStore.activeTabId?.value);
   if (tab && tab.type === 'table' && tab.data?.tableName) {
     return tab.data.tableName;
   }
