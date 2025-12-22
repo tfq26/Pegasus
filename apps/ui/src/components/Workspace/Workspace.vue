@@ -45,11 +45,12 @@ onMounted(() => {
 
 // Sync chatHistory prop to active chat tab's data
 watch(() => props.chatHistory, (newHistory) => {
+  if (!workspaceStore.activeTab) return;
   const activeTab = workspaceStore.activeTab.value;
   if (newHistory && activeTab?.type === 'chat') {
     workspaceStore.updateActiveTabData({ chatHistory: newHistory });
     console.log('[Workspace] Synced chatHistory to active tab:', { 
-      tabId: workspaceStore.activeTabId.value, 
+      tabId: workspaceStore.activeTabId?.value, 
       historyLength: newHistory.length 
     });
   }
