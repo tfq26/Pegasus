@@ -900,9 +900,9 @@ defineExpose({
 
     <!-- Editor Content Area -->
     <div class="flex-1 overflow-hidden">
-      <template v-for="tab in tabs" :key="tab.id">
+      <template v-for="tab in workspaceStore.tabs" :key="tab.id">
         <div 
-          v-if="tab.id === activeTabId"
+          v-if="tab.id === workspaceStore.activeTabId"
           class="w-full h-full flex flex-col"
         >
           <Grid 
