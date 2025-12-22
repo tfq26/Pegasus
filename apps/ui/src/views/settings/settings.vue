@@ -337,7 +337,8 @@ const summaryFor = (conn: ConnectionEntry) => {
   return ''
 }
 
-const loadConnections = async () => {
+const loadConnections = async (retryCount = 0) => {
+  console.log(`[Settings] loadConnections called, retry: ${retryCount}, token in localStorage:`, !!localStorage.getItem('auth_token'))
   try {
     const res = await fetch(`${QUERY_API_URL}/connections`, {
       method: 'GET',
@@ -345,14 +346,25 @@ const loadConnections = async () => {
       credentials: 'include'
     })
     
+    console.log(`[Settings] /connections response: ${res.status}`)
+    
+    // If 401 and we haven't retried yet, wait for token and retry
+    if (res.status === 401 && retryCount < 3) {
+      console.log(`[Settings] Got 401, retrying in 200ms (attempt ${retryCount + 1}/3)`)
+      await new Promise(resolve => setTimeout(resolve, 200))
+      return loadConnections(retryCount + 1)
+    }
+    
     if (res.ok) {
       const data = await res.json()
+      console.log(`[Settings] Loaded ${data.connections?.length || 0} connections`)
       savedConnections.value = data.connections || []
     } else {
+      console.error(`[Settings] Failed to load connections: ${res.status}`)
       savedConnections.value = []
     }
   } catch (e) {
-    console.error('Failed to load connections:', e)
+    console.error('[Settings] Failed to load connections:', e)
     savedConnections.value = []
   }
   
@@ -490,6 +502,8 @@ const saveSettings = async () => {
   }
 }
 
+const connectionUpdateHandler = () => loadConnections()
+
 onMounted(async () => {
   if (isPhone.value) {
     toast.error('Settings are only available on desktop devices.')
@@ -497,8 +511,11 @@ onMounted(async () => {
     return
   }
 
+  // Wait for auth to complete and token to be stored
+  await new Promise(resolve => setTimeout(resolve, 100))
+  
   loadConnections()
-  window.addEventListener('pegasus:connections-updated', loadConnections)
+  window.addEventListener('pegasus:connections-updated', connectionUpdateHandler)
   
   try {
     const res = await fetch(`${QUERY_API_URL}/settings`, {
@@ -523,7 +540,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('pegasus:connections-updated', loadConnections)
+  window.removeEventListener('pegasus:connections-updated', connectionUpdateHandler)
 })
 </script>
 

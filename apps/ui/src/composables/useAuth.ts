@@ -64,9 +64,14 @@ export function useAuth() {
             })
             const data = await res.json()
 
+            console.log('[Auth] /auth/me response:', { hasUser: !!data.user, hasToken: !!data.token })
+
             // Store token in localStorage if returned (for cross-origin requests)
             if (data.token) {
+                console.log('[Auth] Storing token in localStorage:', data.token.substring(0, 20) + '...')
                 localStorage.setItem('auth_token', data.token)
+            } else {
+                console.warn('[Auth] No token in /auth/me response!')
             }
 
             user.value = data.user

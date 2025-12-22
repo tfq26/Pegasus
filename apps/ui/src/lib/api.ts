@@ -18,6 +18,7 @@ export function getAuthHeaders(): HeadersInit {
 
   // Add Authorization header if we have a token in localStorage
   const token = localStorage.getItem('auth_token')
+  console.log('[getAuthHeaders] Token in localStorage:', token ? `${token.substring(0, 20)}...` : 'null')
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
