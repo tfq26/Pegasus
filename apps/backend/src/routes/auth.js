@@ -217,7 +217,8 @@ auth.get("/me", async (c) => {
             user: {
                 ...payload,
                 featureFlags
-            }
+            },
+            token // Include token so frontend can store it in localStorage
         }
 
         console.log('[Auth /me] Returning user data:', {

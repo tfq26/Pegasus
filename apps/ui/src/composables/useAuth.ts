@@ -63,6 +63,12 @@ export function useAuth() {
                 headers
             })
             const data = await res.json()
+
+            // Store token in localStorage if returned (for cross-origin requests)
+            if (data.token) {
+                localStorage.setItem('auth_token', data.token)
+            }
+
             user.value = data.user
             // Sync with feature flags composable
             setUser(data.user)
