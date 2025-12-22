@@ -142,6 +142,27 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         }
     }
 
+    // Specialized action for updating chat history
+    function updateActiveTabChatHistory(messages: any[]) {
+        if (activeTabId.value) {
+            updateTabData(activeTabId.value, { chatHistory: messages })
+        }
+    }
+
+    // Append a message to active tab's chat history
+    function appendMessageToActiveTab(message: any) {
+        const tab = activeTab.value
+        if (tab) {
+            const currentHistory = tab.data?.chatHistory || []
+            updateTabData(tab.id, { chatHistory: [...currentHistory, message] })
+        }
+    }
+
+    // Get active tab's chat history (helper)
+    function getActiveTabChatHistory(): any[] {
+        return activeTab.value?.data?.chatHistory || []
+    }
+
     return {
         // State
         tabs,
@@ -160,6 +181,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         closeTab,
         setActiveTab,
         updateTabData,
-        updateActiveTabData
+        updateActiveTabData,
+        updateActiveTabChatHistory,
+        appendMessageToActiveTab,
+        getActiveTabChatHistory
     }
 })

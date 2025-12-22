@@ -189,10 +189,14 @@ import { useProgress } from '@/lib/progress'
 import { db } from '@/lib/local-db'
 import { generateKey, encryptData, decryptData } from '@/lib/crypto'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 const queryApiUrl = QUERY_API_URL
 const connections = ref<ConnectionEntry[]>([])
 const selectedConnectionId = ref('')
+
+// Pinia store for per-tab chat history
+const workspaceStore = useWorkspaceStore()
 
 // Excel Editor State
 const excelData = ref<any[]>([])
@@ -409,10 +413,13 @@ const handleContinueChat = async (id: string) => {
   // Load into main editor
   chatHistory.value = previewMessages.value
   
-  console.log('[Chat] Chat history after continue:', chatHistory.value.length)
+  // Store in active tab's data (creates association between tab and chat)
+  workspaceStore.updateActiveTabData({ 
+    chatId: id, 
+    chatHistory: [...previewMessages.value] 
+  })
   
-  // If we have a selected connection, good. If not, maybe we should try to restore it?
-  // For now, we assume user manages connection.
+  console.log('[Chat] Chat history after continue:', chatHistory.value.length)
   
   toast.success('Chat loaded')
 }
@@ -437,6 +444,9 @@ const handleCreateChat = async () => {
     // Directly switch to the new chat
     selectedChatId.value = newChat.id
     chatHistory.value = []
+    
+    // Store chatId in active tab's data
+    workspaceStore.updateActiveTabData({ chatId: newChat.id, chatHistory: [] })
     
     // Clear preview state to prevent old chat from loading
     previewChat.value = null
@@ -564,15 +574,38 @@ const currentInput = computed({
 
 const chatHistory = ref<any[]>([])
 
-// Debug: Watch chatHistory changes
-watch(chatHistory, (newVal, oldVal) => {
-  console.log('[Chat] chatHistory changed:', {
-    oldLength: oldVal?.length || 0,
-    newLength: newVal?.length || 0,
-    selectedChatId: selectedChatId.value,
-    stack: new Error().stack
-  })
+// Bi-directional sync: Local chatHistory <-> Active tab's chatHistory in store
+// Sync chatHistory changes TO the active tab in the store
+let isSyncing = false // Prevent infinite loops
+watch(chatHistory, (newVal) => {
+  if (isSyncing) return
+  const activeTab = workspaceStore.activeTab.value
+  if (activeTab?.type === 'chat' && newVal) {
+    workspaceStore.updateActiveTabChatHistory([...newVal])
+    console.log('[Chat] Synced chatHistory to active tab:', {
+      tabId: activeTab.id,
+      messageCount: newVal.length
+    })
+  }
 }, { deep: true })
+
+// Load chatHistory FROM the active tab when switching tabs
+watch(() => workspaceStore.activeTabId.value, (newTabId, oldTabId) => {
+  if (!newTabId || newTabId === oldTabId) return
+  
+  const tab = workspaceStore.tabs.value.find(t => t.id === newTabId)
+  if (tab?.type === 'chat') {
+    isSyncing = true
+    chatHistory.value = tab.data?.chatHistory || []
+    selectedChatId.value = tab.data?.chatId || ''
+    console.log('[Chat] Loaded chatHistory from tab:', {
+      tabId: newTabId,
+      messageCount: chatHistory.value.length,
+      chatId: selectedChatId.value
+    })
+    nextTick(() => { isSyncing = false })
+  }
+})
 
 const encryptionKey = ref<CryptoKey | null>(null)
 const sidebarOpen = ref(true)
