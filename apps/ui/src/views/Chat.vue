@@ -414,6 +414,11 @@ const handleCreateChat = async () => {
     selectedChatId.value = newChat.id
     chatHistory.value = []
     
+    // Clear preview state to prevent old chat from loading
+    previewChat.value = null
+    previewMessages.value = []
+    previewVisible.value = false
+    
     // Reset state
     mode.value = 'chat'
     chatInput.value = ''
