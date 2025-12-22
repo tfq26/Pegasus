@@ -363,7 +363,10 @@ export async function fetchSettings() {
 
 // Chat API
 export async function fetchChats() {
-  const response = await fetch(`${QUERY_API_URL}/chats`, { credentials: 'include' })
+  const response = await fetch(`${QUERY_API_URL}/chats`, {
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
   if (!response.ok) throw new Error('Failed to fetch chats')
   const body = await response.json()
   return body.chats || []
@@ -381,7 +384,10 @@ export async function createChat(title?: string) {
 }
 
 export async function fetchChatHistory(chatId: string) {
-  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}`, { credentials: 'include' })
+  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}`, {
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
   if (!response.ok) throw new Error('Failed to fetch chat history')
   return await response.json()
 }
@@ -460,7 +466,10 @@ export async function updateDashboardElement(id: string, updates: any) {
 }
 
 export async function fetchDashboardLayout() {
-  const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, { credentials: 'include' })
+  const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, {
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
   if (!response.ok) throw new Error('Failed to fetch dashboard layout')
   const body = await response.json()
   return body.layout
@@ -490,7 +499,10 @@ export async function recommendVisualization(query: string, results: any[], prev
 
 // Queries
 export async function fetchQueries() {
-  const response = await fetch(`${QUERY_API_URL}/queries`, { credentials: 'include' })
+  const response = await fetch(`${QUERY_API_URL}/queries`, {
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
   if (!response.ok) throw new Error('Failed to fetch queries')
   return response.json()
 }

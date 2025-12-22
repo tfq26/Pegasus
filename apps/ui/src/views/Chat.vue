@@ -173,7 +173,7 @@ import {
 } from '@/components/ui/select'
 import { CONNECTION_STORAGE_KEY, defaultConnections, buildConnectionPayload } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { QUERY_API_URL, generateAIQuery, analyzeResults, getAIModels, fetchSettings,  fetchChats,
+import { QUERY_API_URL, generateAIQuery, analyzeResults, getAIModels, fetchSettings, fetchChats,
   createChat,
   fetchChatHistory,
   saveMessage,
@@ -181,7 +181,8 @@ import { QUERY_API_URL, generateAIQuery, analyzeResults, getAIModels, fetchSetti
   recommendVisualization,
   fetchQueries,
   saveQuery,
-  sanitizeTable as apiSanitizeTable
+  sanitizeTable as apiSanitizeTable,
+  getAuthHeaders
 } from '@/lib/api'
 import { useProgress } from '@/lib/progress'
 import { db } from '@/lib/local-db'
@@ -442,6 +443,8 @@ const loadConnections = async () => {
 
   try {
     const res = await fetch(`${QUERY_API_URL}/connections`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
       credentials: 'include'
     })
     

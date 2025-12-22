@@ -47,7 +47,7 @@ import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import { updateConnection as apiUpdateConnection } from '@/lib/api'
 import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema, fetchTableEntries, fetchTableCount, deleteChat, clearAllChats } from '@/lib/api'
+import { fetchConnectionSchema, fetchTableEntries, fetchTableCount, deleteChat, clearAllChats, getAuthHeaders } from '@/lib/api'
 
 const props = defineProps<{
   connections: ConnectionEntry[]
@@ -750,6 +750,7 @@ const confirmDeleteConnection = async () => {
   try {
     const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/connections/${conn.id}`, {
       method: 'DELETE',
+      headers: getAuthHeaders(),
       credentials: 'include',
     })
     
