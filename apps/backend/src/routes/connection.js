@@ -93,11 +93,11 @@ const getAuthToken = (c) => {
 connections.get("/", async (c) => {
     const cookie = getCookie(c, "session")
     const authHeader = c.req.header("Authorization")
-    console.log('[Connection GET] Cookie:', cookie ? `${cookie.substring(0, 20)}...` : 'null')
-    console.log('[Connection GET] Auth header:', authHeader ? `${authHeader.substring(0, 27)}...` : 'null')
+    console.log('[Connection GET] Cookie:', cookie || 'null')
+    console.log('[Connection GET] Auth header:', authHeader || 'null')
 
     const token = getAuthToken(c)
-    console.log('[Connection GET] Final token:', token ? `${token.substring(0, 20)}...` : 'null')
+    console.log('[Connection GET] Final token:', token || 'null')
 
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
