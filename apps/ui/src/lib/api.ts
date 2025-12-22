@@ -1,32 +1,9 @@
 import { buildConnectionPayload } from './db-connections'
 import type { ConnectionEntry, Provider } from './db-connections'
+import { api, QUERY_API_URL, getAuthHeaders } from './apiClient'
 
-const DEFAULT_QUERY_API_URL = 'http://localhost:3000'
-
-const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
-  (typeof window !== 'undefined'
-    ? (window as Window & { __QUERY_API_URL__?: string }).__QUERY_API_URL__
-    : undefined) || DEFAULT_QUERY_API_URL
-
-export const QUERY_API_URL = derivedApiUrl
-
-// Helper to get auth headers with token from localStorage
-export function getAuthHeaders(): HeadersInit {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json'
-  }
-
-  // Add Authorization header if we have a token in localStorage
-  const token = localStorage.getItem('auth_token')
-  console.log('[getAuthHeaders] Token in localStorage:', token ? `${token.substring(0, 20)}...` : 'null')
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
-  console.log('[getAuthHeaders] Returning headers:', headers)
-
-  return headers
-}
+// Re-export for backwards compatibility
+export { QUERY_API_URL, getAuthHeaders }
 
 export type TableQueryOptions = {
   entry: ConnectionEntry
@@ -363,64 +340,28 @@ export async function fetchSettings() {
 
 // Chat API
 export async function fetchChats() {
-  const response = await fetch(`${QUERY_API_URL}/chats`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch chats')
-  const body = await response.json()
+  const body = await api.get<{ chats: any[] }>('/chats')
   return body.chats || []
 }
 
 export async function createChat(title?: string) {
-  const response = await fetch(`${QUERY_API_URL}/chats`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ title })
-  })
-  if (!response.ok) throw new Error('Failed to create chat')
-  return await response.json()
+  return api.post('/chats', { title })
 }
 
 export async function fetchChatHistory(chatId: string) {
-  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch chat history')
-  return await response.json()
+  return api.get(`/chats/${chatId}`)
 }
 
 export async function saveMessage(chatId: string, role: 'user' | 'ai', content: string) {
-  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}/messages`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ role, content })
-  })
-  if (!response.ok) throw new Error('Failed to save message')
-  return await response.json()
+  return api.post(`/chats/${chatId}/messages`, { role, content })
 }
 
 export async function deleteChat(chatId: string) {
-  const response = await fetch(`${QUERY_API_URL}/chats/${chatId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to delete chat')
-  return await response.json()
+  return api.delete(`/chats/${chatId}`)
 }
 
 export async function clearAllChats() {
-  const response = await fetch(`${QUERY_API_URL}/chats`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to clear chats')
-  return await response.json()
+  return api.delete('/chats')
 }
 
 // Dashboard API
@@ -727,15 +668,7 @@ export async function saveConnection(connection: any) {
   }
 
   console.log('[API] Saving connection:', connectionToSave)
-
-  const response = await fetch(`${QUERY_API_URL}/connections`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(connectionToSave)
-  })
-  if (!response.ok) throw new Error('Failed to save connection')
-  return await response.json()
+  return api.post('/connections', connectionToSave)
 }
 
 export async function updateConnection(connection: any) {
@@ -745,34 +678,15 @@ export async function updateConnection(connection: any) {
     connectionToSave.provider = 'sqlite'
   }
 
-  const response = await fetch(`${QUERY_API_URL}/connections/${connection.id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(connectionToSave)
-  })
-  if (!response.ok) throw new Error('Failed to update connection')
-  return await response.json()
+  return api.put(`/connections/${connection.id}`, connectionToSave)
 }
 
 export async function getSubscriptionStatus() {
-  const response = await fetch(`${QUERY_API_URL}/subscription-status`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error('Failed to fetch subscription status')
-  return await response.json()
+  return api.get('/subscription-status')
 }
 
 export async function getUsageStats() {
-  const response = await fetch(`${QUERY_API_URL}/usage`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error('Failed to fetch usage stats')
-  return await response.json()
+  return api.get('/usage')
 }
 
 export async function syncSubscription() {
