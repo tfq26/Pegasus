@@ -2,6 +2,7 @@
 import { ref, watch, onUnmounted, onMounted } from 'vue';
 import TabsManager from './TabsManager.vue';
 import { useWorkspaceStore } from '@/stores/workspace';
+import { storeToRefs } from 'pinia';
 import type { Tab } from '@/stores/workspace';
 import { Engine } from '../TableView/Engine/Engine';
 import Grid from '../TableView/Grid/Grid.vue'; 
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 
 // --- Pinia Store ---
 const workspaceStore = useWorkspaceStore();
+const { tabs, activeTabId, activeTab } = storeToRefs(workspaceStore);
 
 // Load tabs from storage on mount
 onMounted(() => {
@@ -45,10 +47,10 @@ onMounted(() => {
 
 // Sync chatHistory prop to active chat tab's data
 watch(() => props.chatHistory, (newHistory) => {
-  if (newHistory && workspaceStore.activeTab?.type === 'chat') {
+  if (newHistory && activeTab.value?.type === 'chat') {
     workspaceStore.updateActiveTabData({ chatHistory: newHistory });
     console.log('[Workspace] Synced chatHistory to active tab:', { 
-      tabId: workspaceStore.activeTabId, 
+      tabId: activeTabId.value, 
       historyLength: newHistory.length 
     });
   }
@@ -402,7 +404,7 @@ const getEngineForTab = (tabId: string) => {
 
 // Watch for Private Mode toggle
 watch(() => props.privateMode, (isPrivate) => {
-    const tabId = workspaceStore.activeTabId;
+    const tabId = activeTabId.value;
     const activeTab = workspaceStore.tabs.find(t => t.id === tabId);
     
     if (activeTab && activeTab.type === 'table') {
@@ -444,14 +446,13 @@ const onAddTab = (type: Tab['type']) => {
 };
 
 // Watch active tab and update parent mode
-// Watch active tab and update parent mode
 watch(activeTabId, () => {
-  const activeTab = workspaceStore.tabs.find(t => t.id === workspaceStore.activeTabId);
-  if (activeTab) {
-    if (activeTab.type === 'table') {
+  const currentTab = tabs.value.find((t: Tab) => t.id === activeTabId.value);
+  if (currentTab) {
+    if (currentTab.type === 'table') {
       emit('update:mode', 'spreadsheet');
     } else {
-      emit('update:mode', activeTab.type === 'query' ? 'write' : 'chat');
+      emit('update:mode', currentTab.type === 'query' ? 'write' : 'chat');
     }
   }
 }, { immediate: true });
@@ -467,15 +468,16 @@ const formatTableName = (tableName: string): string => {
 
 // Method to load table data into a new spreadsheet tab (Legacy)
 const loadTableData = (tableName: string, data: any[], connection: any = null, provider: string = 'sqlite') => {
-  const newId = String(Date.now());
-  const newTab = {
-    id: newId,
-    label: formatTableName(tableName),
-    type: 'table' as const
-  };
+  // Use store action to create tab
+  const createdTab = workspaceStore.createTab('table', {});
+  const newId = createdTab.id;
   
-  workspaceStore.tabs.push(newTab);
-  workspaceStore.activeTabId = newId;
+  // Update the tab label after creation
+  const tab = workspaceStore.tabs.find((t: Tab) => t.id === newId);
+  if (tab) {
+    tab.label = formatTableName(tableName);
+    workspaceStore.saveToStorage();
+  }
   
   const engine = getEngineForTab(newId);
   const hasData = engine.getCell({ row: 0, col: 0 }) !== null;
@@ -626,8 +628,14 @@ const openTable = async (tableName: string, connection: any, provider: string) =
                 originalTable: history.original_table
             }
         };
-        workspaceStore.tabs.push(newTab);
-        workspaceStore.activeTabId = newId;
+        // Use store action to create tab
+        const createdTab = workspaceStore.createTab('table', { tableName, connection, provider, headers, schemaMode });
+        // Update the tab label after creation
+        const tab = workspaceStore.tabs.find((t: Tab) => t.id === createdTab.id);
+        if (tab) {
+          tab.label = sheetLabel;
+          workspaceStore.saveToStorage();
+        }
 
         // 5. Load into Engine with unified approach
         const engine = getEngineForTab(newId);
@@ -740,7 +748,7 @@ const findOrCreateSheetTab = (tableName: string): boolean => {
   
   if (existingTab) {
     // Tab already exists, just switch to it
-    workspaceStore.activeTabId = existingTab.id;
+    workspaceStore.setActiveTab(existingTab.id);
     emit('update:mode', 'spreadsheet');
     return true;
   }
@@ -760,7 +768,7 @@ const setGridRef = (el: any, id: string) => {
 };
 
 const setFormulaBarValue = (value: string) => {
-  const activeGrid = gridRefs.value.get(workspaceStore.activeTabId);
+  const activeGrid = gridRefs.value.get(activeTabId.value);
   if (activeGrid && activeGrid.formulaBarValue) {
     // formulaBarValue is a ref, so we need to set .value
     activeGrid.formulaBarValue.value = value;
@@ -777,14 +785,20 @@ const createQueryTab = (queryContent?: string) => {
     type: 'query' as const,
     data: { content: queryContent || '' }
   };
-  workspaceStore.tabs.push(newTab);
-  workspaceStore.activeTabId = newId;
+  // Use store action to create tab
+  const createdTab = workspaceStore.createTab('table', { tableName, connection, provider, headers, schemaMode, versions, currentVersion, originalTable });
+  // Update the tab label after creation
+  const tab = workspaceStore.tabs.find((t: Tab) => t.id === createdTab.id);
+  if (tab) {
+    tab.label = sheetLabel;
+    workspaceStore.saveToStorage();
+  }
   emit('update:mode', 'write');
   return newId;
 };
 
 const getActiveQueryContent = () => {
-  const tab = workspaceStore.tabs.find(t => t.id === workspaceStore.activeTabId);
+  const tab = workspaceStore.tabs.find(t => t.id === activeTabId.value);
   if (tab && tab.type === 'query') {
     return tab.data?.content || '';
   }
@@ -792,7 +806,7 @@ const getActiveQueryContent = () => {
 };
 
 const getActiveTable = () => {
-  const tab = workspaceStore.tabs.find(t => t.id === workspaceStore.activeTabId);
+  const tab = workspaceStore.tabs.find(t => t.id === activeTabId.value);
   if (tab && tab.type === 'table' && tab.data?.tableName) {
     return tab.data.tableName;
   }
@@ -801,9 +815,9 @@ const getActiveTable = () => {
 
 // Method to manually refresh the current table
 const refreshCurrentTable = async () => {
-  const activeTab = workspaceStore.tabs.find(t => t.id === workspaceStore.activeTabId);
+  const activeTab = workspaceStore.tabs.find(t => t.id === activeTabId.value);
   if (activeTab && activeTab.type === 'table') {
-    const engine = getEngineForTab(workspaceStore.activeTabId);
+    const engine = getEngineForTab(activeTabId.value);
     await refreshTableData(engine);
     toast.success('Table data refreshed');
   }
@@ -814,9 +828,9 @@ import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
 // ... existing code ...
 
 const exportCurrentTable = (format: 'csv' | 'xlsx') => {
-  const activeTab = workspaceStore.tabs.find(t => t.id === workspaceStore.activeTabId);
+  const activeTab = workspaceStore.tabs.find(t => t.id === activeTabId.value);
   if (activeTab && activeTab.type === 'table') {
-    const engine = getEngineForTab(workspaceStore.activeTabId);
+    const engine = getEngineForTab(activeTabId.value);
     const filename = `${activeTab.label || 'export'}.${format}`;
     
     if (format === 'csv') {
@@ -839,10 +853,10 @@ let pollingInterval: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   // Polling disabled - uncomment below to re-enable
   // pollingInterval = setInterval(() => {
-  //   if (workspaceStore.activeTabId) {
-  //       const currentTab = workspaceStore.tabs.find(t => t.id === workspaceStore.activeTabId);
+  //   if (activeTabId.value) {
+  //       const currentTab = workspaceStore.tabs.find(t => t.id === activeTabId.value);
   //       if (currentTab && currentTab.type === 'table') {
-  //           const engine = engineCache.get(workspaceStore.activeTabId);
+  //           const engine = engineCache.get(activeTabId.value);
   //           if (engine && engine.saveStatus === 'saved' && !isRefreshing.value && !engine.isBatching) {
   //                refreshTableData(engine).catch(e => console.error('[Polling] Refresh failed', e));
   //           }
