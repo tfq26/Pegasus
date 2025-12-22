@@ -118,7 +118,7 @@
       <div 
         class="max-w-4xl mx-auto rounded-lg overflow-hidden transition-all duration-500 border relative group/input shadow-2xl"
         :class="[
-          isInputFocused ? 'border-violet-500/40 bg-stone-900/60' : 'border-stone-800 bg-stone-900/30'
+          isInputFocused ? 'border-violet-500/40 bg-stone-800/70' : 'border-stone-800 bg-stone-800/50'
         ]"
       >
         <!-- Thinking Progress Bar -->
