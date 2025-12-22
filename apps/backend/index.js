@@ -15,8 +15,14 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 app.use("*", cors({
   origin: (origin) => {
     // Allow localhost/127.0.0.1
-    if (!origin) return allowedOrigins[0];
-    if (allowedOrigins.includes(origin)) return origin;
+    if (!origin) {
+      console.log('[CORS] No origin, allowing:', allowedOrigins[0])
+      return allowedOrigins[0]
+    }
+    if (allowedOrigins.includes(origin)) {
+      console.log('[CORS] Origin in allowlist:', origin)
+      return origin
+    }
 
     // In development (no strict check), allow local network IPs/hostnames on port 5173
     // Allow any http://...:5173 origin in dev
@@ -25,9 +31,11 @@ app.use("*", cors({
     if (!isProd) {
       // Match http://anything:5173
       if (/^http:\/\/.+:5173$/.test(origin)) {
+        console.log('[CORS] Dev origin allowed:', origin)
         return origin;
       }
     }
+    console.log('[CORS] Origin not allowed, fallback to:', allowedOrigins[0], 'requested:', origin)
     return allowedOrigins[0];
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
