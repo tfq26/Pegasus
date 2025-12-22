@@ -445,7 +445,7 @@ const onAddTab = (type: Tab['type']) => {
 };
 
 // Watch active tab and update parent mode
-watch(() => workspaceStore.activeTabId.value, (newActiveTabId) => {
+watch(() => workspaceStore.activeTabId?.value, (newActiveTabId) => {
   if (!newActiveTabId) return;
   
   const currentTab = workspaceStore.tabs.value.find((t: Tab) => t.id === newActiveTabId);
