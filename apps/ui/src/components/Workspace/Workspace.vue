@@ -926,7 +926,7 @@ defineExpose({
             v-else
             :mode="tab.type === 'query' ? 'write' : 'chat'"
             :input="tab.type === 'query' ? (tab.data?.content || '') : input"
-            :history="tab.type === 'chat' ? (tab.data?.chatHistory || []) : undefined"
+            :history="tab.type === 'chat' ? (tab.data?.chatHistory || props.chatHistory || []) : undefined"
             :is-thinking="props.isThinking"
             @update:input="(val) => {
               if (tab.type === 'query') {
