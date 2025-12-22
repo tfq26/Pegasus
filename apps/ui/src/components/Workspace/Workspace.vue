@@ -444,8 +444,10 @@ const onAddTab = (type: Tab['type']) => {
 };
 
 // Watch active tab and update parent mode
-watch(() => workspaceStore.activeTabId.value, () => {
-  const currentTab = workspaceStore.tabs.value.find((t: Tab) => t.id === workspaceStore.activeTabId.value);
+watch(() => workspaceStore.activeTabId.value, (newActiveTabId) => {
+  if (!newActiveTabId) return;
+  
+  const currentTab = workspaceStore.tabs.value.find((t: Tab) => t.id === newActiveTabId);
   if (currentTab) {
     if (currentTab.type === 'table') {
       emit('update:mode', 'spreadsheet');
