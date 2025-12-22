@@ -80,6 +80,7 @@
           @submit="run"
           @save-query="handleSaveFormulaQuery"
           @save-status="saveStatus = $event"
+          @create-chat="handleCreateChat"
         />
       </section>
 

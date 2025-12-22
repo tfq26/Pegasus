@@ -33,6 +33,7 @@ const emit = defineEmits<{
   (e: 'submit'): void;
   (e: 'save-query', query: string, type: 'formula'): void;
   (e: 'save-status', status: 'saved' | 'saving' | 'error'): void;
+  (e: 'create-chat'): void;
 }>();
 
 // --- Pinia Store ---
@@ -442,6 +443,11 @@ const onAddTab = (type: Tab['type']) => {
     emit('update:mode', 'spreadsheet');
   } else {
     emit('update:mode', type === 'query' ? 'write' : 'chat');
+  }
+  
+  // Signal Chat.vue to create a new chat (clears history)
+  if (type === 'chat') {
+    emit('create-chat');
   }
 };
 
