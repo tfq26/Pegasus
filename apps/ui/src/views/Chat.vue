@@ -562,6 +562,17 @@ const currentInput = computed({
 })
 
 const chatHistory = ref<any[]>([])
+
+// Debug: Watch chatHistory changes
+watch(chatHistory, (newVal, oldVal) => {
+  console.log('[Chat] chatHistory changed:', {
+    oldLength: oldVal?.length || 0,
+    newLength: newVal?.length || 0,
+    selectedChatId: selectedChatId.value,
+    stack: new Error().stack
+  })
+}, { deep: true })
+
 const encryptionKey = ref<CryptoKey | null>(null)
 const sidebarOpen = ref(true)
 const sidebarSide = ref<'left' | 'right'>('left')

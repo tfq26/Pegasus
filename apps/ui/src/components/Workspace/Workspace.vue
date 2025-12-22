@@ -466,13 +466,16 @@ const onAddTab = (type: Tab['type']) => {
     table: 'Spreadsheet'
   };
   
-  const newTab = {
+  const newTab: Tab = {
     id: newId,
     label: labelMap[type] || `New ${type}`,
-    type
+    type,
+    data: type === 'chat' ? { chatHistory: [] } : {} // Initialize chat tabs with empty history
   };
   tabs.value.push(newTab);
   activeTabId.value = newId;
+  
+  console.log('[Workspace] Created new tab:', { id: newId, type, hasEmptyHistory: type === 'chat' });
   
   // Update parent mode based on tab type
   if (type === 'table') {
@@ -949,7 +952,7 @@ defineExpose({
             v-else
             :mode="tab.type === 'query' ? 'write' : 'chat'"
             :input="tab.type === 'query' ? (tab.data?.content || '') : input"
-            :history="tab.type === 'chat' ? props.chatHistory : undefined"
+            :history="tab.type === 'chat' ? (tab.data?.chatHistory || []) : undefined"
             :is-thinking="props.isThinking"
             @update:input="(val) => {
               if (tab.type === 'query') {
