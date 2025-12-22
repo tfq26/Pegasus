@@ -190,13 +190,15 @@ import { db } from '@/lib/local-db'
 import { generateKey, encryptData, decryptData } from '@/lib/crypto'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useChatStore } from '@/stores/chat'
+import { useConnectionStore } from '@/stores/connection'
 
 const queryApiUrl = QUERY_API_URL
-const connections = ref<ConnectionEntry[]>([])
-const selectedConnectionId = ref('')
 
-// Pinia store for per-tab chat history
+// Pinia stores
 const workspaceStore = useWorkspaceStore()
+const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
 
 // Excel Editor State
 const excelData = ref<any[]>([])
@@ -347,9 +349,13 @@ const handleSaveExcel = async (data: any[]) => {
   }
 }
 
-// Chat State
+// Chat State - local refs synced with store via methods
 const chats = ref<any[]>([])
 const selectedChatId = ref('')
+
+// Connection State - local refs synced with store via methods  
+const connections = ref<ConnectionEntry[]>([])
+const selectedConnectionId = ref('')
 
 // Preview Modal State
 const previewChat = ref<any>(null)
@@ -358,7 +364,9 @@ const previewVisible = ref(false)
 
 const loadChats = async () => {
   try {
-    chats.value = await fetchChats()
+    await chatStore.loadChats()
+    // Sync store data to local ref for reactivity
+    chats.value = [...chatStore.chats.value]
   } catch (e) {
     console.error('Failed to load chats', e)
   }
@@ -437,9 +445,11 @@ const handleCreateChat = async () => {
   })
   
   try {
-    const newChat = await createChat('New Chat')
+    const newChat = await chatStore.createChat('New Chat')
     console.log('[Chat] New chat created:', newChat)
-    chats.value.unshift(newChat)
+    
+    // Sync store data to local ref
+    chats.value = [...chatStore.chats.value]
     
     // Directly switch to the new chat
     selectedChatId.value = newChat.id
@@ -489,18 +499,9 @@ const loadConnections = async () => {
   }
 
   try {
-    const res = await fetch(`${QUERY_API_URL}/connections`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-      credentials: 'include'
-    })
-    
-    if (res.ok) {
-      const data = await res.json()
-      connections.value = data.connections || []
-    } else {
-      connections.value = []
-    }
+    await connectionStore.loadConnections()
+    // Sync store data to local ref for reactivity
+    connections.value = [...connectionStore.connections.value]
   } catch (e) {
     console.error('Failed to load connections:', e)
     connections.value = []
@@ -510,11 +511,15 @@ const loadConnections = async () => {
   const savedId = localStorage.getItem('pegasus-selected-connection')
   if (savedId && connections.value.some(c => c.id === savedId)) {
     selectedConnectionId.value = savedId
+    connectionStore.selectConnection(savedId)
   }
 
   // Set default selection if current selection is invalid
   if (!connections.value.some((conn) => conn.id === selectedConnectionId.value)) {
     selectedConnectionId.value = connections.value[0]?.id ?? ''
+    if (selectedConnectionId.value) {
+      connectionStore.selectConnection(selectedConnectionId.value)
+    }
   }
 }
 
