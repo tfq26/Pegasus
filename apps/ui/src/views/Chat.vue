@@ -360,6 +360,7 @@ const loadChats = async () => {
 }
 
 const handleSelectChat = async (id: string) => {
+  console.log('[Chat] Selecting chat:', id)
   const { startOperation, finishOperation, failOperation } = useProgress()
   const opId = `load-chat-${id}`
   startOperation(opId, 'Loading chat history...')
@@ -367,6 +368,7 @@ const handleSelectChat = async (id: string) => {
   try {
     const chat = chats.value.find(c => c.id === id)
     if (!chat) {
+        console.log('[Chat] Chat not found:', id)
         finishOperation(opId)
         return
     }
@@ -380,6 +382,12 @@ const handleSelectChat = async (id: string) => {
       timestamp: m.created_at * 1000
     }))
 
+    console.log('[Chat] Loaded chat history:', {
+      chatId: id,
+      messagesCount: messages.length,
+      currentSelectedId: selectedChatId.value
+    })
+
     previewChat.value = chat
     previewMessages.value = messages
     previewVisible.value = true
@@ -391,11 +399,16 @@ const handleSelectChat = async (id: string) => {
 }
 
 const handleContinueChat = async (id: string) => {
+  console.log('[Chat] Continuing chat:', id)
+  console.log('[Chat] Preview messages being loaded:', previewMessages.value.length)
+  
   previewVisible.value = false
   selectedChatId.value = id
   
   // Load into main editor
   chatHistory.value = previewMessages.value
+  
+  console.log('[Chat] Chat history after continue:', chatHistory.value.length)
   
   // If we have a selected connection, good. If not, maybe we should try to restore it?
   // For now, we assume user manages connection.
@@ -406,8 +419,18 @@ const handleContinueChat = async (id: string) => {
 
 
 const handleCreateChat = async () => {
+  console.log('[Chat] Creating new chat...')
+  console.log('[Chat] Current state before create:', {
+    selectedChatId: selectedChatId.value,
+    chatHistoryLength: chatHistory.value.length,
+    previewChatId: previewChat.value?.id,
+    previewMessagesLength: previewMessages.value.length,
+    previewVisible: previewVisible.value
+  })
+  
   try {
     const newChat = await createChat('New Chat')
+    console.log('[Chat] New chat created:', newChat)
     chats.value.unshift(newChat)
     
     // Directly switch to the new chat
@@ -427,6 +450,14 @@ const handleCreateChat = async () => {
     queryError.value = ''
     lastQuery.value = ''
     resultsPanelVisible.value = false
+    
+    console.log('[Chat] State after create:', {
+      selectedChatId: selectedChatId.value,
+      chatHistoryLength: chatHistory.value.length,
+      previewChatId: previewChat.value?.id,
+      previewMessagesLength: previewMessages.value.length,
+      previewVisible: previewVisible.value
+    })
     
     toast.success('New chat created')
   } catch (e) {
@@ -913,11 +944,19 @@ const handleAIGenerate = async () => {
 
   // Auto-create chat if none selected
   if (!selectedChatId.value) {
+    console.log('[Chat] Auto-creating chat (no chat selected)')
     try {
       const newChat = await createChat('New Chat')
       chats.value.unshift(newChat)
       selectedChatId.value = newChat.id
       chatHistory.value = []
+      
+      // Clear preview state to prevent old chat from loading
+      previewChat.value = null
+      previewMessages.value = []
+      previewVisible.value = false
+      
+      console.log('[Chat] Auto-created chat:', newChat.id)
     } catch (e) {
       console.error('Failed to auto-create chat', e)
     }
