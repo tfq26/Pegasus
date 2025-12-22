@@ -319,7 +319,7 @@ const handleSaveExcel = async (data: any[]) => {
   try {
     const response = await fetch(`${queryApiUrl}/update-table`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       credentials: 'include',
       body: JSON.stringify({
         connection: buildConnectionPayload(conn),
@@ -845,7 +845,7 @@ const run = async () => {
       const response = await fetch(`${queryApiUrl}/query`, {
         signal: abortController.value.signal,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({
           provider: selectedConnection.value.provider,
@@ -1137,7 +1137,7 @@ const handleAIGenerate = async () => {
       
       const response = await fetch(`${queryApiUrl}/query`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({
           provider: selectedConnection.value.provider,
@@ -1805,7 +1805,7 @@ const handleLoadTableToSheet = async () => {
     
     const response = await fetch(`${queryApiUrl}/query`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       credentials: 'include',
       body: JSON.stringify({
         provider: conn.provider,
@@ -1875,7 +1875,7 @@ const handleExecuteSanitization = async (sqls: string[]) => {
         try {
              const response = await fetch(`${queryApiUrl}/query`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 credentials: 'include',
                 body: JSON.stringify({
                   provider: selectedConnection.value.provider,
@@ -1902,7 +1902,7 @@ const handleExecuteSanitization = async (sqls: string[]) => {
         // Let's manually refetch to avoid messing with chat history.
          const response = await fetch(`${queryApiUrl}/query`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthHeaders(),
             credentials: 'include',
             body: JSON.stringify({
               provider: selectedConnection.value.provider,
