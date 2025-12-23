@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import type { ConnectionEntry } from '@/lib/db-connections'
 
@@ -39,12 +39,17 @@ export function useConnections() {
         try {
             await connectionStore.loadConnections()
 
+            // Use nextTick to defer state updates and prevent recursive triggers
+            await nextTick()
+
             // Get the actual array value for operations
             const conns = connectionStore.connections || []
 
             // Try to restore selection from localStorage
             const savedId = localStorage.getItem('pegasus-selected-connection')
             if (savedId && conns.some((c) => c.id === savedId)) {
+                // Defer the update to next tick
+                await nextTick()
                 selectedConnectionId.value = savedId
                 connectionStore.selectConnection(savedId)
                 return
@@ -52,15 +57,21 @@ export function useConnections() {
 
             // Set default selection if current selection is invalid
             if (!conns.some((conn) => conn.id === selectedConnectionId.value)) {
-                selectedConnectionId.value = conns[0]?.id ?? ''
-                if (selectedConnectionId.value) {
-                    connectionStore.selectConnection(selectedConnectionId.value)
+                const defaultId = conns[0]?.id ?? ''
+                if (defaultId) {
+                    // Defer the update to next tick
+                    await nextTick()
+                    selectedConnectionId.value = defaultId
+                    connectionStore.selectConnection(defaultId)
                 }
             }
         } catch (e) {
             console.error('Failed to load connections:', e)
         } finally {
-            isLoadingConnections = false
+            // Reset flag after a delay to ensure all updates are processed
+            setTimeout(() => {
+                isLoadingConnections = false
+            }, 100)
         }
     }
 
