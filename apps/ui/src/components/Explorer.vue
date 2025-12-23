@@ -965,7 +965,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="space-y-3">
-            <div v-if="connections.length === 0" class="py-12 text-center space-y-4">
+            <div v-if="!connections || connections.length === 0" class="py-12 text-center space-y-4">
               <div class="w-12 h-12 rounded-2xl bg-stone-900 border border-stone-800 flex items-center justify-center mx-auto">
                 <Database class="w-6 h-6 text-stone-700" />
               </div>
