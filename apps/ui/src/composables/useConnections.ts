@@ -1,6 +1,9 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import type { ConnectionEntry } from '@/lib/db-connections'
+
+// Shared flag to prevent recursive loading across all instances
+let isLoadingConnections = false
 
 /**
  * Composable for managing database connections
@@ -9,7 +12,7 @@ import type { ConnectionEntry } from '@/lib/db-connections'
 export function useConnections() {
     const connectionStore = useConnectionStore()
 
-    // Use computed to always reflect store state, accessing .value from the store's ref
+    // Use computed to always reflect store state
     const connections = computed<ConnectionEntry[]>(() => {
         return connectionStore.connections || []
     })
@@ -25,29 +28,39 @@ export function useConnections() {
             return
         }
 
-        try {
-            await connectionStore.loadConnections()
-        } catch (e) {
-            console.error('Failed to load connections:', e)
-        }
-
-        // Get the actual array value for operations
-        const conns = connectionStore.connections || []
-
-        // Try to restore selection from localStorage
-        const savedId = localStorage.getItem('pegasus-selected-connection')
-        if (savedId && conns.some((c) => c.id === savedId)) {
-            selectedConnectionId.value = savedId
-            connectionStore.selectConnection(savedId)
+        // Prevent recursive calls
+        if (isLoadingConnections) {
+            console.log('[useConnections] Skipping - already loading')
             return
         }
 
-        // Set default selection if current selection is invalid
-        if (!conns.some((conn) => conn.id === selectedConnectionId.value)) {
-            selectedConnectionId.value = conns[0]?.id ?? ''
-            if (selectedConnectionId.value) {
-                connectionStore.selectConnection(selectedConnectionId.value)
+        isLoadingConnections = true
+
+        try {
+            await connectionStore.loadConnections()
+
+            // Get the actual array value for operations
+            const conns = connectionStore.connections || []
+
+            // Try to restore selection from localStorage
+            const savedId = localStorage.getItem('pegasus-selected-connection')
+            if (savedId && conns.some((c) => c.id === savedId)) {
+                selectedConnectionId.value = savedId
+                connectionStore.selectConnection(savedId)
+                return
             }
+
+            // Set default selection if current selection is invalid
+            if (!conns.some((conn) => conn.id === selectedConnectionId.value)) {
+                selectedConnectionId.value = conns[0]?.id ?? ''
+                if (selectedConnectionId.value) {
+                    connectionStore.selectConnection(selectedConnectionId.value)
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load connections:', e)
+        } finally {
+            isLoadingConnections = false
         }
     }
 
