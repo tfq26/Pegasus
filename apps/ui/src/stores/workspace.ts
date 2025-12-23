@@ -108,10 +108,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         if (activeTabId.value === tabId) {
             if (tabs.value.length > 0) {
                 // Switch to previous tab or first tab
-                activeTabId.value = tabs.value[Math.max(0, index - 1)].id
+                const nextTab = tabs.value[Math.max(0, index - 1)]
+                if (nextTab) {
+                    activeTabId.value = nextTab.id
+                }
             } else {
-                // Create new tab if all closed
-                createTab('chat')
+                // Allow zero tabs - set active to null
+                activeTabId.value = null
             }
         }
 
