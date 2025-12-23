@@ -451,9 +451,10 @@ const onAddTab = (type: Tab['type']) => {
   }
 };
 
-// Watch active tab and update parent mode
-watch(() => workspaceStore.activeTabId?.value, (newActiveTabId) => {
-  if (!newActiveTabId) return;
+// Watch active tab and update parent mode (only on actual tab switch, not initial mount)
+watch(() => workspaceStore.activeTabId?.value, (newActiveTabId, oldActiveTabId) => {
+  // Skip if this is the initial mount or if there's no old value
+  if (!oldActiveTabId || !newActiveTabId) return;
   
   const currentTab = workspaceStore.tabs.value.find((t: Tab) => t.id === newActiveTabId);
   if (currentTab) {
@@ -463,7 +464,7 @@ watch(() => workspaceStore.activeTabId?.value, (newActiveTabId) => {
       emit('update:mode', currentTab.type === 'query' ? 'write' : 'chat');
     }
   }
-}, { immediate: true });
+});
 
 
 // Format table names to hide internal UUIDs
