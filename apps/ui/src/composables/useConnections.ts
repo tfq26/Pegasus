@@ -1,8 +1,6 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { defaultConnections } from '@/lib/db-connections'
-import { QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 
 /**
  * Composable for managing database connections
@@ -11,8 +9,11 @@ import { QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 export function useConnections() {
     const connectionStore = useConnectionStore()
 
-    // Use computed to always reflect store state
-    const connections = computed(() => connectionStore.connections.value)
+    // Use computed to always reflect store state, accessing .value from the store's ref
+    const connections = computed<ConnectionEntry[]>(() => {
+        return connectionStore.connections || []
+    })
+
     const selectedConnectionId = ref('')
 
     /**
@@ -20,7 +21,7 @@ export function useConnections() {
      */
     async function loadConnections() {
         if (typeof window === 'undefined') {
-            // For SSR, we can't load from API, use defaults
+            // For SSR, we can't load from API
             return
         }
 
@@ -30,16 +31,20 @@ export function useConnections() {
             console.error('Failed to load connections:', e)
         }
 
+        // Get the actual array value for operations
+        const conns = connectionStore.connections || []
+
         // Try to restore selection from localStorage
         const savedId = localStorage.getItem('pegasus-selected-connection')
-        if (savedId && connections.value.some(c => c.id === savedId)) {
+        if (savedId && conns.some((c) => c.id === savedId)) {
             selectedConnectionId.value = savedId
             connectionStore.selectConnection(savedId)
+            return
         }
 
         // Set default selection if current selection is invalid
-        if (!connections.value.some((conn) => conn.id === selectedConnectionId.value)) {
-            selectedConnectionId.value = connections.value[0]?.id ?? ''
+        if (!conns.some((conn) => conn.id === selectedConnectionId.value)) {
+            selectedConnectionId.value = conns[0]?.id ?? ''
             if (selectedConnectionId.value) {
                 connectionStore.selectConnection(selectedConnectionId.value)
             }

@@ -480,6 +480,9 @@ const statusLabel = (state?: ConnectionSchemaState) => {
 
 const refreshSchemas = async () => {
   if (typeof window === 'undefined') return
+  
+  // Guard against undefined connections
+  if (!props.connections || !Array.isArray(props.connections)) return
 
   // Do NOT clear existing schemas to prevent flickering
   // Instead, mark them as reloading if they exist, or initialize new ones
