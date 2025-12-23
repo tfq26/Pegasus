@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { defaultConnections } from '@/lib/db-connections'
@@ -11,8 +11,8 @@ import { QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 export function useConnections() {
     const connectionStore = useConnectionStore()
 
-    // Local refs synced with store
-    const connections = ref<ConnectionEntry[]>([])
+    // Use computed to always reflect store state
+    const connections = computed(() => connectionStore.connections.value)
     const selectedConnectionId = ref('')
 
     /**
@@ -20,18 +20,14 @@ export function useConnections() {
      */
     async function loadConnections() {
         if (typeof window === 'undefined') {
-            connections.value = [...defaultConnections]
-            selectedConnectionId.value = connections.value[0]?.id ?? ''
+            // For SSR, we can't load from API, use defaults
             return
         }
 
         try {
             await connectionStore.loadConnections()
-            // Sync store data to local ref for reactivity
-            connections.value = [...connectionStore.connections.value]
         } catch (e) {
             console.error('Failed to load connections:', e)
-            connections.value = []
         }
 
         // Try to restore selection from localStorage
