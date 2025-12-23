@@ -3,8 +3,10 @@ import { ref, computed, watch } from 'vue'
 import ConnectionDialog from '@/components/ConnectionDialog.vue'
 import { defaultConnectionForm } from '@/views/settings/types'
 import type { ConnectionFormState } from '@/views/settings/types'
-import { saveConnection } from '@/lib/api'
+import { useConnectionStore } from '@/stores/connection'
 import { toast } from 'vue-sonner'
+
+const connectionStore = useConnectionStore()
 
 const props = defineProps<{
   open: boolean
@@ -45,10 +47,12 @@ const canAddConnection = computed(() => {
 const handleSave = async () => {
   isSaving.value = true
   try {
-    await saveConnection(form.value)
+    // Use connection store instead of direct API call
+    await connectionStore.saveConnection(form.value as any)
     toast.success('Connection added')
     emit('update:open', false)
     emit('connection-added')
+    // Dispatch event for backwards compatibility
     window.dispatchEvent(new CustomEvent('pegasus:connections-updated'))
   } catch (e) {
     console.error(e)
