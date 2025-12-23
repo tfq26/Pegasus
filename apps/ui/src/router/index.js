@@ -6,7 +6,31 @@ const router = createRouter({
   routes: [
     { path: '/', component: () => import('../views/Home.vue') },
     { path: '/about', component: () => import('../views/About.vue') },
-    { path: '/query', component: () => import('@/views/Chat.vue') },
+
+    // Chat routes - new focused views
+    {
+      path: '/chat',
+      redirect: '/chat/conversation'
+    },
+    {
+      path: '/chat/conversation',
+      component: () => import('@/views/ChatView.vue')
+    },
+    {
+      path: '/chat/query',
+      component: () => import('@/views/QueryView.vue')
+    },
+    {
+      path: '/chat/spreadsheet',
+      component: () => import('@/views/SpreadsheetView.vue')
+    },
+
+    // Legacy route - redirect to new query view
+    {
+      path: '/query',
+      redirect: '/chat/query'
+    },
+
     { path: '/dashboard', component: () => import('@/views/DashboardHome.vue') },
     { path: '/dashboard/:id', component: () => import('@/views/Dashboard.vue') },
     { path: '/shared/dashboard/:token', component: () => import('../views/SharedDashboard.vue') },
