@@ -1,34 +1,50 @@
 {
     "version": "0.6.3",
-    "date": "2025-12-21",
-    "title": "Pro Subscription, Performance & Error Handling",
-    "description": "Introduced Stripe-powered Pro subscriptions with higher AI limits, McMaster-Carr inspired performance optimizations, and improved system-wide error handling.",
+    "releaseDate": "December 21, 2025",
+    "title": "Pro Subscription & Performance",
+    "description": "Introduced Stripe-powered Pro subscriptions, McMaster-Carr inspired performance optimizations, and improved system-wide error handling.",
+    "highlights": [
+        "Stripe Pro subscriptions",
+        "High-performance link prefetching",
+        "System-wide error handling"
+    ],
     "sections": [
         {
-            "title": "Features",
+            "category": "Features",
             "items": [
-                "**Pro Subscription**: Upgrade to Pro for 900k AI tokens/month (vs 100k free).",
-                "**Stripe Integration**: Seamless checkout and subscription management.",
-                "**Error Page**: New dedicated error page with clear actions for users.",
-                "**Pro Badge**: Visual indicators for Pro users in the navigation bar."
+                {
+                    "title": "Pro Subscription System",
+                    "description": "Premium features for power users.",
+                    "details": [
+                        "Upgrade to Pro for 900k AI tokens/month",
+                        "Seamless Stripe checkout and management",
+                        "Visual Pro badges and status indicators"
+                    ]
+                },
+                {
+                    "title": "Safety & Integrity",
+                    "description": "Improved error handling and quota management.",
+                    "details": [
+                        "Dedicated error page with actionable steps",
+                        "Standardized error codes for better debugging",
+                        "Enforced monthly AI token quotas"
+                    ]
+                }
             ]
         },
         {
-            "title": "Performance",
+            "category": "Performance",
             "items": [
-                "**Link Prefetching**: McMaster-Carr style prefetching - route chunks load on hover for instant navigation.",
-                "**DNS Prefetch & Preconnect**: Faster loading of external resources (fonts, avatars).",
-                "**Font Preloading**: Critical fonts load asynchronously for improved LCP.",
-                "**Vendor Chunk Splitting**: Separate bundles for Vue, Charts, and UI libraries for aggressive caching.",
-                "**Content Hashing**: All assets use content-based hashes for optimal browser caching."
-            ]
-        },
-        {
-            "title": "Improvements",
-            "items": [
-                "**Quota System**: Enforced monthly AI token limits with clear error messaging.",
-                "**Error Codes**: Standardized error codes for better debugging and UI handling.",
-                "**Playwright Testing**: Added E2E tests for error page functionality."
+                {
+                    "title": "McMaster-Carr Experience",
+                    "description": "Optimizations for instant feeling interactions.",
+                    "details": [
+                        "Route prefetching loads chunks on hover",
+                        "DNS prefetch and preconnect for external resources",
+                        "Critical font preloading for improved LCP",
+                        "Aggressive caching via vendor chunk splitting and content hashing"
+                    ]
+                }
             ]
         }
     ]

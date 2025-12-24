@@ -1,56 +1,38 @@
 {
     "version": "0.7.0.5",
-    "date": "2025-12-21",
+    "releaseDate": "December 21, 2025",
     "title": "Architectural Improvements",
-    "description": "Major refactor introducing centralized API client for improved reliability and maintainability",
-    "categories": [
+    "description": "Major refactor introducing centralized API client for improved reliability and maintainability.",
+    "highlights": [
+        "Centralized API client",
+        "Automatic auth header injection",
+        "Consistent error handling"
+    ],
+    "sections": [
         {
-            "name": "Architecture",
+            "category": "Architecture",
             "items": [
                 {
                     "title": "Centralized API Client",
-                    "description": "Introduced a new `apiClient` class that automatically handles authentication headers, CORS credentials, and error handling for all API requests. This prevents entire classes of bugs related to missing authentication headers.",
-                    "type": "improvement"
-                },
-                {
-                    "title": "Automatic Auth Header Injection",
-                    "description": "All API calls now automatically include the JWT authorization header from localStorage, eliminating the need to manually add headers in every fetch call.",
-                    "type": "improvement"
-                },
-                {
-                    "title": "Consistent Error Handling",
-                    "description": "Centralized error handling provides consistent error messages and makes it easier to add retry logic, logging, and other cross-cutting concerns.",
-                    "type": "improvement"
+                    "description": "Improving API interaction reliability across the platform.",
+                    "details": [
+                        "New apiClient class handles authentication and error logic automatically",
+                        "Automatic injection of JWT headers from storage",
+                        "Consistent cross-origin (CORS) support for production environments"
+                    ]
                 }
             ]
         },
         {
-            "name": "Bug Fixes",
+            "category": "Bug Fixes",
             "items": [
                 {
-                    "title": "Production Authentication Fixed",
-                    "description": "Resolved 401 Unauthorized errors in production by ensuring all API calls include proper authentication headers. This affected connections, chats, queries, and settings endpoints.",
-                    "type": "fix"
-                },
-                {
-                    "title": "Cross-Origin Request Support",
-                    "description": "Fixed CORS configuration to properly allow Authorization headers in cross-origin requests between frontend and backend subdomains.",
-                    "type": "fix"
-                }
-            ]
-        },
-        {
-            "name": "Code Quality",
-            "items": [
-                {
-                    "title": "Reduced Code Duplication",
-                    "description": "Refactored API functions to use the centralized client, reducing code duplication and making the codebase more maintainable.",
-                    "type": "improvement"
-                },
-                {
-                    "title": "TypeScript Improvements",
-                    "description": "Added generic type support to API client methods for better type safety and IDE autocomplete.",
-                    "type": "improvement"
+                    "title": "Authentication Fixes",
+                    "description": "Resolved critical production authentication issues.",
+                    "details": [
+                        "Fixed 401 Unauthorized errors affecting connections and settings",
+                        "Corrected header format for cross-origin requests"
+                    ]
                 }
             ]
         }

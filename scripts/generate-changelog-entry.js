@@ -68,20 +68,22 @@ commits.forEach(msg => {
 // Build JSON structure
 const jsonOutput = {
     version,
-    date,
+    releaseDate: date,
+    date, // Keep for compatibility
     title,
     description: `Release v${version}`,
-    categories: []
+    highlights: commits.slice(0, 3), // Top 3 commits as highlights
+    sections: []
 }
 
 for (const [name, msgs] of Object.entries(categories)) {
     if (msgs.length > 0) {
-        jsonOutput.categories.push({
-            name,
+        jsonOutput.sections.push({
+            category: name,
             items: msgs.map(msg => ({
                 title: msg,
                 description: msg,
-                type: name === 'Features' ? 'new' : name === 'Bug Fixes' ? 'fix' : 'improvement'
+                details: [msg]
             }))
         })
     }
