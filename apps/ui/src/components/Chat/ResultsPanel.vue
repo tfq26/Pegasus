@@ -43,9 +43,10 @@ const emit = defineEmits<{
 const size = ref(320) // Default size in pixels
 const isResizing = ref(false)
 const isMaximized = ref(false)
-const activeTab = ref<'results' | 'messages' | 'history'>('results')
-import { defineAsyncComponent } from 'vue'
+const activeTab = ref<'output' | 'problems' | 'execution' | 'versioning'>('output')
+import { defineAsyncComponent, unref } from 'vue'
 const ExcelEditor = defineAsyncComponent(() => import('@/components/Excel/ExcelEditor.vue'))
+import { AlertCircle, Activity, GitBranch, Terminal as TerminalIcon, History, Command, Info, Gauge } from 'lucide-vue-next'
 
 const viewMode = ref<'table' | 'json' | 'excel'>('table')
 
@@ -103,6 +104,20 @@ const resultType = computed(() => {
 const resultCount = computed(() => {
   if (Array.isArray(props.result)) return props.result.length
   return null
+})
+
+const executionMetrics = computed(() => {
+  // Placeholder for real metrics from Engine
+  return {
+    time: '42ms',
+    rows: resultCount.value || 0,
+    cost: '$0.001',
+    status: props.error ? 'failed' : 'success'
+  }
+})
+
+const problemsCount = computed(() => {
+  return props.error ? 1 : 0
 })
 
 // Add event listeners for resizing
@@ -187,25 +202,33 @@ const copyToClipboard = async (text: string) => {
     <!-- Header / Tab Bar -->
     <div class="flex items-center justify-between px-4 py-1.5 bg-stone-900/40 backdrop-blur-md border-b border-stone-800/50 shrink-0 z-10">
       <div class="flex items-center gap-6">
-        <!-- Modern Pill Tabs -->
-        <div class="flex p-0.5 bg-stone-950/50 rounded-lg border border-stone-800/50 relative overflow-hidden">
+        <div class="flex items-center gap-1 bg-stone-950/30 p-0.5 rounded-lg border border-stone-800/30">
           <button
-            v-for="tab in (['results', 'messages', 'history'] as const)"
-            :key="tab"
-            @click="activeTab = tab"
-            class="px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all relative z-10"
+            v-for="tab in ([
+              { id: 'output', label: 'Output', icon: Table, count: ref(0) },
+              { id: 'problems', label: 'Problems', icon: AlertCircle, count: problemsCount },
+              { id: 'execution', label: 'Execution', icon: Gauge, count: ref(0) },
+              { id: 'versioning', label: 'Versioning', icon: GitBranch, count: ref(0) }
+            ] as const)"
+            :key="tab.id"
+            @click="activeTab = tab.id"
+            class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all relative group"
             :class="
-              activeTab === tab
+              activeTab === tab.id
                 ? 'bg-stone-800 text-stone-100 shadow-sm'
                 : 'text-stone-500 hover:text-stone-300'
             "
           >
-             {{ tab === 'results' ? 'Output' : (tab === 'messages' ? 'Console' : 'Log') }}
+             <component :is="tab.icon" class="w-3 h-3" :class="activeTab === tab.id ? 'text-violet-400' : 'text-stone-600 group-hover:text-stone-400'" />
+             <span>{{ tab.label }}</span>
+             <span v-if="unref(tab.count) > 0" class="flex items-center justify-center min-w-[14px] h-[14px] px-1 bg-rose-500 text-white text-[8px] font-black rounded-full ml-1">
+               {{ unref(tab.count) }}
+             </span>
           </button>
         </div>
 
         <!-- View Mode (Table/JSON) -->
-        <div v-if="activeTab === 'results' && Array.isArray(result)" class="flex items-center gap-1.5 pl-4 border-l border-stone-800/50">
+        <div v-if="activeTab === 'output' && Array.isArray(result)" class="flex items-center gap-1.5 pl-4 border-l border-stone-800/50">
           <button
             @click="viewMode = 'table'"
             class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
@@ -226,13 +249,21 @@ const copyToClipboard = async (text: string) => {
       <div class="flex items-center gap-3">
         <!-- Result count badge -->
         <div
-          v-if="activeTab === 'results' && resultCount !== null"
+          v-if="activeTab === 'output' && resultCount !== null"
           class="flex items-center gap-2 px-2 py-0.5 bg-stone-950 border border-stone-800/50 rounded-full"
         >
           <div class="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]"></div>
           <span class="text-[10px] font-mono text-stone-400">
             {{ resultCount.toLocaleString() }} records
           </span>
+        </div>
+        
+        <!-- Status Indicator (Pulsing Dot) -->
+        <div class="flex items-center gap-1.5 px-2 py-0.5 bg-stone-900/50 border border-stone-800/50 rounded-md">
+           <div :class="`w-1.5 h-1.5 rounded-full ${props.error ? 'bg-rose-500 shadow-[0_0_8px_theme(colors.rose.500)]' : (props.loading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]')}`"></div>
+           <span class="text-[9px] font-black uppercase tracking-tighter text-stone-500">
+             {{ props.error ? 'Protocol Failure' : (props.loading ? 'Processing' : 'System Secure') }}
+           </span>
         </div>
 
         <div class="h-4 w-px bg-stone-800 mx-1"></div>
@@ -282,9 +313,10 @@ const copyToClipboard = async (text: string) => {
       </Transition>
 
       <div class="flex-1 overflow-auto">
-        <!-- Results View -->
-        <div v-if="activeTab === 'results'" class="h-full flex flex-col">
+        <!-- Output View -->
+        <div v-if="activeTab === 'output'" class="h-full flex flex-col">
           <div v-if="error" class="m-6 p-6 rounded-2xl border border-rose-500/20 bg-rose-500/5 relative group animate-in fade-in slide-in-from-top-4 duration-500">
+             <!-- Error content remains the same ... -->
              <div class="flex items-start gap-4">
                <div class="w-10 h-10 shrink-0 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
                   <X class="w-5 h-5" />
@@ -304,11 +336,8 @@ const copyToClipboard = async (text: string) => {
           </div>
 
           <div v-else-if="result" class="h-full flex flex-col p-3 space-y-3">
-            <!-- Analysis Insight -->
-
-
-            <!-- Toolbar (Visualize / Sanitize) -->
-            <div v-if="Array.isArray(result) && result.length > 0" class="flex items-center gap-3">
+             <!-- Results table content remains the same ... -->
+             <div v-if="Array.isArray(result) && result.length > 0" class="flex items-center gap-3">
                <button @click="emit('create-dashboard-element')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-950 hover:bg-white text-[9px] font-black uppercase tracking-widest transition-all shadow-xl shadow-stone-950/20">
                   <LayoutDashboard class="w-3 h-3" />
                   <span>Visualize</span>
@@ -317,13 +346,8 @@ const copyToClipboard = async (text: string) => {
                   <Table class="w-3 h-3" />
                   <span>Spreadsheet</span>
                </button>
-               <button @click="emit('sanitize')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-stone-100 hover:border-stone-700 text-[9px] font-black uppercase tracking-widest transition-all">
-                  <Sparkles class="w-3 h-3" />
-                  <span>Optimize</span>
-               </button>
             </div>
 
-            <!-- Data Output -->
             <div class="flex-1 min-h-0 min-w-0 rounded-xl border border-stone-800/50 bg-stone-950/30 overflow-hidden shadow-inner">
                <ResultsTable 
                   v-if="viewMode === 'table' && Array.isArray(result)" 
@@ -340,8 +364,7 @@ const copyToClipboard = async (text: string) => {
             </div>
           </div>
 
-          <!-- Empty State -->
-          <div v-else class="h-full flex flex-col items-center justify-center p-12 space-y-6">
+          <div v-else class="h-full flex flex-col items-center justify-center p-12 space-y-6 opacity-30 grayscale">
              <div class="relative">
                 <div class="absolute inset-0 bg-stone-800/20 blur-3xl rounded-full"></div>
                 <div class="relative w-16 h-16 rounded-2xl bg-stone-900 border border-stone-800 flex items-center justify-center transform rotate-12">
@@ -349,40 +372,74 @@ const copyToClipboard = async (text: string) => {
                 </div>
              </div>
              <div class="text-center space-y-2">
-                <h4 class="text-sm font-black uppercase tracking-[0.2em] text-stone-400">System Ready</h4>
-                <p class="text-xs text-stone-600 max-w-[200px] leading-relaxed">Execute a protocol to view analytical output in this workspace.</p>
+                <h4 class="text-sm font-black uppercase tracking-[0.2em] text-stone-400">Idle Output</h4>
+                <p class="text-xs text-stone-600 max-w-[200px] leading-relaxed">No active protocol stream detected.</p>
              </div>
           </div>
         </div>
 
-        <!-- Console / History Tab Content (Simplified for now) -->
-        <div v-else-if="activeTab === 'messages'" class="p-8 h-full">
-           <!-- Console experience -->
-           <div class="h-full flex flex-col font-mono text-[11px] text-stone-500 space-y-2">
-              <div class="flex gap-2">
-                 <span class="text-emerald-500">[INFO]</span>
-                 <span>Pegasus Session Started</span>
+        <!-- Problems Tab -->
+        <div v-else-if="activeTab === 'problems'" class="h-full flex flex-col p-4">
+           <div v-if="!error" class="flex-1 flex flex-col items-center justify-center space-y-4 opacity-40">
+              <Check class="w-8 h-8 text-emerald-500" />
+              <div class="text-center">
+                 <h4 class="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-1">No Problems Detected</h4>
+                 <p class="text-[9px] text-stone-500 font-mono">Clean scan of current operation stream.</p>
               </div>
-              <div class="flex gap-2">
-                 <span class="text-emerald-500">[INFO]</span>
-                 <span>Awaiting instruction input...</span>
+           </div>
+           <div v-else class="space-y-2">
+              <div class="p-3 bg-rose-500/5 border border-rose-500/20 rounded-lg flex gap-3 group hover:bg-rose-500/10 transition-all cursor-pointer">
+                 <AlertCircle class="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                 <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                       <span class="text-[10px] font-black uppercase tracking-widest text-rose-500">Execution Error</span>
+                       <span class="text-[9px] font-mono text-stone-600">Row 1, Col 1</span>
+                    </div>
+                    <p class="text-[11px] font-mono text-stone-300 break-words leading-relaxed">{{ error }}</p>
+                 </div>
               </div>
            </div>
         </div>
 
-        <div v-else class="p-6 space-y-4">
-           <h4 class="text-[10px] font-black uppercase tracking-widest text-stone-500 px-2">Operation Logs</h4>
-           <div v-if="!history || history.length === 0" class="py-12 text-center text-xs text-stone-600 italic">No historical data found.</div>
-           <div v-for="item in history" :key="item.id" class="p-4 rounded-xl border border-stone-900 bg-stone-900/20 hover:border-stone-800 transition-all cursor-pointer group">
-              <div class="flex items-center justify-between mb-2">
-                 <span class="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-stone-900 text-stone-500 group-hover:text-stone-300">
-                    {{ item.source }}
-                 </span>
-                 <span class="text-[10px] font-mono text-stone-700">
-                    {{ new Date(item.timestamp).toLocaleTimeString() }}
-                 </span>
+        <!-- Execution Tab -->
+        <div v-else-if="activeTab === 'execution'" class="h-full flex flex-col p-6 space-y-8">
+           <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div v-for="(val, label) in executionMetrics" :key="label" class="p-4 bg-stone-950 border border-stone-800/50 rounded-xl relative overflow-hidden group">
+                 <div class="absolute top-0 left-0 w-1 h-full" :class="label === 'status' ? (val === 'success' ? 'bg-emerald-500' : 'bg-rose-500') : 'bg-stone-800 group-hover:bg-violet-500 transition-colors'"></div>
+                 <h5 class="text-[9px] font-black uppercase tracking-widest text-stone-600 mb-2">{{ label }}</h5>
+                 <div class="text-lg font-mono text-stone-200 uppercase">{{ val }}</div>
               </div>
-              <pre class="text-[12px] font-mono text-stone-400 whitespace-pre-wrap line-clamp-2 leading-relaxed">{{ item.query }}</pre>
+           </div>
+           
+           <div class="flex-1 bg-stone-950 border border-stone-800/50 rounded-xl p-4 flex flex-col">
+              <div class="flex items-center justify-between mb-4 pb-4 border-b border-stone-900">
+                 <h5 class="text-[9px] font-black uppercase tracking-widest text-stone-400">Performance Timeline</h5>
+                 <div class="flex gap-2">
+                    <div class="w-2 h-2 rounded-full bg-violet-500/50"></div>
+                    <div class="w-2 h-2 rounded-full bg-stone-800"></div>
+                 </div>
+              </div>
+              <div class="flex-1 flex items-end gap-1.5 h-32">
+                 <div v-for="i in 20" :key="i" 
+                      class="flex-1 bg-stone-900 rounded-t-sm hover:bg-violet-500/40 transition-all cursor-pointer"
+                      :style="{ height: `${Math.random() * 80 + 10}%` }">
+                 </div>
+              </div>
+           </div>
+        </div>
+
+        <!-- Versioning Tab -->
+        <div v-else-if="activeTab === 'versioning'" class="h-full flex flex-col items-center justify-center p-12 space-y-6">
+           <div class="w-16 h-16 rounded-full bg-stone-900 border border-stone-800 flex items-center justify-center relative overflow-hidden group">
+              <div class="absolute inset-0 bg-violet-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <GitBranch class="w-8 h-8 text-stone-700 group-hover:text-violet-500 transition-colors" />
+           </div>
+           <div class="text-center space-y-3 max-w-[280px]">
+              <h4 class="text-xs font-black uppercase tracking-[0.2em] text-stone-300">Sandbox Branching</h4>
+              <p class="text-[10px] text-stone-600 leading-relaxed italic">Database branching is coming soon. Soon you'll be able to create private database clones for no-risk manipulation.</p>
+              <button class="px-4 py-2 bg-stone-800 text-stone-400 text-[9px] font-black uppercase tracking-widest rounded-lg border border-stone-700 cursor-not-allowed">
+                 Initialize Local Branch
+              </button>
            </div>
         </div>
       </div>

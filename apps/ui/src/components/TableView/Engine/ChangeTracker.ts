@@ -37,6 +37,14 @@ export class ChangeTracker {
     private deletedColumns: Set<string> = new Set();
     private addedColumns: string[] = [];
     private rowIdMap: Map<number, any> = new Map();
+    public columnNames: string[] = [];
+
+    /**
+     * Set column names for reference
+     */
+    setColumnNames(columns: string[]): void {
+        this.columnNames = [...columns];
+    }
 
     /**
      * Mark a cell as modified
@@ -146,7 +154,9 @@ export class ChangeTracker {
         // 3. Updates & Creates - Group modified cells by row
         const rowsToProcess = new Set<number>();
         for (const cellKey of this.modifiedCells) {
-            const row = parseInt(cellKey.split(',')[0]);
+            const rowPart = cellKey.split(',')[0];
+            if (rowPart === undefined) continue;
+            const row = parseInt(rowPart);
             if (!isNaN(row)) {
                 rowsToProcess.add(row);
             }

@@ -68,12 +68,14 @@ export async function interpretExcelFromXML(filePath) {
 
         console.log(`[XMLExcelInterpreter] Extracted ${rows.length} rows`);
 
-        // Find the header row - look for row with "Fund Name" or similar specific headers
-        // Skip rows with repeated values (merged cells)
+        // Find the header row - look for row with "Fund Name" specifically
+        // This is typically the detailed header row in financial reports
         let headerRow = null;
         let headerRowIndex = -1;
+        let bestCandidate = null;
+        let bestCandidateIndex = -1;
 
-        for (let i = 0; i < Math.min(10, rows.length); i++) {
+        for (let i = 0; i < Math.min(15, rows.length); i++) {
             const row = rows[i];
             const values = Object.values(row.cells).filter(v => v && v.trim());
 
@@ -84,25 +86,42 @@ export async function interpretExcelFromXML(filePath) {
                 continue;
             }
 
+            // Best match: row with "Fund Name" - this is the detailed header
+            const hasFundName = values.some(v =>
+                v && v.toLowerCase().includes('fund name')
+            );
+
+            if (hasFundName) {
+                headerRow = row;
+                headerRowIndex = i;
+                console.log(`[XMLExcelInterpreter] Found header row with Fund Name at index ${i} (row ${row.rowNumber})`);
+                console.log(`[XMLExcelInterpreter] Header values:`, values);
+                break;
+            }
+
+            // Secondary match: rows with multiple financial keywords (as fallback)
             const hasSpecificHeaders = values.some(v =>
                 v && (
-                    v.toLowerCase().includes('fund name') ||
                     v.toLowerCase().includes('folio') ||
                     v.toLowerCase().includes('since') ||
                     v.toLowerCase().includes('amount') ||
                     v.toLowerCase().includes('units') ||
-                    v.toLowerCase().includes('nav') ||
-                    v.toLowerCase().includes('balance')
+                    v.toLowerCase().includes('nav')
                 )
             );
 
-            if (hasSpecificHeaders) {
-                headerRow = row;
-                headerRowIndex = i;
-                console.log(`[XMLExcelInterpreter] Found header row at index ${i} (row ${row.rowNumber})`);
-                console.log(`[XMLExcelInterpreter] Header values:`, values);
-                break;
+            if (hasSpecificHeaders && !bestCandidate) {
+                bestCandidate = row;
+                bestCandidateIndex = i;
+                console.log(`[XMLExcelInterpreter] Found candidate header row at index ${i} (row ${row.rowNumber})`);
             }
+        }
+
+        // Use best candidate if no row with "Fund Name" found
+        if (!headerRow && bestCandidate) {
+            headerRow = bestCandidate;
+            headerRowIndex = bestCandidateIndex;
+            console.log(`[XMLExcelInterpreter] Using candidate header row at index ${headerRowIndex}`);
         }
 
         if (!headerRow) {
@@ -111,7 +130,22 @@ export async function interpretExcelFromXML(filePath) {
         }
 
         // Extract column mappings from header row
+        // CRITICAL: Also look for columns that have data but no header (like Fund Name in column A)
         const columnMappings = [];
+        const allColumnsWithData = new Set();
+
+        // First, scan all data rows to find ALL columns that have data
+        for (let i = headerRowIndex + 1; i < Math.min(headerRowIndex + 10, rows.length); i++) {
+            Object.keys(rows[i].cells).forEach(col => {
+                if (rows[i].cells[col] && rows[i].cells[col].toString().trim()) {
+                    allColumnsWithData.add(col);
+                }
+            });
+        }
+
+        console.log(`[XMLExcelInterpreter] All columns with data:`, [...allColumnsWithData].sort());
+
+        // Add header row columns
         Object.keys(headerRow.cells).forEach(colLetter => {
             const headerValue = headerRow.cells[colLetter];
             if (headerValue && headerValue.trim()) {
@@ -120,31 +154,80 @@ export async function interpretExcelFromXML(filePath) {
                     semanticName: headerValue.trim(),
                     originalName: headerValue.trim()
                 });
+                allColumnsWithData.delete(colLetter); // Remove from set since we handled it
             }
         });
 
-        console.log(`[XMLExcelInterpreter] Found ${columnMappings.length} columns:`, columnMappings.map(c => c.semanticName));
+        // Add any columns with data but NO header (assign generic names)
+        // Sort columns alphabetically to ensure correct order (A, B, C, ..., AA, AB, etc.)
+        const remainingColumns = [...allColumnsWithData].sort((a, b) => {
+            if (a.length !== b.length) return a.length - b.length;
+            return a.localeCompare(b);
+        });
 
-        // Extract data rows (skip header and any rows before it, plus one separator row)
-        const dataStartIndex = headerRowIndex + 2; // Skip header + 1 separator row
+        remainingColumns.forEach((colLetter, idx) => {
+            // Check if this column has meaningful data (not just numbers)
+            const sampleValue = rows[headerRowIndex + 1]?.cells[colLetter] || '';
+
+            // Column A with text is likely "Fund Name" or "Name"
+            if (colLetter === 'A') {
+                console.log(`[XMLExcelInterpreter] Column A has no header but has data: "${sampleValue}". Adding as "Name".`);
+                columnMappings.unshift({
+                    column: 'A',
+                    semanticName: 'Name',
+                    originalName: ''
+                });
+            } else {
+                console.log(`[XMLExcelInterpreter] Column ${colLetter} has data but no header: "${sampleValue}". Adding as "Column_${colLetter}".`);
+                columnMappings.push({
+                    column: colLetter,
+                    semanticName: `Column_${colLetter}`,
+                    originalName: ''
+                });
+            }
+        });
+
+        // Sort column mappings by column letter
+        columnMappings.sort((a, b) => {
+            if (a.column.length !== b.column.length) return a.column.length - b.column.length;
+            return a.column.localeCompare(b.column);
+        });
+
+        console.log(`[XMLExcelInterpreter] Found ${columnMappings.length} columns:`, columnMappings.map(c => `${c.column}:${c.semanticName}`));
+
+        // Extract data rows - skip header and filter out separator/category rows
+        // Category rows have data only in column A (like "Equity - Large & Mid Cap")
+        // Separator rows have only numbers or are mostly empty
         const dataRows = [];
 
-        for (let i = dataStartIndex; i < rows.length; i++) {
+        for (let i = headerRowIndex + 1; i < rows.length; i++) {
             const row = rows[i];
             const rowData = {};
-            let isEmpty = true;
+            let nonEmptyCount = 0;
+            let hasColumnAData = false;
 
             columnMappings.forEach(colMap => {
                 const value = row.cells[colMap.column] || '';
                 if (value && value.toString().trim()) {
-                    isEmpty = false;
+                    nonEmptyCount++;
+                    if (colMap.column === 'A') hasColumnAData = true;
                 }
                 rowData[colMap.semanticName] = value;
             });
 
-            // Skip empty rows
-            if (!isEmpty) {
+            // Skip rows that are:
+            // - Completely empty
+            // - Have data only in first few columns (category headers like "Equity - Large & Mid Cap")
+            // - Total rows (contain "Total" or "Member Total")
+            const firstColValue = row.cells['A'] || '';
+            const isCategory = nonEmptyCount <= 3 && hasColumnAData && !firstColValue.match(/^\d+$/);
+            const isTotal = firstColValue.toLowerCase().includes('total');
+            const isNumberOnly = firstColValue.match(/^\d+$/);
+
+            if (nonEmptyCount >= 5 && !isCategory && !isTotal && !isNumberOnly) {
                 dataRows.push(rowData);
+            } else {
+                console.log(`[XMLExcelInterpreter] Skipping row ${row.rowNumber}: cols=${nonEmptyCount}, first="${String(firstColValue).substring(0, 20)}"`);
             }
         }
 

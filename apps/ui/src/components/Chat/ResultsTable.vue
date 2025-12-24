@@ -56,7 +56,14 @@ const paginatedData = computed(() => {
   if (!props.data) return []
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
-  return props.data.slice(start, end)
+  
+  return props.data.slice(start, end).map(item => {
+    // Normalize primitives to objects so row[col] works
+    if (item !== null && typeof item !== 'object') {
+        return { Value: item }
+    }
+    return item
+  })
 })
 
 const openJsonModal = (data: any) => {
@@ -70,6 +77,13 @@ const isObject = (val: any) => {
 
 const columns = computed(() => {
   if (!props.data || props.data.length === 0) return []
+  
+  // Check if first item is primitive
+  const firstItem = props.data[0]
+  if (firstItem !== null && typeof firstItem !== 'object') {
+      return ['Value']
+  }
+
   const keys = new Set<string>()
   const sample = props.data.slice(0, 50)
   sample.forEach(item => {

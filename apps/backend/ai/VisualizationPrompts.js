@@ -24,8 +24,8 @@ export class VisualizationPrompts {
       You are a data visualization expert. Your job is to recommend a chart configuration.
       
       Query: ${query}
-      Results (first 50 rows):
-      ${JSON.stringify(results.slice(0, 50), null, 2)}
+      Results (first 10 rows):
+      ${JSON.stringify(results.slice(0, 10), null, 2)}
       
       ${refinementContext}
       ${chartTypeHint}

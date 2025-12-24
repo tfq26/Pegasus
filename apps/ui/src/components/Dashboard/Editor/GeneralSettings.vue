@@ -44,6 +44,27 @@
       </select>
     </div>
 
+    <!-- Refresh Frequency -->
+    <div v-if="localConfig.query" class="space-y-2">
+      <label class="text-sm font-medium">Refresh Frequency</label>
+      <select
+        v-model="localConfig.refreshFrequency"
+        @change="updateConfig"
+        class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <option :value="undefined">Manual Only</option>
+        <option :value="60">Every 1 minute</option>
+        <option :value="300">Every 5 minutes</option>
+        <option :value="900">Every 15 minutes</option>
+        <option :value="1800">Every 30 minutes</option>
+        <option :value="3600">Every 1 hour</option>
+        <option :value="86400">Daily</option>
+      </select>
+      <p class="text-xs text-muted-foreground">
+        How often the data should be automatically re-fetched.
+      </p>
+    </div>
+
     <!-- Query (Read-only) -->
     <div class="space-y-2">
       <label class="text-sm font-medium">Source Query</label>
@@ -92,12 +113,13 @@ import { toast } from 'vue-sonner'
 interface DashboardElement {
   id: string
   title: string
-  query: string
+  query?: string
+  connectionId?: string
   type: string
-  config: {
-    data: any
-    options: any
-  }
+  config: any
+  refreshFrequency?: number
+  lastResult?: any
+  cacheUntil?: number
   customization?: {
     description?: string
     [key: string]: any
@@ -178,6 +200,7 @@ const updateConfig = () => {
 
 // Copy query
 const copyQuery = () => {
+  if (!localConfig.value.query) return
   navigator.clipboard.writeText(localConfig.value.query)
   copied.value = true
   setTimeout(() => copied.value = false, 2000)

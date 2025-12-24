@@ -12,6 +12,9 @@ import { CellType } from '../Engine/types';
 import { toast } from 'vue-sonner';
 import { useFeatureFlags } from '@/composables/useFeatureFlags';
 import FindDialog from '../FindDialog.vue';
+import CommitBar from './CommitBar.vue';
+import ChangeReviewDialog from './ChangeReviewDialog.vue';
+import type { RowDiff } from '../Engine/types';
 import { SearchEngine } from '../Engine/SearchEngine';
 import ProviderBadge from '../ProviderBadge.vue';
 import { 
@@ -65,7 +68,13 @@ const {
   rowCount,
   colCount,
   rowHeight,
-  colWidth
+  defaultColWidth,
+  getColWidth,
+  setColWidth,
+  autoFitColumn,
+  autoFitAllColumns,
+  totalWidth,
+  textWrap
 } = useGridScroll(props.engine);
 
 // Force re-render trigger
@@ -157,7 +166,7 @@ watch(formulaBarValue, (val) => {
     const input = val.substring(1).toUpperCase();
     // Find last function name being typed
     const lastFuncMatch = input.match(/([A-Z]+)$/);
-    if (lastFuncMatch) {
+    if (lastFuncMatch && lastFuncMatch[1]) {
       const partial = lastFuncMatch[1];
       formulaSuggestions.value = BUILT_IN_FUNCTIONS.filter(f => f.startsWith(partial));
       showSuggestions.value = formulaSuggestions.value.length > 0;
@@ -181,6 +190,46 @@ watch(formulaBarValue, (val) => {
 const isFillDragging = ref(false);
 const fillStart = ref<CellPosition | null>(null);
 const fillRange = ref<{ start: CellPosition, end: CellPosition } | null>(null);
+
+// --- Column Resize State ---
+const resizingColumn = ref<number | null>(null);
+const resizeStartX = ref(0);
+const resizeStartWidth = ref(0);
+
+const startColResize = (col: number, e: MouseEvent) => {
+  e.stopPropagation();
+  e.preventDefault();
+  resizingColumn.value = col;
+  resizeStartX.value = e.clientX;
+  resizeStartWidth.value = getColWidth(col);
+  
+  document.addEventListener('mousemove', onColResizeMove);
+  document.addEventListener('mouseup', stopColResize);
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+};
+
+const onColResizeMove = (e: MouseEvent) => {
+  if (resizingColumn.value === null) return;
+  
+  const delta = e.clientX - resizeStartX.value;
+  const newWidth = Math.max(40, Math.min(500, resizeStartWidth.value + delta));
+  setColWidth(resizingColumn.value, newWidth);
+};
+
+const stopColResize = () => {
+  resizingColumn.value = null;
+  document.removeEventListener('mousemove', onColResizeMove);
+  document.removeEventListener('mouseup', stopColResize);
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+};
+
+const handleHeaderDblClick = (col: number, e: MouseEvent) => {
+  // Auto-fit column on double-click
+  e.stopPropagation();
+  autoFitColumn(col);
+};
 
 // --- Selection State (useGridSelection) ---
 
@@ -437,7 +486,47 @@ const selectedCellLabel = computed(() => {
   return `${colIndexToLabel(selection.value.col)}${selection.value.row + 1}`;
 });
 
-// const currentCellRawValue = computed ... moved to useGridEditing
+// --- Modification State ---
+const modifiedRows = computed(() => {
+  const modified = new Set<number>();
+  props.engine.changeTracker.getModifiedCellKeys().forEach(key => {
+    const part = key.split(',')[0];
+    if (part !== undefined) {
+      const row = parseInt(part);
+      if (!isNaN(row) && props.engine.changeTracker.getRowId(row)) {
+        modified.add(row);
+      }
+    }
+  });
+  return modified;
+});
+
+const addedRows = computed(() => {
+  const added = new Set<number>();
+  props.engine.changeTracker.getModifiedCellKeys().forEach(key => {
+    const part = key.split(',')[0];
+    if (part !== undefined) {
+      const row = parseInt(part);
+      if (!isNaN(row) && !props.engine.changeTracker.getRowId(row)) {
+        added.add(row);
+      }
+    }
+  });
+  return added;
+});
+
+const isRowModified = (row: number) => modifiedRows.value.has(row) || addedRows.value.has(row);
+
+const deletedRows = computed(() => {
+  return new Set(props.engine.getDeletedRows());
+});
+
+const isRowDeleted = (row: number) => deletedRows.value.has(row);
+
+const isCellModified = (row: number, col: number) => {
+  const key = `${row},${col}`;
+  return props.engine.changeTracker.getModifiedCellKeys().has(key);
+};
 
 // Helper for display value (direct engine access for performance)
 const getDisplayValue = (row: number, col: number) => {
@@ -514,8 +603,8 @@ const isReferencedInFormula = (row: number, col: number): number => {
 // Get color class for referenced cell
 const getReferenceColorClass = (row: number, col: number): string => {
   const refIndex = isReferencedInFormula(row, col);
-  if (refIndex < 0) return '';
-  return REFERENCE_COLORS[refIndex % REFERENCE_COLORS.length];
+  if (refIndex < 0 || REFERENCE_COLORS.length === 0) return '';
+  return REFERENCE_COLORS[refIndex % REFERENCE_COLORS.length] || '';
 };
 
 
@@ -730,7 +819,7 @@ const onFormulaBarKeydown = async (e: KeyboardEvent) => {
       const suggestion = formulaSuggestions.value[selectedSuggestionIndex.value];
       if (suggestion) {
         e.preventDefault();
-        insertSuggestion(formulaSuggestions.value[selectedSuggestionIndex.value]);
+        insertSuggestion(suggestion);
         return;
       }
     } else if (e.key === 'Escape') {
@@ -757,7 +846,7 @@ const insertSuggestion = (suggestion: string) => {
   const val = formulaBarValue.value;
   // Find the last partial function name and replace it
   const match = val.match(/([A-Z]+)$/);
-  if (match) {
+  if (match && match[1]) {
     formulaBarValue.value = val.substring(0, val.length - match[1].length) + suggestion + '(';
   } else {
     formulaBarValue.value = val + suggestion + '(';
@@ -1342,6 +1431,36 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', onGlobalMouseUp);
   document.removeEventListener('mousemove', onFillHandleMouseMove);
 });
+
+const discardAllChanges = () => {
+  props.engine.changeTracker.clear();
+  // We need to trigger a re-render
+  renderKey.value++;
+};
+
+const showReviewDialog = ref(false);
+const pendingDiffs = ref<RowDiff[]>([]);
+
+const openReviewDialog = () => {
+  pendingDiffs.value = props.engine.getDiff();
+  showReviewDialog.value = true;
+};
+
+const committing = ref(false);
+const commitChanges = async () => {
+  committing.value = true;
+  try {
+    await props.engine.commit();
+    renderKey.value++;
+    showReviewDialog.value = false;
+    toast.success('Changes committed successfully!');
+  } catch (err: any) {
+    console.error('Commit failed:', err);
+    toast.error(`Commit failed: ${err.message}`);
+  } finally {
+    committing.value = false;
+  }
+};
 </script>
 
 <template>
@@ -1479,35 +1598,31 @@ onUnmounted(() => {
             <span class="text-xs text-muted-foreground bg-accent px-1 rounded">Bg</span>
             <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('background', (e.target as HTMLInputElement).value)" />
         </div>
+        <div class="w-px h-4 bg-border mx-2"></div>
+        <!-- Text Wrap Toggle -->
+        <button 
+          class="w-8 h-8 flex items-center justify-center rounded transition-colors"
+          :class="textWrap ? 'bg-primary/20 text-primary' : 'hover:bg-accent text-foreground'"
+          @click="textWrap = !textWrap"
+          title="Toggle text wrapping"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M3 12h15a3 3 0 110 6h-4l2-2m0 4l-2-2M3 18h7"/>
+          </svg>
+        </button>
+        <!-- Auto-fit Columns -->
+        <button 
+          class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent text-foreground"
+          @click="autoFitAllColumns"
+          title="Auto-fit all column widths"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3v18M16 3v18M3 12h18M3 6h4M17 6h4M3 18h4M17 18h4"/>
+          </svg>
+        </button>
     </div>
 
-    <!-- Header Container (Static vertical, syncs horizontal) -->
-    <div 
-      ref="headerContainer"
-      class="overflow-hidden border-b border-border bg-muted z-10 flex-none"
-    >
-      <table class="border-collapse table-fixed bg-background">
-        <thead class="bg-muted text-xs font-semibold text-muted-foreground" style="height: 24px;">
-          <tr>
-            <th class="w-10 border-r border-border bg-muted/80 z-20 sticky left-0 text-[10px] text-center"></th>
-            <th
-              v-for="col in colCount"
-              :key="col"
-              class="border-r border-border px-1 select-none relative group transition-colors hover:bg-muted/80 cursor-pointer"
-              :class="{ 'bg-primary/20 text-primary font-bold': isColumnSelected(col - 1) }"
-              :style="{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }"
-              @click="selectColumn(col - 1, $event)"
-              :data-col="col - 1"
-            >
-              {{ colIndexToLabel(col - 1) }}
-              <div class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            </th>
-          </tr>
-        </thead>
-      </table>
-    </div>
-
-    <!-- Grid Body -->
+    <!-- Grid Body with Sticky Header -->
     <div 
       class="flex-1 overflow-auto relative select-none outline-none"
       ref="gridContainer"
@@ -1516,14 +1631,49 @@ onUnmounted(() => {
       @click="focusGrid"
       tabindex="0"
     >
-      <!-- Phantom spacer to set scroll height -->
-      <div :style="{ height: `${rowCount * rowHeight}px`, width: `${colCount * colWidth}px` }"></div>
+      <!-- Sticky Column Headers -->
+      <div 
+        ref="headerContainer"
+        class="sticky top-0 z-20 bg-muted border-b border-border"
+        :style="{ width: `${totalWidth}px` }"
+      >
+        <table class="border-collapse table-fixed bg-muted">
+          <thead class="text-xs font-semibold text-muted-foreground" style="height: 24px;">
+            <tr>
+              <th 
+                class="border-r border-border bg-muted/80 text-[10px] text-center sticky left-0 z-30"
+                :style="{ width: '40px', minWidth: '40px', maxWidth: '40px' }"
+              ></th>
+              <th
+                v-for="col in colCount"
+                :key="col"
+                class="border-r border-border px-1 select-none relative group transition-colors hover:bg-muted/80 cursor-pointer"
+                :class="{ 'bg-primary/20 text-primary font-bold': isColumnSelected(col - 1) }"
+                :style="{ width: `${getColWidth(col - 1)}px`, minWidth: `${getColWidth(col - 1)}px`, maxWidth: `${getColWidth(col - 1)}px` }"
+                @click="selectColumn(col - 1, $event)"
+                :data-col="col - 1"
+              >
+                {{ colIndexToLabel(col - 1) }}
+                <!-- Resize Handle -->
+                <div 
+                  class="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-primary/50 opacity-0 group-hover:opacity-100 transition-opacity -mr-1"
+                  @mousedown="startColResize(col - 1, $event)"
+                  @dblclick="handleHeaderDblClick(col - 1, $event)"
+                ></div>
+              </th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+
+      <!-- Phantom spacer to set scroll height (adjusted for header) -->
+      <div :style="{ height: `${rowCount * rowHeight}px`, width: `${totalWidth}px` }"></div>
       
       <!-- Live Cursors Overlay -->
       <PresenceOverlay 
         :engine="engine" 
         :row-height="rowHeight" 
-        :col-width="colWidth"
+        :col-width="defaultColWidth"
         :offset-x="40"
         :trigger="renderKey"
         @follow-user="handleFollowUser"
@@ -1542,19 +1692,24 @@ onUnmounted(() => {
 
       <!-- Virtualized Table Body -->
       <table 
-        class="border-collapse table-fixed bg-background absolute top-0 left-0"
-        :style="{ transform: `translateY(${virtualState.startRow * rowHeight}px)` }"
+        class="border-collapse table-fixed bg-background absolute left-0"
+        :style="{ top: '24px', transform: `translateY(${virtualState.startRow * rowHeight}px)` }"
       >
         <tbody>
           <tr
             v-for="rowOffset in visibleRows"
             :key="virtualState.startRow + rowOffset"
-            class="h-6"
+            class="h-6 group"
+            :class="{
+              'row-modified': isRowModified(virtualState.startRow + rowOffset),
+              'row-deleted': isRowDeleted(virtualState.startRow + rowOffset)
+            }"
             :style="{ height: `${rowHeight}px` }"
           >
             <!-- Row Header -->
             <td 
-              class="w-10 border-r border-b border-border bg-muted text-[10px] text-center text-muted-foreground select-none sticky left-0 z-10 cursor-pointer hover:bg-muted/80"
+              class="border-r border-b border-border bg-muted text-[10px] text-center text-muted-foreground select-none sticky left-0 z-10 cursor-pointer hover:bg-muted/80"
+              :style="{ width: '40px', minWidth: '40px', maxWidth: '40px' }"
               :class="{ 'bg-primary/20 text-primary font-bold': isRowSelected(virtualState.startRow + rowOffset) }"
               @click="selectRow(virtualState.startRow + rowOffset, $event)"
               :data-row="virtualState.startRow + rowOffset"
@@ -1566,28 +1721,32 @@ onUnmounted(() => {
             <td
               v-for="col in colCount"
               :key="col"
-              class="border-r border-b border-border px-1 text-xs relative cursor-cell whitespace-nowrap overflow-hidden"
+              class="border-r border-b border-border px-1 text-xs relative cursor-cell overflow-hidden"
+              :class="[
+                textWrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
+                {
+                  'bg-blue-50/50 dark:bg-blue-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
+                  'ring-2 ring-primary ring-inset z-10 bg-background': selection?.row === (virtualState.startRow + rowOffset) && selection?.col === col - 1 && !editingCell,
+                  'bg-primary/15': isInSelection(virtualState.startRow + rowOffset, col - 1),
+                  'border-r-2 border-r-primary': fillRange && col - 1 === fillRange.end.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
+                  'border-l-2 border-l-primary': fillRange && col - 1 === fillRange.start.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
+                  'border-t-2 border-t-primary': fillRange && virtualState.startRow + rowOffset === fillRange.start.row && col - 1 >= fillRange.start.col && col - 1 <= fillRange.end.col,
+                  'border-b-2 border-b-primary': fillRange && virtualState.startRow + rowOffset === fillRange.end.row && col - 1 >= fillRange.start.col && col - 1 <= fillRange.end.col,
+                  [getReferenceColorClass(virtualState.startRow + rowOffset, col - 1)]: true,
+                  'text-foreground': true,
+                  'cell-dirty': isCellModified(virtualState.startRow + rowOffset, col - 1)
+                }
+              ]"
               :style="{ 
-                width: `${colWidth}px`, 
-                minWidth: `${colWidth}px`, 
-                maxWidth: `${colWidth}px`,
+                width: `${getColWidth(col - 1)}px`, 
+                minWidth: `${getColWidth(col - 1)}px`, 
+                maxWidth: `${getColWidth(col - 1)}px`,
                 ...getCellStyle(virtualState.startRow + rowOffset, col - 1)
               }"
               :data-row="virtualState.startRow + rowOffset"
               :data-col="col - 1"
-              :class="{
-                'bg-blue-50/50 dark:bg-blue-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
-                'ring-2 ring-primary ring-inset z-10 bg-background': selection?.row === (virtualState.startRow + rowOffset) && selection?.col === col - 1 && !editingCell,
-                'bg-primary/15': isInSelection(virtualState.startRow + rowOffset, col - 1),
-                'border-r-2 border-r-primary': fillRange && col - 1 === fillRange.end.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
-                'border-l-2 border-l-primary': fillRange && col - 1 === fillRange.start.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
-                'border-t-2 border-t-primary': fillRange && virtualState.startRow + rowOffset === fillRange.start.row && col - 1 >= fillRange.start.col && col - 1 <= fillRange.end.col,
-                'border-b-2 border-b-primary': fillRange && virtualState.startRow + rowOffset === fillRange.end.row && col - 1 >= fillRange.start.col && col - 1 <= fillRange.end.col,
-                [getReferenceColorClass(virtualState.startRow + rowOffset, col - 1)]: true,
-                'text-foreground': true
-              }"
               @mousedown="(e) => onMouseDown(virtualState.startRow + rowOffset, col - 1, e)"
-              @mouseover="onMouseEnter(virtualState.startRow + rowOffset, col - 1)"
+              @mouseover="onMouseEnter"
               @dblclick="(e) => handleCellDblClick(virtualState.startRow + rowOffset, col - 1, e)"
             >
               <!-- Editing Input -->
@@ -1602,9 +1761,15 @@ onUnmounted(() => {
                 class="absolute inset-0 w-full h-full px-1 text-xs bg-background focus:outline-none focus:ring-2 focus:ring-primary z-20 text-foreground"
               />
               <!-- Display Value -->
-              <span v-else class="pointer-events-none">{{ getDisplayValue(virtualState.startRow + rowOffset, col - 1) }}</span>
+              <span v-else class="pointer-events-none relative z-10">{{ getDisplayValue(virtualState.startRow + rowOffset, col - 1) }}</span>
 
-              <!-- Note Indicator -->
+              <!-- Dirty Cell Indicator (Top Left) -->
+              <div 
+                v-if="isCellModified(virtualState.startRow + rowOffset, col - 1)" 
+                class="absolute top-0 left-0 w-0 h-0 border-r-[6px] border-r-transparent border-t-[6px] border-t-blue-500 pointer-events-none z-20"
+              ></div>
+
+              <!-- Note Indicator (Top Right) -->
               <div 
                 v-if="props.engine.hasNotes(`${virtualState.startRow + rowOffset},${col - 1}`)" 
                 class="absolute top-0 right-0 w-0 h-0 border-l-[6px] border-l-transparent border-t-[6px] border-t-amber-500 pointer-events-none"
@@ -1850,6 +2015,64 @@ onUnmounted(() => {
             @delete="(id) => engine.deleteNote(activeNoteKey!, id)"
             @close="closeNotePopover"
         />
+
+        <CommitBar
+          :modified-count="modifiedRows.size"
+          :deleted-count="deletedRows.size"
+          :added-count="addedRows.size"
+          @discard="discardAllChanges"
+          @review="openReviewDialog"
+          @commit="commitChanges"
+        />
+
+        <ChangeReviewDialog
+          v-model:open="showReviewDialog"
+          :diffs="pendingDiffs"
+          :loading="committing"
+          @commit="commitChanges"
+        />
     </div>
 </template>
+
+<style scoped>
+@reference "../../../styles.css";
+
+.row-modified {
+  @apply bg-violet-50/30 dark:bg-violet-900/10;
+}
+
+.row-modified td:first-child {
+  @apply border-l-2 border-l-violet-500 shadow-[inset_4px_0_0_-2px_rgba(139,92,246,0.3)];
+}
+
+.row-deleted {
+  @apply bg-destructive/10 dark:bg-destructive/20 opacity-70 grayscale-[0.5];
+}
+
+.row-deleted td {
+  @apply line-through text-muted-foreground transition-all duration-300;
+}
+
+.cell-dirty {
+  @apply relative;
+}
+
+/* Red dot for deleted rows in header */
+.row-deleted td:first-child {
+  @apply relative;
+}
+.row-deleted td:first-child::after {
+  content: '';
+  @apply absolute top-1 left-1 w-1.5 h-1.5 bg-destructive rounded-full;
+}
+
+/* Blue dot for modified rows in header */
+.row-modified:not(.row-deleted) td:first-child {
+  @apply relative;
+}
+.row-modified:not(.row-deleted) td:first-child::after {
+  content: '';
+  @apply absolute top-1 left-1 w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse;
+}
+</style>
 ```

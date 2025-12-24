@@ -866,6 +866,15 @@ chat.post("/ai/generate", async (c) => {
                 } else if (p.choices) {
                     // Fallback if ambiguous flag is missing but structure looks like one
                     return c.json({ ambiguous: true, ...p });
+                } else if (provider === 'mongodb' && (p.collection || p.filter || p.pipeline)) {
+                    // MongoDB query - the entire JSON IS the query
+                    // Return it directly - frontend will pass this to /query endpoint
+                    console.log('[Chat] Detected MongoDB query structure, returning as-is');
+                    return c.json({
+                        query: JSON.stringify(p),
+                        usage,
+                        reasoning: p.reasoning || null
+                    });
                 }
             } catch (e) { }
         }
@@ -962,8 +971,21 @@ chat.post("/ai/analyze", async (c) => {
         let summaryText = analysis
         try {
             const parsed = JSON.parse(analysis)
+
+            // Check if it's a chart configuration
+            if (parsed.chart_type) {
+                // Inject metadata for dashboard usage
+                parsed.query = query
+                parsed.description = question
+                if (!parsed.title) {
+                    parsed.title = question.length > 50 ? question.substring(0, 47) + '...' : question
+                }
+                // Return stringified JSON with injected metadata
+                summaryText = JSON.stringify(parsed)
+                console.log('[AI Analyze] Detected chart response, injected metadata')
+            }
             // Check for both 'answer' and 'summary' fields
-            if (parsed.answer) {
+            else if (parsed.answer) {
                 summaryText = parsed.answer
                 console.log('[AI Analyze] Extracted answer from JSON response')
             } else if (parsed.summary) {
@@ -1056,17 +1078,47 @@ chat.get("/ai/models", async (c) => {
     }
 })
 
+chat.post("/ai/analyze-dashboard", async (c) => {
+    const token = getCookie(c, "session")
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const { dashboardTitle, elements } = await c.req.json()
+
+        // Construct a summary of the data
+        const dataSummary = elements.map(el => {
+            const resultSummary = Array.isArray(el.results)
+                ? `Array of ${el.results.length} rows. Sample: ${JSON.stringify(el.results.slice(0, 2))}`
+                : JSON.stringify(el.results);
+            return `Element: ${el.title} (Type: ${el.type})\nData: ${resultSummary}`;
+        }).join('\n\n');
+
+        const prompt = `
+You are a senior data analyst. You are analyzing a dashboard titled "${dashboardTitle}".
+Below is a summary of the data from various dashboard elements:
+
+${dataSummary}
+
+Based on this data, provide a concise (2-3 paragraphs) summary of the key insights, trends, and any anomalies you detect. 
+Focus on crossing references between different elements if applicable.
+Keep the tone professional and helpful.
+`;
+
+        const response = await aiClient.generateText(prompt, null)
+        return c.json({ analysis: response })
+    } catch (e) {
+        console.error("[Chat] Analyze dashboard failed:", e)
+        return c.json({ error: e.message || "Failed to analyze dashboard" }, 500)
+    }
+})
+
 chat.post("/ai/search", async (c) => {
     const token = getCookie(c, "session")
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { query } = await c.req.json()
-        const payload = await verify(token, jwtSecret)
-
-        // This seems to be a general web search or internal search depending on implementation
-        // For now assumed web search via aiClient if supported, or just generic Q&A
-        const response = await aiClient.chat(query, [], null)
-
+        await verify(token, jwtSecret)
+        const response = await aiClient.generateText(query, null)
         return c.json({ result: response })
     } catch (e) {
         return c.json({ error: e.message }, 500)

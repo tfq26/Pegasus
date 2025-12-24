@@ -64,7 +64,26 @@
 
           <!-- Content (No bubbles, just clean breaks) -->
           <div class="pl-7 space-y-1">
+            <!-- Chart Rendering for AI responses with chart data -->
+            <div v-if="msg.role === 'assistant' && isChartContent(msg.content)" class="w-full max-w-2xl space-y-3">
+              <div class="text-sm font-medium text-stone-400 mb-2">{{ parseChartConfig(msg.content).title }}</div>
+              <ChartRenderer 
+                :type="parseChartConfig(msg.content).type" 
+                :data="parseChartConfig(msg.content).data"
+                :options="{ responsive: true, maintainAspectRatio: true, plugins: { legend: { display: true } } }"
+                class="rounded-lg border border-stone-800 bg-stone-900/50 p-4 h-[300px]"
+              />
+              <button 
+                @click="$emit('add-to-dashboard', parseChartConfig(msg.content))"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[10px] font-bold uppercase tracking-wide hover:bg-violet-500/20 transition-all"
+              >
+                <LayoutDashboard class="w-3 h-3" />
+                <span>Add to Dashboard</span>
+              </button>
+            </div>
+            <!-- Regular Text Content -->
             <div 
+              v-else
               class="text-stone-300 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white"
             >
                <div class="whitespace-pre-wrap break-words">
@@ -174,6 +193,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, nextTick, defineAsyncComponent } from 'vue'
 import { toast } from 'vue-sonner'
+import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import { 
   Bot, 
   User, 
@@ -186,7 +206,8 @@ import {
   LineChart,
   Brain,
   Zap,
-  RefreshCw
+  RefreshCw,
+  LayoutDashboard
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useColorMode, usePreferredDark } from '@vueuse/core'
@@ -215,7 +236,7 @@ const props = defineProps<{
   isThinking?: boolean
 }>()
 
-const emit = defineEmits(['update:input', 'submit'])
+const emit = defineEmits(['update:input', 'submit', 'add-to-dashboard'])
 
 const localInput = ref(props.input)
 const isInputFocused = ref(false)
@@ -276,6 +297,33 @@ const formatContent = (content: string) => {
   return formatted.replace(/\\n/g, '\n')
 }
 
+const isChartContent = (content: string): boolean => {
+  if (typeof content !== 'string') return false
+  try {
+    const parsed = JSON.parse(content)
+    return parsed && parsed.chart_type && parsed.data && (parsed.data.labels || parsed.data.datasets)
+  } catch {
+    return false
+  }
+}
+
+const parseChartConfig = (content: string): any => {
+  try {
+    const parsed = JSON.parse(content)
+    return {
+      type: parsed.chart_type,
+      title: parsed.title || '',
+      labels: parsed.data?.labels || [],
+      datasets: parsed.data?.datasets || [],
+      data: parsed.data,
+      query: parsed.query, // Preserved from backend injection
+      ...parsed // Spread other fields just in case
+    }
+  } catch {
+    return { type: 'bar', labels: [], datasets: [] }
+  }
+}
+
 const loadMore = async () => {
   if (isLoadingMore.value || !hasMore.value) return
   isLoadingMore.value = true
@@ -317,11 +365,15 @@ onMounted(() => {
 })
 
 watch(() => props.input, (val) => {
-  localInput.value = val
+  if (val !== localInput.value) {
+    localInput.value = val
+  }
 })
 
 watch(localInput, (val) => {
-  emit('update:input', val)
+  if (val !== props.input) {
+    emit('update:input', val)
+  }
   nextTick(() => adjustTextareaHeight())
 })
 

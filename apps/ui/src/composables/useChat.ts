@@ -2,6 +2,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { fetchChats, fetchChatHistory } from '@/lib/api'
+import { useChatDialogs } from './useChatDialogs'
 
 /**
  * Composable for managing chat operations
@@ -16,10 +17,13 @@ export function useChat() {
     const selectedChatId = ref('')
     const chatHistory = ref<any[]>([])
 
-    // Preview modal state
-    const previewChat = ref<any>(null)
-    const previewMessages = ref<any[]>([])
-    const previewVisible = ref(false)
+    const {
+        previewChat,
+        previewMessages,
+        previewVisible,
+        openChatPreview,
+        closeChatPreview
+    } = useChatDialogs()
 
     /**
      * Load all chats from API and sync to local ref
@@ -28,7 +32,7 @@ export function useChat() {
         try {
             await chatStore.loadChats()
             // Sync store data to local ref for reactivity
-            chats.value = [...chatStore.chats.value]
+            chats.value = [...(chatStore as any).chats]
         } catch (e) {
             console.error('Failed to load chats', e)
         }
@@ -43,7 +47,7 @@ export function useChat() {
             console.log('[useChat] New chat created:', newChat)
 
             // Sync store data to local ref
-            chats.value = [...chatStore.chats.value]
+            chats.value = [...(chatStore as any).chats]
 
             // Switch to the new chat
             selectedChatId.value = newChat.id
@@ -53,9 +57,7 @@ export function useChat() {
             workspaceStore.updateActiveTabData({ chatId: newChat.id, chatHistory: [] })
 
             // Clear preview state
-            previewChat.value = null
-            previewMessages.value = []
-            previewVisible.value = false
+            closeChatPreview()
 
             return newChat
         } catch (e) {
@@ -76,9 +78,7 @@ export function useChat() {
             const messages = await chatStore.loadChatHistory(id)
 
             // Show preview modal
-            previewChat.value = chat
-            previewMessages.value = messages
-            previewVisible.value = true
+            openChatPreview(chat, messages)
         } catch (e) {
             console.error('[useChat] Failed to load chat:', e)
             throw e
@@ -89,17 +89,25 @@ export function useChat() {
      * Continue with selected chat (from preview)
      */
     function continueChat(id: string) {
-        previewVisible.value = false
-        selectedChatId.value = id
+        const chat = chats.value.find(c => c.id === id)
+        const messagesToLoad = [...previewMessages.value]
 
-        // Load into main editor
-        chatHistory.value = previewMessages.value
+        closeChatPreview()
 
-        // Store in active tab's data
-        workspaceStore.updateActiveTabData({
+        // Create a new tab instead of updating the active one
+        const newTab = workspaceStore.createTab('chat', {
             chatId: id,
-            chatHistory: [...previewMessages.value]
+            chatHistory: messagesToLoad
         })
+
+        // Update tab label to chat title if available
+        if (chat?.title) {
+            newTab.label = chat.title
+            workspaceStore.saveToStorage()
+        }
+
+        selectedChatId.value = id
+        chatHistory.value = [...previewMessages.value]
     }
 
     /**
@@ -108,7 +116,7 @@ export function useChat() {
     async function deleteChat(id: string) {
         try {
             await chatStore.deleteChat(id)
-            chats.value = [...chatStore.chats.value]
+            chats.value = [...(chatStore as any).chats]
 
             if (selectedChatId.value === id) {
                 selectedChatId.value = ''
@@ -124,17 +132,17 @@ export function useChat() {
     let isSyncing = false
     watch(chatHistory, (newVal) => {
         if (isSyncing) return
-        const activeTab = workspaceStore.activeTab.value
+        const activeTab = (workspaceStore as any).activeTab
         if (activeTab?.type === 'chat' && newVal) {
             workspaceStore.updateActiveTabChatHistory([...newVal])
         }
     }, { deep: true })
 
     // Load chatHistory FROM the active tab when switching tabs
-    watch(() => workspaceStore.activeTabId.value, (newTabId, oldTabId) => {
+    watch(() => (workspaceStore as any).activeTabId, (newTabId, oldTabId) => {
         if (!newTabId || newTabId === oldTabId) return
 
-        const tab = workspaceStore.tabs.value.find(t => t.id === newTabId)
+        const tab = (workspaceStore as any).tabs.find((t: any) => t.id === newTabId)
         if (tab?.type === 'chat') {
             isSyncing = true
             chatHistory.value = tab.data?.chatHistory || []
@@ -142,6 +150,85 @@ export function useChat() {
             nextTick(() => { isSyncing = false })
         }
     })
+
+    /**
+     * Execute natural language query with AI
+     * Converts prompt to SQL, executes it, and updates chat history
+     */
+    async function executeWithAI(
+        prompt: string,
+        connectionId: string,
+        onProgress?: (percent: number, message: string) => void
+    ) {
+        try {
+            // Import API functions
+            const { generateAIQuery, QUERY_API_URL, getAuthHeaders } = await import('@/lib/api')
+            const { buildConnectionPayload } = await import('@/lib/db-connections')
+            const { useConnectionStore } = await import('@/stores/connection')
+
+            onProgress?.(10, 'Thinking...')
+
+            // Get connection
+            const connectionStore = useConnectionStore()
+            const connection = connectionStore.connections.value.find(c => c.id === connectionId)
+            if (!connection) {
+                throw new Error('Connection not found')
+            }
+
+            // Generate SQL from natural language
+            const aiResponse = await generateAIQuery(prompt, connectionId, chatHistory.value)
+
+            onProgress?.(40, 'Executing...')
+
+            // Execute the generated SQL
+            const payload = buildConnectionPayload(connection)
+            const res = await fetch(`${QUERY_API_URL}/query`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                credentials: 'include',
+                body: JSON.stringify({
+                    provider: connection.provider,
+                    connection: payload,
+                    query: (aiResponse as any).query,
+                    source: 'ai',
+                    model: (aiResponse as any).model
+                })
+            })
+
+            const body = await res.json()
+
+            if (!res.ok) {
+                throw new Error(body.error || 'Query execution failed')
+            }
+
+            onProgress?.(80, 'Formatting results...')
+
+            // Update chat history
+            const timestamp = Date.now()
+            chatHistory.value.push({
+                role: 'user',
+                content: prompt,
+                timestamp
+            })
+
+            chatHistory.value.push({
+                role: 'assistant',
+                content: aiResponse.explanation || 'Query executed successfully',
+                timestamp
+            })
+
+            onProgress?.(100, 'Complete')
+
+            return {
+                query: aiResponse.query,
+                result: body.result,
+                explanation: aiResponse.explanation
+            }
+        } catch (error: any) {
+            console.error('[useChat] AI execution failed:', error)
+            throw error
+        }
+    }
 
     return {
         // State
@@ -157,6 +244,7 @@ export function useChat() {
         createChat,
         selectChat,
         continueChat,
-        deleteChat
+        deleteChat,
+        executeWithAI
     }
 }

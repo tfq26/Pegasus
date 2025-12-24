@@ -1,220 +1,277 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { parseXML } from './xmlParser.js';
-import AdmZip from 'adm-zip';
+import ExcelJS from 'exceljs';
 
-// Helper to convert Excel column letter to index (A=0, B=1, Z=25, AA=26, etc.)
-function columnLetterToIndex(letter) {
-    let index = 0;
-    for (let i = 0; i < letter.length; i++) {
-        index = index * 26 + (letter.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
-    }
-    return index - 1;
-}
-
-// Helper to extract column letter from cell reference (e.g., "A1" -> "A", "AB23" -> "AB")
-function getCellColumn(cellRef) {
-    return cellRef.replace(/[0-9]/g, '');
-}
-
+/**
+ * Parse an Excel file using ExcelJS.
+ * Returns an object with:
+ * - sheets: object where keys are sheet names and values are arrays of row objects
+ * - metadata: parsing confidence and details for each sheet
+ * 
+ * Handles formulas (returns calculated values), merged cells, and rich text.
+ */
 export async function parseExcel(filePath) {
-    const tempDir = path.join(path.dirname(filePath), 'temp_' + path.basename(filePath, '.xlsx'));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
 
-    try {
-        // 1. Unzip the xlsx file using adm-zip (pure Node.js, no shell commands)
-        await fs.mkdir(tempDir, { recursive: true });
-        const zip = new AdmZip(filePath);
-        zip.extractAllTo(tempDir, true);
+    const result = {};
+    const metadata = {};
 
-        // 2. Read Shared Strings
-        const sharedStringsPath = path.join(tempDir, 'xl', 'sharedStrings.xml');
-        let sharedStrings = [];
-        try {
-            const sharedStringsXml = await fs.readFile(sharedStringsPath, 'utf-8');
-            const parsedShared = parseXML(sharedStringsXml);
-            // Structure usually: <sst><si><t>Value</t></si>...</sst>
-            // Handle both simple text and rich text (multiple <t> nodes)
+    workbook.eachSheet((worksheet, sheetId) => {
+        const rows = [];
+        let headers = [];
+        let headerRowNumber = 0;
+        let parsingMethod = 'none';
+        let confidence = 0;
+        const warnings = [];
 
-            if (parsedShared.sst && parsedShared.sst.si) {
-                const items = Array.isArray(parsedShared.sst.si) ? parsedShared.sst.si : [parsedShared.sst.si];
-                sharedStrings = items.map(item => {
-                    // Handle simple text: <si><t>Value</t></si>
-                    if (item.t) {
-                        if (typeof item.t === 'string') return item.t;
-                        if (item.t._text) return item.t._text;
-                        return '';
-                    }
-                    // Handle rich text: <si><r><t>Part1</t></r><r><t>Part2</t></r></si>
-                    if (item.r) {
-                        const rNodes = Array.isArray(item.r) ? item.r : [item.r];
-                        return rNodes.map(r => r.t?._text || r.t || '').join('');
-                    }
-                    return '';
-                });
-            }
-        } catch (e) {
-            console.warn('No shared strings found or failed to parse', e.message);
-        }
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+            // Get cell values, resolving formulas/rich text
+            const rowValues = [];
 
-        // 3. Read Workbook to get sheet names
-        const workbookPath = path.join(tempDir, 'xl', 'workbook.xml');
-        const workbookXml = await fs.readFile(workbookPath, 'utf-8');
-        const parsedWorkbook = parseXML(workbookXml);
-
-        const sheets = [];
-        if (parsedWorkbook.workbook && parsedWorkbook.workbook.sheets && parsedWorkbook.workbook.sheets.sheet) {
-            const sheetNodes = Array.isArray(parsedWorkbook.workbook.sheets.sheet)
-                ? parsedWorkbook.workbook.sheets.sheet
-                : [parsedWorkbook.workbook.sheets.sheet];
-
-            sheetNodes.forEach(node => {
-                // attributes like name="Sheet1" sheetId="1" r:id="rId1"
-                // My parser puts attributes in _attributes
-                if (node._attributes) {
-                    sheets.push({
-                        name: node._attributes.name,
-                        id: node._attributes['r:id'] // e.g., rId1 maps to worksheets/sheet1.xml usually
-                    });
+            row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                // Ensure array is large enough
+                while (rowValues.length < colNumber) {
+                    rowValues.push('');
                 }
-            });
-        }
 
-        // Map rId to filename using _rels/workbook.xml.rels
-        const relsPath = path.join(tempDir, 'xl', '_rels', 'workbook.xml.rels');
-        const relsXml = await fs.readFile(relsPath, 'utf-8');
-        const parsedRels = parseXML(relsXml);
-        const rels = {};
-        if (parsedRels.Relationships && parsedRels.Relationships.Relationship) {
-            const relNodes = Array.isArray(parsedRels.Relationships.Relationship)
-                ? parsedRels.Relationships.Relationship
-                : [parsedRels.Relationships.Relationship];
-            relNodes.forEach(node => {
-                if (node._attributes) {
-                    rels[node._attributes.Id] = node._attributes.Target;
-                }
-            });
-        }
+                let value = '';
 
-        const result = {};
-
-        // 4. Parse each sheet
-        for (const sheet of sheets) {
-            const target = rels[sheet.id];
-            if (!target) continue;
-
-            const sheetPath = path.join(tempDir, 'xl', target);
-            const sheetXml = await fs.readFile(sheetPath, 'utf-8');
-            const parsedSheet = parseXML(sheetXml);
-
-            const rows = [];
-            // Structure: <worksheet><sheetData><row><c t="s"><v>0</v></c>...</row>...</sheetData></worksheet>
-
-            if (parsedSheet.worksheet && parsedSheet.worksheet.sheetData && parsedSheet.worksheet.sheetData.row) {
-                const rowNodes = Array.isArray(parsedSheet.worksheet.sheetData.row)
-                    ? parsedSheet.worksheet.sheetData.row
-                    : [parsedSheet.worksheet.sheetData.row];
-
-                let headers = [];
-                let maxColumns = 0;
-
-                // First pass: determine max columns
-                rowNodes.forEach((rowNode) => {
-                    const cells = rowNode.c ? (Array.isArray(rowNode.c) ? rowNode.c : [rowNode.c]) : [];
-
-                    cells.forEach(cell => {
-                        if (cell._attributes && cell._attributes.r) {
-                            const colLetter = getCellColumn(cell._attributes.r);
-                            const colIndex = columnLetterToIndex(colLetter);
-                            maxColumns = Math.max(maxColumns, colIndex + 1);
-                        }
-                    });
-                });
-
-                // Second pass: extract data with smart header detection
-                rowNodes.forEach((rowNode, rowIndex) => {
-                    const cells = rowNode.c ? (Array.isArray(rowNode.c) ? rowNode.c : [rowNode.c]) : [];
-                    const rowValues = new Array(maxColumns).fill(''); // Pre-fill with empty strings
-
-                    cells.forEach(cell => {
-                        let value = cell.v?._text || cell.v || '';
-
-                        // Resolve shared string reference
-                        if (cell._attributes && cell._attributes.t === 's') {
-                            const index = parseInt(value);
-                            value = sharedStrings[index] || '';
-                        }
-
-                        // Get column index from cell reference
-                        if (cell._attributes && cell._attributes.r) {
-                            const colLetter = getCellColumn(cell._attributes.r);
-                            const colIndex = columnLetterToIndex(colLetter);
-                            rowValues[colIndex] = value;
-                        }
-                    });
-
-                    // Smart header detection: Find row with multiple meaningful column names
-                    if (headers.length === 0) {
-                        const nonEmptyCount = rowValues.filter(v => v && v.toString().trim() !== '').length;
-                        const hasMultipleColumns = nonEmptyCount >= 3; // At least 3 columns with data
-
-                        // Check if this looks like a header row
-                        const looksLikeHeader = rowValues.some(v =>
-                            v && (
-                                v.toString().toLowerCase().includes('name') ||
-                                v.toString().toLowerCase().includes('amount') ||
-                                v.toString().toLowerCase().includes('date') ||
-                                v.toString().toLowerCase().includes('value') ||
-                                v.toString().toLowerCase().includes('return') ||
-                                v.toString().toLowerCase().includes('folio') ||
-                                v.toString().toLowerCase().includes('since') ||
-                                v.toString().toLowerCase().includes('nav') ||
-                                v.toString().toLowerCase().includes('gain') ||
-                                v.toString().toLowerCase().includes('loss')
-                            )
-                        );
-
-                        if (hasMultipleColumns && looksLikeHeader) {
-                            // Clean up headers: remove extra spaces, handle multi-word headers
-                            console.log('[ExcelParser] Raw header values before cleaning:', rowValues);
-                            headers = rowValues.map((h, i) => {
-                                if (!h || h.toString().trim() === '') {
-                                    console.log(`[ExcelParser] Column ${i} has empty header, naming as Unknown Column ${i}`);
-                                    return `Unknown Column ${i}`;
-                                }
-                                // Clean the header text
-                                let cleaned = h.toString().trim();
-                                // Remove special characters but keep spaces, dots, parentheses, percent
-                                cleaned = cleaned.replace(/[^\w\s\.\(\)%]/g, '');
-                                // Replace multiple spaces with single space
-                                cleaned = cleaned.replace(/\s+/g, ' ');
-                                return cleaned || `Unknown Column ${i}`;
-                            });
-                            console.log('[ExcelParser] Found headers:', headers);
-                        }
+                if (cell.value === null || cell.value === undefined) {
+                    value = '';
+                } else if (typeof cell.value === 'object') {
+                    // Handle different object types
+                    if (cell.value.result !== undefined) {
+                        // Formula cell - use calculated result
+                        value = cell.value.result;
+                    } else if (cell.value.richText) {
+                        // Rich text - concatenate all text parts
+                        value = cell.value.richText.map(r => r.text || '').join('');
+                    } else if (cell.value.text !== undefined) {
+                        // Hyperlink or other text object
+                        value = cell.value.text;
+                    } else if (cell.value instanceof Date) {
+                        // Date object
+                        value = cell.value.toISOString().split('T')[0];
                     } else {
-                        // Skip completely empty rows
-                        if (rowValues.some(v => v !== '')) {
-                            const rowData = {};
-                            headers.forEach((header, i) => {
-                                rowData[header] = rowValues[i] || '';
-                            });
-                            rows.push(rowData);
-                        }
+                        // Other object - stringify
+                        value = String(cell.value);
                     }
-                });
+                } else {
+                    value = cell.value;
+                }
+
+                rowValues[colNumber - 1] = value;
+            });
+
+            // Header detection with multi-row support
+            if (headers.length === 0) {
+                const nonEmpty = rowValues.filter(v => v !== '' && v !== undefined && v !== null);
+
+                if (nonEmpty.length >= 2) {
+                    // Check if this row has many duplicate values (indicating merged cells in title rows)
+                    const uniqueValues = new Set(nonEmpty);
+                    const hasManyDuplicates = uniqueValues.size < nonEmpty.length / 2;
+
+                    if (hasManyDuplicates) {
+                        // This might be a parent header row - store it for potential combination
+                        console.log(`[ExcelParser] Found potential parent header row ${rowNumber}:`, [...uniqueValues]);
+                        // Store this row for potential combination with next row
+                        worksheet._parentHeaderRow = { rowNumber, values: rowValues };
+                        return;
+                    }
+
+                    // Check if this looks like a header row
+                    const looksLikeHeader = rowValues.some(v => {
+                        if (!v) return false;
+                        const str = String(v).toLowerCase();
+                        return str.includes('name') || str.includes('date') || str.includes('amount') ||
+                            str.includes('value') || str.includes('total') || str.includes('type') ||
+                            str.includes('folio') || str.includes('nav') || str.includes('units') ||
+                            str.includes('gain') || str.includes('loss') || str.includes('return') ||
+                            str.includes('since') || str.includes('cost') || str.includes('switch') ||
+                            str.includes('dividend') || str.includes('balance') || str.includes('market') ||
+                            str.includes('ret') || str.includes('xirr');
+                    });
+
+                    if (looksLikeHeader) {
+                        // Check if we have a parent header row to combine with
+                        if (worksheet._parentHeaderRow) {
+                            const parentValues = worksheet._parentHeaderRow.values;
+                            console.log(`[ExcelParser] Combining parent row ${worksheet._parentHeaderRow.rowNumber} with child row ${rowNumber}`);
+
+                            // Combine parent and child headers
+                            headers = rowValues.map((childHeader, i) => {
+                                const parentHeader = parentValues[i];
+                                let combined = '';
+
+                                // Build combined header from parent + child
+                                if (parentHeader && parentHeader !== '') {
+                                    combined = String(parentHeader).trim();
+                                }
+                                if (childHeader && childHeader !== '') {
+                                    const childStr = String(childHeader).trim();
+                                    if (combined) {
+                                        combined += ' ' + childStr;
+                                    } else {
+                                        combined = childStr;
+                                    }
+                                }
+
+                                if (!combined) {
+                                    return `Column_${i + 1}`;
+                                }
+
+                                // Clean header
+                                combined = combined.replace(/[\n\r]/g, ' ');
+                                combined = combined.replace(/\s+/g, ' ');
+                                return combined;
+                            });
+
+                            delete worksheet._parentHeaderRow;
+                            parsingMethod = 'multi-row';
+                        } else {
+                            // Single-row headers
+                            headers = rowValues.map((h, i) => {
+                                if (h === '' || h === undefined || h === null) {
+                                    return `Column_${i + 1}`;
+                                }
+                                let cleaned = String(h).trim();
+                                cleaned = cleaned.replace(/[\n\r]/g, ' ');
+                                cleaned = cleaned.replace(/\s+/g, ' ');
+                                return cleaned || `Column_${i + 1}`;
+                            });
+                            parsingMethod = 'single-row';
+                        }
+
+                        headerRowNumber = rowNumber;
+
+                        // Calculate initial confidence based on header quality
+                        const headerKeywordMatches = headers.filter(h => {
+                            const str = h.toLowerCase();
+                            return str.includes('name') || str.includes('date') || str.includes('amount') ||
+                                str.includes('value') || str.includes('total') || str.includes('units') ||
+                                str.includes('cost') || str.includes('balance') || str.includes('nav');
+                        }).length;
+
+                        const genericHeaders = headers.filter(h => h.startsWith('Column_')).length;
+
+                        // Confidence: 0.5 base + 0.3 for keyword matches + 0.2 penalty for generic headers
+                        confidence = 0.5 + (headerKeywordMatches / headers.length) * 0.3 - (genericHeaders / headers.length) * 0.2;
+
+                        if (genericHeaders > headers.length / 3) {
+                            warnings.push(`${genericHeaders} columns have generic names (Column_X)`);
+                        }
+
+                        console.log(`[ExcelParser] Found headers at row ${rowNumber}:`, headers);
+                        console.log(`[ExcelParser] Initial confidence: ${confidence.toFixed(2)} (method: ${parsingMethod})`);
+                        return; // Don't add header row to data
+                    }
+                }
             }
 
-            result[sheet.name] = rows;
+            // Data rows (only after headers are found)
+            if (headers.length > 0 && rowNumber > headerRowNumber) {
+                // Check if row has any non-empty values
+                const hasData = rowValues.some(v => v !== '' && v !== undefined && v !== null);
+
+                if (hasData) {
+                    const rowData = {};
+                    headers.forEach((header, i) => {
+                        rowData[header] = rowValues[i] !== undefined ? rowValues[i] : '';
+                    });
+                    rows.push(rowData);
+                }
+            }
+        });
+
+        // Post-processing: Check if the first "data" row is actually the real headers
+        // This happens when we have multi-level headers and detected an intermediate level
+        if (rows.length > 0) {
+            const firstRow = rows[0];
+            const firstRowValues = Object.values(firstRow);
+
+            // Check if first row looks more like headers than data
+            const looksLikeRealHeaders = firstRowValues.filter(v => {
+                if (!v || v === '') return false;
+                const str = String(v).toLowerCase();
+                // Check for common header patterns
+                return str.includes('name') || str.includes('no') || str.includes('since') ||
+                    str.includes('amount') || str.includes('units') || str.includes('cost') ||
+                    str.includes('value') || str.includes('nav') || str.includes('balance') ||
+                    str.includes('dividend') || str.includes('switch') || str.includes('gain') ||
+                    str.includes('loss') || str.includes('ret') || str.includes('xirr') ||
+                    str.includes('date') || str.includes('folio') || str.includes('market');
+            }).length;
+
+            // If more than half the columns look like headers, use this row as headers
+            if (looksLikeRealHeaders >= headers.length / 2) {
+                console.log(`[ExcelParser] First data row appears to be real headers, using it instead`);
+
+                // Combine parent headers with these detailed headers
+                const newHeaders = headers.map((parentHeader, i) => {
+                    const detailedHeader = firstRowValues[i];
+                    if (!detailedHeader || detailedHeader === '') {
+                        return parentHeader;
+                    }
+
+                    const detailedStr = String(detailedHeader).trim();
+                    // If parent header is generic (Column_X), just use detailed
+                    if (parentHeader.startsWith('Column_')) {
+                        return detailedStr;
+                    }
+
+                    // Otherwise combine: "Current Status" + "NAV" = "Current Status NAV"
+                    return `${parentHeader} ${detailedStr}`.trim();
+                });
+
+                headers = newHeaders;
+                console.log(`[ExcelParser] Updated headers:`, headers);
+                parsingMethod = 'post-processed';
+
+                // Recalculate confidence with updated headers
+                const headerKeywordMatches = headers.filter(h => {
+                    const str = h.toLowerCase();
+                    return str.includes('name') || str.includes('date') || str.includes('amount') ||
+                        str.includes('value') || str.includes('total') || str.includes('units') ||
+                        str.includes('cost') || str.includes('balance') || str.includes('nav');
+                }).length;
+
+                const genericHeaders = headers.filter(h => h.startsWith('Column_')).length;
+                confidence = 0.6 + (headerKeywordMatches / headers.length) * 0.3 - (genericHeaders / headers.length) * 0.1;
+
+                console.log(`[ExcelParser] Updated confidence: ${confidence.toFixed(2)} (post-processed)`);
+
+                // Remove first row from data since it's now the header
+                rows.shift();
+            }
         }
 
-        return result;
-
-    } finally {
-        // Cleanup using Node.js fs.rm (recursive removal)
-        try {
-            await fs.rm(tempDir, { recursive: true, force: true });
-        } catch (e) {
-            console.error('Failed to cleanup temp dir', e);
+        // Final confidence adjustments
+        if (headers.length === 0) {
+            confidence = 0;
+            warnings.push('No headers detected');
+        } else if (rows.length === 0) {
+            confidence = Math.max(0, confidence - 0.3);
+            warnings.push('No data rows found');
         }
-    }
+
+        // Clamp confidence to [0, 1]
+        confidence = Math.max(0, Math.min(1, confidence));
+
+        // Only add sheet if it has data
+        if (rows.length > 0) {
+            result[worksheet.name] = rows;
+            metadata[worksheet.name] = {
+                confidence,
+                method: parsingMethod,
+                headerRow: headerRowNumber,
+                totalRows: rows.length,
+                totalColumns: headers.length,
+                warnings: warnings.length > 0 ? warnings : undefined,
+                headers
+            };
+            console.log(`[ExcelParser] Sheet "${worksheet.name}": ${rows.length} rows, ${headers.length} columns, confidence: ${confidence.toFixed(2)}`);
+        }
+    });
+
+    return { sheets: result, metadata };
 }

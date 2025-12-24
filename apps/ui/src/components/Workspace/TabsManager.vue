@@ -1,6 +1,6 @@
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { MessageSquare, Table, Database, X, Plus } from 'lucide-vue-next';
 
 export interface Tab {
@@ -34,18 +34,24 @@ const emit = defineEmits<{
 
 const isDropdownOpen = ref(false);
 const plusButtonRef = ref<HTMLButtonElement | null>(null);
+const dropdownStyle = ref<any>({});
 
-const dropdownStyle = computed(() => {
-  if (!plusButtonRef.value) return {};
-  const rect = plusButtonRef.value.getBoundingClientRect();
-  return {
-    top: `${rect.bottom + 4}px`,
-    left: `${rect.left}px`,
-  };
-});
+const updatePosition = () => {
+    if (!plusButtonRef.value) return;
+    const rect = plusButtonRef.value.getBoundingClientRect();
+    dropdownStyle.value = {
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+    };
+}
 
 const toggleDropdown = () => {
-  isDropdownOpen.value = !isDropdownOpen.value;
+  if (!isDropdownOpen.value) {
+      updatePosition();
+      isDropdownOpen.value = true;
+  } else {
+      isDropdownOpen.value = false;
+  }
 };
 
 const closeDropdown = () => {

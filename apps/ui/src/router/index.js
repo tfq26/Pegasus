@@ -7,28 +7,28 @@ const router = createRouter({
     { path: '/', component: () => import('../views/Home.vue') },
     { path: '/about', component: () => import('../views/About.vue') },
 
-    // Chat routes - new focused views
+    // Main query interface with multi-tab workspace
+    {
+      path: '/query',
+      component: () => import('@/views/Chat.vue')
+    },
+
+    // Redirects from old chat routes to unified query view
     {
       path: '/chat',
-      redirect: '/chat/conversation'
+      redirect: '/query'
     },
     {
       path: '/chat/conversation',
-      component: () => import('@/views/ChatView.vue')
+      redirect: '/query'
     },
     {
       path: '/chat/query',
-      component: () => import('@/views/QueryView.vue')
+      redirect: '/query'
     },
     {
       path: '/chat/spreadsheet',
-      component: () => import('@/views/SpreadsheetView.vue')
-    },
-
-    // Legacy route - redirect to new query view
-    {
-      path: '/query',
-      redirect: '/chat/query'
+      redirect: '/query'
     },
 
     { path: '/dashboard', component: () => import('@/views/DashboardHome.vue') },
@@ -47,37 +47,32 @@ const router = createRouter({
 
 // Refresh user state after login redirects
 router.beforeEach(async (to, from) => {
-  const { fetchUser } = useAuth()
+  const { fetchUser, user } = useAuth()
+  const token = localStorage.getItem('auth_token')
+
+  // List of paths that require authentication
+  const protectedPaths = ['/query', '/dashboard', '/profile', '/settings', '/feedback', '/support']
+  const isProtectedPath = protectedPaths.some(path => to.path.startsWith(path))
+
+  // Redirect to login if user is not authenticated and trying to access a protected path
+  if (isProtectedPath && !token) {
+    console.log('[Router] Unauthenticated access to protected path, redirecting to login:', to.path)
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
 
   // Check if we're coming from a login flow
-  // This handles cases where:
-  // 1. User navigates away from /login page
-  // 2. User is redirected back from OAuth provider (check for auth query params)
   const isComingFromLogin = from.path === '/login'
   const hasAuthParams = to.query.code || to.query.state || to.query.session_state
 
-  console.log('[Router] Navigation:', {
-    from: from.path,
-    to: to.path,
-    isComingFromLogin,
-    hasAuthParams,
-    query: to.query
-  })
-
   if (isComingFromLogin || hasAuthParams) {
     console.log('[Router] Refreshing user state after login/OAuth redirect')
-    // Refresh user state to update mobile navigation and other components
     await fetchUser()
 
-    // Clean up auth query params from URL if present
     if (hasAuthParams) {
       const cleanQuery = { ...to.query }
       delete cleanQuery.code
       delete cleanQuery.state
       delete cleanQuery.session_state
-
-      console.log('[Router] Cleaning auth params from URL')
-      // Replace current route to remove auth params from URL
       router.replace({ path: to.path, query: cleanQuery })
     }
   }

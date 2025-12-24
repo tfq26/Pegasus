@@ -49,6 +49,12 @@ export function useQuery() {
 
         try {
             const payload = buildConnectionPayload(connection, query)
+            console.log('[useQuery] Executing query:', {
+                connection,
+                payload,
+                provider: connection.provider,
+                query
+            })
 
             const res = await fetch(`${QUERY_API_URL}/query`, {
                 method: 'POST',
@@ -60,6 +66,11 @@ export function useQuery() {
             const body = await res.json()
 
             if (!res.ok) {
+                console.error('[useQuery] Query failed:', {
+                    status: res.status,
+                    statusText: res.statusText,
+                    body
+                })
                 throw new Error(body.error || 'Query failed')
             }
 

@@ -6,15 +6,29 @@ import {
     fetchDashboard,
     updateDashboard,
     deleteDashboard,
-    shareDashboard
+    shareDashboard,
+    QUERY_API_URL
 } from '@/lib/api'
+
+export interface DashboardElement {
+    id: string
+    type: string
+    title: string
+    config: any
+    query?: string
+    connectionId?: string
+    lastResult?: any
+    cacheUntil?: number
+    refreshFrequency?: number // minutes, 0 means live
+}
 
 export interface Dashboard {
     id: string
     title: string
     data: {
         layout: any[]
-        elements: any[]
+        elements: DashboardElement[]
+        parameters?: Record<string, any>
     }
     is_public: boolean
     share_token: string | null
@@ -25,10 +39,13 @@ export interface Dashboard {
 export const useDashboardStore = defineStore('dashboard', () => {
     const dashboards = ref<Dashboard[]>([])
     const currentDashboard = ref<Dashboard | null>(null)
+    const parameters = ref<Record<string, any>>({})
     const isLoading = ref(false)
     const error = ref<string | null>(null)
 
     const isSaving = ref(false)
+    const isAnalyzing = ref(false)
+    const analysisResult = ref<string | null>(null)
 
     const loadDashboards = async () => {
         isLoading.value = true
@@ -47,6 +64,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         const existing = dashboards.value.find(d => d.id === id)
         if (existing && !forceRefresh) {
             currentDashboard.value = existing
+            // Initialize parameters from dashboard data
+            parameters.value = existing.data?.parameters || {}
         }
 
         // Always fetch fresh data in background if we strictly want consistency, 
@@ -60,6 +79,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         try {
             const dashboard = await fetchDashboard(id)
             currentDashboard.value = dashboard
+            parameters.value = dashboard.data?.parameters || {}
+
             // Update list item if needed
             const index = dashboards.value.findIndex(d => d.id === id)
             if (index !== -1) {
@@ -74,11 +95,21 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    const updateParameter = (name: string, value: any) => {
+        parameters.value = { ...parameters.value, [name]: value }
+
+        // If we have a current dashboard, we should ideally sync parameters back to its data
+        if (currentDashboard.value) {
+            if (!currentDashboard.value.data) currentDashboard.value.data = { layout: [], elements: [], parameters: {} }
+            currentDashboard.value.data.parameters = { ...parameters.value }
+        }
+    }
+
     const createNewDashboard = async (title: string) => {
         isLoading.value = true
         error.value = null
         try {
-            const { id } = await createDashboard(title, { layout: [], elements: [] })
+            const { id } = await createDashboard(title, { layout: [], elements: [], parameters: {} })
             await loadDashboards()
             // We can just fetch the single new dashboard instead of reloading all, but loadDashboards is fine for now
             await selectDashboard(id, true)
@@ -102,6 +133,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
             title: currentDashboard.value.title,
             data: {
                 ...currentDashboard.value.data,
+                parameters: parameters.value,
                 cover_image: (currentDashboard.value as any).cover_image
             }
         }
@@ -165,7 +197,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
             if (!dashboard) throw new Error('Dashboard not found')
 
             // Ensure data exists
-            const currentData = dashboard.data || { layout: [], elements: [] }
+            const currentData = dashboard.data || { layout: [], elements: [], parameters: {} }
             const newId = crypto.randomUUID()
 
             // Calculate next position
@@ -231,6 +263,85 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    const executeElementQuery = async (elementId: string, forceRefresh = false) => {
+        if (!currentDashboard.value) return
+
+        const element = currentDashboard.value.data.elements.find(el => el.id === elementId)
+        if (!element || !element.query || !element.connectionId) return
+
+        // Check cache
+        const now = Date.now()
+        if (!forceRefresh && element.cacheUntil && element.cacheUntil > now && element.lastResult) {
+            console.log(`[DashboardStore] Using cached result for ${elementId}`)
+            return element.lastResult
+        }
+
+        // Replace parameters in query
+        let query = element.query
+        Object.entries(parameters.value).forEach(([key, val]) => {
+            const regex = new RegExp(`{{${key}}}`, 'g')
+            query = query.replace(regex, typeof val === 'string' ? `'${val}'` : val)
+        })
+
+        try {
+            const response = await fetch(`${QUERY_API_URL}/api/query-by-id`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    connectionId: element.connectionId,
+                    query: query
+                })
+            })
+
+            if (!response.ok) throw new Error('Query failed')
+            const body = await response.json()
+
+            // Update element data in current dashboard
+            const elementIndex = currentDashboard.value.data.elements.findIndex(el => el.id === elementId)
+            if (elementIndex !== -1) {
+                const updatedElement = { ...currentDashboard.value.data.elements[elementIndex] } as DashboardElement
+                updatedElement.lastResult = body.result
+
+                // Cache logic: Default to 5 minutes if not specified, 0 means no cache
+                const freq = updatedElement.refreshFrequency !== undefined ? updatedElement.refreshFrequency : 5
+                if (freq > 0) {
+                    updatedElement.cacheUntil = now + (freq * 60 * 1000)
+                }
+
+                if (updatedElement.type === 'stat') {
+                    const firstRow = body.result?.[0]
+                    if (firstRow) {
+                        const firstKey = Object.keys(firstRow)[0]
+                        if (firstKey !== undefined) {
+                            updatedElement.config.value = firstRow[firstKey]
+                        }
+                    }
+                } else if (body.result && Array.isArray(body.result)) {
+                    // Transform raw result to chart config using local generator
+                    const { generateChartConfig } = await import('@/lib/chartGenerator')
+                    const newConfig = generateChartConfig(body.result, element.query)
+
+                    if (newConfig && newConfig.config && newConfig.config.data) {
+                        updatedElement.config.data = newConfig.config.data
+                    } else {
+                        // Fallback just in case generator fails
+                        updatedElement.config.data = body.result
+                    }
+                } else {
+                    updatedElement.config.data = body.result
+                }
+
+                currentDashboard.value.data.elements[elementIndex] = updatedElement
+            }
+
+            return body.result
+        } catch (e: any) {
+            console.error('[DashboardStore] executeElementQuery failed:', e)
+            throw e
+        }
+    }
+
     const importDashboard = async (dashboardData: any) => {
         isLoading.value = true
         try {
@@ -256,9 +367,16 @@ export const useDashboardStore = defineStore('dashboard', () => {
             }
             // Create a new dashboard with the shared data
             // We need to regenerate IDs for elements to avoid conflicts if we ever merge or just to be clean
-            const elements = dashboardData.data.elements.map((el: any) => ({
-                ...el,
-                id: crypto.randomUUID()
+            const elements = dashboardData.data.elements.map((el: any): DashboardElement => ({
+                id: crypto.randomUUID(),
+                type: el.type || 'chart',
+                title: el.title || 'Untitled',
+                config: el.config || {},
+                query: el.query,
+                connectionId: el.connectionId,
+                lastResult: el.lastResult,
+                cacheUntil: el.cacheUntil,
+                refreshFrequency: el.refreshFrequency
             }))
 
             // We also need to update the layout to reference the new element IDs
@@ -276,7 +394,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
             const newData = {
                 layout,
-                elements
+                elements,
+                parameters: dashboardData.data.parameters || {}
             }
 
             const { id } = await createDashboard(title, newData)
@@ -290,19 +409,44 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    const refreshDashboard = async (forceRefresh = false) => {
+        if (!currentDashboard.value) return
+
+        console.log(`[DashboardStore] Refreshing all elements (force=${forceRefresh})`)
+        const elements = currentDashboard.value.data.elements
+
+        // Execute all queries in parallel
+        const promises = elements
+            .filter(el => el.query && el.connectionId)
+            .map(el => executeElementQuery(el.id, forceRefresh))
+
+        try {
+            await Promise.all(promises)
+            console.log('[DashboardStore] All elements refreshed')
+        } catch (e) {
+            console.error('[DashboardStore] Some elements failed to refresh:', e)
+        }
+    }
+
     return {
         dashboards,
         currentDashboard,
+        parameters,
         isLoading,
         isSaving,
+        isAnalyzing,
+        analysisResult,
         error,
         loadDashboards,
         selectDashboard,
+        updateParameter,
         createNewDashboard,
         saveCurrentDashboard,
         removeDashboard,
         generateShareLink,
         addElementToDashboard,
+        executeElementQuery,
+        refreshDashboard,
         importDashboard
     }
 })

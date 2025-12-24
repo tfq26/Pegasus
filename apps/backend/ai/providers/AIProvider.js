@@ -70,9 +70,10 @@ export class AIProvider {
         const messages = [{ role: 'user', content: prompt }]
 
         const response = await this.generateContent(messages, { json: true })
+        const text = typeof response === 'string' ? response : response.text
 
         try {
-            const jsonStr = PromptBuilder.cleanResponse(response)
+            const jsonStr = PromptBuilder.cleanResponse(text)
             return JSON.parse(jsonStr)
         } catch (e) {
             console.warn("Failed to parse disambiguation response", e)
@@ -88,9 +89,10 @@ export class AIProvider {
         const messages = [{ role: 'user', content: prompt }]
 
         const response = await this.generateContent(messages, { json: true })
+        const text = typeof response === 'string' ? response : response.text
 
         try {
-            const jsonStr = PromptBuilder.cleanResponse(response)
+            const jsonStr = PromptBuilder.cleanResponse(text)
             // If response is "null" or empty, return null
             if (!jsonStr || jsonStr === 'null') return null
             return JSON.parse(jsonStr)

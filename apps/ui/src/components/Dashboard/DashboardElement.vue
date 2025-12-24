@@ -41,6 +41,17 @@
                 <Move v-else class="w-4 h-4" />
               </div>
 
+              <!-- Refresh Button (Always showing for now if has query) -->
+              <button
+                v-if="element?.query"
+                @click.stop="handleRefresh(true)"
+                :disabled="isRefreshing"
+                class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+                title="Refresh Data"
+              >
+                <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" />
+              </button>
+
                <!-- Mobile Actions Menu -->
                <div v-if="isMobile" class="shrink-0" @click.stop>
                  <DropdownMenu>
@@ -80,6 +91,7 @@
               :data="element.config.data" 
               :options="{ ...element.config.options, maintainAspectRatio: false, responsive: true }"
               :customization="element.customization"
+              @drill-down="$emit('drill-down', $event)"
               class="w-full h-full p-4"
             />
             <ChartRenderer 
@@ -88,6 +100,7 @@
               :data="element.config" 
               :options="{ label: element.title }"
               :customization="element.customization"
+              @drill-down="$emit('drill-down', $event)"
               class="w-full h-full p-4"
             />
 
@@ -136,6 +149,11 @@
         <ContextMenuItem @select="$emit('view-query')">
           <Code class="w-4 h-4 mr-2" />
           View Query
+        </ContextMenuItem>
+        <ContextMenuSeparator class="bg-border" />
+        <ContextMenuItem @select="handleRefresh(true)" :disabled="isRefreshing">
+          <RefreshCw class="w-4 h-4 mr-2" :class="{ 'animate-spin': isRefreshing }" />
+          Refresh Data
         </ContextMenuItem>
       </template>
       <ContextMenuSeparator class="bg-border" />
@@ -186,7 +204,47 @@ const emit = defineEmits<{
   (e: 'edit-query'): void
   (e: 'view-query'): void
   (e: 'download'): void
+  (e: 'drill-down', data: any): void
 }>()
+
+import { onMounted, ref } from 'vue'
+import { useDashboardStore } from '@/stores/dashboard'
+import { Loader2, RefreshCw } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
+
+const store = useDashboardStore()
+const isRefreshing = ref(false)
+
+const handleRefresh = async (force = false) => {
+    if (!props.element?.id || !props.element?.query || !props.element?.connectionId) return
+    
+    isRefreshing.value = true
+    try {
+        await store.executeElementQuery(props.element.id, force)
+        if (force) {
+            toast.success(`Refreshed ${props.element.title || 'element'}`)
+        }
+    } catch (e: any) {
+        console.error('[DashboardElement] Refresh failed:', e)
+        toast.error(`Failed to refresh ${props.element.title || 'element'}: ${e.message}`)
+    } finally {
+        isRefreshing.value = false
+    }
+}
+
+onMounted(async () => {
+    // Check if we need to fetch data (if query exists but no data, or if cache is stale)
+    if (props.element?.query && props.element?.connectionId) {
+        const now = Date.now()
+        const isStale = !props.element.cacheUntil || props.element.cacheUntil < now
+        const hasNoData = props.element.type === 'stat' ? props.element.config?.value === undefined : !props.element.config?.data
+        
+        if (hasNoData || isStale) {
+            console.log(`[DashboardElement] Initial refresh for ${props.element.id}`)
+            handleRefresh()
+        }
+    }
+})
 
 const formatSize = (bytes: number) => {
   if (bytes === 0) return '0 B'

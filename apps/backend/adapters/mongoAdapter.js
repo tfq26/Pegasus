@@ -40,8 +40,23 @@ export class MongoAdapter extends DatabaseAdapter {
       try {
         payload = JSON.parse(query)
       } catch (error) {
-        console.error("Failed to parse MongoDB query:", query)
-        throw new Error(`MongoDB query must be a valid JSON payload. Received: ${query.substring(0, 100)}...`)
+        // Try to extract JSON from a string that might have explanatory text before/after it
+        const jsonStart = query.indexOf('{')
+        const jsonEnd = query.lastIndexOf('}')
+
+        if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+          const potentialJson = query.substring(jsonStart, jsonEnd + 1)
+          try {
+            payload = JSON.parse(potentialJson)
+            console.log('[Mongo] Extracted JSON from query with explanatory text')
+          } catch (innerError) {
+            console.error("Failed to parse MongoDB query:", query)
+            throw new Error(`MongoDB query must be a valid JSON payload. Could not extract valid JSON. Received: ${query.substring(0, 100)}...`)
+          }
+        } else {
+          console.error("Failed to parse MongoDB query:", query)
+          throw new Error(`MongoDB query must be a valid JSON payload. No JSON object found. Received: ${query.substring(0, 100)}...`)
+        }
       }
     }
 

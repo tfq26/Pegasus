@@ -98,6 +98,17 @@ const initSchema = async () => {
             DEFINE INDEX idx_original_table ON sanitization_metadata COLUMNS original_table UNIQUE;
         `);
 
+        // Connection Workspaces (Persistence)
+        await db.query(`
+            DEFINE TABLE connection_workspace SCHEMALESS;
+            DEFINE FIELD connection_id ON TABLE connection_workspace TYPE string;
+            DEFINE FIELD user ON TABLE connection_workspace TYPE record<user>;
+            DEFINE FIELD workspace_data ON TABLE connection_workspace TYPE object;
+            DEFINE FIELD expires_at ON TABLE connection_workspace TYPE datetime;
+            
+            DEFINE INDEX idx_workspace_conn ON TABLE connection_workspace COLUMNS connection_id, user UNIQUE;
+        `);
+
         console.log('[SurrealDB] Schema initialized');
     } catch (e) {
         // Ignore "table already exists" errors

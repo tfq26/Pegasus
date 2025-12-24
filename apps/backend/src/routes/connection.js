@@ -215,12 +215,12 @@ connections.put("/:id", async (c) => {
         console.log('[Connection] Updating connection:', connectionId, 'for user:', userId)
 
         const [updated] = await db.query(`
-        UPDATE ${connectionId} SET {
-            nickname: $nickname,
-            description: $description,
-            provider: $provider,
-            config: $config
-        } WHERE user = type::thing('user', $userId);
+        UPDATE ${connectionId} SET 
+            nickname = $nickname,
+            description = $description,
+            provider = $provider,
+            config = $config
+        WHERE user = type::thing('user', $userId);
     `, {
             userId: userId,
             nickname: connection.nickname,

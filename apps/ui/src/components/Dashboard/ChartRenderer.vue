@@ -49,6 +49,7 @@ const formatStatValue = (val: any) => {
 }
 
 const computedData = computed(() => {
+  if (!props.data) return { labels: [], datasets: [] }
   const data = JSON.parse(JSON.stringify(props.data))
   
   // Apply custom labels (overrides axis/category labels)
@@ -67,9 +68,28 @@ const computedData = computed(() => {
   return data
 })
 
+const emit = defineEmits<{
+  (e: 'drill-down', data: { label: string, value: any, datasetLabel: string, index: number }): void
+}>()
+
 const computedOptions = computed(() => {
   const options = JSON.parse(JSON.stringify(props.options || {}))
   
+  // Add drill-down handler
+  options.onClick = (event: any, elements: any[]) => {
+    if (elements.length > 0) {
+      const chart = event.chart
+      const firstElement = elements[0]
+      const index = firstElement.index
+      const label = chart.data.labels[index]
+      const value = chart.data.datasets[firstElement.datasetIndex].data[index]
+      const datasetLabel = chart.data.datasets[firstElement.datasetIndex].label
+      
+      console.log(`[ChartRenderer] Drill-down clicked: ${label} = ${value}`)
+      emit('drill-down', { label, value, datasetLabel, index })
+    }
+  }
+
   // Add hover notes to tooltip
   if (props.customization?.notes) {
     if (!options.plugins) options.plugins = {}

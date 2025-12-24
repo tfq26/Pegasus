@@ -5,7 +5,7 @@ import { Surreal } from 'surrealdb';
 export class SurrealAdapter extends DatabaseAdapter {
     constructor(connection) {
         super(connection);
-        this.isInternal = !connection.url && !connection.host; // If no URL/host, assume internal DB
+        this.isInternal = !connection?.url && !connection?.host; // If no URL/host, assume internal DB
         this.db = this.isInternal ? globalDb : new Surreal();
     }
 

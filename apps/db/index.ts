@@ -141,7 +141,6 @@ const initDb = async () => {
         created_at INTEGER DEFAULT (unixepoch()),
         updated_at INTEGER DEFAULT (unixepoch()),
         FOREIGN KEY(user_id) REFERENCES users(id)
-      )
     `)
 
     // Migration: Move v1 data to v2

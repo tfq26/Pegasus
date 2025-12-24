@@ -95,24 +95,24 @@ export const buildConnectionPayload = (
 ) => {
   switch (entry.provider) {
     case 'mysql':
-      return { ...entry.mysql }
+      return { provider: 'mysql', ...entry.mysql }
     case 'postgres':
-      return { ...entry.postgres }
+      return { provider: 'postgres', ...entry.postgres }
     case 'mongodb':
       // Only include database/collection if explicitly set by user
-      const payload: any = { url: entry.mongodb?.url }
+      const payload: any = { provider: 'mongodb', url: entry.mongodb?.url }
       if (entry.mongodb?.database?.trim()) payload.database = entry.mongodb.database
       if (entry.mongodb?.collection?.trim()) payload.collection = entry.mongodb.collection
       Object.assign(payload, overrides)
       return payload
     case 'kusto':
-      return { ...entry.kusto }
+      return { provider: 'kusto', ...entry.kusto }
     case 'sqlite':
-      return { ...entry.sqlite }
+      return { provider: 'sqlite', ...entry.sqlite }
     case 'surrealdb':
-      return { ...entry.surrealdb }
+      return { provider: 'surrealdb', ...entry.surrealdb }
     default:
-      return {}
+      return { provider: entry.provider }
   }
 }
 

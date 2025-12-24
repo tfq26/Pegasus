@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, onMounted } from 'vue';
+import { ref, watch, onUnmounted, onMounted, computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import TabsManager from './TabsManager.vue';
 import { useWorkspaceStore } from '@/stores/workspace';
 import type { Tab } from '@/stores/workspace';
@@ -7,6 +8,7 @@ import { Engine } from '../TableView/Engine/Engine';
 import Grid from '../TableView/Grid/Grid.vue'; 
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import { toast } from 'vue-sonner';
+import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
 
 // Interface for version history
 interface TableVersion {
@@ -34,28 +36,26 @@ const emit = defineEmits<{
   (e: 'save-query', query: string, type: 'formula'): void;
   (e: 'save-status', status: 'saved' | 'saving' | 'error'): void;
   (e: 'create-chat'): void;
+  (e: 'add-to-dashboard', config: any): void;
 }>();
 
 // --- Pinia Store ---
 const workspaceStore = useWorkspaceStore();
+const { tabs, activeTabId, activeTab } = storeToRefs(workspaceStore);
 
 // Load tabs from storage on mount
+// Load tabs handled by Chat.vue via store
 onMounted(() => {
-  workspaceStore.loadFromStorage();
+  // workspaceStore.loadWorkspace('temp'); // Handled by parent
 });
 
 // Sync chatHistory prop to active chat tab's data
 watch(() => props.chatHistory, (newHistory) => {
-  if (!workspaceStore.activeTab) return;
-  const activeTab = workspaceStore.activeTab.value;
-  if (newHistory && activeTab?.type === 'chat') {
+  const currentTab = activeTab.value as any;
+  if (newHistory && currentTab?.type === 'chat') {
     workspaceStore.updateActiveTabData({ chatHistory: newHistory });
-    console.log('[Workspace] Synced chatHistory to active tab:', { 
-      tabId: workspaceStore.activeTabId?.value, 
-      historyLength: newHistory.length 
-    });
   }
-}, { deep: true, immediate: true });
+}, { deep: true });
 
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
@@ -164,128 +164,42 @@ const refreshTableData = async (engine: Engine) => {
 
 // Auto-save logic (Hybrid Strategy: Full Replacement or Delta Operations)
 const saveChanges = async (engine: Engine) => {
-   // Prevent save during refresh to avoid infinite loop
+   // Prevent save during refresh
    if (isRefreshing.value) {
      console.log('[Save] Skipping save during refresh');
      return;
    }
-      // Determine if we're using full_replacement strategy
-    const isSurrealDB = engine.sourceProvider === 'surrealdb';
-    
-    // Skip save if no actual modifications exist (except for SurrealDB which uses full_replacement)
-    if (!isSurrealDB && !engine.hasPendingModifications()) {
-      console.log('[Save] No pending modifications, skipping save');
-      engine.saveStatus = 'saved';
-      emit('save-status', 'saved');
-      return;
-    }
-    
+   
     try {
-      // 1. Determine Save Strategy
-      let strategy = engine.getSaveStrategy();
-      
-      // For SurrealDB, we force full_replacement for now because we don't track record IDs in the engine
-      // (we explicitly hid them in openTable). Delta updates require IDs.
-      if (isSurrealDB) {
-          console.log('[Save] Forcing full_replacement for SurrealDB');
-          strategy = 'full_replacement';
+      if (!engine.hasPendingModifications()) {
+        engine.saveStatus = 'saved';
+        emit('save-status', 'saved');
+        return;
       }
 
-     console.log(`[Save] Using strategy: ${strategy}`);
-     
-     let ops: any[] = [];
-     
-     if (strategy === 'full_replacement') {
-       // Full Replacement: Get all current data and replace table
-       const allRows = engine.getAllNonEmptyRows();
-       console.log(`[Save] Full replacement with ${allRows.length} rows`);
-       console.log(`[Save] Engine source: table=${engine.sourceTable}, provider=${engine.sourceProvider}`);
-       console.log(`[Save] Sample rows:`, allRows.slice(0, 2));
-       
-       // Include schema changes BEFORE full replacement
-       const deletedCols = engine.getDeletedColumns();
-       const addedCols = engine.getAddedColumns?.() || [];
-       
-       deletedCols.forEach(col => {
-         ops.push({ type: 'drop_column', column: col });
-       });
-       
-       addedCols.forEach(col => {
-         ops.push({ type: 'add_column', column: col });
-       });
-              if (allRows.length === 0 && deletedCols.length === 0 && addedCols.length === 0) {
-          // Empty table and no schema changes - just delete all
-          ops.push({ type: 'full_replacement', rows: [] });
-        } else if (allRows.length > 0 || deletedCols.length === 0) {
-          // Full replacement with all data
-          // Note: For SurrealDB, column names are now A, B, C... (no normalization needed)
-          console.log(`[Save] Full replacement with ${allRows.length} rows`);
-          if (allRows.length > 0 && allRows[0]) {
-            console.log(`[Save] First row columns:`, Object.keys(allRows[0]));
-            console.log(`[Save] First row data:`, allRows[0]);
-          }
-          
-          ops.push({ type: 'full_replacement', rows: allRows });
-        }
-     } else {
-       // Delta Operations: Only send what changed
-       ops = engine.getPendingOperations();
-       const deletedCols = engine.getDeletedColumns();
-       
-       deletedCols.forEach(col => {
-         ops.push({ type: 'drop_column', column: col });
-       });
-       
-       console.log(`[Save] Delta operations: ${ops.length} changes`);
-     }
-     
-     if (ops.length === 0) {
-         engine.saveStatus = 'saved';
-         emit('save-status', 'saved');
-         return;
-     }
-     
-     console.log('[Save] Operations:', ops);
-     engine.saveStatus = 'saving';
-     emit('save-status', 'saving');
-     
-     // 2. Send Request
-     const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/api/table/${engine.sourceTable}/operations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            connection: engine.sourceConnection,
-            provider: engine.sourceProvider,
-            operations: ops
-          })
-     });
-     
-     const body = await response.json();
-     
-     if (!response.ok) throw new Error(body.error || 'Save failed');
-     
-     // 3. Cleanup
-     engine.clearModifiedTracking();
-     engine.saveStatus = 'saved';
-     emit('save-status', 'saved');
-     
-     // 4. Refresh only if using delta operations
-     // For full replacement, data is already in sync (we just sent everything)
-     if (strategy === 'delta_operations') {
-       console.log('[Save] Refreshing after delta operations');
-       await refreshTableData(engine);
-     } else {
-       console.log('[Save] Skipping refresh after full replacement (already in sync)');
-     }
-     
-     console.log('[Save] Success');
-   } catch (e: any) {
-     console.error('[Save] Failed:', e);
-     engine.saveStatus = 'error';
-     emit('save-status', 'error');
-     toast.error(`Save failed: ${e.message}`);
-   }
+      console.log('[Save] Committing changes via Engine...');
+      engine.saveStatus = 'saving';
+      emit('save-status', 'saving');
+      
+      await engine.commit();
+      
+      engine.saveStatus = 'saved';
+      emit('save-status', 'saved');
+      console.log('[Save] Success');
+
+      // Refresh data to ensure UI is in sync with server-calculated results (e.g. sequence IDs, defaults)
+      // Only refresh if we have a source to refresh from
+      if (engine.sourceTable) {
+        // Debounced refresh or just skip if it's already in sync
+        // For now, let's skip full refresh unless explicitly needed, 
+        // as Engine.commit() already cleared modification tracking locally.
+      }
+    } catch (e: any) {
+      console.error('[Save] Failed:', e);
+      engine.saveStatus = 'error';
+      emit('save-status', 'error');
+      toast.error(`Save failed: ${e.message}`);
+    }
 };
 
 const getEngineForTab = (tabId: string) => {
@@ -296,7 +210,7 @@ const getEngineForTab = (tabId: string) => {
     );
     
     // Restore metadata from tab if available
-    const tab = workspaceStore.tabs.value.find(t => t.id === tabId);
+    const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
     if (tab?.data?.tableName) {
         console.log('[Workspace] Restoring engine metadata from tab:', tab.data);
         engine.setSource(
@@ -306,50 +220,58 @@ const getEngineForTab = (tabId: string) => {
             tab.data.provider
         );
         
-        // Reload data in background
-        console.log('[Workspace] Background reloading data for restored tab');
-        fetchTableData(tab.data.tableName as string, tab.data.connection, tab.data.provider as string)
-            .then(({ rows }) => {
-                 if (!rows || rows.length === 0) return;
-                 console.log(`[Workspace] Reloaded ${rows.length} rows`);
-                 
-                 engine.beginBatch();
-                 engine.clear(); // Ensure clean state
-                 
-                 const headers = tab?.data?.headers || [];
-                 let dataStartsAtRow = 1;
-                 let injectHeaders = true;
+        // CRITICAL: Only reload data if engine is truly empty (not during initial openTable load)
+        // Check if engine has any data - if not, we're likely in the middle of openTable
+        const hasExistingData = engine.getCell({ row: 0, col: 0 }) !== null;
+        
+        if (!hasExistingData) {
+            console.log('[Workspace] Engine is empty, skipping background reload (likely during initial load)');
+        } else {
+            // Reload data in background for existing tabs
+            console.log('[Workspace] Background reloading data for restored tab');
+            fetchTableData(tab.data.tableName as string, tab.data.connection, tab.data.provider as string)
+                .then(({ rows }) => {
+                     if (!rows || rows.length === 0) return;
+                     console.log(`[Workspace] Reloaded ${rows.length} rows`);
+                     
+                     engine.beginBatch();
+                     engine.clear(); // Ensure clean state
+                     
+                     const headers = tab?.data?.headers || [];
+                     let dataStartsAtRow = 1;
+                     let injectHeaders = true;
 
-                 // Logic to detect if headers are already in data (dedup)
-                 if (rows.length > 0) {
-                    const firstRow = rows[0];
-                    const isMatch = headers.every((h: string) => {
-                         const val = firstRow[h];
-                         return val === h || val === String(h);
-                    });
-                    if (isMatch) {
-                        dataStartsAtRow = 0;
-                        injectHeaders = false;
-                    }
-                 }
-                 
-                 if (injectHeaders) {
-                    headers.forEach((header: string, colIndex: number) => {
-                         engine.setValue({ row: 0, col: colIndex }, header, true);
-                    });
-                 }
-                 
-                 rows.forEach((row: any, rowIndex: number) => {
-                     headers.forEach((header: string, colIndex: number) => {
-                         const value = row[header];
-                         engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
+                     // Logic to detect if headers are already in data (dedup)
+                     if (rows.length > 0) {
+                        const firstRow = rows[0];
+                        const isMatch = headers.every((h: string) => {
+                             const val = firstRow[h];
+                             return val === h || val === String(h);
+                        });
+                        if (isMatch) {
+                            dataStartsAtRow = 0;
+                            injectHeaders = false;
+                        }
+                     }
+                     
+                     if (injectHeaders) {
+                        headers.forEach((header: string, colIndex: number) => {
+                             engine.setValue({ row: 0, col: colIndex }, header, true);
+                        });
+                     }
+                     
+                     rows.forEach((row: any, rowIndex: number) => {
+                         headers.forEach((header: string, colIndex: number) => {
+                             const value = row[header];
+                             engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
+                         });
                      });
-                 });
-                 
-                 engine.endBatch();
-                 engine.setOriginalData(rows);
-            })
-            .catch(e => console.error('[Workspace] Failed to reload restored data:', e));
+                     
+                     engine.endBatch();
+                     engine.setOriginalData(rows);
+                })
+                .catch(e => console.error('[Workspace] Failed to reload restored data:', e));
+        }
     }
     
     // Auto-save listener with rate limiting
@@ -392,6 +314,13 @@ const getEngineForTab = (tabId: string) => {
         }
     });
     
+    // Set up change listener for undo/redo state
+    engine.onChange(() => {
+        updateUndoRedoState()
+    })
+    
+    updateUndoRedoState()
+    
     engineCache.set(tabId, engine);
   }
   
@@ -403,28 +332,27 @@ const getEngineForTab = (tabId: string) => {
   return engineCache.get(tabId)!;
 };
 
-// Watch for Private Mode toggle
 watch(() => props.privateMode, (isPrivate) => {
-    const tabId = workspaceStore.activeTabId.value;
-    const activeTab = workspaceStore.tabs.value.find(t => t.id === tabId);
+    const tabId = (activeTabId.value as unknown as string);
+    if (!tabId) return;
+
+    const currentTab = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === tabId);
     
-    if (activeTab && activeTab.type === 'table') {
-        if (isPrivate) {
+    if (currentTab && currentTab.type === 'table') {
+        const currentTabId = (activeTabId.value as unknown as string);
+        if (isPrivate && currentTabId) {
             // Turning ON Private Mode: Create Branch
-            const baseEngine = engineCache.get(tabId);
-            if (baseEngine && !privateEngines.has(tabId)) {
-                console.log('[Workspace] Creating private branch for tab', tabId);
+            const baseEngine = engineCache.get(currentTabId);
+            if (baseEngine && !privateEngines.has(currentTabId)) {
+                console.log('[Workspace] Creating private branch for tab', currentTabId);
                 const branch = baseEngine.createBranch('private');
-                privateEngines.set(tabId, branch);
+                privateEngines.set(currentTabId, branch);
             }
-        } else {
+        } else if (!isPrivate && currentTabId) {
             // Turning OFF Private Mode: Discard Branch (or it was just merged)
-            // We just clear the private engine from cache so next render uses base
-            console.log('[Workspace] Exiting private mode for tab', tabId);
-            privateEngines.delete(tabId);
+            console.log('[Workspace] Exiting private mode for tab', currentTabId);
+            privateEngines.delete(currentTabId);
         }
-        // Force re-render of Grid to pick up new engine
-        // (Vue might not detect map change automatically if not reactive, but getEngineForTab call in template should re-run if prop changed)
     }
 });
 
@@ -435,7 +363,13 @@ const onTabClose = (id: string) => {
 };
 
 const onAddTab = (type: Tab['type']) => {
-  const data = type === 'chat' ? { chatHistory: [] } : {};
+  // If chat, let parent handle creation/reuse to avoid duplicate
+  if (type === 'chat') {
+    emit('create-chat');
+    return;
+  }
+
+  const data = {};
   workspaceStore.createTab(type, data);
   
   // Update parent mode based on tab type
@@ -444,19 +378,16 @@ const onAddTab = (type: Tab['type']) => {
   } else {
     emit('update:mode', type === 'query' ? 'write' : 'chat');
   }
-  
-  // Signal Chat.vue to create a new chat (clears history)
-  if (type === 'chat') {
-    emit('create-chat');
-  }
 };
 
 // Watch active tab and update parent mode (only on actual tab switch, not initial mount)
+// Watch active tab and update parent mode (Disabled to prevent recursion loops and because new views manage their own routing)
+/*
 watch(() => workspaceStore.activeTabId?.value, (newActiveTabId, oldActiveTabId) => {
   // Skip if this is the initial mount or if there's no old value
   if (!oldActiveTabId || !newActiveTabId) return;
   
-  const currentTab = workspaceStore.tabs.value.find((t: Tab) => t.id === newActiveTabId);
+  const currentTab = (tabs.value as any[])?.find((t: Tab) => t.id === newActiveTabId);
   if (currentTab) {
     if (currentTab.type === 'table') {
       emit('update:mode', 'spreadsheet');
@@ -465,6 +396,7 @@ watch(() => workspaceStore.activeTabId?.value, (newActiveTabId, oldActiveTabId) 
     }
   }
 });
+*/
 
 
 // Format table names to hide internal UUIDs
@@ -482,10 +414,10 @@ const loadTableData = (tableName: string, data: any[], connection: any = null, p
   const newId = createdTab.id;
   
   // Update the tab label after creation
-  const tab = workspaceStore.tabs.value.find((t: Tab) => t.id === newId);
+  const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === newId);
   if (tab) {
     tab.label = formatTableName(tableName);
-    workspaceStore.saveToStorage();
+    workspaceStore.saveWorkspace();
   }
   
   const engine = getEngineForTab(newId);
@@ -537,141 +469,136 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         const loadingId = toast.loading(`Loading ${formatTableName(tableName)}...`);
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
 
-        // 1. Fetch Schema
-        console.log('[Workspace] Fetching schema...');
-        const schemaRes = await fetch(`${baseUrl}/api/table/${tableName}/schema`, { 
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             credentials: 'include',
-             body: JSON.stringify({ connection, provider })
-        });
-        const schemaBody = await schemaRes.json();
-        if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
+        // 1. Fetch Schema and Data in parallel (OPTIMIZATION)
+        console.log('[Workspace] Fetching schema and data in parallel...');
+        const [schemaRes, queryRes] = await Promise.all([
+            fetch(`${baseUrl}/api/table/${tableName}/schema`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ connection, provider })
+            }),
+            fetch(`${baseUrl}/api/table/${tableName}/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ connection, provider, limit: 2000 })
+            })
+        ]);
 
-        // 2. Fetch Data
-        console.log('[Workspace] Fetching data...');
-        const queryRes = await fetch(`${baseUrl}/api/table/${tableName}/query`, {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             credentials: 'include',
-             body: JSON.stringify({ connection, provider, limit: 2000 })
-        });
-        const queryBody = await queryRes.json();
+        const [schemaBody, queryBody] = await Promise.all([
+            schemaRes.json(),
+            queryRes.json()
+        ]);
+
+        if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
         if (!queryRes.ok) throw new Error(queryBody.error || 'Failed to load data');
 
         const rows = queryBody.rows || [];
         
-        // Get column names from schema
-        const headers = (schemaBody.columns || [])
-           .map((c: any) => c.name)
-           .filter((n: string) => n !== '__id' && n !== '_rowid_' && n !== '_row_order');
+        // Get column names from schema OR from first row of data as fallback
+        let headers = [];
+        
+        // Try to get headers from schema first
+        if (schemaBody.columns && Array.isArray(schemaBody.columns) && schemaBody.columns.length > 0) {
+            headers = schemaBody.columns
+               .map((c: any) => c.name)
+               .filter((n: string) => n && n !== '__id' && n !== '_rowid_' && n !== '_row_order' && n !== 'id');
+        }
+        
+        // Fallback: Extract headers from first row of data
+        if (headers.length === 0 && rows.length > 0) {
+            headers = Object.keys(rows[0])
+                .filter((n: string) => n && n !== '__id' && n !== '_rowid_' && n !== '_row_order' && n !== 'id');
+        }
         
         console.log('[Workspace] Loaded', rows.length, 'rows with', headers.length, 'columns');
-        console.log('[Workspace] Headers:', headers);
 
-        // 3. Detect schema mode
-        // Check if headers follow A, B, C... pattern (column letters)
+        // 2. Detect schema mode
         const isColumnLetters = headers.every((name: string, index: number) => {
             const expectedLetter = labelToColIndex(name) === index;
             return expectedLetter || name.match(/^[A-Z]+$/);
         });
         
         const schemaMode = isColumnLetters ? 'column-letters' : 'named-headers';
-        console.log('[Workspace] Detected schema mode:', schemaMode);
+        console.log('[Workspace] Schema mode:', schemaMode);
 
-        // 3b. Fetch Versions History
-        let history: any = { original_table: tableName, current_version: 1, versions: [] };
-        try {
-            console.log('[Workspace] Fetching version history...');
-            const vRes = await fetch(`${baseUrl}/api/table/${tableName}/versions`, {
-                 credentials: 'include'
-            });
-            if (vRes.ok) {
-                 history = await vRes.json();
-            }
-        } catch (e) {
-            console.warn('[Workspace] Failed to fetch versions:', e);
-        }
-
-        // Prepare available versions list (Original + Sanitized)
-        // If we are currently on original (version 0-ish), current_version from backend relies on metadata current pointer.
-        // We want strict list for UI.
-        const uiVersions = [];
-        if (history.original_table) {
-            uiVersions.push({ 
-                version: 0, 
-                table: history.original_table, 
-                created_at: new Date().toISOString(), // Fallback
-                reason: 'Original Upload'
-            });
-        }
-        if (history.versions && Array.isArray(history.versions)) {
-            uiVersions.push(...history.versions);
-        }
-        
-        // Determine current effective version
-        // If tableName == original_table -> 0
-        // Else find in versions
+        // 3. Fetch version history in background (non-blocking)
+        let uiVersions: any[] = [];
         let currentUiVersion = 0;
-        if (tableName === history.original_table) {
-            currentUiVersion = 0;
-        } else {
-            const match = history.versions?.find((v: any) => v.table === tableName);
-            if (match) currentUiVersion = match.version;
-        }
+        
+        // Don't block initial load on version history
+        fetch(`${baseUrl}/api/table/${tableName}/versions`, { credentials: 'include' })
+            .then(vRes => vRes.ok ? vRes.json() : null)
+            .then(history => {
+                if (!history) return;
+                
+                const versions = [];
+                if (history.original_table) {
+                    versions.push({ 
+                        version: 0, 
+                        table: history.original_table, 
+                        created_at: new Date().toISOString(),
+                        reason: 'Original Upload'
+                    });
+                }
+                if (history.versions && Array.isArray(history.versions)) {
+                    versions.push(...history.versions);
+                }
+                
+                // Update tab data with versions
+                const tab = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === newId);
+                if (tab) {
+                    tab.data = { ...tab.data, versions, currentVersion: currentUiVersion };
+                }
+            })
+            .catch(e => console.warn('[Workspace] Version history fetch failed:', e));
 
-        // 4. Create Tab
-        const newId = String(Date.now());
-        const newTab = {
-            id: newId,
-            label: formatTableName(tableName),
-            type: 'table' as const,
-            data: {
-                tableName,
-                connection,
-                provider,
-                headers,
-                schemaMode,
-                versions: uiVersions,
-                currentVersion: currentUiVersion,
-                originalTable: history.original_table
-            }
-        };
+        // Prepare label
+        const sheetLabel = `${tableName} (Sheet)`
+
         // Use store action to create tab
-        const createdTab = workspaceStore.createTab('table', { tableName, connection, provider, headers, schemaMode });
-        // Update the tab label after creation
-        const tab = workspaceStore.tabs.value.find((t: Tab) => t.id === createdTab.id);
-        if (tab) {
-          tab.label = sheetLabel;
-          workspaceStore.saveToStorage();
-        }
+        const createdTab = workspaceStore.createTab('table', { 
+            tableName, 
+            data: rows, 
+            label: sheetLabel,
+            connection,
+            provider
+        });
+        
+        const newId = createdTab.id;
 
-        // 5. Load into Engine with unified approach
+        // 4. Load into Engine (OPTIMIZED)
         const engine = getEngineForTab(newId);
         engine.clear();
         engine.beginBatch();
 
-        // Unified data loading - works for all providers
+        // Pre-convert all values to strings once (avoid repeated String() calls)
+        const stringifyValue = (v: any) => (v === null || v === undefined) ? '' : String(v);
+
         if (schemaMode === 'column-letters') {
-            // Column letters mode - all rows are data (including row 0)
-            rows.forEach((row: any, rowIndex: number) => {
-                headers.forEach((colLetter: string, colIndex: number) => {
-                    const value = row[colLetter];
-                    engine.setValue({ row: rowIndex, col: colIndex }, String(value ?? ''), true);
-                });
-            });
+            // Column letters mode - all rows are data
+            for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+                const row = rows[rowIndex];
+                for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+                    const value = stringifyValue(row[headers[colIndex]]);
+                    engine.setValue({ row: rowIndex, col: colIndex }, value, true);
+                }
+            }
         } else {
-            // Named headers mode - row 0 contains headers, data starts at row 1
-            headers.forEach((header: string, colIndex: number) => {
-                engine.setValue({ row: 0, col: colIndex }, header, true);
-            });
+            // Named headers mode - set headers first
+            for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+                engine.setValue({ row: 0, col: colIndex }, headers[colIndex], true);
+            }
             
-            rows.forEach((row: any, rowIndex: number) => {
-                headers.forEach((header: string, colIndex: number) => {
-                    const value = row[header];
-                    engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''), true);
-                });
-            });
+            // Then set data rows (optimized loop)
+            for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+                const row = rows[rowIndex];
+                for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+                    const value = stringifyValue(row[headers[colIndex]]);
+                    engine.setValue({ row: rowIndex + 1, col: colIndex }, value, true);
+                }
+            }
         }
 
         engine.endBatch();
@@ -700,7 +627,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
 };
 
 const handleVersionChange = async (tabId: string, version: number) => {
-    const tab = workspaceStore.tabs.value.find(t => t.id === tabId);
+    const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
     if (!tab || !tab.data || !tab.data.versions) return;
 
     const targetVersion = tab.data.versions.find((v: any) => v.version === version);
@@ -752,13 +679,24 @@ const handleVersionChange = async (tabId: string, version: number) => {
 
 // Method to find or create sheet tab (returns true if already exists)
 const findOrCreateSheetTab = (tableName: string): boolean => {
-  const sheetLabel = formatTableName(tableName);
-  const existingTab = workspaceStore.tabs.value.find(t => t.label === sheetLabel && t.type === 'table');
+  // Match by tableName, not label (more reliable)
+  const existingTab = (tabs.value as unknown as Tab[]).find((t: Tab) => 
+    t.type === 'table' && t.data?.tableName === tableName
+  );
   
   if (existingTab) {
-    // Tab already exists, just switch to it
+    // CRITICAL: Ensure tab is properly activated
+    console.log('[Workspace] Found existing tab, activating:', existingTab.id);
     workspaceStore.setActiveTab(existingTab.id);
     emit('update:mode', 'spreadsheet');
+    
+    // Optionally refresh data in existing tab
+    const engine = getEngineForTab(existingTab.id);
+    if (engine && engine.sourceTable) {
+      console.log('[Workspace] Refreshing existing tab data');
+      refreshTableData(engine).catch(e => console.error('[Workspace] Refresh failed:', e));
+    }
+    
     return true;
   }
   
@@ -787,62 +725,109 @@ const setFormulaBarValue = (value: string) => {
 };
 
 const createQueryTab = (queryContent?: string) => {
-  const newId = String(Date.now());
-  const newTab = {
-    id: newId,
-    label: 'SQL Query',
-    type: 'query' as const,
-    data: { content: queryContent || '' }
-  };
   // Use store action to create tab
-  const createdTab = workspaceStore.createTab('table', { tableName, connection, provider, headers, schemaMode, versions, currentVersion, originalTable });
-  // Update the tab label after creation
-  const tab = workspaceStore.tabs.value.find((t: Tab) => t.id === createdTab.id);
-  if (tab) {
-    tab.label = sheetLabel;
-    workspaceStore.saveToStorage();
-  }
-  emit('update:mode', 'write');
-  return newId;
-};
-
-const getActiveQueryContent = () => {
-  const tab = workspaceStore.tabs.value.find(t => t.id === workspaceStore.activeTabId.value);
-  if (tab && tab.type === 'query') {
-    return tab.data?.content || '';
-  }
-  return '';
-};
-
-const getActiveTable = () => {
-  if (!workspaceStore.tabs?.value) return null;
+  const createdTab = workspaceStore.createTab('query', { content: queryContent || '' });
   
-  const tab = workspaceStore.tabs.value.find(t => t.id === workspaceStore.activeTabId?.value);
+  emit('update:mode', 'write');
+  return createdTab.id;
+};
+
+// Handle input updates from ChatEditor without direct store mutation
+const handleTabInputUpdate = (tabId: string, tabType: string, val: string) => {
+  if (tabType === 'query') {
+    // Use store action to update tab-specific content
+    workspaceStore.updateTabData(tabId, { content: val });
+  } else {
+    // Update global input for chat mode
+    emit('update:input', val);
+  }
+};
+
+// Helper to get active query content
+const getActiveQueryContent = (): string => {
+  const currentId = (activeTabId.value as unknown as string);
+  const tab = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === currentId);
+  return tab?.data?.content || '';
+};
+
+// Helper to get current active table name
+const getActiveTable = (): string | null => {
+  const currentId = (activeTabId.value as unknown as string);
+  if (!currentId) return null;
+  const tab = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === currentId);
   if (tab && tab.type === 'table' && tab.data?.tableName) {
     return tab.data.tableName;
   }
   return null;
 };
 
-// Method to manually refresh the current table
+// Refresh current active table if in spreadsheet mode
 const refreshCurrentTable = async () => {
-  const activeTab = workspaceStore.tabs.value.find(t => t.id === workspaceStore.activeTabId.value);
-  if (activeTab && activeTab.type === 'table') {
-    const engine = getEngineForTab(workspaceStore.activeTabId.value);
-    await refreshTableData(engine);
-    toast.success('Table data refreshed');
-  }
+    const tabId = (activeTabId.value as unknown as string);
+    if (!tabId) return;
+    const tab = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === tabId);
+    if (tab?.type === 'table') {
+        const engine = getEngineForTab(tabId);
+        await refreshTableData(engine);
+        toast.success('Table data refreshed');
+    }
 };
 
-import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
+const handleRenameTable = async (newName: string) => {
+    // Logic for renaming table...
+    console.log('Renaming table to', newName);
+};
 
-// ... existing code ...
+
+const canUndo = ref(false)
+const canRedo = ref(false)
+
+const activeEngine = computed(() => {
+    const currentId = (activeTabId.value as unknown as string);
+    if (!currentId) return null;
+    // Check for private mode engine first
+    if (props.privateMode && privateEngines.has(currentId)) {
+        return privateEngines.get(currentId);
+    }
+    return engineCache.get(currentId);
+})
+
+// Update undo/redo state when active engine changes (tab switch)
+watch(activeEngine, () => {
+    updateUndoRedoState()
+})
+
+const updateUndoRedoState = () => {
+  if (!activeEngine.value) {
+    canUndo.value = false
+    canRedo.value = false
+    return
+  }
+  canUndo.value = activeEngine.value.undoManager.canUndo()
+  canRedo.value = activeEngine.value.undoManager.canRedo()
+}
+
+const handleUndo = () => {
+  if (activeEngine.value?.undoManager.undo()) {
+    activeEngine.value.notifyChange() // Ensure UI updates
+    updateUndoRedoState()
+  }
+}
+
+const handleRedo = () => {
+    if (activeEngine.value?.undoManager.redo()) {
+        activeEngine.value.notifyChange() // Ensure UI updates
+        updateUndoRedoState()
+    }
+}
 
 const exportCurrentTable = (format: 'csv' | 'xlsx') => {
-  const activeTab = workspaceStore.tabs.value.find(t => t.id === workspaceStore.activeTabId.value);
-  if (activeTab && activeTab.type === 'table') {
-    const engine = getEngineForTab(workspaceStore.activeTabId.value);
-    const filename = `${activeTab.label || 'export'}.${format}`;
+  const currentTabIdValue = (activeTabId.value as unknown as string);
+  if (!currentTabIdValue) return;
+  const activeTabObj = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === currentTabIdValue);
+  if (activeTabObj && activeTabObj.type === 'table') {
+    const engine = getEngineForTab(currentTabIdValue);
+    const filename = `${activeTabObj.label || 'export'}.${format}`;
     
     if (format === 'csv') {
       CSVExporter.export(engine, filename);
@@ -880,7 +865,7 @@ onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval);
 });
 
-// Expose method for parent component
+// Expose methods to parent
 defineExpose({
   loadTableData,
   openTable,
@@ -901,8 +886,9 @@ defineExpose({
   <div class="flex flex-col h-full w-full">
     <!-- Tabs -->
     <TabsManager 
-      :tabs="workspaceStore.tabs" 
-      v-model:activeTabId="workspaceStore.activeTabId"
+      :tabs="workspaceStore.tabs as any" 
+      :active-tab-id="workspaceStore.activeTabId as any"
+      @update:active-tab-id="workspaceStore.setActiveTab"
       @close="onTabClose"
       @add="onAddTab"
     />
@@ -910,9 +896,9 @@ defineExpose({
 
     <!-- Editor Content Area -->
     <div class="flex-1 overflow-hidden">
-      <template v-for="tab in workspaceStore.tabs" :key="tab.id">
+      <template v-for="tab in (tabs as any)" :key="tab.id">
         <div 
-          v-if="tab.id === workspaceStore.activeTabId"
+          v-if="tab.id === activeTabId"
           class="w-full h-full flex flex-col"
         >
           <Grid 
@@ -933,20 +919,12 @@ defineExpose({
           <ChatEditor 
             v-else
             :mode="tab.type === 'query' ? 'write' : 'chat'"
-            :input="tab.type === 'query' ? (tab.data?.content || '') : input"
+            :input="tab.type === 'query' ? (tab.data?.content || '') : props.input"
             :history="tab.type === 'chat' ? (tab.data?.chatHistory || []) : undefined"
             :is-thinking="props.isThinking"
-            @update:input="(val) => {
-              if (tab.type === 'query') {
-                // Update tab-specific content
-                if (!tab.data) tab.data = {};
-                tab.data.content = val;
-              } else {
-                // Update global input for chat mode
-                emit('update:input', val);
-              }
-            }"
+            @update:input="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
             @submit="emit('submit')"
+            @add-to-dashboard="(config) => emit('add-to-dashboard', config)"
           />
         </div>
       </template>

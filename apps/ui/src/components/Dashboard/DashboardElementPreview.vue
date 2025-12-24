@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-[800px] bg-background border-border text-foreground">
+    <DialogContent class="sm:max-w-[800px] bg-background border-border text-foreground" @pointerDownOutside.prevent @interactOutside.prevent>
       <DialogHeader>
         <DialogTitle>Create Dashboard Element</DialogTitle>
         <DialogDescription class="text-muted-foreground">
@@ -49,8 +49,8 @@
               <SelectItem value="create_new" class="font-medium text-primary border-b border-border mb-1">
                 + Create New Dashboard...
               </SelectItem>
-              <SelectItem v-for="d in dashboards" :key="d.id" :value="d.id">
-                {{ d.title }}
+              <SelectItem v-for="d in dashboardsList" :key="(d as any).id" :value="(d as any).id">
+                {{ (d as any).title }}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -126,8 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
+import { ref, watch, computed } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -140,12 +139,14 @@ const props = defineProps<{
   initialConfig: any
   query: string
   results: any[]
+  connectionId?: string
 }>()
 
 const emit = defineEmits(['update:open', 'saved'])
 
 const store = useDashboardStore()
-const { dashboards, currentDashboard } = storeToRefs(store)
+const dashboardsList = computed((): any[] => (store.dashboards as any))
+const activeDashboard = computed((): any => (store.currentDashboard as any))
 const selectedDashboardId = ref<string>('')
 const isSaving = ref(false)
 
@@ -173,14 +174,14 @@ watch(() => props.initialConfig, (newConfig) => {
 watch(() => props.open, async (isOpen) => {
     if (isOpen) {
         // Load dashboards
-        if (dashboards.value.length === 0) {
+        if (dashboardsList.value.length === 0) {
             await store.loadDashboards()
         }
         
-        if (currentDashboard.value) {
-            selectedDashboardId.value = currentDashboard.value.id
-        } else if (dashboards.value.length > 0) {
-            selectedDashboardId.value = dashboards.value[0]!.id
+        if (activeDashboard.value) {
+            selectedDashboardId.value = activeDashboard.value.id
+        } else if (dashboardsList.value.length > 0) {
+            selectedDashboardId.value = dashboardsList.value[0]!.id
         }
         
         // Reset original data when dialog opens
@@ -190,7 +191,7 @@ watch(() => props.open, async (isOpen) => {
 
 watch(selectedDashboardId, (val) => {
   if (val === 'create_new') {
-    newDashboardName.value = `New Dashboard ${dashboards.value.length + 1}`
+    newDashboardName.value = `New Dashboard ${dashboardsList.value.length + 1}`
     showCreateDashboardModal.value = true
   }
 })
@@ -487,7 +488,8 @@ const saveToDashboard = async () => {
       type: config.value.type,
       title: config.value.title,
       config: config.value.config,
-      query: props.query
+      query: config.value.query || props.query,
+      connectionId: props.connectionId
     })
     toast.success('Saved to Dashboard')
     emit('saved')

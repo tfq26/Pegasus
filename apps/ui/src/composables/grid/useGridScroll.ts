@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue';
+import { ref, computed, reactive } from 'vue';
 import type { Engine } from '../../../Engine/Engine';
 
 export function useGridScroll(engine: Engine) {
@@ -6,7 +6,68 @@ export function useGridScroll(engine: Engine) {
     const rowCount = 1000;
     const colCount = 26; // Reduced to 26 (A-Z) for better horizontal fit
     const rowHeight = 24;
-    const colWidth = 100;
+    const defaultColWidth = 100;
+
+    // Dynamic column widths (reactive map)
+    const columnWidths = reactive<Record<number, number>>({});
+
+    // Text wrapping toggle
+    const textWrap = ref(false);
+
+    // Get width for a specific column
+    const getColWidth = (col: number): number => {
+        return columnWidths[col] ?? defaultColWidth;
+    };
+
+    // Set width for a specific column
+    const setColWidth = (col: number, width: number) => {
+        columnWidths[col] = Math.max(40, Math.min(500, width)); // Clamp between 40-500px
+    };
+
+    // Auto-fit column width based on content
+    const autoFitColumn = (col: number) => {
+        const minWidth = 60;
+        const maxWidth = 400;
+        const charWidth = 8;
+        let maxLen = 3; // Minimum for column label like "A"
+
+        // Sample first 50 rows for content width
+        for (let row = 0; row < Math.min(50, rowCount); row++) {
+            const cell = engine.getCell({ row, col });
+            if (cell?.rawInput) {
+                const len = String(cell.rawInput).length;
+                if (len > maxLen) maxLen = len;
+            }
+        }
+
+        const calculatedWidth = Math.min(maxWidth, Math.max(minWidth, maxLen * charWidth + 24));
+        setColWidth(col, calculatedWidth);
+    };
+
+    // Auto-fit all columns
+    const autoFitAllColumns = () => {
+        for (let col = 0; col < colCount; col++) {
+            autoFitColumn(col);
+        }
+    };
+
+    // Calculate total width of all columns
+    const totalWidth = computed(() => {
+        let total = 40; // Row header width
+        for (let col = 0; col < colCount; col++) {
+            total += getColWidth(col);
+        }
+        return total;
+    });
+
+    // Calculate left offset for a column
+    const getColLeftOffset = (targetCol: number): number => {
+        let offset = 40; // Start after row header
+        for (let col = 0; col < targetCol; col++) {
+            offset += getColWidth(col);
+        }
+        return offset;
+    };
 
     // Refs
     const gridContainer = ref<HTMLElement | null>(null);
@@ -25,7 +86,7 @@ export function useGridScroll(engine: Engine) {
         // Update engine view state
         engine.viewState.scrollTop = scrollTop;
 
-        // Sync horizontal scroll
+        // Sync horizontal scroll (header container is now inside grid, but keep for compatibility)
         if (headerContainer.value) {
             headerContainer.value.scrollLeft = target.scrollLeft;
         }
@@ -58,9 +119,9 @@ export function useGridScroll(engine: Engine) {
             gridContainer.value.scrollTop = bottom - containerHeight;
         }
 
-        // Horizontal
-        const left = col * colWidth;
-        const right = (col + 1) * colWidth;
+        // Horizontal - use dynamic column widths
+        const left = getColLeftOffset(col);
+        const right = left + getColWidth(col);
         const containerWidth = gridContainer.value.clientWidth;
         const scrollLeft = gridContainer.value.scrollLeft;
 
@@ -76,7 +137,17 @@ export function useGridScroll(engine: Engine) {
         rowCount,
         colCount,
         rowHeight,
-        colWidth,
+        defaultColWidth,
+
+        // Dynamic sizing
+        columnWidths,
+        getColWidth,
+        setColWidth,
+        autoFitColumn,
+        autoFitAllColumns,
+        totalWidth,
+        getColLeftOffset,
+        textWrap,
 
         // Refs
         gridContainer,

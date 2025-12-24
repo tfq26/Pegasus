@@ -1,69 +1,57 @@
-import { ref, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import type { ConnectionEntry } from '@/lib/db-connections'
 
-// Global state to track initialization
-let initialized = false
-
 /**
  * Composable for managing database connections
- * Handles loading, selecting, and syncing connections with the store
+ * Uses LOCAL refs that are manually synced with the store (same pattern as Chat.vue)
+ * This avoids reactive loops from computed properties
  */
 export function useConnections() {
     const connectionStore = useConnectionStore()
 
-    // Use local ref instead of computed to avoid reactive loops
+    // Use LOCAL refs - same pattern as original Chat.vue
+    // These are NOT computed properties - they are manually synced
     const connections = ref<ConnectionEntry[]>([])
     const selectedConnectionId = ref('')
 
-    // Sync from store when it changes (one-way sync)
-    watch(
-        () => connectionStore.connections,
-        (newConnections) => {
-            if (newConnections && Array.isArray(newConnections)) {
-                connections.value = newConnections
-            }
-        },
-        { immediate: true }
+    const selectedConnection = computed(() =>
+        connections.value.find(c => c.id === selectedConnectionId.value) || null
     )
 
     /**
-     * Load connections from API
+     * Load connections from API and sync to local refs
      */
     async function loadConnections() {
-        if (typeof window === 'undefined') return
+        if (typeof window === 'undefined') {
+            connections.value = []
+            return
+        }
 
-        // Only load once per session
-        if (initialized && connectionStore.connections.length > 0) {
-            connections.value = connectionStore.connections
-            restoreSelection()
+        // Skip if store is already loading
+        if (connectionStore.isLoading) {
             return
         }
 
         try {
             await connectionStore.loadConnections()
-            connections.value = connectionStore.connections || []
-            initialized = true
-            restoreSelection()
+
+            // Sync store data to local ref (same as Chat.vue line 504)
+            // Using storeToRefs-like access or ensuring unwrapping
+            const storeConnections = (connectionStore.connections as any).value || connectionStore.connections
+            connections.value = [...storeConnections]
+
+            // Restore selection from localStorage
+            const savedId = localStorage.getItem('pegasus-selected-connection')
+            if (savedId && connections.value.some(c => c.id === savedId)) {
+                selectedConnectionId.value = savedId
+            } else if (!connections.value.some(c => c.id === selectedConnectionId.value)) {
+                // Set default selection if current selection is invalid
+                selectedConnectionId.value = connections.value[0]?.id ?? ''
+            }
         } catch (e) {
             console.error('Failed to load connections:', e)
-        }
-    }
-
-    function restoreSelection() {
-        const conns = connections.value
-        if (!conns.length) return
-
-        // Try to restore selection from localStorage
-        const savedId = localStorage.getItem('pegasus-selected-connection')
-        if (savedId && conns.some((c) => c.id === savedId)) {
-            selectedConnectionId.value = savedId
-            return
-        }
-
-        // Set default selection
-        if (!selectedConnectionId.value || !conns.some((c) => c.id === selectedConnectionId.value)) {
-            selectedConnectionId.value = conns[0]?.id ?? ''
+            connections.value = []
         }
     }
 
@@ -72,7 +60,6 @@ export function useConnections() {
      */
     function selectConnection(id: string) {
         selectedConnectionId.value = id
-        connectionStore.selectConnection(id)
         if (id) {
             localStorage.setItem('pegasus-selected-connection', id)
         }
@@ -80,6 +67,7 @@ export function useConnections() {
 
     return {
         connections,
+        selectedConnection,
         selectedConnectionId,
         loadConnections,
         selectConnection

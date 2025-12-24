@@ -49,23 +49,28 @@ export function useRealtimeCursor(
         // Don't sync in private mode
         if (privateMode.value) return;
 
-        const connected = await connectToSurreal();
-        if (connected) {
-            // Stable user identity for this session
-            let storedUser = localStorage.getItem('pegasus-temp-user');
-            let user;
-            if (storedUser) {
-                user = JSON.parse(storedUser);
-            } else {
-                user = {
-                    id: 'user_' + Math.random().toString(36).substr(2, 9),
-                    name: 'User ' + Math.floor(Math.random() * 100),
-                    color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')
-                };
-                localStorage.setItem('pegasus-temp-user', JSON.stringify(user));
-            }
+        try {
+            const connected = await connectToSurreal();
+            if (connected) {
+                // Stable user identity for this session
+                let storedUser = localStorage.getItem('pegasus-temp-user');
+                let user;
+                if (storedUser) {
+                    user = JSON.parse(storedUser);
+                } else {
+                    user = {
+                        id: 'user_' + Math.random().toString(36).substr(2, 9),
+                        name: 'User ' + Math.floor(Math.random() * 100),
+                        color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')
+                    };
+                    localStorage.setItem('pegasus-temp-user', JSON.stringify(user));
+                }
 
-            realtimeSync = new RealtimeSync(engine, 'main-room', user);
+                realtimeSync = new RealtimeSync(engine, 'main-room', user);
+            }
+        } catch (error) {
+            console.warn('[Realtime] Failed to initialize realtime sync:', error);
+            // Don't block spreadsheet loading if realtime fails
         }
     };
 

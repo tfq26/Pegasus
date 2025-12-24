@@ -24,6 +24,7 @@
     "@workos-inc/node": "^7.74.2",
     "adm-zip": "^0.5.16",
     "azure-kusto-data": "^7.0.3",
+    "exceljs": "^4.4.0",
     "hono": "^4.10.6",
     "mongodb": "^5.9.0",
     "mysql2": "^3.4.4",

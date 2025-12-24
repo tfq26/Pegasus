@@ -68,10 +68,12 @@ export class GeminiProvider extends AIProvider {
                 }
             } else {
                 // Single turn (or just prompt without history)
+                console.time('[Gemini] generateContent')
                 const result = await model.generateContent({
                     contents: [{ role: 'user', parts: [{ text: lastUserMessage }] }],
                     generationConfig
                 })
+                console.timeEnd('[Gemini] generateContent')
                 const response = result.response
                 const text = response.text()
                 const usage = response.usageMetadata

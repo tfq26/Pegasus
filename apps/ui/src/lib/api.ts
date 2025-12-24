@@ -127,27 +127,17 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
     const safeTable = table.replace(/"/g, '""')
     queryPayload = `SELECT COUNT(*) as count FROM "${safeTable}"`
   } else if (provider === 'surrealdb') {
-    // SurrealDB count syntax
     queryPayload = `SELECT count() FROM ${table} GROUP ALL`
   } else if (provider === 'mongodb') {
-    connection = buildConnectionPayload(entry, { collection: table })
-    // For MongoDB adapter, we need to send a specific "count" command or use aggregate
-    // But our current backend adapter likely mimics a SQL interface or expects a specific JSON format.
-    // Based on existing fetchTableEntries, it sends a JSON string payload.
-    // We'll trust the backend `AIClient` or `MongoAdapter` to handle a specialized request or we can use the `countDocuments` equivalent.
-    // Checking `fetchTableEntries`: queryPayload is `{ filter, skip, limit }`.
-    // Let's assume sending `{ count: true, filter: {} }` might be handled if we modify backend,
-    // OR more safely, we send a JSON meant for "count".
-    // Actually, looking at `apps/backend/adapters/mongodbAdapter.js` would be smart if I could, but I'll stick to a plausible specialized payload 
-    // or standard "find" method if I can't check backend.
-    // Wait, the safest is to NOT guess. The `query` endpoint expects a string.
-    // Let's assume I need to implement basic counting.
-    // Since I can't easily change backend adapter interface without seeing it, I'll assumme standard SQL-like behavior for SQL adapters.
-    // For Mongo, without backing code, counting is tricky.
-    // Let's defer Mongo and Kusto exact count implementation or try a generic count query.
-    queryPayload = JSON.stringify({ count: true })
+    // MongoDB uses aggregation pipeline for count operations
+    // Extract collection name from 'db.collection' format if needed
+    const collectionName = table.includes('.') ? table.split('.')[1] : table
+    connection = buildConnectionPayload(entry, { collection: collectionName })
+    queryPayload = JSON.stringify({
+      pipeline: [{ $count: 'count' }]
+    })
   } else {
-    // Kusto / other fallback
+    // Kusto and other providers
     const sanitizedTable = table.replace(/"/g, '\\"')
     queryPayload = `${sanitizedTable} | count`
   }
@@ -159,24 +149,19 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
       provider,
       connection,
       query: queryPayload,
-      type: 'count' // Hint to backend if needed, though strictly `query` param usually carries the logic
     }),
   })
 
-  // If backend doesn't support generic count query for Mongo, this might fail.
-  // However, for SQL (sqlite, mysql) it's standard.
   const body = await response.json()
   if (!response.ok || body.error) {
-    // Fail silently return 0 or undefined? No, let's throw.
     throw new Error(body.error ?? 'Unable to fetch count')
   }
 
-  // Parse result
-  // SQL usually returns [{ count: 123 }] or [{ "Count": 123 }]
+  // Parse result based on provider
   const result = body.result
   if (Array.isArray(result) && result.length > 0) {
     const firstRow = result[0]
-    // Check common keys for count
+    // Check common keys for count (SQL: count/Count/COUNT, MongoDB aggregation: count)
     const val = firstRow.count ?? firstRow.Count ?? firstRow.COUNT ?? Object.values(firstRow)[0]
     return Number(val)
   }
@@ -218,6 +203,16 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
   }
 
   return { query: body.query, usage: body.usage }
+}
+
+export async function translateQuery(query: string, targetDialect: string, connectionId: string) {
+  const prompt = `Translate the following SQL query to ${targetDialect} dialect. Return ONLY the translated SQL query:\n\n${query}`
+  return generateAIQuery(prompt, connectionId)
+}
+
+export async function explainQuery(query: string, connectionId: string) {
+  // Use analyzeResults to get a natural language explanation
+  return analyzeResults(`Explain this SQL query in plain English and provide any performance optimization tips:`, [], query)
 }
 
 
@@ -681,6 +676,10 @@ export async function updateConnection(connection: any) {
   return api.put(`/connections/${connection.id}`, connectionToSave)
 }
 
+export async function deleteConnection(id: string) {
+  return api.delete(`/connections/${id}`)
+}
+
 export async function getSubscriptionStatus() {
   return api.get('/subscription-status')
 }
@@ -747,4 +746,29 @@ export async function fetchOperationAnalytics(range = 'day') {
   })
   if (!response.ok) throw new Error('Failed to fetch operation analytics')
   return response.json()
+}
+
+export async function renameTable(connection: ConnectionEntry, table: string, newName: string) {
+  const payload = buildConnectionPayload(connection)
+  return api.post('/query/rename-table', {
+    connection: payload,
+    table,
+    newName
+  })
+}
+
+export async function deleteTable(connection: ConnectionEntry, table: string) {
+  const payload = buildConnectionPayload(connection)
+  return api.post('/query/delete-table', {
+    connection: payload,
+    table
+  })
+}
+
+export async function fetchDatabaseTables(connection: ConnectionEntry, dbName: string) {
+  const payload = buildConnectionPayload(connection)
+  return api.post('/query/database-tables', {
+    connection: payload,
+    database: dbName
+  })
 }

@@ -453,23 +453,25 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
 
       Provide a natural language summary that directly answers the user's question.
       
+      CRITICAL: You MUST return a valid JSON object.
+      
+      Response Format:
+      {
+        "answer": "Your plain text response here..."
+      }
+      
       Rules:
       1. Be concise but informative
-      2. Use bullet points or numbered lists when presenting multiple items
+      2. Use bullet points or numbered lists when presenting multiple items (use \\n for newlines)
       3. Format numbers with appropriate units (e.g., $120,000 for money, 5 employees)
       4. If showing a list of items, present them clearly
       5. Highlight key insights or patterns in the data
-      6. Use plain text only - no JSON, no markdown code blocks
+      6. The "answer" field should contain the formatted text string
       
-      Example good response:
-      "Based on the employee data, 4 employees earn above the average salary of $81,600:
-      
-      • Charlie Brown - $120,000 (Engineering)
-      • Bob Johnson - $95,000 (Management)
-      • Alice Smith - $85,000 (Sales)
-      • Diana Prince - $82,000 (Engineering)
-      
-      These employees earn between $400 and $38,400 above the company average."
+      Example response:
+      {
+        "answer": "Based on the employee data, 4 employees earn above the average salary of $81,600:\\n\\n• Charlie Brown - $120,000 (Engineering)\\n• Bob Johnson - $95,000 (Engineering)"
+      }
     `
   }
 

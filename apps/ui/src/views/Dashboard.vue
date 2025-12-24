@@ -71,6 +71,18 @@
           <MessageSquare class="w-4 h-4" />
           <span class="hidden sm:inline">Chat</span>
         </button>
+
+        <button
+          v-if="currentDashboard && layout.length > 0"
+          @click="generateDashboardSummary"
+          :disabled="isAnalyzing"
+          class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2 text-primary"
+          title="Generate AI Insights"
+        >
+          <BrainCircuit v-if="!isAnalyzing" class="w-4 h-4" />
+          <Loader2 v-else class="w-4 h-4 animate-spin" />
+          <span class="hidden lg:inline">{{ isAnalyzing ? 'Analyzing...' : 'Generate Insights' }}</span>
+        </button>
         
         <CollaboratorAvatars :collaborators="collaborators" class="mr-2 hidden sm:flex" />
         
@@ -162,6 +174,9 @@
       </div>
     </header>
 
+    <!-- Global Dashboard Filters -->
+    <DashboardFilters />
+
     <!-- Main Content Area with potential Sidebar -->
     <div class="flex-1 overflow-hidden flex relative relative-container">
       
@@ -197,6 +212,9 @@
         @mousemove="onMouseMove"
         @mouseleave="onMouseLeave"
       >
+        <!-- AI Insights -->
+        <DashboardInsights v-if="currentDashboard && layout.length > 0" />
+
         <!-- Live Cursors Overlay -->
         <LiveCursors :cursors="cursors" />
 
@@ -229,6 +247,7 @@
             @edit-query="handleEditQuery(getElement(item.i)!)"
             @view-query="handleViewQuery(getElement(item.i)!)"
             @download="downloadFile(getElement(item.i)!)"
+            @drill-down="handleDrillDown"
           />
         </template>
       </DraggableGrid>
@@ -451,6 +470,9 @@ import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
 import DashboardChat from '@/components/Dashboard/DashboardChat.vue'
 import LiveCursors from '@/components/Dashboard/LiveCursors.vue'
 import CollaboratorAvatars from '@/components/Dashboard/CollaboratorAvatars.vue'
+import DashboardInsights from '@/components/Dashboard/DashboardInsights.vue'
+import DashboardFilters from '@/components/Dashboard/DashboardFilters.vue'
+import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
 import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy } from '@/lib/api'
 import { toast } from 'vue-sonner'
@@ -484,7 +506,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard } from 'lucide-vue-next'
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard, BrainCircuit } from 'lucide-vue-next'
 import DashboardElement from '@/components/Dashboard/DashboardElement.vue'
 
 defineOptions({ name: 'DashboardPage' })
@@ -492,7 +514,9 @@ defineOptions({ name: 'DashboardPage' })
 const router = useRouter()
 const route = useRoute()
 const store = useDashboardStore()
-const { dashboards, currentDashboard, isLoading } = storeToRefs(store)
+const dashboards = computed((): any[] => store.dashboards as any)
+const currentDashboard = computed((): any => store.currentDashboard as any)
+const isLoading = computed(() => store.isLoading)
 
 import Navbar from '@/components/Navbar.vue'
 import { useMediaQuery } from '@vueuse/core'
@@ -510,6 +534,8 @@ const {
   cursors,
   chatMessages
 } = useCollaboration()
+
+const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
 
 const showChat = ref(false)
 const dashboardContainer = ref<HTMLElement | null>(null)
@@ -784,6 +810,33 @@ const confirmPrivacyChange = async () => {
   } catch (e) {
     console.error('Privacy change error:', e)
     toast.error('Failed to update privacy settings')
+  }
+}
+
+const handleDrillDown = async (data: any) => {
+  console.log('[Dashboard] Drill-down received:', data)
+  
+  // Try to find a parameter that matches the label or dataset label
+  const params = store.parameters
+  const keys = Object.keys(params)
+  
+  let targetKey = keys.find(k => k.toLowerCase() === data.datasetLabel?.toLowerCase())
+  if (!targetKey) {
+    targetKey = keys.find(k => k.toLowerCase().includes('category') || k.toLowerCase().includes('name') || k.toLowerCase().includes('type'))
+  }
+  
+  if (targetKey) {
+    console.log(`[Dashboard] Updating parameter "${targetKey}" to "${data.label}"`)
+    store.updateParameter(targetKey, data.label)
+    
+    // Automatically refresh
+    toast.info(`Filtering by ${data.label}...`)
+    await store.refreshDashboard(true)
+  } else {
+    console.log('[Dashboard] No matching parameter found for drill-down')
+    toast.info(`Clicked: ${data.label} (${data.value})`, {
+      description: 'Add a parameter with a matching name to enable automatic filtering.'
+    })
   }
 }
 

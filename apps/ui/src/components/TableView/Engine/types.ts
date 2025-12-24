@@ -104,3 +104,14 @@ export interface SourceMetadata {
     provider: string | null;
     columns: string[];
 }
+
+/**
+ * Change Review Types
+ */
+export interface RowDiff {
+    type: 'create' | 'update' | 'delete';
+    row: number; // Grid row index
+    rowId?: any; // Primary key from DB
+    changes?: Record<string, { before: any, after: any }>; // Column name -> { before, after }
+    data?: Record<string, any>; // Full row data for create/delete
+}

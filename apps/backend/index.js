@@ -55,6 +55,7 @@ app.route('/api', tableRoutes)
 // Mount Chat/AI Routes
 app.route('/', chatRoutes)
 app.route('/operations', operationRoutes)
+app.route('/workspace', workspaceRoutes)
 
 
 
@@ -72,6 +73,7 @@ import { connectionRoutes } from "./src/routes/connection.js"
 import { tableRoutes } from "./src/routes/table.js"
 import { chatRoutes } from "./src/routes/chat.js"
 import { operationRoutes } from "./src/routes/operations.js"
+import { workspaceRoutes } from "./src/routes/workspace.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"
@@ -224,19 +226,31 @@ app.post("/upload", async (c) => {
           if (xmlResult && xmlResult.data && xmlResult.data.length > 0) {
             console.log(`[Upload] XML AI interpretation successful: ${xmlResult.data.length} rows`);
             // Get sheet name from original parser or use default
-            const parsedExcel = await parseExcel(tempFilePath);
-            const sheetName = Object.keys(parsedExcel)[0] || 'Sheet1';
+            const parseResult = await parseExcel(tempFilePath);
+            const sheetName = Object.keys(parseResult.sheets)[0] || 'Sheet1';
             data = { [sheetName]: xmlResult.data };
             excelMapping = xmlResult.mapping;
           } else {
             // Fallback to original parser if XML interpretation fails
             console.warn('[Upload] XML interpretation returned no data, using original parser');
-            data = await parseExcel(tempFilePath);
+            const parseResult = await parseExcel(tempFilePath);
+            data = parseResult.sheets;
+            // Log confidence scores
+            Object.entries(parseResult.metadata).forEach(([sheet, meta]) => {
+              console.log(`[Upload] Sheet "${sheet}" confidence: ${meta.confidence.toFixed(2)} (${meta.method})`);
+              if (meta.warnings) console.warn(`[Upload] Warnings:`, meta.warnings);
+            });
           }
         } catch (xmlError) {
           console.error('[Upload] XML interpretation error:', xmlError.message);
           console.warn('[Upload] Falling back to original parser');
-          data = await parseExcel(tempFilePath);
+          const parseResult = await parseExcel(tempFilePath);
+          data = parseResult.sheets;
+          // Log confidence scores
+          Object.entries(parseResult.metadata).forEach(([sheet, meta]) => {
+            console.log(`[Upload] Sheet "${sheet}" confidence: ${meta.confidence.toFixed(2)} (${meta.method})`);
+            if (meta.warnings) console.warn(`[Upload] Warnings:`, meta.warnings);
+          });
         }
       } else if (fileType === 'xml') {
         const xmlContent = await fs.readFile(tempFilePath, 'utf-8')
@@ -934,6 +948,78 @@ app.post("/query", async (c) => {
 
   return c.json({ ok: true, result })
 })
+
+// Query by Connection ID - for Dashboard Elements
+app.post("/api/query-by-id", async (c) => {
+  const { connectionId, query } = await c.req.json()
+  console.log(`[Backend] query-by-id request for connection: ${connectionId}`)
+
+  if (!connectionId || !query) {
+    return c.json({ error: 'connectionId and query are required' }, 400)
+  }
+
+  // Get auth token
+  const token = getCookie(c, "session")
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  let userId = null
+  try {
+    const payload = await verify(token, jwtSecret)
+    userId = payload.sub
+  } catch (e) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  // Fetch connection from database
+  let connId = connectionId
+  if (!connId.includes(':')) connId = `connection:${connId}`
+
+  try {
+    const [results] = await db.query(`SELECT * FROM ${connId} WHERE user = type::thing('user', $userId)`, { userId })
+
+    if (!results || results.length === 0) {
+      return c.json({ error: 'Connection not found' }, 404)
+    }
+
+    const connRow = results[0]
+    const provider = connRow.provider
+    const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+
+    // Build connection object for adapter
+    const connection = { id: connId, ...config }
+
+    const Adapter = adapters[provider]
+    if (!Adapter) {
+      return c.json({ error: `Provider '${provider}' not supported` }, 400)
+    }
+
+    const adapter = new Adapter(connection)
+    let result = null
+    let error = null
+
+    try {
+      await adapter.connect()
+      result = await adapter.query(query)
+    } catch (err) {
+      error = err.message
+    } finally {
+      await adapter.disconnect()
+    }
+
+    if (error) {
+      return c.json({ error }, 500)
+    }
+
+    return c.json({ ok: true, result })
+  } catch (e) {
+    console.error('[query-by-id] Error:', e)
+    return c.json({ error: e.message || 'Query failed' }, 500)
+  }
+})
+
+
 
 app.post("/schema", async (c) => {
   try {

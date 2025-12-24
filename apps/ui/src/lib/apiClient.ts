@@ -73,7 +73,17 @@ class ApiClient {
 
         const response = await fetch(url, config)
 
-        // Handle non-OK responses
+        // Handle unauthorized responses centrally
+        if (response.status === 401) {
+            console.warn('[ApiClient] Unauthorized (401). Clearing token and redirecting to login.')
+            localStorage.removeItem('auth_token')
+            if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+                window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
+            }
+            throw new Error('Unauthorized')
+        }
+
+        // Handle other non-OK responses
         if (!response.ok) {
             const errorText = await response.text()
             let errorMessage = `${method} ${path} failed: ${response.status}`
