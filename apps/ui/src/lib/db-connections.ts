@@ -41,6 +41,14 @@ export type SQLiteConfig = {
 
 export type SurrealConfig = {
   uploadId?: string
+  host?: string
+  port?: number
+  namespace?: string
+  database?: string
+  username?: string
+  password?: string
+  protocol?: 'ws' | 'http' | 'wss' | 'https'
+  url?: string
 }
 
 export type ConnectionEntry = {

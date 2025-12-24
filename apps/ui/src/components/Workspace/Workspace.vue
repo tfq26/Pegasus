@@ -715,7 +715,10 @@ const setGridRef = (el: any, id: string) => {
 };
 
 const setFormulaBarValue = (value: string) => {
-  const activeGrid = gridRefs.value.get(workspaceStore.activeTabId.value);
+  const tabId = activeTabId.value;
+  if (!tabId) return;
+  
+  const activeGrid = gridRefs.value.get(tabId);
   if (activeGrid && activeGrid.formulaBarValue) {
     // formulaBarValue is a ref, so we need to set .value
     activeGrid.formulaBarValue.value = value;

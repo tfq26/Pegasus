@@ -29,6 +29,17 @@
         :connection-id="connectionId"
         @execute-fix="$emit('execute-sanitize', $event)"
       />
+
+      <InDepthSummaryDialog
+        v-model:open="summaryDialogVisible"
+        :text="summaryText"
+      />
+
+      <MutationReviewDialog
+        v-model:open="mutationDialogVisible"
+        :mutation="mutationData || { method: '', reasoning: '', confirmation: '', query: {} }"
+        @apply="$emit('apply-mutation', $event)"
+      />
     </div>
   </Teleport>
 </template>
@@ -41,6 +52,8 @@ import AmbiguityDialog from './AmbiguityDialog.vue'
 import ChatHistoryModal from './ChatHistoryModal.vue'
 import DashboardElementPreview from '../Dashboard/DashboardElementPreview.vue'
 import SanitizePreviewDialog from './SanitizePreviewDialog.vue'
+import InDepthSummaryDialog from './InDepthSummaryDialog.vue'
+import MutationReviewDialog from './MutationReviewDialog.vue'
 
 const props = defineProps<{
   connectionId: string
@@ -53,7 +66,15 @@ defineEmits<{
   'continue-chat': [chatId: string]
   'save-dashboard': []
   'execute-sanitize': [fix: any]
+  'apply-mutation': [mutation: any]
 }>()
+
+const { 
+  summaryDialogVisible, 
+  summaryText,
+  mutationDialogVisible,
+  mutationData
+} = useChatDialogs()
 
 // Use composables for state
 const { ambiguity, ambiguityDialogVisible } = useQuery()

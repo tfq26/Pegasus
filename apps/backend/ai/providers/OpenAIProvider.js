@@ -12,7 +12,7 @@ export class OpenAIProvider extends AIProvider {
         }))
 
         const requestBody = {
-            model: this.config.model || 'gpt-4o',
+            model: options.model || this.config.model || 'gpt-4o',
             messages: apiMessages,
             temperature: options.temperature ?? 0.7,
             max_tokens: options.maxTokens || 2000

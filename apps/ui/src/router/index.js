@@ -39,8 +39,16 @@ const router = createRouter({
     // { path: '/releases', component: () => import('../views/Releases.vue') },
     { path: '/feedback', component: () => import('../views/Feedback.vue') },
     { path: '/support', component: () => import('../views/Support.vue') },
+    {
+      path: '/docs',
+      component: () => import('../views/DocsView.vue'),
+      children: [
+        { path: ':type/:slug', component: () => import('../views/DocsView.vue') }
+      ]
+    },
     { path: '/login', component: () => import('../views/Login.vue') },
     { path: '/workspace-test', component: () => import('../views/WorkspaceTest.vue') },
+    // { path: '/stocks', component: () => import('../views/StockDashboard.vue') },
     { path: '/error', component: () => import('../views/ErrorPage.vue') },
   ],
 })
@@ -51,7 +59,7 @@ router.beforeEach(async (to, from) => {
   const token = localStorage.getItem('auth_token')
 
   // List of paths that require authentication
-  const protectedPaths = ['/query', '/dashboard', '/profile', '/settings', '/feedback', '/support']
+  const protectedPaths = ['/query', '/dashboard', '/profile', '/settings', '/feedback', '/support', '/docs']
   const isProtectedPath = protectedPaths.some(path => to.path.startsWith(path))
 
   // Redirect to login if user is not authenticated and trying to access a protected path

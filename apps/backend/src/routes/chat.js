@@ -303,13 +303,14 @@ chat.post("/chats/:id/messages", async (c) => {
         }
         let chatId = c.req.param("id")
         if (!chatId.includes(':')) chatId = `chat:${chatId}`
-        const { role, content } = await c.req.json()
+        const { role, content, meta } = await c.req.json()
 
         // Append to messages array
         const newMessage = {
             id: crypto.randomUUID(),
             role,
             content,
+            meta: meta || null,
             created_at: Math.floor(Date.now() / 1000)
         }
 
@@ -770,6 +771,19 @@ chat.post("/ai/generate", async (c) => {
 
                 console.log('[Chat] Parsed potential JSON from AI:', JSON.stringify(parsed, null, 2));
 
+                if (parsed.action === 'edit') {
+                    console.log('[Chat] Detected edit action');
+                    return c.json({
+                        action: 'edit',
+                        method: parsed.method,
+                        reasoning: parsed.reasoning,
+                        confirmation: parsed.confirmation,
+                        example_formula: parsed.example_formula,
+                        query: parsed.query,
+                        usage
+                    });
+                }
+
                 // Normalize 'steps' or 'queries'
                 const steps = parsed.steps || parsed.queries || [];
 
@@ -984,7 +998,12 @@ chat.post("/ai/analyze", async (c) => {
                 summaryText = JSON.stringify(parsed)
                 console.log('[AI Analyze] Detected chart response, injected metadata')
             }
-            // Check for both 'answer' and 'summary' fields
+            // Check for enhanced content (answer + prediction/action)
+            else if (parsed.answer && (parsed.prediction || parsed.action)) {
+                summaryText = JSON.stringify(parsed)
+                console.log('[AI Analyze] Preserving structured response (contains prediction or action)')
+            }
+            // Check for simple field extraction
             else if (parsed.answer) {
                 summaryText = parsed.answer
                 console.log('[AI Analyze] Extracted answer from JSON response')

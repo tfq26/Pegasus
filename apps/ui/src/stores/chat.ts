@@ -6,6 +6,7 @@ export interface ChatMessage {
     role: 'user' | 'assistant' | 'ai'
     content: string
     timestamp: number
+    meta?: any
 }
 
 export interface Chat {
@@ -67,7 +68,8 @@ export const useChatStore = defineStore('chat', () => {
             const messages: ChatMessage[] = data.messages.map((m: any) => ({
                 role: m.role === 'ai' ? 'assistant' : m.role,
                 content: m.content,
-                timestamp: m.created_at * 1000
+                timestamp: m.created_at * 1000,
+                meta: m.meta
             }))
 
             // Update chat in store
@@ -87,9 +89,9 @@ export const useChatStore = defineStore('chat', () => {
         }
     }
 
-    async function saveMessage(chatId: string, role: 'user' | 'ai', content: string) {
+    async function saveMessage(chatId: string, role: 'user' | 'ai', content: string, meta?: any) {
         try {
-            await api.post(`/chats/${chatId}/messages`, { role, content })
+            await api.post(`/chats/${chatId}/messages`, { role, content, meta })
 
             // Update local state
             const chat = chats.value.find(c => c.id === chatId)
@@ -97,7 +99,8 @@ export const useChatStore = defineStore('chat', () => {
                 chat.messages.push({
                     role: role === 'ai' ? 'assistant' : role,
                     content,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    meta
                 })
                 chat.updatedAt = Date.now()
             }

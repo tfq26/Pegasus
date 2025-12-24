@@ -17,6 +17,12 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@aws-sdk/client-ec2": "^3.958.0",
+    "@aws-sdk/client-ecs": "^3.958.0",
+    "@aws-sdk/credential-providers": "^3.958.0",
+    "@azure/abort-controller": "^2.1.2",
+    "@azure/arm-containerinstance": "^9.1.0",
+    "@azure/identity": "^4.13.0",
     "@google/generative-ai": "^0.24.1",
     "@hono/node-server": "^1.19.6",
     "@libsql/client": "^0.15.15",

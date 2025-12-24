@@ -1,5 +1,6 @@
 import { GeminiProvider } from "./providers/GeminiProvider.js"
 import { OpenAIProvider } from "./providers/OpenAIProvider.js"
+// import { AnthropicProvider } from "./providers/AnthropicProvider.js"
 
 export class AIClient {
     constructor() {
@@ -14,6 +15,13 @@ export class AIClient {
         if (process.env.OPENAI_API_KEY) {
             this.providers.set('openai', new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY }))
         }
+
+        // Initialize Anthropic
+        /*
+        if (process.env.ANTHROPIC_API_KEY) {
+            this.providers.set('anthropic', new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY }))
+        }
+        */
     }
 
     getProviderForModel(modelId) {
@@ -27,6 +35,17 @@ export class AIClient {
                 return provider
             }
         }
+
+        // Check if model is Anthropic
+        /*
+        if (modelId.startsWith('claude')) {
+            const provider = this.providers.get('anthropic')
+            if (provider) {
+                provider.config.model = modelId
+                return provider
+            }
+        }
+        */
 
         // Default to Gemini for gemini-* models or fallback
         const provider = this.providers.get('gemini')

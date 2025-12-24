@@ -1,14 +1,41 @@
 {
     "version": "0.7.1",
     "releaseDate": "December 24, 2025",
-    "title": "Workspace Persistence & Sidebar Improvements",
-    "description": "Introduces connection-aware workspace persistence, a new sidebar toggle for switching between tables and saved tabs, and safety features for unsaved work.",
+    "title": "Improved Data Processing & Workspace Persistence",
+    "description": "Major overhaul of Excel parsing logic for complex spreadsheets, combined with connection-aware workspace persistence and enhanced data preview tools.",
     "highlights": [
-        "Connection-aware workspace persistence",
-        "Sidebar toggle for Tables and Tabs",
-        "Temporary workspace migration safety"
+        "Advanced Excel Parsing with ExcelJS",
+        "Multi-row Header Combination Logic",
+        "Local Pagination for Data Previews",
+        "Connection-aware Workspace Persistence"
     ],
     "sections": [
+        {
+            "category": "Data Processing",
+            "items": [
+                {
+                    "title": "Robust Excel Engine",
+                    "description": "A complete rewrite of our Excel parser using ExcelJS for extreme reliability with complex financial reports.",
+                    "details": [
+                        "Added support for formulas (calculates results instead of showing strings)",
+                        "Handles rich text and merged cells seamlessly",
+                        "Automatic multi-row header detection: intelligently combines parent categories with detail columns",
+                        "Integrated confidence scoring (0-1) to detect and flag potentially problematic parses",
+                        "Advanced post-processing to identify real headers buried under title rows"
+                    ]
+                },
+                {
+                    "title": "Enhanced Data Preview",
+                    "description": "Improved tools for exploring large datasets directly in the browser.",
+                    "details": [
+                        "Added local pagination controls (Page X of Y) for instant data navigation",
+                        "Adjustable rows per page: switch between 10, 25, and 50 rows per view",
+                        "Showing X of Y records count for better dataset visibility",
+                        "Performance optimizations for rendering hundreds of columns in the preview modal"
+                    ]
+                }
+            ]
+        },
         {
             "category": "Features",
             "items": [
@@ -44,11 +71,12 @@
             "category": "Technical",
             "items": [
                 {
-                    "title": "Backend Services",
-                    "description": "New infrastructure for user session management.",
+                    "title": "Infrastructure Upgrades",
+                    "description": "Backend services expanded to handle complex data state.",
                     "details": [
+                        "Migrated backend parsing from custom XML logic to ExcelJS",
                         "Connection-workspaces database table for persistent storage",
-                        "WorkspaceService for handling loading and migration logic"
+                        "Metadata return support for parsing confidence and warnings"
                     ]
                 }
             ]

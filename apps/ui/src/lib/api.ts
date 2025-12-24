@@ -264,7 +264,10 @@ export async function executeQuery({ connectionId, query, source = 'user' }: { c
 export async function analyzeResults(question: string, results: any[], query: string) {
   const response = await fetch(`${QUERY_API_URL}/ai/analyze`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      ...getAuthHeaders() as Record<string, string>,
+      'Content-Type': 'application/json'
+    },
     credentials: 'include',
     body: JSON.stringify({
       question,
@@ -414,7 +417,10 @@ export async function fetchDashboardLayout() {
 export async function saveDashboardLayout(layout: any[]) {
   const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      ...getAuthHeaders() as Record<string, string>,
+      'Content-Type': 'application/json'
+    },
     credentials: 'include',
     body: JSON.stringify({ layout })
   })
@@ -605,7 +611,10 @@ export interface FeedbackData {
 export async function submitFeedback(feedback: FeedbackData) {
   const response = await fetch(`${QUERY_API_URL}/feedback`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      ...getAuthHeaders() as Record<string, string>,
+      'Content-Type': 'application/json'
+    },
     credentials: 'include',
     body: JSON.stringify(feedback)
   })

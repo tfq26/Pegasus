@@ -10,82 +10,33 @@
         </p>
       </div>
 
-      <!-- Changelog Section -->
-      <section class="space-y-6">
-        <h2 class="text-2xl font-bold text-foreground flex items-center gap-2">
-          <Sparkles class="w-6 h-6 text-primary" />
-          Release Notes
-        </h2>
-        
-        <div class="space-y-4">
-          <div v-for="(release, index) in releases" :key="release.version" class="rounded-xl border border-border bg-card overflow-hidden">
-            <button
-              @click="toggleExpanded(index)"
-              class="w-full p-6 text-left hover:bg-accent/50 transition-colors"
-            >
-              <div class="flex items-start justify-between gap-4">
-                <div class="flex-1">
-                  <div class="flex items-center gap-3 mb-2">
-                    <span class="px-3 py-1 rounded-lg text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                      v{{ release.version }}
-                    </span>
-                    <span v-if="release.isLatest" class="px-2 py-0.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
-                      Latest
-                    </span>
-                    <span class="text-sm text-muted-foreground">{{ release.releaseDate }}</span>
-                  </div>
-                  <h3 class="text-lg font-semibold text-foreground mb-2">{{ release.title }}</h3>
-                  <p class="text-muted-foreground">{{ release.description }}</p>
-                </div>
-                <div class="shrink-0 transition-transform duration-200" :class="{ 'rotate-180': expandedItems.has(index) }">
-                  <svg class="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-            </button>
-            
-            <div 
-              v-if="expandedItems.has(index) && releaseDetails[release.version]"
-              class="px-6 pb-6 border-t border-border bg-muted/20 space-y-6"
-            >
-              <!-- Highlights -->
-              <div v-if="releaseDetails[release.version].highlights" class="mt-6">
-                <h4 class="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Sparkles class="w-4 h-4 text-amber-500" />
-                  Highlights
-                </h4>
-                <ul class="space-y-2">
-                  <li v-for="(highlight, i) in releaseDetails[release.version].highlights" :key="i" class="text-sm text-muted-foreground flex items-start gap-2">
-                    <Check class="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                    <span>{{ highlight }}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <!-- Sections (New Features, Improvements, Bug Fixes) -->
-              <div v-for="section in releaseDetails[release.version].sections" :key="section.category" class="space-y-4">
-                <h4 class="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <component :is="getCategoryIcon(section.category)" class="w-4 h-4" :class="getCategoryColor(section.category)" />
-                  {{ section.category }}
-                </h4>
-                
-                <div v-for="item in section.items" :key="item.title" class="pl-6 space-y-2">
-                  <div>
-                    <h5 class="text-sm font-medium text-foreground">{{ item.title }}</h5>
-                    <p class="text-xs text-muted-foreground mt-1">{{ item.description }}</p>
-                  </div>
-                  <ul class="space-y-1.5">
-                    <li v-for="(detail, i) in item.details" :key="i" class="text-xs text-muted-foreground flex items-start gap-2">
-                      <span class="text-primary mt-1">•</span>
-                      <span>{{ detail }}</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
+      <!-- Documentation & Releases Redirect -->
+      <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <RouterLink to="/docs" class="group p-8 rounded-2xl border border-border bg-card/50 backdrop-blur-sm hover:border-violet-500/50 hover:bg-violet-500/5 transition-all duration-300 shadow-lg hover:shadow-violet-500/10">
+          <div class="flex items-start justify-between mb-4">
+            <div class="p-3 rounded-xl bg-violet-500/10 border border-violet-500/20 group-hover:scale-110 transition-transform">
+              <BookOpen class="w-6 h-6 text-violet-500" />
             </div>
+            <ArrowRight class="w-5 h-5 text-muted-foreground group-hover:text-violet-500 transition-colors" />
           </div>
-        </div>
+          <h3 class="text-xl font-bold text-foreground mb-2">Documentation</h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">
+            Need help setting up cloud credentials or exploring features? Check out our step-by-step guides.
+          </p>
+        </RouterLink>
+
+        <RouterLink to="/docs/release/v0.7.1" class="group p-8 rounded-2xl border border-border bg-card/50 backdrop-blur-sm hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 shadow-lg hover:shadow-amber-500/10">
+          <div class="flex items-start justify-between mb-4">
+            <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 group-hover:scale-110 transition-transform">
+              <Sparkles class="w-6 h-6 text-amber-500" />
+            </div>
+            <ArrowRight class="w-5 h-5 text-muted-foreground group-hover:text-amber-500 transition-colors" />
+          </div>
+          <h3 class="text-xl font-bold text-foreground mb-2">What's New</h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">
+            Stay up to date with the latest features, improvements, and bug fixes in Pegasus.
+          </p>
+        </RouterLink>
       </section>
 
       <!-- Experimental Features Section -->
@@ -304,12 +255,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { BookOpen, ArrowRight } from 'lucide-vue-next'
 
 defineOptions({ name: 'SupportView' })
-
-const releases = ref<any[]>([])
-const releaseDetails = ref<Record<string, any>>({})
-const expandedItems = ref(new Set<number>())
 
 // Experimental Features State
 const experimentalStatus = ref<{
@@ -388,39 +336,9 @@ const handleExperimentalRequest = async () => {
   }
 }
 
-// Load releases and changelog details
 onMounted(async () => {
   await loadExperimentalStatus()
-  
-  try {
-    // Load releases index
-    const releasesResponse = await fetch('/releases.json')
-    releases.value = (await releasesResponse.json()).releases
-    
-    // Load details for each release
-    for (const release of releases.value) {
-      try {
-        const detailResponse = await fetch(`/changelogs/${release.changelogFile}`)
-        releaseDetails.value[release.version] = await detailResponse.json()
-      } catch (error) {
-        console.error(`Failed to load changelog for ${release.version}:`, error)
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load releases:', error)
-    releases.value = []
-  }
 })
-
-const toggleExpanded = (index: number) => {
-  if (expandedItems.value.has(index)) {
-    expandedItems.value.delete(index)
-  } else {
-    expandedItems.value.add(index)
-  }
-  // Trigger reactivity
-  expandedItems.value = new Set(expandedItems.value)
-}
 
 // Helper functions for category styling
 const getCategoryIcon = (category: string) => {

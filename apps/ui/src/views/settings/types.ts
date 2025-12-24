@@ -1,4 +1,4 @@
-import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, PostgresConfig } from '@/lib/db-connections'
+import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, PostgresConfig, SurrealConfig } from '@/lib/db-connections'
 import type { SchemaPreview } from '@/lib/api'
 
 export type ConnectionFormState = {
@@ -10,9 +10,7 @@ export type ConnectionFormState = {
   mongodb: MongoConfig
   kusto: KustoConfig
   sqlite: SQLiteConfig
-  surrealdb: {
-    uploadId?: string
-  }
+  surrealdb: SurrealConfig
 }
 
 export const defaultConnectionForm: ConnectionFormState = {
@@ -24,7 +22,7 @@ export const defaultConnectionForm: ConnectionFormState = {
   mongodb: { url: '', database: '', collection: '' },
   kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '' },
   sqlite: { path: '', authToken: '' },
-  surrealdb: {}
+  surrealdb: { protocol: 'ws', host: '127.0.0.1', port: 8000, namespace: 'test', database: 'test', username: 'root', password: 'root' }
 }
 
 export type ConnectionStatusState = {
@@ -63,4 +61,15 @@ export type SettingsModel = {
   confirmDestructive?: boolean
   notifications?: boolean
   chatAutoDeleteDays?: number
+  azureCredentials?: {
+    tenantId: string
+    clientId: string
+    clientSecret: string
+    subscriptionId: string
+  }
+  awsCredentials?: {
+    accessKeyId: string
+    secretAccessKey: string
+    region: string
+  }
 }

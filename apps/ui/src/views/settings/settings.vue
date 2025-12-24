@@ -168,6 +168,17 @@ const settings = ref<SettingsModel>({
   azureConnected: true,
   enabledModels: [],
   chatAutoDeleteDays: 30,
+  azureCredentials: {
+    tenantId: '',
+    clientId: '',
+    clientSecret: '',
+    subscriptionId: ''
+  },
+  awsCredentials: {
+    accessKeyId: '',
+    secretAccessKey: '',
+    region: 'us-east-1'
+  }
 })
 
 const savedConnections = ref<ConnectionEntry[]>([])

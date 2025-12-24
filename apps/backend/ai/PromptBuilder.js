@@ -64,6 +64,16 @@ Output Schema:
   "limit": 10 // Optional limit, default 100
 }
 
+OR if the user wants to EDIT/MODIFY/DELETE data:
+{
+  "action": "edit",
+  "method": "update|insert|delete",
+  "reasoning": "Why this action is being taken",
+  "confirmation": "Human readable confirmation message",
+  "example_formula": "e.g., Price * 1.1 = New Price",
+  "query": { ... MongoDB update/insert/delete spec ... }
+}
+
 OR if ambiguous:
 {
   "ambiguous": true,
@@ -150,13 +160,23 @@ EXAMPLES:
 IMPORTANT - ${dialect.toUpperCase()} Query Format:
 You can return a single SQL query OR a JSON object for complex requests.
 
-JSON Format for COMPLEX/MULTI-PART QUESTIONS:
+JSON Format for COMPLEX, MULTI-PART, or MUTATION QUESTIONS:
 {
   "multi_step": true,
   "steps": [
     { "query": "SELECT ...", "explanation": "First, we get..." },
     { "query": "SELECT ...", "explanation": "Then, we calculate..." }
   ]
+}
+
+OR if the user wants to EDIT/MODIFY/DELETE data (SQL MUTATION):
+{
+  "action": "edit",
+  "method": "update|insert|delete",
+  "reasoning": "Why this action is being taken",
+  "confirmation": "I have prepared an update to change the status of order #101 to 'shipped'.",
+  "example_formula": "Status: 'pending' -> 'shipped'",
+  "query": "UPDATE orders SET status = 'shipped' WHERE order_id = 101"
 }
 
 OR if ambiguous:
@@ -246,8 +266,17 @@ SURREALDB QUERY GENERATOR
 You generate SurrealQL queries for SurrealDB. SurrealQL is similar to SQL but has important differences.
 
 RESPONSE FORMAT:
-- For simple queries: Return just the query string
+- For simple SELECT queries: Return just the query string
 - For ambiguous requests: Return JSON with "ambiguous": true, "message": "...", "choices": [...]
+- For EDIT/MODIFY/DELETE (MUTATIONS):
+{
+  "action": "edit",
+  "method": "update|insert|delete",
+  "reasoning": "Increasing TechCorp inventory prices per user request.",
+  "confirmation": "I will increase the price of all TechCorp products by 10%.",
+  "example_formula": "Price * 1.1 = New Price",
+  "query": "UPDATE inventory SET Price = Price * 1.1 WHERE Supplier = 'TechCorp'"
+}
 
 SURREALQL SYNTAX GUIDE:
 
@@ -265,6 +294,10 @@ SURREALQL SYNTAX GUIDE:
 3. GROUPING & COUNTING:
    SELECT Supplier, count() FROM table_name GROUP BY Supplier
    (Returns: [{Supplier: "X", count: 5}, {Supplier: "Y", count: 3}])
+   
+   To get a single TOTAL count for all records:
+   SELECT count() FROM table_name GROUP ALL
+   (Returns: [{count: 10}])
 
 4. AGGREGATIONS (use RETURN for sum/avg/min/max):
    RETURN math::sum((SELECT VALUE type::number(Stock) FROM table_name))
@@ -307,6 +340,13 @@ Response: RETURN math::sum((SELECT VALUE type::number(Stock) FROM inventory))
 
 User: "Show me products from TechCorp"
 Response: SELECT * FROM inventory WHERE Supplier = 'TechCorp' LIMIT 100
+
+"HOW MANY" QUESTIONS:
+When users ask "how many X", they typically want to see the actual data, not just a count.
+- Use: SELECT * FROM table WHERE ... LIMIT 100
+- NOT: SELECT count() FROM table WHERE ...
+- Only use count() with GROUP ALL if the user explicitly asks for "just the count" or "only the number"
+- The count is implied by the number of results returned
 
 RULES:
 1. Always include LIMIT unless doing aggregation
@@ -441,7 +481,7 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
   static buildAnalysisPrompt(question, results, query) {
     return `
       You are a helpful data analyst assistant.
-      Analyze the following database results to answer the user's question in a clear, conversational way.
+      Analyze the following database results to answer the user's question with deep insights.
       
       Query Executed: ${query}
       
@@ -457,20 +497,30 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
       
       Response Format:
       {
-        "answer": "Your plain text response here..."
+        "answer": "Your detailed response here...",
+        "prediction": {
+          "value": "The predicted value (if applicable)",
+          "confidence": 0.85, // 0.0 to 1.0
+          "reasoning": "Step-by-step logic for this prediction"
+        }
       }
       
-      Rules:
-      1. Be concise but informative
-      2. Use bullet points or numbered lists when presenting multiple items (use \\n for newlines)
-      3. Format numbers with appropriate units (e.g., $120,000 for money, 5 employees)
-      4. If showing a list of items, present them clearly
-      5. Highlight key insights or patterns in the data
-      6. The "answer" field should contain the formatted text string
+      Rules for "answer":
+      1. Length: At least 1 paragraph, maximum 5 paragraphs.
+      2. If results are numerical, include statistical context (averages, totals, min/max).
+      3. Identify patterns, trends, or notable outliers.
+      4. Use bullet points or numbered lists when presenting multiple items (use \\n for newlines).
+      5. Format numbers with appropriate units (e.g., $120,000, 5 employees).
+      6. Highlight key insights.
+      
+      Rules for "prediction" (Only include if user asks to predict/forecast):
+      1. Use current data points to extrapolate.
+      2. Provide a confidence score from 0.0 to 1.0.
+      3. Explain the reasoning clearly.
       
       Example response:
       {
-        "answer": "Based on the employee data, 4 employees earn above the average salary of $81,600:\\n\\n• Charlie Brown - $120,000 (Engineering)\\n• Bob Johnson - $95,000 (Engineering)"
+        "answer": "Based on the sales data, there is a strong upward trend in Q3. Total revenue reached $450k, a 15% increase from Q2. Most of this growth comes from the 'Electronics' category which accounted for 60% of sales.\\n\\nNotable patterns:\\n• Sales peak on weekends\\n• Customer retention is at 82%\\n• Average order value grew by $12."
       }
     `
   }

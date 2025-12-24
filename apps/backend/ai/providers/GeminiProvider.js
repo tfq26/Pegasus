@@ -42,8 +42,9 @@ export class GeminiProvider extends AIProvider {
         }
 
         // Initialize model with specific system instruction for this request
+        const modelId = options.model || this.config.model || "gemini-2.5-flash"
         const model = this.genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: modelId,
             systemInstruction: systemInstruction
         })
 

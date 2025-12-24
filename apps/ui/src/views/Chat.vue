@@ -116,6 +116,7 @@
         @sanitize="handleSanitize"
         :has-recommendation="hasRecommendation"
         :settings="settings"
+        :analysis="lastAssistantMessage?.meta"
       />
 
       <DialogManager
@@ -126,6 +127,7 @@
         @continue-chat="handleContinueChat"
         @save-dashboard="toast.success('Added to dashboard')"
         @execute-sanitize="executeSanitization"
+        @apply-mutation="handleApplyMutation"
       />
 
        <DiffView
@@ -197,9 +199,10 @@ import { useChatExecution } from '@/composables/useChatExecution'
 import { useChatToolbar } from '@/composables/useChatToolbar'
 import { useTableActions } from '@/composables/useTableActions'
 import { useProgress } from '@/lib/progress'
+import { getAuthHeaders } from '@/lib/apiClient'
+import { buildConnectionPayload } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { QUERY_API_URL, fetchQueries, fetchSettings, getAIModels, analyzeResults, saveQuery, saveMessage } from '@/lib/api'
-import { buildConnectionPayload } from '@/lib/db-connections'
 import { generateKey, decryptData } from '@/lib/crypto'
 import { db } from '@/lib/local-db'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
@@ -448,6 +451,51 @@ const currentInput = computed({
         else writeInput.value = val
     }
 })
+
+const lastAssistantMessage = computed(() => {
+    const aiMessages = chatHistory.value.filter(m => m.role === 'assistant')
+    return aiMessages.length > 0 ? aiMessages[aiMessages.length - 1] : null
+})
+
+const handleApplyMutation = async (mutation: any) => {
+    if (!selectedConnection.value) {
+        toast.error('No connection selected')
+        return
+    }
+    isExecuting.value = true
+    const timestamp = Date.now()
+    try {
+        const payload = buildConnectionPayload(selectedConnection.value as ConnectionEntry)
+        const res = await fetch(`${import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'}/query`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                provider: selectedConnection.value.provider,
+                connection: payload,
+                query: mutation.query,
+                source: 'ai_mutation'
+            })
+        })
+        const body = await res.json()
+        if (!res.ok) throw new Error(body.error)
+
+        queryResult.value = body.result
+        lastQuery.value = typeof mutation.query === 'string' ? mutation.query : JSON.stringify(mutation.query)
+        
+        chatHistory.value.push({ 
+            role: 'assistant', 
+            content: `Mutation executed successfully: ${mutation.confirmation}`, 
+            timestamp: Date.now() 
+        })
+        
+        toast.success('Mutation successful')
+        workspaceRef.value?.refreshCurrentTable?.()
+    } catch (e: any) {
+        toast.error('Mutation failed', { description: e.message })
+    } finally {
+        isExecuting.value = false
+    }
+}
 const handleUpdateInput = (val: string) => {
     if (mode.value === 'chat') chatInput.value = val
     else writeInput.value = val
@@ -485,7 +533,7 @@ const handleAddChartToDashboard = (chartConfig: any) => {
 
 const handleCreateChat = async () => {
     // Reuse empty chat tab if possible
-    const activeTab = workspaceStore.activeTab.value
+    const activeTab = (workspaceStore as any).activeTab
     const isReusable = activeTab && activeTab.type === 'chat' && !activeTab.data?.chatId && (!activeTab.data?.chatHistory || activeTab.data.chatHistory.length === 0)
 
     if (isReusable) {

@@ -11,6 +11,7 @@ import { api, getAuthHeaders } from '@/lib/apiClient'
 import { buildConnectionPayload } from '@/lib/db-connections'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
 import { useConnectionStore } from '@/stores/connection'
+import { useChatDialogs } from '@/composables/useChatDialogs'
 
 export function useChatExecution(
     mode: Ref<string>,
@@ -31,6 +32,7 @@ export function useChatExecution(
     const workspaceStore = useWorkspaceStore()
     const chatStore = useChatStore()
     const { startOperation, finishOperation, failOperation, withProgress } = useProgress()
+    const { openMutation } = useChatDialogs()
 
     // State managed by this composable
     const isExecuting = ref(false)
@@ -217,8 +219,8 @@ export function useChatExecution(
                             await chatStore.saveMessage(selectedChatId.value, 'ai', summaryText)
                         } catch (e) { console.warn('Failed to persist message', e) }
                     }
-                } catch (err) {
-                    console.error('Failed to generate summary:', err)
+                } catch (err: any) {
+                    console.error('[Chat] Failed to generate summary:', err)
                     const fallback = 'Query completed.'
                     chatHistory.value.push({ role: 'assistant', content: fallback, timestamp: Date.now() })
                     if (selectedChatId.value) {
@@ -273,9 +275,45 @@ export function useChatExecution(
 
         const gid = `chat-${Date.now()}`
 
+        // Follow-up Explanation Check - Route directly to analysis when user asks about previous results
+        const isExplanationRequest = /\b(explain|how|why|elaborate|tell me more|what does|reasoning|clarify|break down)\b/i.test(userPrompt)
+        const isReference = /\b(this|that|it|these|those|the result|results?|above|previous)\b/i.test(userPrompt)
+
+        if (isExplanationRequest && isReference && queryResult.value && lastQuery.value) {
+            console.log('[Chat] Detected follow-up explanation request, using previous results')
+            chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+
+            try {
+                const explanation = await analyzeResults(userPrompt, queryResult.value, lastQuery.value)
+                const explanationText = typeof explanation === 'string' ? explanation : JSON.stringify(explanation)
+
+                chatHistory.value.push({
+                    role: 'assistant',
+                    content: explanationText,
+                    timestamp: Date.now()
+                })
+
+                if (selectedChatId.value) {
+                    try {
+                        await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
+                        await chatStore.saveMessage(selectedChatId.value, 'ai', explanationText)
+                    } catch (e) { console.warn('Failed to persist messages', e) }
+                }
+            } catch (err: any) {
+                console.error('[Chat] Follow-up explanation failed:', err)
+                chatHistory.value.push({
+                    role: 'assistant',
+                    content: 'I apologize, I was unable to provide an explanation. Please try rephrasing your question.',
+                    timestamp: Date.now()
+                })
+            }
+
+            isExecuting.value = false
+            return
+        }
+
         // Visualization Check
         const wantsVisualization = /visualize|chart|graph|dashboard/i.test(userPrompt)
-        const isReference = /\b(this|results?)\b/i.test(userPrompt)
         if (wantsVisualization && isReference && queryResult.value && lastQuery.value) {
             chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
             chatHistory.value.push({ role: 'assistant', content: 'Generating visualization...', timestamp: Date.now() })
@@ -334,8 +372,8 @@ export function useChatExecution(
                 let aiSummary = ""
                 try {
                     aiSummary = await analyzeResults(userPrompt, combinedResults, combinedQuery)
-                } catch (err) {
-                    console.error('Failed to generate summary:', err)
+                } catch (err: any) {
+                    console.error('[Chat] Failed to generate multi-step summary:', err)
                     aiSummary = "Here are the results of your request."
                 }
 
@@ -361,7 +399,15 @@ export function useChatExecution(
 
             } else {
                 // Single step standard
-                const singleAIResponse = aiResponse as { query: string; model?: string; explanation?: string }
+                const singleAIResponse = aiResponse as any
+
+                // If this is a mutation (edit/insert/delete)
+                if (singleAIResponse.action === 'edit') {
+                    openMutation(singleAIResponse)
+                    isExecuting.value = false
+                    // We don't push to history yet - wait for user to apply
+                    return
+                }
 
                 // Executing the query in aiResponse
                 const payload = buildConnectionPayload(selectedConnection.value)
@@ -384,11 +430,30 @@ export function useChatExecution(
                 // Generate Natural Summary
                 update(90, 'Synthesizing...')
                 let aiSummary = singleAIResponse.explanation || "Query executed successfully."
+                let prediction = null
                 try {
                     const response = await analyzeResults(userPrompt, body.result, singleAIResponse.query)
-                    if (response) aiSummary = response
-                } catch (err) {
-                    console.error('Failed to generate summary:', err)
+                    if (response) {
+                        if (typeof response === 'object') {
+                            aiSummary = response.answer
+                            prediction = response.prediction
+                        } else {
+                            // Try parsing if it's a stringified JSON (from backend)
+                            try {
+                                const parsed = JSON.parse(response)
+                                if (parsed.answer) {
+                                    aiSummary = parsed.answer
+                                    prediction = parsed.prediction
+                                } else {
+                                    aiSummary = response
+                                }
+                            } catch (e) {
+                                aiSummary = response
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.error('[Chat] Failed to generate single-step summary:', err)
                 }
 
                 chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
@@ -398,14 +463,16 @@ export function useChatExecution(
                     } catch (e) { console.warn(e) }
                 }
 
+                const assistantContent = typeof aiSummary === 'object' ? JSON.stringify(aiSummary) : aiSummary
                 chatHistory.value.push({
                     role: 'assistant',
-                    content: aiSummary,
-                    timestamp: Date.now()
+                    content: assistantContent,
+                    timestamp: Date.now(),
+                    meta: prediction ? { prediction } : undefined
                 })
                 if (selectedChatId.value) {
                     try {
-                        await chatStore.saveMessage(selectedChatId.value, 'ai', aiSummary)
+                        await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, prediction ? { prediction } : undefined)
                     } catch (e) { console.warn(e) }
                 }
             }

@@ -286,6 +286,7 @@ import {
   Info,
   LayoutDashboard,
   MessageSquare,
+  TrendingUp,
   User,
   Settings,
   CircleHelp,
@@ -297,7 +298,8 @@ import {
   ArrowRight,
   Sun,
   Moon,
-  Monitor
+  Monitor,
+  BookOpen
 } from 'lucide-vue-next'
 
 defineOptions({ name: 'AppNavbar' })
@@ -311,13 +313,14 @@ const links = [
   { to: '/about', label: 'About', icon: Info },
   // { to: '/releases', label: 'Releases', icon: Info },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/query', label: 'Query', icon: MessageSquare }
+  { to: '/query', label: 'Query', icon: MessageSquare },
+  // { to: '/stocks', label: 'Stocks', icon: TrendingUp },
 ]
 
 const filteredLinks = computed(() => {
   if (isPhone.value) {
-    // Show only Home, About, and Releases on mobile
-    return links.filter((link) => ['Home', 'About', 'Releases'].includes(link.label))
+    // Show only Home and About on mobile
+    return links.filter((link) => ['Home', 'About'].includes(link.label))
   }
   return links
 })
@@ -325,7 +328,8 @@ const filteredLinks = computed(() => {
 const dropdownItems = [
   { to: '/profile', label: 'Profile', icon: User },
   { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/support', label: 'Support', icon: CircleHelp }
+  { to: '/support', label: 'Support', icon: CircleHelp },
+  { to: '/docs', label: 'Docs', icon: BookOpen }
 ]
 
 const showDropdown = ref(false)
@@ -375,7 +379,7 @@ const handleClickOutside = (e: MouseEvent) => {
 const checkSubscription = async () => {
   if (user.value) {
     try {
-      const status = await getSubscriptionStatus()
+      const status = (await getSubscriptionStatus()) as any
       isPro.value = status.tier === 'pro'
     } catch (e) {
       console.error('Failed to check subscription', e)

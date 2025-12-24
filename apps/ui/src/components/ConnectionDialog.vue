@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { fetchConnectionSchema } from '@/lib/api'
+import { fetchConnectionSchema, QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 import Dialog from '@/components/ui/dialog/Dialog.vue'
 import DialogContent from '@/components/ui/dialog/DialogContent.vue'
 import DialogHeader from '@/components/ui/dialog/DialogHeader.vue'
@@ -15,7 +15,8 @@ import {
   Loader2,
   Search, 
   Server, 
-  Upload
+  Upload,
+  Link2
 } from 'lucide-vue-next'
 
 import { 
@@ -30,6 +31,22 @@ import type { ConnectionEntry } from '@/lib/db-connections'
 import { getMongoDatabaseFromUrl } from '@/lib/db-connections'
 import type { ConnectionFormState } from '@/views/settings/types'
 import { uploadFile } from '@/lib/api'
+import ProvisionModal from '@/components/Provisioning/ProvisionModal.vue'
+import { Sparkles, Zap } from 'lucide-vue-next'
+
+const showProvisionModal = ref(false)
+
+const onProvisioned = (data: { nickname: string; config: any }) => {
+  props.connectionForm.nickname = data.nickname
+  props.connectionForm.surrealdb.protocol = data.config.protocol
+  props.connectionForm.surrealdb.host = data.config.host
+  props.connectionForm.surrealdb.port = data.config.port
+  props.connectionForm.surrealdb.namespace = data.config.namespace
+  props.connectionForm.surrealdb.database = data.config.database
+  props.connectionForm.surrealdb.username = data.config.username
+  props.connectionForm.surrealdb.password = data.config.password
+  props.connectionForm.surrealdb.url = data.config.url
+}
 
 const props = defineProps<{
   open: boolean
@@ -43,6 +60,22 @@ const emit = defineEmits<{
   'save': []
   'update': []
 }>()
+
+const importKustoCreds = async () => {
+  try {
+    const res = await fetchConnectionSchema({ provider: 'settings' } as any) // Hack to fetch settings via existing api proxy if needed, or just fetch directly
+    const settingsRes = await fetch(`${QUERY_API_URL}/settings`, { headers: getAuthHeaders() })
+    const data = await settingsRes.json()
+    if (data.settings?.azureCredentials) {
+      props.connectionForm.kusto.tenantId = data.settings.azureCredentials.tenantId
+      props.connectionForm.kusto.clientId = data.settings.azureCredentials.clientId
+      props.connectionForm.kusto.clientSecret = data.settings.azureCredentials.clientSecret
+      showAdvancedKusto.value = true
+    }
+  } catch (e) {
+    console.error('Failed to import kusto creds', e)
+  }
+}
 
 const isOpen = computed({
   get: () => props.open,
@@ -267,6 +300,7 @@ const processFile = async (file: File) => {
                 <SelectItem value="mongodb">MongoDB</SelectItem>
                 <SelectItem value="kusto">Kusto</SelectItem>
                 <SelectItem value="sqlite">SQLite</SelectItem>
+                <SelectItem value="surrealdb">SurrealDB</SelectItem>
                 <SelectItem value="file">File Import (Excel/JSON/XML)</SelectItem>
               </SelectContent>
             </Select>
@@ -286,7 +320,7 @@ const processFile = async (file: File) => {
         <div class="h-px bg-border my-4"></div>
 
         <!-- File Import -->
-        <div v-if="props.connectionForm.provider === 'file' || props.connectionForm.provider === 'surrealdb'" class="space-y-4">
+        <div v-if="props.connectionForm.provider === 'file'" class="space-y-4">
              <div class="space-y-1.5">
                 <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Upload File</label>
                 <div class="flex items-center gap-3">
@@ -500,7 +534,7 @@ const processFile = async (file: File) => {
           </div>
 
           <!-- Advanced Auth Toggle -->
-          <div class="pt-2">
+          <div class="flex items-center justify-between pt-2">
             <button 
               type="button" 
               @click="showAdvancedKusto = !showAdvancedKusto"
@@ -508,6 +542,13 @@ const processFile = async (file: File) => {
             >
               <component :is="showAdvancedKusto ? ChevronDown : ChevronRight" class="w-3.5 h-3.5" />
               Advanced Authentication (Service Principal)
+            </button>
+            <button 
+              type="button"
+              @click="importKustoCreds"
+              class="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+            >
+              <Link2 class="w-3 h-3" /> Use Linked Account
             </button>
           </div>
 
@@ -564,6 +605,84 @@ const processFile = async (file: File) => {
           </div>
         </div>
 
+        <!-- SurrealDB -->
+        <div v-else-if="props.connectionForm.provider === 'surrealdb'" class="space-y-4">
+          <!-- Provisioning CTA -->
+          <div 
+            @click="showProvisionModal = true"
+            class="p-4 bg-gradient-to-r from-violet-600/10 to-indigo-600/10 border border-violet-500/20 rounded-xl cursor-pointer hover:from-violet-600/20 hover:to-indigo-600/20 transition-all group"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="p-2 bg-violet-600 rounded-lg shadow-lg shadow-violet-500/20 group-hover:scale-110 transition-transform">
+                  <Sparkles class="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold">Don't have an instance?</h4>
+                  <p class="text-[10px] text-muted-foreground">Provision a managed SurrealDB instance in one click.</p>
+                </div>
+              </div>
+              <button class="text-[10px] font-bold uppercase tracking-widest text-violet-500 bg-violet-500/10 px-3 py-1.5 rounded-lg hover:bg-violet-500 hover:text-white transition-colors">
+                Provision Now
+              </button>
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Protocol</label>
+              <Select v-model="props.connectionForm.surrealdb.protocol">
+                <SelectTrigger class="w-full rounded-lg border-input bg-background h-[38px]">
+                  <SelectValue placeholder="Protocol" />
+                </SelectTrigger>
+                <SelectContent class="bg-popover border-border">
+                  <SelectItem value="ws">ws</SelectItem>
+                  <SelectItem value="wss">wss</SelectItem>
+                  <SelectItem value="http">http</SelectItem>
+                  <SelectItem value="https">https</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">URL (Optional - Overrides Host/Port)</label>
+              <input v-model="props.connectionForm.surrealdb.url" placeholder="ws://localhost:8000/rpc" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="space-y-1.5 md:col-span-2">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
+              <input v-model="props.connectionForm.surrealdb.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
+              <input v-model.number="props.connectionForm.surrealdb.port" type="number" placeholder="8000" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Namespace</label>
+              <input v-model="props.connectionForm.surrealdb.namespace" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
+              <input v-model="props.connectionForm.surrealdb.database" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+            </div>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Username</label>
+              <input v-model="props.connectionForm.surrealdb.username" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
+              <input v-model="props.connectionForm.surrealdb.password" type="password" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+            </div>
+          </div>
+        </div>
+
         <DialogFooter class="flex justify-end gap-3 pt-4 border-t border-border">
           <button
             type="button"
@@ -580,8 +699,13 @@ const processFile = async (file: File) => {
             {{ props.isEditMode ? 'Update Connection' : 'Save Connection' }}
           </button>
         </DialogFooter>
-
       </form>
+
+      <ProvisionModal 
+        :open="showProvisionModal"
+        @update:open="showProvisionModal = $event"
+        @provisioned="onProvisioned"
+      />
     </DialogContent>
   </Dialog>
 </template>

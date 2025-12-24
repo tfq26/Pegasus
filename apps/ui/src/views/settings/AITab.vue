@@ -210,6 +210,14 @@ const temperatureValue = computed({
                 >
                   Gemini
                 </span>
+                <!--
+                <span 
+                  v-else-if="model.provider === 'anthropic'" 
+                  class="px-1.5 py-0.5 rounded text-[10px] bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                >
+                  Anthropic
+                </span>
+                -->
                 <span v-if="isModelActive(model.id)" class="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary border border-primary/30">
                   Active
                 </span>

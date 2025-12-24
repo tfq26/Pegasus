@@ -20,6 +20,10 @@ const sanitizeIssues = ref<any[]>([])
 const sanitizeTable = ref('')
 
 const diffViewVisible = ref(false)
+const summaryDialogVisible = ref(false)
+const summaryText = ref('')
+const mutationDialogVisible = ref(false)
+const mutationData = ref<any>(null)
 
 export function useChatDialogs() {
 
@@ -48,6 +52,16 @@ export function useChatDialogs() {
         sanitizeDialogVisible.value = true
     }
 
+    function openSummary(text: string) {
+        summaryText.value = text
+        summaryDialogVisible.value = true
+    }
+
+    function openMutation(data: any) {
+        mutationData.value = data
+        mutationDialogVisible.value = true
+    }
+
     return {
         // Chat Preview
         previewVisible,
@@ -68,6 +82,16 @@ export function useChatDialogs() {
         openSanitizePreview,
 
         // Diff View
-        diffViewVisible
+        diffViewVisible,
+
+        // In-depth Summary
+        summaryDialogVisible,
+        summaryText,
+        openSummary,
+
+        // Mutation Review
+        mutationDialogVisible,
+        mutationData,
+        openMutation
     }
 }

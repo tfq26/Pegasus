@@ -20,7 +20,13 @@ const props = defineProps<{
   error: string
   lastQuery: string
   loading: boolean
-  analysis?: any
+  analysis?: {
+    prediction?: {
+      value: string
+      confidence: number
+      reasoning: string
+    }
+  }
   isAnalyzing?: boolean
   history?: any[]
   ambiguity?: { message: string; choices: string[]; reasoning?: string }
@@ -43,10 +49,10 @@ const emit = defineEmits<{
 const size = ref(320) // Default size in pixels
 const isResizing = ref(false)
 const isMaximized = ref(false)
-const activeTab = ref<'output' | 'problems' | 'execution' | 'versioning'>('output')
+const activeTab = ref<'output' | 'insights' | 'problems' | 'execution' | 'versioning'>('output')
 import { defineAsyncComponent, unref } from 'vue'
 const ExcelEditor = defineAsyncComponent(() => import('@/components/Excel/ExcelEditor.vue'))
-import { AlertCircle, Activity, GitBranch, Terminal as TerminalIcon, History, Command, Info, Gauge } from 'lucide-vue-next'
+import { AlertCircle, Activity, GitBranch, Terminal as TerminalIcon, History, Command, Info, Gauge, Brain, Sparkles } from 'lucide-vue-next'
 
 const viewMode = ref<'table' | 'json' | 'excel'>('table')
 
@@ -206,6 +212,7 @@ const copyToClipboard = async (text: string) => {
           <button
             v-for="tab in ([
               { id: 'output', label: 'Output', icon: Table, count: ref(0) },
+              { id: 'insights', label: 'Insights', icon: Brain, count: computed(() => props.analysis?.prediction ? 1 : 0) },
               { id: 'problems', label: 'Problems', icon: AlertCircle, count: problemsCount },
               { id: 'execution', label: 'Execution', icon: Gauge, count: ref(0) },
               { id: 'versioning', label: 'Versioning', icon: GitBranch, count: ref(0) }
@@ -399,6 +406,70 @@ const copyToClipboard = async (text: string) => {
                  </div>
               </div>
            </div>
+        </div>
+
+        <!-- Insights Tab -->
+        <div v-else-if="activeTab === 'insights'" class="h-full flex flex-col p-6 space-y-6 overflow-auto">
+          <div v-if="props.analysis?.prediction" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <!-- Confidence Score -->
+            <div class="flex items-center justify-between p-4 bg-stone-950 border border-stone-800 rounded-2xl relative overflow-hidden group">
+               <div class="absolute inset-0 bg-violet-500/5 opacity-0 group-hover:opacity-100 transition-all"></div>
+               <div class="space-y-1">
+                 <h5 class="text-[10px] font-black uppercase tracking-widest text-stone-500">Prediction Confidence</h5>
+                 <div class="text-2xl font-mono text-stone-100 flex items-baseline gap-1">
+                    <span>{{ (props.analysis.prediction.confidence * 100).toFixed(0) }}</span>
+                    <span class="text-sm text-stone-500">%</span>
+                 </div>
+               </div>
+               <!-- Circular progress or similar -->
+               <div class="relative w-12 h-12 flex items-center justify-center">
+                  <svg class="w-full h-full -rotate-90">
+                    <circle cx="24" cy="24" r="20" fill="transparent" stroke="currentColor" stroke-width="4" class="text-stone-900" />
+                    <circle cx="24" cy="24" r="20" fill="transparent" stroke="currentColor" stroke-width="4" 
+                      id="confidence-circle"
+                      class="text-violet-500" 
+                      :stroke-dasharray="2 * Math.PI * 20"
+                      :stroke-dashoffset="2 * Math.PI * 20 * (1 - props.analysis.prediction.confidence)"
+                    />
+                  </svg>
+                  <Sparkles class="w-3 h-3 absolute text-violet-400" />
+               </div>
+            </div>
+
+            <!-- Predicted Value -->
+            <div class="p-5 bg-stone-900/40 border border-stone-800/50 rounded-2xl">
+              <h5 class="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-3">Predicted Result</h5>
+              <div class="text-[15px] font-medium text-stone-200 leading-relaxed">{{ props.analysis.prediction.value }}</div>
+            </div>
+
+            <!-- Reasoning -->
+            <div class="space-y-3">
+              <h5 class="text-[10px] font-black uppercase tracking-widest text-stone-500">Logic & Reasoning</h5>
+              <div class="p-5 bg-stone-950 border border-stone-800 rounded-2xl border-l-4 border-l-violet-500">
+                <div class="text-[13px] text-stone-300 leading-[1.6] whitespace-pre-wrap select-text selection:bg-violet-500/30">
+                  {{ props.analysis.prediction.reasoning }}
+                </div>
+              </div>
+            </div>
+            
+            <div class="flex items-center gap-2 p-3 bg-stone-900/30 rounded-lg border border-stone-800/50">
+               <Info class="w-3.5 h-3.5 text-stone-500" />
+               <p class="text-[10px] text-stone-600 italic">Predictions are generated using AI-driven extrapolation. Always verify before making business decisions.</p>
+            </div>
+          </div>
+
+          <div v-else class="flex-1 flex flex-col items-center justify-center space-y-6 opacity-30 grayscale">
+             <div class="relative">
+                <div class="absolute inset-0 bg-stone-800/20 blur-3xl rounded-full"></div>
+                <div class="relative w-16 h-16 rounded-2xl bg-stone-900 border border-stone-800 flex items-center justify-center transform rotate-12 transition-transform hover:rotate-0">
+                   <Brain class="w-8 h-8 text-stone-700" />
+                </div>
+             </div>
+             <div class="text-center space-y-2">
+                <h4 class="text-sm font-black uppercase tracking-[0.2em] text-stone-400">Quiet Mind</h4>
+                <p class="text-xs text-stone-600 max-w-[240px] leading-relaxed">No deep prediction intelligence available for the current result set.</p>
+             </div>
+          </div>
         </div>
 
         <!-- Execution Tab -->

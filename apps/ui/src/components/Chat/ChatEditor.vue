@@ -84,11 +84,21 @@
             <!-- Regular Text Content -->
             <div 
               v-else
-              class="text-stone-300 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white"
+              class="text-stone-300 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white markdown-chat"
             >
-               <div class="whitespace-pre-wrap break-words">
-                  {{ formatContent(msg.content) }}
+                <div class="break-words">
+                  <div v-if="shouldTruncate(msg.content) && !isExpanded(msg)" v-html="renderMarkdown(getTruncatedContent(msg.content))"></div>
+                  <div v-else v-html="renderMarkdown(formatContent(msg.content))"></div>
                 </div>
+                
+                <button 
+                  v-if="shouldTruncate(msg.content) && !isExpanded(msg)"
+                  @click="handleReadMore(msg)"
+                  class="mt-2 text-violet-400 hover:text-violet-300 text-[11px] font-bold flex items-center gap-1 transition-all"
+                >
+                  <Sparkles class="w-3 h-3" />
+                  <span>Read Full Report</span>
+                </button>
             </div>
 
             <!-- Action Toolbar (Pinned below content) -->
@@ -107,7 +117,7 @@
               <!-- Retry Button (User messages only) -->
                <button 
                 v-if="msg.role === 'user'"
-                @click="localInput = msg.content; isInputFocused = true" 
+                @click="handleRetry(msg.content)" 
                 class="flex items-center space-x-2 px-2 py-1 rounded bg-stone-900/50 border border-stone-800/50 text-[10px] text-stone-500 hover:text-violet-400 hover:border-violet-500/30 transition-all"
               >
                 <RefreshCw class="w-3 h-3" />
@@ -207,14 +217,29 @@ import {
   Brain,
   Zap,
   RefreshCw,
-  LayoutDashboard
+  LayoutDashboard,
+  ChevronDown
 } from 'lucide-vue-next'
+import MarkdownIt from 'markdown-it'
 import { useAuth } from '@/composables/useAuth'
 import { useColorMode, usePreferredDark } from '@vueuse/core'
+import { useChatDialogs } from '@/composables/useChatDialogs'
 
 const { user } = useAuth()
 const mode = useColorMode()
 const preferredDark = usePreferredDark()
+
+const md = new MarkdownIt({ 
+  html: true, 
+  linkify: true, 
+  typographer: true,
+  breaks: true 
+})
+
+const renderMarkdown = (content: string) => {
+  if (!content) return ''
+  return md.render(content)
+}
 
 const pegasusLogo = computed(() => {
   const isDark = mode.value === 'dark' || (mode.value === 'auto' && preferredDark.value)
@@ -247,6 +272,32 @@ const isLoadingMore = ref(false)
 const displayCount = ref(20)
 const observer = ref<IntersectionObserver | null>(null)
 const copied = ref('')
+const expandedMessages = ref(new Set<number>())
+const { openSummary } = useChatDialogs()
+
+const isExpanded = (msg: any) => expandedMessages.value.has(msg.timestamp)
+
+const shouldTruncate = (content: string) => {
+  const text = formatContent(content)
+  return text.length > 400 || (text.match(/\n/g) || []).length > 2
+}
+
+const getTruncatedContent = (content: string) => {
+  const text = formatContent(content)
+  if (text.length <= 400) return text
+  return text.substring(0, 380) + '...'
+}
+
+const handleReadMore = (msg: any) => {
+  const fullText = formatContent(msg.content)
+  if (fullText.length > 1000) {
+    // If extremely long, open in dialog
+    openSummary(fullText)
+  } else {
+    // Otherwise just expand in-place
+    expandedMessages.value.add(msg.timestamp)
+  }
+}
 
 
 const displayedMessages = computed(() => {
@@ -282,6 +333,15 @@ const copyToClipboard = async (text: string) => {
   }
 }
 
+const handleRetry = (content: string) => {
+  localInput.value = content
+  isInputFocused.value = true
+  // Wait for localInput to propagate to parent via emit('update:input') which happens in the watcher
+  nextTick(() => {
+    emit('submit')
+  })
+}
+
 
 const formatTime = (timestamp: number) => {
   const date = new Date(timestamp)
@@ -294,6 +354,15 @@ const formatContent = (content: string) => {
   if (formatted.startsWith('"') && formatted.endsWith('"')) {
     try { formatted = JSON.parse(formatted) } catch (e) { formatted = formatted.slice(1, -1) }
   }
+  
+  // Handle structured AI response
+  if (formatted.startsWith('{') && formatted.endsWith('}')) {
+      try {
+          const parsed = JSON.parse(formatted)
+          if (parsed.answer) return parsed.answer.replace(/\\n/g, '\n')
+      } catch (e) {}
+  }
+
   return formatted.replace(/\\n/g, '\n')
 }
 
@@ -439,4 +508,31 @@ watch(() => props.history?.length, async () => {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Markdown Chat Styling */
+.markdown-chat :deep(p) { margin-bottom: 0.75rem; }
+.markdown-chat :deep(p:last-child) { margin-bottom: 0; }
+.markdown-chat :deep(strong) { color: #fff; font-weight: 700; }
+.markdown-chat :deep(ul) { list-style: disc; padding-left: 1.25rem; margin-bottom: 0.75rem; }
+.markdown-chat :deep(ol) { list-style: decimal; padding-left: 1.25rem; margin-bottom: 0.75rem; }
+.markdown-chat :deep(li) { margin-bottom: 0.25rem; }
+.markdown-chat :deep(code) { 
+  background: rgba(139, 92, 246, 0.1); 
+  padding: 0.125rem 0.25rem; 
+  border-radius: 0.25rem; 
+  font-family: monospace; 
+  font-size: 0.85em; 
+  color: #a78bfa;
+}
+.markdown-chat :deep(pre) { 
+  background: #000; 
+  padding: 0.75rem; 
+  border-radius: 0.5rem; 
+  margin: 0.75rem 0; 
+  overflow-x: auto; 
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.markdown-chat :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 12px; }
+.markdown-chat :deep(th), .markdown-chat :deep(td) { border: 1px solid #2d2d2d; padding: 6px 10px; text-align: left; }
+.markdown-chat :deep(th) { background: #1a1a1a; font-weight: bold; }
 </style>

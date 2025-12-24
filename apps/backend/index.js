@@ -56,6 +56,9 @@ app.route('/api', tableRoutes)
 app.route('/', chatRoutes)
 app.route('/operations', operationRoutes)
 app.route('/workspace', workspaceRoutes)
+app.route('/stocks', stockRoutes)
+app.route('/provision', provisionRoutes)
+app.route('/docs', docsRoutes)
 
 
 
@@ -74,6 +77,9 @@ import { tableRoutes } from "./src/routes/table.js"
 import { chatRoutes } from "./src/routes/chat.js"
 import { operationRoutes } from "./src/routes/operations.js"
 import { workspaceRoutes } from "./src/routes/workspace.js"
+import { stockRoutes } from "./src/routes/stock.js"
+import { provisionRoutes } from "./src/routes/provision.js"
+import docsRoutes from "./src/routes/docs.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"
