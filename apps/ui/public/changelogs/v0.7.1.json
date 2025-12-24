@@ -1,0 +1,48 @@
+{
+    "version": "0.7.1",
+    "date": "2025-12-24",
+    "title": "Workspace Persistence & Sidebar Improvements",
+    "description": "Introduces connection-aware workspace persistence, a new sidebar toggle for switching between tables and saved tabs, and safety features for unsaved work.",
+    "categories": [
+        {
+            "name": "Features",
+            "items": [
+                {
+                    "title": "Workspace Persistence",
+                    "description": "Tabs (chats, spreadsheets, queries) are now saved per connection. Work is automatically saved and restored when you switch connections.",
+                    "type": "new"
+                },
+                {
+                    "title": "Sidebar Toggle",
+                    "description": "Switch between 'Tables' and 'Tabs' view in the sidebar to manage your saved sessions for the active connection.",
+                    "type": "new"
+                },
+                {
+                    "title": "Temporary Workspace Safety",
+                    "description": "Unsaved tabs in the temporary workspace trigger a visual warning. Switching to a connection prompts to move or discard these tabs.",
+                    "type": "new"
+                }
+            ]
+        },
+        {
+            "name": "Backend",
+            "items": [
+                {
+                    "title": "Workspace Service",
+                    "description": "New backend service to manage workspace state, persisting active tabs to the database per connection.",
+                    "type": "improvement"
+                }
+            ]
+        },
+        {
+            "name": "Frontend",
+            "items": [
+                {
+                    "title": "Connection-Aware Store",
+                    "description": "Refactored workspace store to handle multiple workspace contexts (temp vs connections).",
+                    "type": "improvement"
+                }
+            ]
+        }
+    ]
+}
