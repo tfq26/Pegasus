@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g., 0.8.0)"
+        required: true
+      title:
+        description: "Release Title"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v1
+
+      - name: Setup Git User
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Generate Changelog Entry
+        run: bun scripts/generate-changelog-entry.js --version=${{ inputs.version }} --title="${{ inputs.title }}"
+
+      - name: Update Releases Index
+        run: bun run changelog:generate
+
+      - name: Commit & Tag
+        run: |
+          git add apps/ui/public/changelogs apps/ui/public/releases.json
+          git commit -m "chore(release): v${{ inputs.version }}"
+          git tag v${{ inputs.version }}
+          git push origin HEAD:main
+          git push origin v${{ inputs.version }}
