@@ -401,7 +401,7 @@ const htmlContent = `
                 <p class="cta-text">
                     Download Pegasus Desktop and experience the future of database analytics
                 </p>
-                <a href="/downloads" class="cta-button">
+                <a href="/download" class="cta-button">
                     <span>Download Now</span>
                     <span>→</span>
                 </a>
