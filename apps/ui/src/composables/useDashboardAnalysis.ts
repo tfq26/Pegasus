@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 
 export function useDashboardAnalysis() {

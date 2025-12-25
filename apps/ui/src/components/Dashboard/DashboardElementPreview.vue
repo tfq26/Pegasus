@@ -132,7 +132,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import ChartRenderer from './ChartRenderer.vue'
 import { recommendVisualization } from '@/lib/api'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const props = defineProps<{
   open: boolean

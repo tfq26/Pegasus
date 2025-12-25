@@ -8,24 +8,29 @@ export interface ConnectionSchemaState {
     error?: string
 }
 
-export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
-    const connectionSchemas = ref<Record<string, ConnectionSchemaState>>({})
-    const dbTablesCache = ref<Record<string, Record<string, string[]>>>({})
+const connectionSchemas = ref<Record<string, ConnectionSchemaState>>({})
+const dbTablesCache = ref<Record<string, Record<string, string[]>>>({})
 
+export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
     const schemaFor = (id: string) => connectionSchemas.value[id] || { status: 'idle', tables: [] }
 
     const refreshSchemas = async () => {
-        if (!connections.value) return
+        if (!connections.value || connections.value.length === 0) return
 
         for (const conn of connections.value) {
+            // Already have it? Skip unless it's error or idle
+            const current = connectionSchemas.value[conn.id]
+            if (current && (current.status === 'success' || current.status === 'loading')) {
+                continue
+            }
+
             if (!connectionSchemas.value[conn.id]) {
                 connectionSchemas.value[conn.id] = { status: 'idle', tables: [] }
             }
 
-            // If already loading or successfully loaded, skip (unless we want to force refresh)
-            if (connectionSchemas.value[conn.id].status === 'loading') continue
+            const entry = connectionSchemas.value[conn.id]
+            if (entry) entry.status = 'loading'
 
-            connectionSchemas.value[conn.id].status = 'loading'
             try {
                 const schema = await fetchConnectionSchema(conn)
                 connectionSchemas.value[conn.id] = {
@@ -46,17 +51,21 @@ export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
     // Helper to fetch tables for a specific database (SurrealDB/Postgres etc)
     const getTablesForDb = async (conn: ConnectionEntry, dbName: string) => {
         // Check cache first
-        if (dbTablesCache.value[conn.id]?.[dbName]) {
-            return dbTablesCache.value[conn.id][dbName]
+        const connCache = dbTablesCache.value[conn.id]
+        if (connCache?.[dbName]) {
+            return connCache[dbName]
         }
 
         try {
             const tables = await fetchDatabaseTables(conn, dbName)
 
             if (!dbTablesCache.value[conn.id]) dbTablesCache.value[conn.id] = {}
-            dbTablesCache.value[conn.id][dbName] = tables
+            const targetCache = dbTablesCache.value[conn.id]
+            if (targetCache) {
+                targetCache[dbName] = tables as any
+            }
 
-            return tables
+            return tables as string[]
         } catch (err) {
             console.error(`[ExplorerSchema] Failed to fetch tables for ${dbName}:`, err)
             return []

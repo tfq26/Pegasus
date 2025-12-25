@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/context-menu'
 import JsonViewer from '@/components/JsonViewer.vue'
 import { Braces, Minus, Plus } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import type { SettingsModel } from '@/views/settings/types'
 import { useTimeAgo, useStorage } from '@vueuse/core'
 

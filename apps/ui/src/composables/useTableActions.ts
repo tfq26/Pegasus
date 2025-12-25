@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { useProgress } from '@/lib/progress'
 import { sanitizeTable as apiSanitizeTable } from '@/lib/api'
 

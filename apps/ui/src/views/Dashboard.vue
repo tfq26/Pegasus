@@ -475,7 +475,7 @@ import DashboardFilters from '@/components/Dashboard/DashboardFilters.vue'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
 import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy } from '@/lib/api'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -519,7 +519,7 @@ const currentDashboard = computed((): any => store.currentDashboard as any)
 const isLoading = computed(() => store.isLoading)
 
 import Navbar from '@/components/Navbar.vue'
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useThrottleFn } from '@vueuse/core'
 import { useMobileDetection } from '@/composables/useMobileDetection'
 
 const { isPhone, isTablet } = useMobileDetection()
@@ -540,10 +540,14 @@ const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
 const showChat = ref(false)
 const dashboardContainer = ref<HTMLElement | null>(null)
 
-// Watch for dashboard changes to join/leave rooms
+// Watch for dashboard changes to join/leave rooms and save last viewed
 watch(() => currentDashboard.value?.id, (newId, oldId) => {
   if (oldId) leaveDashboard(oldId)
-  if (newId) joinDashboard(newId)
+  if (newId) {
+    joinDashboard(newId)
+    // Save as last viewed dashboard for navbar navigation
+    localStorage.setItem('pegasus-last-dashboard', newId)
+  }
 }, { immediate: true })
 
 let autoSaveInterval: ReturnType<typeof setInterval> | null = null
@@ -595,23 +599,16 @@ onBeforeUnmount(() => {
   }
 })
 
-// Cursor Handling
-const onMouseMove = (e: MouseEvent) => {
+// Cursor Handling - Throttled to 30Hz (33ms) for performance
+const onMouseMove = useThrottleFn((e: MouseEvent) => {
   if (!dashboardContainer.value || !currentDashboard.value) return
   
-  // Calculate relative position within the scrollable container
-  // Assuming the overlay is absolute positioned 0,0 relative to this container
-  // We want coordinates relative to the top-left of the content area.
-  
-  // However, e.layerX/Y can be tricky with nested elements.
-  // Best to use client coordinates minus container rect, plus scroll.
   const rect = dashboardContainer.value.getBoundingClientRect()
   const x = e.clientX - rect.left + dashboardContainer.value.scrollLeft
   const y = e.clientY - rect.top + dashboardContainer.value.scrollTop
   
-  // Throttle this in real app, but raw for now
   emitCursorMove(currentDashboard.value.id, x, y)
-}
+}, 33)
 
 const onMouseLeave = () => {
     // Optionally signal cursor left

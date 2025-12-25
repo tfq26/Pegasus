@@ -520,7 +520,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 
 const router = useRouter()

@@ -23,6 +23,11 @@
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "start": "bun run-apps.js",
+    "start:web": "bun run-apps.js --web",
+    "start:desktop": "bun run-apps.js --desktop",
+    "start:all": "bun run-apps.js --all",
+    "desktop:dev": "cd apps/desktop && bun run tauri:dev",
+    "desktop:build": "cd apps/desktop && bun run tauri:build",
     "changelog:generate": "node scripts/generate-releases-index.js"
   },
   "peerDependencies": {

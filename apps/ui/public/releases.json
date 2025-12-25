@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.8.0",
+            "releaseDate": "December 24, 2025",
+            "title": "UI Modernization & Performance Core",
+            "description": "A massive architectural shift towards Shadcn standards, highly responsive exploration tools, and deep data interaction capabilities.",
+            "changelogFile": "v0.8.0.json",
+            "isLatest": true
+        },
+        {
             "version": "0.7.1",
             "releaseDate": "December 24, 2025",
             "title": "Workspace Persistence & Sidebar Improvements",
             "description": "Introduces connection-aware workspace persistence, a new sidebar toggle for switching between tables and saved tabs, and safety features for unsaved work.",
             "changelogFile": "v0.7.1.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.7.0.5",

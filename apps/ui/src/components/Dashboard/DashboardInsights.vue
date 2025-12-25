@@ -37,13 +37,7 @@
     <div class="text-xs text-muted-foreground/60 mt-1">Crossing references across all elements</div>
   </div>
   
-  <div v-else class="p-6 bg-muted/20 border border-border border-dashed rounded-lg mb-6 flex items-center justify-center text-center">
-    <div class="flex flex-col items-center gap-3">
-      <Sparkles class="w-8 h-8 text-muted-foreground/50 mb-2" />
-      <div class="text-sm text-muted-foreground font-medium">Ready to analyze your dashboard.</div>
-      <p class="text-xs text-muted-foreground/60 max-w-xs">Use the "Generate Insights" button in the toolbar above to start the AI analysis.</p>
-    </div>
-  </div>
+
 </template>
 
 <script setup lang="ts">

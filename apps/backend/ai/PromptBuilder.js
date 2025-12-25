@@ -486,8 +486,9 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
       Query Executed: ${query}
       
       Results:
-      ${JSON.stringify(results.slice(0, 50), null, 2)} 
-      ${results.length > 50 ? '(Note: Only the first 50 rows are shown)' : ''}
+      Results:
+      ${Array.isArray(results) ? JSON.stringify(results.slice(0, 50), null, 2) : JSON.stringify(results, null, 2)} 
+      ${Array.isArray(results) && results.length > 50 ? '(Note: Only the first 50 rows are shown)' : ''}
 
       User Question: ${question}
 
@@ -567,7 +568,7 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
       if (!response || typeof response !== 'string') return '';
 
       // 1. Remove markdown code blocks
-      let clean = response.replace(/```(sql|kusto|mongo|json)?/g, '').replace(/```/g, '').trim()
+      let clean = response.replace(/```(sql|surrealql|kusto|mongo|json)?/g, '').replace(/```/g, '').trim()
 
       // 2. If dialect is mongodb, try to extract just the JSON object
       if (dialect === 'mongodb') {
@@ -577,7 +578,29 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
         }
       }
 
-      // 3. Check for JSON (ambiguous response) even in SQL dialects
+      // 3. SurrealDB-specific cleanup
+      if (dialect === 'surrealdb') {
+        // Remove trailing semicolons
+        clean = clean.replace(/;\s*$/, '')
+
+        // Fix double closing parentheses at end - common AI mistake
+        // e.g., "... FROM table_name))" -> "... FROM table_name)"
+        while (clean.endsWith('))')) {
+          // Count opening vs closing parens
+          const openCount = (clean.match(/\(/g) || []).length
+          const closeCount = (clean.match(/\)/g) || []).length
+          if (closeCount > openCount) {
+            clean = clean.slice(0, -1) // Remove extra closing paren
+          } else {
+            break
+          }
+        }
+
+        // Remove any trailing garbage characters after final paren
+        clean = clean.replace(/\)\s*[^)\s]+$/, ')')
+      }
+
+      // 4. Check for JSON (ambiguous response) even in SQL dialects
       if (clean.startsWith('{') && clean.endsWith('}')) {
         // It's likely JSON (ambiguous response or mongo)
         return clean

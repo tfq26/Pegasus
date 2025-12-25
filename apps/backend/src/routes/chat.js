@@ -898,7 +898,7 @@ chat.post("/ai/generate", async (c) => {
         // Extract only the SQL statement if AI added explanatory text
         // Look for SELECT, INSERT, UPDATE, DELETE, CREATE statements
         // Improvement: Stop at the first "Results:", "Explanation:" or similar headers if they appear at start of a line
-        const sqlStartMatch = generatedQuery.match(/(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH)\s+/i)
+        const sqlStartMatch = generatedQuery.match(/(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH|RETURN)\s+/i)
 
 
         if (sqlStartMatch) {

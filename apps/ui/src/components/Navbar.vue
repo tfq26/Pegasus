@@ -40,6 +40,17 @@
           <Menu class="h-6 w-6" />
         </button>
 
+        <!-- Desktop Connection Status -->
+        <div v-if="isDesktop && !isPhone" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 border border-border">
+          <div 
+            :class="isOnline ? 'bg-green-500' : 'bg-yellow-500'" 
+            class="w-2 h-2 rounded-full animate-pulse"
+          />
+          <span class="text-xs font-medium text-muted-foreground">
+            {{ isOnline ? 'Connected' : 'Offline' }}
+          </span>
+        </div>
+
         <!-- Global Progress Bar -->
         <GlobalProgressBar v-if="!isPhone" />
 
@@ -309,20 +320,39 @@ const { isPhone } = useMobileDetection()
 const { user, isLoading, fetchUser, logout } = useAuth()
 
 const links = [
-  { to: '/', label: 'Home', icon: Home },
-  { to: '/about', label: 'About', icon: Info },
+  { to: '/', label: 'Home', icon: Home, webOnly: true },
+  { to: '/about', label: 'About', icon: Info, webOnly: true },
   // { to: '/releases', label: 'Releases', icon: Info },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/query', label: 'Query', icon: MessageSquare },
   // { to: '/stocks', label: 'Stocks', icon: TrendingUp },
 ]
 
+// Check if running in Tauri desktop
+const isTauri = () => '__TAURI_INTERNALS__' in window
+const isDesktop = computed(() => isTauri())
+const isOnline = ref(navigator.onLine)
+
+// Watch online status
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { isOnline.value = true })
+  window.addEventListener('offline', () => { isOnline.value = false })
+}
+
 const filteredLinks = computed(() => {
-  if (isPhone.value) {
-    // Show only Home and About on mobile
-    return links.filter((link) => ['Home', 'About'].includes(link.label))
+  let result = links
+
+  // Desktop: hide web-only pages (Home, About)
+  if (isTauri()) {
+    result = result.filter((link) => !link.webOnly)
   }
-  return links
+
+  // Phone: show only Home and About
+  if (isPhone.value) {
+    result = links.filter((link) => ['Home', 'About'].includes(link.label))
+  }
+
+  return result
 })
 
 const dropdownItems = [

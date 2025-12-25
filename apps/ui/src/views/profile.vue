@@ -120,7 +120,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { createCheckoutSession, createPortalSession, getSubscriptionStatus, getUsageStats, syncSubscription } from '@/lib/api'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 defineOptions({ name: 'ProfilePage' })
 

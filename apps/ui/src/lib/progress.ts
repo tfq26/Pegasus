@@ -1,5 +1,5 @@
 import { ref, computed, watch, onMounted } from 'vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { logOperationToBackend, fetchOperationHistory } from './api'
 
 export type OperationStatus = 'pending' | 'running' | 'completed' | 'error'

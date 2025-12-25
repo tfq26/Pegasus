@@ -100,7 +100,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useColorMode } from '@vueuse/core'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import GeneralTab from './GeneralTab.vue'
 import AITab from './AITab.vue'
 import QueriesTab from './QueriesTab.vue'

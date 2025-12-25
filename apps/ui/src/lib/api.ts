@@ -781,3 +781,22 @@ export async function fetchDatabaseTables(connection: ConnectionEntry, dbName: s
     database: dbName
   })
 }
+
+export async function runQuery(connection: ConnectionEntry, query: string) {
+  const payload = buildConnectionPayload(connection)
+  const response = await fetch(`${QUERY_API_URL}/query`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      provider: connection.provider,
+      connection: payload,
+      query,
+    }),
+  })
+
+  const body = await response.json()
+  if (!response.ok || body.error) {
+    throw new Error(body.error ?? 'Query failed')
+  }
+  return body
+}

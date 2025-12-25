@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Database, Trash, Table2, Layers } from 'lucide-vue-next'
+import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import type { ConnectionSchemaState } from '@/composables/useExplorerSchema'
 import TableList from './TableList.vue'
@@ -50,7 +50,7 @@ function statusLabel(state?: ConnectionSchemaState) {
     ></div>
 
     <article
-      @click="emit('select', connection.id)"
+      @click="emit('select', selected ? '' : connection.id)"
       class="relative cursor-pointer rounded-xl border p-3 transition-all duration-300 overflow-hidden"
       :class="[
         selected 
@@ -83,10 +83,21 @@ function statusLabel(state?: ConnectionSchemaState) {
           </div>
         </div>
 
-        <div class="flex flex-col items-end gap-1">
+        <div class="flex items-center gap-1">
+          <button 
+            @click.stop="emit('select', selected ? '' : connection.id)"
+            class="p-1 rounded-md transition-all sm:opacity-0 sm:group-hover:opacity-100"
+            :class="selected ? 'text-violet-400 opacity-100' : 'text-stone-500 hover:bg-stone-800'"
+            :title="selected ? 'Collapse' : 'Expand'"
+          >
+            <ChevronUp v-if="selected" class="w-4 h-4" />
+            <ChevronDown v-else class="w-4 h-4" />
+          </button>
+          
           <button 
             @click.stop="emit('delete', connection)"
             class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-stone-800 text-stone-600 hover:text-rose-400 transition-all"
+            title="Delete Connection"
           >
             <Trash class="w-3.5 h-3.5" />
           </button>

@@ -1,10 +1,22 @@
 #!/usr/bin/env bun
-// Script to run both UI and backend apps in Pegasus project using Bun
-// Cross-platform compatible (Windows & Mac)
+// Script to run Pegasus apps with different modes
+// Usage:
+//   bun run run-apps.js         # Run web version (db + backend + ui)
+//   bun run run-apps.js --web   # Run web version (db + backend + ui)
+//   bun run run-apps.js --desktop  # Run desktop version (db + backend + tauri)
+//   bun run run-apps.js --all   # Run everything (db + backend + ui + tauri)
 
 import { spawn, execSync } from "child_process";
 import { join } from "path";
 import { readFileSync } from "fs";
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+const mode = args.includes('--desktop') ? 'desktop'
+    : args.includes('--all') ? 'all'
+        : 'web'; // Default to web
+
+console.log(`\n🚀 Starting Pegasus in ${mode.toUpperCase()} mode...\n`);
 
 // Load environment variables from backend .env file
 try {
@@ -46,23 +58,40 @@ process.on("exit", cleanup);
 
 function killPort(port) {
     try {
-        // Windows-compatible port killing using netstat and taskkill
-        const output = execSync(`netstat -ano | findstr :${port}`).toString();
-        const lines = output.split('\n').filter(line => line.includes('LISTENING'));
-
-        if (lines.length > 0) {
-            const pidMatch = lines[0].trim().split(/\s+/).pop();
-            if (pidMatch) {
-                console.log(`Killing process on port ${port} (PID: ${pidMatch})...`);
-                try {
-                    execSync(`taskkill /PID ${pidMatch} /F`, { stdio: 'ignore' });
-                } catch (e) {
-                    // ignore - process might already be dead
+        // Try Mac/Linux first
+        const output = execSync(`lsof -ti:${port} 2>/dev/null || true`).toString().trim();
+        if (output) {
+            output.split('\n').forEach(pid => {
+                if (pid) {
+                    console.log(`Killing process on port ${port} (PID: ${pid})...`);
+                    try {
+                        execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+                    } catch (e) {
+                        // ignore
+                    }
                 }
-            }
+            });
         }
     } catch (e) {
-        // No process found on port or command failed
+        // Try Windows fallback
+        try {
+            const output = execSync(`netstat -ano | findstr :${port}`).toString();
+            const lines = output.split('\n').filter(line => line.includes('LISTENING'));
+
+            if (lines.length > 0) {
+                const pidMatch = lines[0].trim().split(/\s+/).pop();
+                if (pidMatch) {
+                    console.log(`Killing process on port ${port} (PID: ${pidMatch})...`);
+                    try {
+                        execSync(`taskkill /PID ${pidMatch} /F`, { stdio: 'ignore' });
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+            }
+        } catch (e) {
+            // No process found
+        }
     }
 }
 
@@ -86,7 +115,6 @@ async function runCommand(command, args, cwd, label, ignoreError = false) {
         proc.on("exit", (code) => {
             if (code !== 0 && code !== null && !ignoreError) {
                 console.log(`${label} exited with code ${code}`);
-                // resolve(code); // Don't reject, just resolve code
             }
             resolve(code);
         });
@@ -102,7 +130,7 @@ async function startSurrealDB(rootDir) {
 
     const proc = spawn("surreal", args, {
         cwd: rootDir,
-        stdio: "inherit", // Pipe output so we can see DB logs
+        stdio: "inherit",
         shell: true
     });
 
@@ -116,9 +144,12 @@ async function main() {
     const rootDir = import.meta.dir;
 
     killPort(3000); // Kill backend port
-    killPort(5173); // Kill UI port (optional, vite usually handles it, but safer)
+    killPort(5173); // Kill UI port
+    if (mode === 'desktop' || mode === 'all') {
+        killPort(1420); // Kill Tauri dev port
+    }
 
-    // Start installs in parallel
+    // Install dependencies
     console.log("Installing dependencies...");
     await runCommand("bun", ["install"], rootDir, "Root Install");
 
@@ -145,6 +176,7 @@ async function main() {
 
     const backendDir = join(rootDir, "apps", "backend");
     const uiDir = join(rootDir, "apps", "ui");
+    const desktopDir = join(rootDir, "apps", "desktop");
 
     // Start backend in background with hot reload
     runCommand("bun", ["run", "--hot", "index.js"], backendDir, "Backend")
@@ -153,11 +185,31 @@ async function main() {
     // Give backend a moment to connect to DB
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Start UI in background
-    runCommand("bun", ["dev"], uiDir, "UI")
-        .catch((err) => console.error("UI error:", err));
+    // Start UI if web or all mode
+    if (mode === 'web' || mode === 'all') {
+        runCommand("bun", ["dev"], uiDir, "UI (Web)")
+            .catch((err) => console.error("UI error:", err));
+    }
 
-    console.log("\nAll systems operational (DB, Backend, UI). Press Ctrl+C to stop.");
+    // Start Tauri if desktop or all mode
+    if (mode === 'desktop' || mode === 'all') {
+        // Wait a bit more for UI dev server to start before Tauri
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        runCommand("bun", ["tauri", "dev"], desktopDir, "Tauri Desktop")
+            .catch((err) => console.error("Tauri error:", err));
+    }
+
+    const modeLabel = mode === 'all' ? 'Web + Desktop' : mode === 'desktop' ? 'Desktop' : 'Web';
+    console.log(`\n✅ All systems operational (${modeLabel}). Press Ctrl+C to stop.\n`);
+    console.log("Available endpoints:");
+    console.log("  • Backend API: http://localhost:3000");
+    if (mode === 'web' || mode === 'all') {
+        console.log("  • Web UI: http://localhost:5173");
+    }
+    if (mode === 'desktop' || mode === 'all') {
+        console.log("  • Desktop: Tauri window (port 1420)");
+    }
+    console.log("");
 
     // Keep the script running
     await new Promise(() => { });

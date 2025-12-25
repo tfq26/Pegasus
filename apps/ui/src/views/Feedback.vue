@@ -122,7 +122,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { submitFeedback } from '@/lib/api'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { Send } from 'lucide-vue-next'
 import {
   Select,

@@ -234,4 +234,127 @@ auth.get("/me", async (c) => {
     }
 })
 
+// ============================================
+// DEVICE AUTHORIZATION FLOW (for Desktop Apps)
+// ============================================
+
+// In-memory store for pending device authorizations (use Redis in production)
+const deviceCodes = new Map()
+
+// Step 1: Desktop app requests a device code
+auth.post('/device/code', async (c) => {
+    const code = crypto.randomUUID().slice(0, 8).toUpperCase() // Short readable code
+    const deviceCode = crypto.randomUUID() // Internal device code for polling
+
+    deviceCodes.set(deviceCode, {
+        userCode: code,
+        status: 'pending', // pending | authorized | expired
+        token: null,
+        user: null,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + (10 * 60 * 1000) // 10 minutes
+    })
+
+    console.log('[Auth Device] Code generated:', code, 'deviceCode:', deviceCode)
+
+    return c.json({
+        device_code: deviceCode,
+        user_code: code,
+        verification_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/device`,
+        expires_in: 600 // 10 minutes
+    })
+})
+
+// Step 2: Desktop app polls for authorization status
+auth.get('/device/token', async (c) => {
+    const deviceCode = c.req.query('device_code')
+
+    if (!deviceCode) {
+        return c.json({ error: 'device_code required' }, 400)
+    }
+
+    const session = deviceCodes.get(deviceCode)
+
+    if (!session) {
+        return c.json({ error: 'expired_token', error_description: 'Device code not found or expired' }, 400)
+    }
+
+    // Check expiry
+    if (Date.now() > session.expiresAt) {
+        deviceCodes.delete(deviceCode)
+        return c.json({ error: 'expired_token', error_description: 'Device code expired' }, 400)
+    }
+
+    if (session.status === 'pending') {
+        return c.json({ error: 'authorization_pending' }, 400)
+    }
+
+    if (session.status === 'authorized' && session.token) {
+        // Success! Clean up and return token
+        deviceCodes.delete(deviceCode)
+        console.log('[Auth Device] Token issued for user:', session.user?.email)
+        return c.json({
+            access_token: session.token,
+            token_type: 'Bearer',
+            user: session.user
+        })
+    }
+
+    return c.json({ error: 'authorization_pending' }, 400)
+})
+
+// Step 3: Browser submits user code after OAuth
+auth.post('/device/authorize', async (c) => {
+    const { user_code, token, user } = await c.req.json()
+
+    if (!user_code || !token) {
+        return c.json({ error: 'user_code and token required' }, 400)
+    }
+
+    // Find the device session by user code
+    let foundDeviceCode = null
+    for (const [deviceCode, session] of deviceCodes.entries()) {
+        if (session.userCode === user_code.toUpperCase() && session.status === 'pending') {
+            foundDeviceCode = deviceCode
+            break
+        }
+    }
+
+    if (!foundDeviceCode) {
+        return c.json({ error: 'Invalid or expired code' }, 400)
+    }
+
+    // Authorize the device
+    const session = deviceCodes.get(foundDeviceCode)
+    session.status = 'authorized'
+    session.token = token
+    session.user = user
+    deviceCodes.set(foundDeviceCode, session)
+
+    console.log('[Auth Device] Code authorized:', user_code, 'for user:', user?.email)
+
+    return c.json({ success: true, message: 'Device authorized! You can close this window.' })
+})
+
+// Step 4: Browser page to enter code (or auto-fill from URL)
+auth.get('/device/verify', async (c) => {
+    const code = c.req.query('code')
+
+    if (code) {
+        // Validate code exists
+        let found = false
+        for (const session of deviceCodes.values()) {
+            if (session.userCode === code.toUpperCase() && session.status === 'pending') {
+                found = true
+                break
+            }
+        }
+
+        return c.json({ valid: found, code: code.toUpperCase() })
+    }
+
+    return c.json({ valid: false })
+})
+
 export { auth as authRoutes }
+

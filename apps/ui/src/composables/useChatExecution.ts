@@ -4,7 +4,7 @@ import { useChatStore } from '@/stores/chat'
 // useChat removed to avoid circular dependency
 // Chat.vue provides createChat
 
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { useProgress } from '@/lib/progress'
 import { generateAIQuery, recommendVisualization, analyzeResults } from '@/lib/api'
 import { api, getAuthHeaders } from '@/lib/apiClient'

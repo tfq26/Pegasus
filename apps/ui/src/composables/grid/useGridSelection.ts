@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue';
-import { toast } from 'vue-sonner';
+import { toast } from '@/composables/useNotifications';
 import { colIndexToLabel } from '../../components/TableView/Engine/FormulaParser';
 import type { Engine } from '../../components/TableView/Engine/Engine';
 import type { CellPosition } from '../../components/TableView/Engine/types';

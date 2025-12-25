@@ -44,7 +44,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { Switch } from '@/components/ui/switch'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
 

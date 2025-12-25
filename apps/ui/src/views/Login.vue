@@ -57,9 +57,14 @@ import { useAuth } from '@/composables/useAuth'
 defineOptions({ name: 'LoginPage' })
 
 const router = useRouter()
-const { user, isLoading, fetchUser, login } = useAuth()
+const { user, isLoading, isOnline, fetchUser, login, isTauri } = useAuth()
 
 onMounted(() => {
+  // Redirect to local auth only if Tauri AND offline
+  if (isTauri() && !isOnline.value) {
+    router.replace('/local-auth')
+    return
+  }
   fetchUser()
 })
 

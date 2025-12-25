@@ -160,7 +160,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Cloud, Terminal, Zap, Info, Copy, Loader2, Bot, Link2 } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { api } from '@/lib/apiClient'
 import type { SettingsModel } from '@/views/settings/types'
 

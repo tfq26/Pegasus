@@ -59,7 +59,7 @@ const contextUsage = 45
   <div class="flex items-center gap-3 w-full">
     <!-- Model Selection -->
     <div class="flex items-center gap-2">
-      <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Engine</span>
+      <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Model</span>
       <Select 
         :model-value="aiOptions.model"
         @update:model-value="updateOption('model', $event)"

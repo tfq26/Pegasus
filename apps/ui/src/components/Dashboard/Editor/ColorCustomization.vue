@@ -132,7 +132,7 @@ import {
   generateAnalogous,
   COLOR_THEMES 
 } from '@/utils/colorPalette'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 interface DashboardElement {
   id: string

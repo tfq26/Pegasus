@@ -202,7 +202,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, nextTick, defineAsyncComponent } from 'vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import { 
   Bot, 

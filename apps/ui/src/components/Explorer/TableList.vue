@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Table, Eye, Edit } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
+import { Table, Eye, Edit, Search, X, ChevronDown } from 'lucide-vue-next'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -22,80 +23,153 @@ const emit = defineEmits<{
   'delete': [connection: ConnectionEntry, table: string]
 }>()
 
-function formatTableName(tableName: string, connectionId?: string): string {
+// --- Performance & UX for large schemas ---
+const searchQuery = ref('')
+const displayLimit = ref(50)
+
+const filteredTables = computed(() => {
+  if (!searchQuery.value) return props.tables
+  const q = searchQuery.value.toLowerCase()
+  return props.tables.filter(t => t.toLowerCase().includes(q))
+})
+
+const visibleTables = computed(() => {
+  return filteredTables.value.slice(0, displayLimit.value)
+})
+
+const hasMore = computed(() => {
+  return displayLimit.value < filteredTables.value.length
+})
+
+function formatTableName(tableName: string): string {
   if (!tableName) return ''
   
-  // Format logic from Explorer.vue
-  let name = tableName
-  
-  // Pattern 1: data_UUID_actualName
+  // Pattern 1: data_UUID_actualName (no dashes in hex)
   const pattern1 = /^data_[a-f0-9]{32}_(.+)$/
-  const match1 = name.match(pattern1)
+  const match1 = tableName.match(pattern1)
   if (match1) return match1[1]
   
   // Pattern 2: data_UUID_with_dashes_actualName
   const pattern2 = /^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/
-  const match2 = name.match(pattern2)
+  const match2 = tableName.match(pattern2)
   if (match2) return match2[1]
 
-  return name
+  return tableName
 }
 </script>
 
 <template>
-  <div class="mt-4 pt-4 border-t border-stone-800/50 space-y-1 max-h-[400px] overflow-y-auto pr-1">
-    <div 
-      v-for="table in props.tables" 
-      :key="table"
-      class="block"
-    >
-      <ContextMenu>
-        <ContextMenuTrigger class="flex-1 flex items-center justify-between">
-          <div 
-            class="flex items-center justify-between p-2 rounded-lg hover:bg-violet-500/5 group/table transition-all border border-transparent hover:border-violet-500/10 w-full cursor-pointer"
-            @click="emit('table-click', props.connection, table)"
-          >
-            <div class="flex items-center gap-2 overflow-hidden">
-              <Table class="w-3.5 h-3.5 text-stone-600 group-hover/table:text-violet-400 shrink-0" />
-              <span class="truncate text-stone-400 group-hover/table:text-stone-200 transition-colors">
-                {{ formatTableName(table, props.connection.id) }}
-              </span>
+  <div class="mt-4 pt-4 border-t border-stone-800/50 space-y-3">
+    <!-- Local Search for large connections -->
+    <div v-if="props.tables.length > 10" class="px-1">
+      <div class="relative group/search">
+        <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-600 group-focus-within/search:text-violet-400 transition-colors" />
+        <input 
+          v-model="searchQuery"
+          type="text"
+          placeholder="Filter tables..."
+          class="w-full bg-stone-900/50 border border-stone-800/80 rounded-lg pl-8 pr-8 py-1.5 text-[11px] text-stone-300 placeholder:text-stone-700 focus:outline-none focus:border-violet-500/30 focus:ring-1 focus:ring-violet-500/10 transition-all font-medium"
+        />
+        <button 
+          v-if="searchQuery" 
+          @click="searchQuery = ''"
+          class="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-md hover:bg-stone-800 text-stone-600 hover:text-stone-400 transition-all"
+        >
+          <X class="w-2.5 h-2.5" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Table List -->
+    <div class="space-y-1 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
+      <div 
+        v-for="table in visibleTables" 
+        :key="table!"
+        class="block"
+      >
+        <ContextMenu>
+          <ContextMenuTrigger class="flex-1 flex items-center justify-between">
+            <div 
+              class="flex items-center justify-between p-2 rounded-lg hover:bg-violet-500/5 group/table transition-all border border-transparent hover:border-violet-500/10 w-full cursor-pointer"
+              @click="emit('table-click', props.connection, table!)"
+            >
+              <div class="flex items-center gap-2 overflow-hidden">
+                <Table class="w-3.5 h-3.5 text-stone-600 group-hover/table:text-violet-400 shrink-0" />
+                <span class="truncate text-stone-400 group-hover/table:text-stone-200 transition-colors text-[12px]">
+                  {{ formatTableName(table!) }}
+                </span>
+              </div>
+              
+              <div class="flex items-center gap-1 opacity-0 group-hover/table:opacity-100 translate-x-1 group-hover/table:translate-x-0 transition-all">
+                <button 
+                  @click.stop="emit('preview', props.connection, table)" 
+                  class="p-1 hover:text-violet-400 text-stone-500 transition-colors"
+                  title="Preview Data"
+                >
+                  <Eye class="w-3 h-3" />
+                </button>
+                <button 
+                  @click.stop="emit('edit', props.connection, table)" 
+                  class="p-1 hover:text-white text-stone-500 transition-colors"
+                  title="Open in Editor"
+                >
+                  <Edit class="w-3 h-3" />
+                </button>
+              </div>
             </div>
-            
-            <div class="flex items-center gap-1 opacity-0 group-hover/table:opacity-100 translate-x-1 group-hover/table:translate-x-0 transition-all">
-              <button 
-                @click.stop="emit('preview', props.connection, table)" 
-                class="p-1 hover:text-violet-400 text-stone-500 transition-colors"
-                title="Preview Data"
-              >
-                <Eye class="w-3 h-3" />
-              </button>
-              <button 
-                @click.stop="emit('edit', props.connection, table)" 
-                class="p-1 hover:text-white text-stone-500 transition-colors"
-                title="Open in Editor"
-              >
-                <Edit class="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent class="w-48 bg-[#0a0a0b] border-stone-800 text-stone-100">
-           <ContextMenuItem @select="emit('preview', props.connection, table)">
-              Preview Data
-           </ContextMenuItem>
-           <ContextMenuItem @select="emit('edit', props.connection, table)">
-              Open in Editor
-           </ContextMenuItem>
-           <ContextMenuSeparator class="bg-stone-800 my-1" />
-           <ContextMenuItem @select="emit('rename', props.connection, table)">
-              Rename Table...
-           </ContextMenuItem>
-           <ContextMenuItem @select="emit('delete', props.connection, table)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
-              Delete Table
-           </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+          </ContextMenuTrigger>
+          <ContextMenuContent class="w-48 bg-[#0a0a0b] border-stone-800 text-stone-100">
+             <ContextMenuItem @select="emit('preview', props.connection, table)">
+                Preview Data
+             </ContextMenuItem>
+             <ContextMenuItem @select="emit('edit', props.connection, table)">
+                Open in Editor
+             </ContextMenuItem>
+             <ContextMenuSeparator class="bg-stone-800 my-1" />
+             <ContextMenuItem @select="emit('rename', props.connection, table)">
+                Rename Table...
+             </ContextMenuItem>
+             <ContextMenuItem @select="emit('delete', props.connection, table)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                Delete Table
+             </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      </div>
+
+      <!-- Footer / Load More -->
+      <div v-if="filteredTables.length === 0" class="py-12 text-center">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-stone-600">No tables found</p>
+      </div>
+      
+      <div v-if="hasMore" class="p-2 pt-4 flex flex-col items-center gap-2">
+        <p class="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-600">
+          Showing {{ displayLimit }} of {{ filteredTables.length }}
+        </p>
+        <button 
+          @click="displayLimit += 100"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 text-[10px] font-bold uppercase tracking-widest text-stone-400 hover:text-violet-400 hover:bg-stone-800 transition-all active:scale-95"
+        >
+           Load More
+           <ChevronDown class="w-3 h-3" />
+        </button>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.scrollbar-thin::-webkit-scrollbar {
+  width: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #292524;
+  border-radius: 10px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #44403c;
+}
+</style>
+

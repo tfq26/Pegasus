@@ -1,5 +1,5 @@
 import { type Ref } from 'vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { translateQuery, explainQuery } from '@/lib/api'
 
 export function useChatToolbar(workspaceRef: Ref<any>, selectedConnection?: Ref<any>) {

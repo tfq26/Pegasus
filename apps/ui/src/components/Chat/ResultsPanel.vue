@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { X, Maximize2, Minimize2, PanelBottom, PanelRight, LayoutDashboard, Table } from 'lucide-vue-next'
 import JsonViewer from '@/components/JsonViewer.vue'
 import ResultsTable from './ResultsTable.vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import {
   ContextMenu,
   ContextMenuContent,

@@ -9,7 +9,7 @@ const app = new Hono()
 // CORS configuration - supports both development and production
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
-  : ["http://localhost:5173", "http://127.0.0.1:5173"]
+  : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:1420", "http://127.0.0.1:1420"]
 
 // CORS Configuration MUST be before routes
 app.use("*", cors({

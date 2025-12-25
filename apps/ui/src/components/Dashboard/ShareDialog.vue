@@ -120,7 +120,7 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { 
   inviteUserToDashboard, 
   fetchDashboardPermissions, 

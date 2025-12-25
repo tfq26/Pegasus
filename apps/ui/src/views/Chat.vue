@@ -175,7 +175,8 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
+import { storeToRefs } from 'pinia'
 import ChatSidebar from '@/components/Chat/ChatSidebar.vue'
 import ChatToolbar from '@/components/Chat/ChatToolbar.vue'
 import Workspace from '@/components/Workspace/Workspace.vue'
@@ -188,7 +189,6 @@ import DiffView from '@/components/TableView/DiffView.vue'
 import PresenceCounter from '@/components/PresenceCounter.vue'
 import UnsavedTabWarning from '@/components/Workspace/UnsavedTabWarning.vue'
 import UnsavedTabsDialog from '@/components/Workspace/UnsavedTabsDialog.vue'
-
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
 import { useConnectionStore } from '@/stores/connection'
@@ -209,6 +209,7 @@ import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
 
 // Stores
 const workspaceStore = useWorkspaceStore()
+const { tabs: workspaceTabs } = storeToRefs(workspaceStore)
 const chatStore = useChatStore()
 const connectionStore = useConnectionStore()
 
@@ -229,10 +230,39 @@ const pendingConnectionName = computed(() =>
 )
 
 const handleSelectConnection = async (id: string | null) => {
-    if (!id) return
+    // If we're deselecting/collapsing (id is null or empty)
+    if (!id) {
+        await _selectConnection('')
+        return
+    }
     
     // Check if we have unsaved work in current temp workspace
     if (workspaceStore.isTempWorkspace && workspaceStore.hasUnsavedWork) {
+        // Smart handling: Can we auto-migrate?
+        // Check if any tabs are referencing a connection OTHER than the one selected
+        const referencedConnIds = new Set<string>()
+        if (Array.isArray(workspaceTabs.value)) {
+            workspaceTabs.value.forEach((tab: any) => {
+                const tabConnId = tab.data?.connection?.id || tab.data?.connectionId
+                if (tabConnId) referencedConnIds.add(String(tabConnId))
+            })
+        }
+
+        // Safe if no tabs have connection info, or all tabs match the target connection 'id'
+        const isSafe = referencedConnIds.size === 0 || 
+                      (referencedConnIds.size === 1 && referencedConnIds.has(String(id)))
+
+        if (isSafe) {
+            console.log('[Chat] Smarter assignment: Auto-migrating tabs to connection', id)
+            const success = await workspaceStore.migrateUnsavedTabs(id)
+            if (success) {
+                 await _selectConnection(id)
+                 toast.success('Tabs assigned to connection')
+                 return
+            }
+        }
+
+        // Show dialog if multiple connections referenced or migration fails
         pendingConnectionId.value = id
         unsavedDialogVisible.value = true
         return
@@ -263,6 +293,8 @@ const handleDiscard = async () => {
         pendingConnectionId.value = null
     }
 }
+
+
 
 const handleBannerMigrate = () => {
     if (!sidebarOpen.value) sidebarOpen.value = true

@@ -183,7 +183,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Sparkles, Check, Plus, Wrench, Bug, Beaker, Clock } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { useAuth } from '@/composables/useAuth'
 
 defineOptions({ name: 'ReleasesPage' })

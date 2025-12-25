@@ -127,7 +127,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import {
   Dialog,
   DialogContent,

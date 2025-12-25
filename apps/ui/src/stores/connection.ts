@@ -18,12 +18,36 @@ export const useConnectionStore = defineStore('connection', () => {
         connections.value.length > 0
     )
 
+    // Track if connections have been loaded initially
+    const isInitialized = ref(false)
+    const lastFetchTime = ref<number>(0)
+    const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes cache
+
     // Actions
-    async function loadConnections() {
+    async function loadConnections(forceRefresh = false) {
+        // Skip if already loading
+        if (isLoading.value) {
+            return
+        }
+
+        // Check cache - only fetch if:
+        // 1. Force refresh requested
+        // 2. Never initialized
+        // 3. Cache expired (5 minutes)
+        const now = Date.now()
+        const cacheValid = isInitialized.value && (now - lastFetchTime.value) < CACHE_DURATION
+
+        if (!forceRefresh && cacheValid && connections.value.length > 0) {
+            console.log('[ConnectionStore] Using cached connections:', connections.value.length)
+            return
+        }
+
         isLoading.value = true
         try {
             const response = await api.get<{ connections: ConnectionEntry[] }>('/connections')
             connections.value = response.connections || []
+            isInitialized.value = true
+            lastFetchTime.value = now
             console.log('[ConnectionStore] Loaded connections:', connections.value.length)
         } catch (e) {
             console.error('[ConnectionStore] Failed to load connections:', e)

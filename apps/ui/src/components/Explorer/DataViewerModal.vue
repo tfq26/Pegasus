@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import { 
   Table, Minus, Plus, X, Search, Loader2, 
-  ChevronDown, ChevronRight, AlignJustify, Columns 
+  ChevronDown, ChevronRight, AlignJustify, Columns,
+  MoreVertical, Copy, Edit2, Trash2, Check, CheckSquare, Square,
+  RefreshCcw
 } from 'lucide-vue-next'
 import JsonViewer from '@/components/JsonViewer.vue'
+import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import Pagination from '@/components/ui/pagination/Pagination.vue'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu'
 import type { ViewerState } from '@/composables/useDataViewer'
+import { toast } from '@/composables/useNotifications'
 
 const props = defineProps<{
   viewer: ViewerState
@@ -25,6 +36,9 @@ const emit = defineEmits<{
   'toggle-sort': [column: string]
   'page-change': [page: number]
   'limit-change': [limit: number]
+  'delete-row': [row: any]
+  'update-cell': [row: any, column: string, value: any]
+  'reload': []
 }>()
 
 const localSearchQuery = computed({
@@ -39,14 +53,95 @@ const rowsPerPage = ref(10)
 const textWrap = ref(false)
 const autoFitColumns = ref(false)
 
+// Advanced State
+const contextMenuData = ref({ 
+  rowIndex: -1, 
+  col: '', 
+  rowData: null as any 
+})
+const editingCell = ref<{ rowIndex: number, col: string, value: any } | null>(null)
+const editInputRef = ref<HTMLInputElement | null>(null)
+
 const toggleRowExpansion = (index: number) => {
-  if (expandedRows.value.has(index)) expandedRows.value.delete(index)
-  else expandedRows.value.add(index)
+  const newSet = new Set(expandedRows.value)
+  if (newSet.has(index)) newSet.delete(index)
+  else newSet.add(index)
+  expandedRows.value = newSet
 }
 
-const toggleRowSelection = (index: number, event: MouseEvent) => {
-  if (selectedRows.value.has(index)) selectedRows.value.delete(index)
-  else selectedRows.value.add(index)
+const toggleRowSelection = (index: number) => {
+  const newSet = new Set(selectedRows.value)
+  if (newSet.has(index)) newSet.delete(index)
+  else newSet.add(index)
+  selectedRows.value = newSet
+}
+
+const toggleAllSelection = () => {
+  if (selectedRows.value.size === paginatedRows.value.length && paginatedRows.value.length > 0) {
+    selectedRows.value = new Set()
+  } else {
+    const allIndices = paginatedRows.value.map((_, i) => i)
+    selectedRows.value = new Set(allIndices)
+  }
+}
+
+const copyToClipboard = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
+  } catch (err) {
+    toast.error('Failed to copy')
+  }
+}
+
+const copySelected = async () => {
+  if (!selectedRows.value.size) return
+  const selectedData = Array.from(selectedRows.value).map(idx => paginatedRows.value[idx])
+  await copyToClipboard(JSON.stringify(selectedData, null, 2))
+}
+
+const setContextMenuContext = (rowIndex: number, col: string, rowData: any) => {
+  contextMenuData.value = {
+    rowIndex,
+    col,
+    rowData
+  }
+}
+
+const handleContextMenuAction = async (action: string) => {
+  const { rowIndex, col, rowData } = contextMenuData.value
+  if (!rowData) return
+
+  if (action === 'copy-cell') {
+    await copyToClipboard(String(rowData[col] ?? ''))
+  } else if (action === 'copy-row') {
+    await copyToClipboard(JSON.stringify(rowData, null, 2))
+  } else if (action === 'edit-cell') {
+    startEdit(rowIndex, col, rowData[col])
+  } else if (action === 'delete-row') {
+    if (confirm('Are you sure you want to delete this row?')) {
+      emit('delete-row', rowData)
+    }
+  }
+}
+
+const startEdit = (rowIndex: number, col: string, value: any) => {
+  editingCell.value = { rowIndex, col, value }
+  nextTick(() => {
+    editInputRef.value?.focus()
+  })
+}
+
+const saveEdit = () => {
+  if (!editingCell.value) return
+  const { rowIndex, col, value } = editingCell.value
+  const row = paginatedRows.value[rowIndex]
+  emit('update-cell', row, col, value)
+  editingCell.value = null
+}
+
+const cancelEdit = () => {
+  editingCell.value = null
 }
 
 const viewerTextSizeClass = computed(() => props.zoomClasses[props.zoomLevel])
@@ -60,12 +155,12 @@ const columnWidths = computed(() => {
   const maxWidth = 400
   const charWidth = 8 // approximate pixels per character
   
-  viewerColumns.value.forEach(col => {
+  viewerColumns.value.forEach((col: string) => {
     // Start with header width
     let maxLen = String(col).length
     
     // Check data rows for max content length
-    paginatedRows.value.forEach(row => {
+    paginatedRows.value.forEach((row: any) => {
       const val = row[col]
       const len = String(val ?? '').length
       if (len > maxLen) maxLen = len
@@ -95,7 +190,7 @@ const viewerColumns = computed(() => {
   if (!firstRow) return []
   
   const columns = Object.keys(firstRow).filter(key => 
-    key !== 'id' && key !== '__id' && key !== '_row_order'
+    key !== '__id' && key !== '_row_order'
   )
   
   if (props.viewer.connection?.provider === 'surrealdb') {
@@ -133,7 +228,7 @@ const filteredAndSortedRows = computed(() => {
   
   if (props.searchQuery.trim()) {
     const query = props.searchQuery.toLowerCase()
-    rows = rows.filter(row => {
+    rows = rows.filter((row: any) => {
       return Object.values(row).some(val => 
         String(val).toLowerCase().includes(query)
       )
@@ -179,16 +274,17 @@ const paginatedRows = computed(() => {
 // Reset to page 1 when filters change
 const resetPagination = () => {
   currentPage.value = 1
+  selectedRows.value = new Set()
 }
 
 // Handle rows per page change
 const handleLimitChange = () => {
   currentPage.value = 1
+  selectedRows.value = new Set()
   emit('limit-change', rowsPerPage.value)
 }
 
 // Watch for filter/sort changes
-import { watch } from 'vue'
 watch([() => props.searchQuery, () => props.sortColumn, () => props.sortDirection], resetPagination)
 
 const formatCellValue = (value: unknown) => {
@@ -208,10 +304,10 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
   let name = tableName
   const pattern1 = /^data_[a-f0-9]{32}_(.+)$/
   const match1 = name.match(pattern1)
-  if (match1) return match1[1]
+  if (match1) return (match1[1] as string) || ''
   const pattern2 = /^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/
   const match2 = name.match(pattern2)
-  if (match2) return match2[1]
+  if (match2) return (match2[1] as string) || ''
   return name
 }
 </script>
@@ -223,7 +319,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
       class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/80 backdrop-blur-md p-4 sm:p-8"
       @click.self="emit('close')"
     >
-      <div class="relative w-full max-w-6xl h-full max-h-[85vh] overflow-hidden flex flex-col rounded-[32px] border border-stone-800 bg-[#0a0a0b] shadow-2xl">
+      <div class="relative w-full max-w-6xl h-full max-h-[90vh] overflow-hidden flex flex-col rounded-[32px] border border-stone-800 bg-[#0a0a0b] shadow-2xl">
         <!-- Viewer Header -->
         <div class="p-6 sm:px-8 border-b border-stone-800 flex items-center justify-between bg-stone-900/20">
           <div class="flex items-center gap-4">
@@ -239,6 +335,15 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
           </div>
 
           <div class="flex items-center gap-3">
+            <button
+               v-if="selectedRows.size > 0"
+               @click="copySelected"
+               class="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-violet-500/20 active:scale-95"
+            >
+               <Copy class="w-3.5 h-3.5" />
+               Copy Selected ({{ selectedRows.size }})
+            </button>
+
             <div class="flex items-center bg-stone-900/60 rounded-xl p-1 border border-stone-800/50">
               <button 
                 @click="textWrap = !textWrap"
@@ -293,13 +398,20 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
               <input
                 v-model="localSearchQuery"
                 type="text"
-                placeholder="Filter data..."
+                placeholder="Filter current view..."
                 class="w-full pl-10 pr-4 py-2 bg-stone-900/50 border border-stone-800 rounded-xl text-sm text-stone-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
               />
             </div>
             <div v-if="localSearchQuery" class="text-[10px] font-bold uppercase tracking-widest text-violet-400">
               {{ filteredAndSortedRows.length }} matches
             </div>
+            <button 
+               @click="emit('reload')" 
+               title="Refresh data"
+               class="p-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white transition-all active:rotate-180 duration-500"
+            >
+                <RefreshCcw class="w-4 h-4" />
+            </button>
           </div>
 
           <!-- Table -->
@@ -311,54 +423,115 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
             <div v-else-if="viewer.error" class="p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-400 text-sm">
               {{ viewer.error }}
             </div>
-            <table v-else-if="viewer.entries.length" class="w-full border-separate border-spacing-0">
-              <thead>
-                <tr class="text-left">
-                  <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 w-10"></th>
-                  <th
-                    v-for="col in viewerColumns"
-                    :key="col"
-                    @click="emit('toggle-sort', col)"
-                    class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div class="flex items-center gap-2">
-                      {{ col }}
-                      <span v-if="sortColumn === col" class="text-violet-400">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <template v-for="(entry, index) in paginatedRows" :key="`row-${index}`">
-                  <tr 
-                    @click="toggleRowSelection(index, $event)"
-                    class="group/row transition-colors hover:bg-stone-900/40"
-                    :class="selectedRows.has(index) ? 'bg-violet-500/10' : ''"
-                  >
-                    <td class="px-4 py-3 border-b border-stone-800/50">
-                      <button @click.stop="toggleRowExpansion(index)" class="text-stone-700 hover:text-violet-400 transition-colors">
-                        <ChevronDown v-if="expandedRows.has(index)" class="w-3.5 h-3.5" />
-                        <ChevronRight v-else class="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                    <td
-                      v-for="col in viewerColumns"
-                      :key="col"
-                      :style="getColumnStyle(col)"
-                      class="px-4 py-3 border-b border-stone-800/50 text-xs font-medium text-stone-400 group-hover/row:text-stone-100 transition-colors"
-                      :class="textWrap ? 'whitespace-normal break-words' : 'truncate'"
-                    >
-                       {{ formatCellValue(entry[col]) }}
-                    </td>
-                  </tr>
-                  <tr v-if="expandedRows.has(index)">
-                    <td :colspan="viewerColumns.length + 1" class="p-6 bg-stone-900/20 border-b border-stone-800/50">
-                      <JsonViewer :data="entry" :text-size="viewerTextSizeClass" />
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
+            
+            <ContextMenu v-else-if="viewer.entries.length">
+              <ContextMenuTrigger as-child>
+                <table class="w-full border-separate border-spacing-0">
+                  <thead>
+                    <tr class="text-left">
+                      <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 w-10">
+                        <Checkbox 
+                          :model-value="selectedRows.size === paginatedRows.length && paginatedRows.length > 0" 
+                          @update:model-value="toggleAllSelection"
+                          class="border-stone-700 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
+                        />
+                      </th>
+                      <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 w-10"></th>
+                      <th
+                        v-for="col in viewerColumns"
+                        :key="col"
+                        @click="emit('toggle-sort', col)"
+                        class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div class="flex items-center gap-2">
+                           {{ col }}
+                           <span v-if="sortColumn === col" class="text-violet-400">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                        </div>
+                      </th>
+                      <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="(entry, index) in paginatedRows" :key="`row-${index}`">
+                      <tr 
+                        class="group/row transition-colors hover:bg-stone-900/40"
+                        :class="selectedRows.has(index) ? 'bg-violet-500/5' : ''"
+                      >
+                        <td class="px-4 py-3 border-b border-stone-800/50">
+                          <Checkbox 
+                            :model-value="selectedRows.has(index)" 
+                            @update:model-value="toggleRowSelection(index)"
+                            class="border-stone-700 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
+                          />
+                        </td>
+                        <td class="px-4 py-3 border-b border-stone-800/50">
+                          <button @click.stop="toggleRowExpansion(index)" class="text-stone-700 hover:text-violet-400 transition-colors">
+                            <ChevronDown v-if="expandedRows.has(index)" class="w-3.5 h-3.5" />
+                            <ChevronRight v-else class="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                        <td
+                          v-for="col in viewerColumns"
+                          :key="col"
+                          :style="getColumnStyle(col)"
+                          @contextmenu="setContextMenuContext(index, col, entry)"
+                          class="px-4 py-3 border-b border-stone-800/50 text-xs font-medium text-stone-400 group-hover/row:text-stone-100 transition-colors relative"
+                          :class="[
+                            textWrap ? 'whitespace-normal break-words' : 'truncate',
+                            editingCell?.rowIndex === index && editingCell?.col === col ? 'bg-violet-500/10 ring-2 ring-violet-500 ring-inset z-20' : ''
+                          ]"
+                        >
+                           <template v-if="editingCell?.rowIndex === index && editingCell?.col === col">
+                              <input
+                                 ref="editInputRef"
+                                 v-model="editingCell.value"
+                                 @blur="saveEdit"
+                                 @keyup.enter="saveEdit"
+                                 @keyup.esc="cancelEdit"
+                                 class="absolute inset-0 w-full h-full bg-stone-900 text-white px-4 border-none focus:outline-none focus:ring-0"
+                              />
+                           </template>
+                           <template v-else>
+                              {{ formatCellValue(entry[col]) }}
+                           </template>
+                        </td>
+                        <td class="px-4 py-3 border-b border-stone-800/50 text-right opacity-0 group-hover/row:opacity-100 transition-opacity">
+                            <button @contextmenu="setContextMenuContext(index, viewerColumns[0], entry)" class="text-stone-600 hover:text-white transition-colors p-1">
+                                <MoreVertical class="w-4 h-4" />
+                            </button>
+                        </td>
+                      </tr>
+                      <tr v-if="expandedRows.has(index)">
+                        <td :colspan="viewerColumns.length + 3" class="p-6 bg-stone-900/20 border-b border-stone-800/50">
+                          <JsonViewer :data="entry" :text-size="viewerTextSizeClass || ''" />
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </ContextMenuTrigger>
+
+              <ContextMenuContent class="w-56 bg-[#0a0a0b] border-stone-800 text-stone-300">
+                <ContextMenuItem @select="handleContextMenuAction('copy-cell')" class="gap-2 focus:bg-stone-900 focus:text-white">
+                  <Copy class="w-4 h-4 text-stone-500" />
+                  <span>Copy Cell Value</span>
+                </ContextMenuItem>
+                <ContextMenuItem @select="handleContextMenuAction('copy-row')" class="gap-2 focus:bg-stone-900 focus:text-white">
+                  <Copy class="w-4 h-4 text-stone-500" />
+                  <span>Copy Row (JSON)</span>
+                </ContextMenuItem>
+                <ContextMenuSeparator class="bg-stone-800" />
+                <ContextMenuItem @select="handleContextMenuAction('edit-cell')" class="gap-2 focus:bg-stone-900 focus:text-white">
+                  <Edit2 class="w-4 h-4 text-stone-500" />
+                  <span>Edit Cell</span>
+                </ContextMenuItem>
+                <ContextMenuSeparator class="bg-stone-800" />
+                <ContextMenuItem @select="handleContextMenuAction('delete-row')" class="gap-2 focus:bg-rose-500/10 focus:text-rose-400 text-rose-500">
+                  <Trash2 class="w-4 h-4" />
+                  <span>Delete Record</span>
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
             <div v-else class="py-20 text-center text-stone-600 font-bold uppercase tracking-widest text-xs">
               No entries found
             </div>
@@ -391,25 +564,14 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
 
             <div class="flex items-center gap-4">
               <!-- Local pagination -->
-              <div v-if="totalPages > 1" class="flex items-center gap-2">
-                <button
-                  @click="currentPage = Math.max(1, currentPage - 1)"
-                  :disabled="currentPage === 1"
-                  class="px-3 py-1.5 bg-stone-900/50 border border-stone-800 rounded text-xs text-stone-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Previous
-                </button>
-                <span class="text-xs text-stone-500 font-medium">
-                  Page {{ currentPage }} of {{ totalPages }}
-                </span>
-                <button
-                  @click="currentPage = Math.min(totalPages, currentPage + 1)"
-                  :disabled="currentPage === totalPages"
-                  class="px-3 py-1.5 bg-stone-900/50 border border-stone-800 rounded text-xs text-stone-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                >
-                  Next
-                </button>
-              </div>
+              <Pagination
+                v-if="totalPages > 1"
+                :page="currentPage"
+                :has-prev="currentPage > 1"
+                :has-next="currentPage < totalPages"
+                :total-pages="totalPages"
+                @page-change="(p) => currentPage = p"
+              />
               
               <!-- Database pagination (if applicable) -->
               <Pagination

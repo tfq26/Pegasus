@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted, watch, type Ref } from 'vue';
-import { toast } from 'vue-sonner';
+import { toast } from '@/composables/useNotifications';
 import { connectToSurreal } from '@/lib/surreal';
 import { RealtimeSync } from '../../components/TableView/Engine/RealtimeSync';
 import type { Engine } from '../../components/TableView/Engine/Engine';

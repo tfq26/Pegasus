@@ -4,7 +4,7 @@ import ConnectionDialog from '@/components/ConnectionDialog.vue'
 import { defaultConnectionForm } from '@/views/settings/types'
 import type { ConnectionFormState } from '@/views/settings/types'
 import { useConnectionStore } from '@/stores/connection'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const connectionStore = useConnectionStore()
 

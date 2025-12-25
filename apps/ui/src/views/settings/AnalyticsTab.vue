@@ -201,7 +201,7 @@ import {
 } from 'lucide-vue-next'
 import { fetchOperationAnalytics } from '@/lib/api'
 import { useProgress } from '@/lib/progress'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, ArcElement, LineElement, PointElement, Filler } from 'chart.js'
 import { Doughnut, Bar, Line } from 'vue-chartjs'
 

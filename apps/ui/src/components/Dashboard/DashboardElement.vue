@@ -2,6 +2,7 @@
   <ContextMenu>
     <ContextMenuTrigger>
       <div 
+        ref="elementContainer"
         class="dashboard-card w-full h-full flex flex-col bg-card border border-border shadow-sm rounded-sm overflow-hidden transition-all hover:shadow-md"
         :class="{ 'pointer-events-none': isLocked && !isMobile }"
       >
@@ -190,6 +191,7 @@ import {
 } from '@/components/ui/tooltip'
 import { Pencil, Trash2, Code, Settings, File, Move, MoreVertical } from 'lucide-vue-next'
 import { renderMarkdown } from '@/lib/markdown'
+import { useIntersectionObserver } from '@vueuse/core'
 
 const props = defineProps<{
   element: any
@@ -210,7 +212,7 @@ const emit = defineEmits<{
 import { onMounted, ref } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import { Loader2, RefreshCw } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const store = useDashboardStore()
 const isRefreshing = ref(false)
@@ -232,18 +234,38 @@ const handleRefresh = async (force = false) => {
     }
 }
 
-onMounted(async () => {
-    // Check if we need to fetch data (if query exists but no data, or if cache is stale)
-    if (props.element?.query && props.element?.connectionId) {
-        const now = Date.now()
-        const isStale = !props.element.cacheUntil || props.element.cacheUntil < now
-        const hasNoData = props.element.type === 'stat' ? props.element.config?.value === undefined : !props.element.config?.data
+const elementContainer = ref<HTMLElement | null>(null)
+const hasInitiallyLoaded = ref(false)
+
+// Use Intersection Observer for Lazy Loading
+const { stop } = useIntersectionObserver(
+  elementContainer as any,
+  (entries) => {
+    const entry = entries[0]
+    if (entry?.isIntersecting && !hasInitiallyLoaded.value) {
+        hasInitiallyLoaded.value = true
         
-        if (hasNoData || isStale) {
-            console.log(`[DashboardElement] Initial refresh for ${props.element.id}`)
-            handleRefresh()
+        // Only fetch if we need to (if query exists but no data, or if cache is stale)
+        if (props.element?.query && props.element?.connectionId) {
+            const now = Date.now()
+            const isStale = !props.element.cacheUntil || props.element.cacheUntil < now
+            const hasNoData = props.element.type === 'stat' ? props.element.config?.value === undefined : !props.element.config?.data
+            
+            if (hasNoData || isStale) {
+                console.log(`[DashboardElement] Lazy refresh for ${props.element.id}`)
+                handleRefresh()
+            }
         }
+        
+        // We can stop observing once we've triggered the initial load
+        stop()
     }
+  },
+  { threshold: 0.1 }
+)
+
+onMounted(async () => {
+    // Basic initialization if needed, but the actual data fetch is now handled by Intersection Observer
 })
 
 const formatSize = (bytes: number) => {

@@ -7,7 +7,7 @@ import type { Tab } from '@/stores/workspace';
 import { Engine } from '../TableView/Engine/Engine';
 import Grid from '../TableView/Grid/Grid.vue'; 
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
-import { toast } from 'vue-sonner';
+import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
 
 // Interface for version history

@@ -312,9 +312,26 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 if (updatedElement.type === 'stat') {
                     const firstRow = body.result?.[0]
                     if (firstRow) {
-                        const firstKey = Object.keys(firstRow)[0]
-                        if (firstKey !== undefined) {
-                            updatedElement.config.value = firstRow[firstKey]
+                        const keys = Object.keys(firstRow)
+
+                        // 1. Identify Numeric and Categorical Columns
+                        const numericKeys = keys.filter(k => typeof firstRow[k] === 'number')
+                        const categoricalKeys = keys.filter(k => typeof firstRow[k] === 'string')
+
+                        // 2. Select Value Key (Numeric prefered)
+                        const preferredValueNames = ['value', 'stat', 'total', 'count', 'amount', 'salary', 'price', 'cost']
+                        let valueKey = numericKeys.find(k => preferredValueNames.includes(k.toLowerCase())) || numericKeys[0] || keys[0]
+
+                        // 3. Select Label Key (Categorical prefered)
+                        const preferredLabelNames = ['name', 'label', 'title', 'category', 'type', 'group']
+                        let labelKey = categoricalKeys.find(k => preferredLabelNames.includes(k.toLowerCase())) || categoricalKeys[0]
+
+                        // Update config
+                        if (valueKey !== undefined) {
+                            updatedElement.config.value = firstRow[valueKey]
+                        }
+                        if (labelKey !== undefined) {
+                            updatedElement.config.label = firstRow[labelKey]
                         }
                     }
                 } else if (body.result && Array.isArray(body.result)) {

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
-import { toast } from 'vue-sonner'
-import { fetchTableEntries } from '@/lib/api'
+import { toast } from '@/composables/useNotifications'
+import { fetchTableEntries, runQuery } from '@/lib/api'
 import type { ConnectionEntry } from '@/lib/db-connections'
 
 export interface ViewerState {
@@ -105,9 +105,82 @@ export function useDataViewer() {
         }
     }
 
+    const reload = async () => {
+        if (!viewer.value.connection || !viewer.value.table) return
+        await loadPage(viewer.value.page)
+    }
+
+    const deleteRow = async (row: any) => {
+        if (!row || !viewer.value.connection || !viewer.value.table) return
+
+        const provider = viewer.value.connection.provider
+        const table = viewer.value.table
+
+        // Try to find a primary key
+        const pkCandidate = Object.keys(row).find(k => k.toLowerCase() === 'id' || k.toLowerCase() === 'uuid') || Object.keys(row)[0]
+        if (!pkCandidate) throw new Error('Could not identify primary key for deletion')
+
+        const pkValue = row[pkCandidate]
+        let query = ''
+
+        if (provider === 'mysql') {
+            query = `DELETE FROM \`${table}\` WHERE \`${pkCandidate}\` = ${typeof pkValue === 'number' ? pkValue : `'${pkValue}'`}`
+        } else if (provider === 'sqlite' || provider === 'postgres') {
+            query = `DELETE FROM "${table}" WHERE "${pkCandidate}" = ${typeof pkValue === 'number' ? pkValue : `'${pkValue}'`}`
+        } else if (provider === 'surrealdb') {
+            query = `DELETE ${pkValue}`
+        }
+
+        if (!query) throw new Error('Deletion not supported for this provider yet')
+
+        try {
+            await runQuery(viewer.value.connection, query)
+            toast.success('Row deleted successfully')
+            await reload()
+        } catch (err: any) {
+            toast.error('Failed to delete row: ' + err.message)
+            throw err
+        }
+    }
+
+    const updateCell = async (row: any, column: string, newValue: any) => {
+        if (!row || !viewer.value.connection || !viewer.value.table) return
+
+        const provider = viewer.value.connection.provider
+        const table = viewer.value.table
+
+        const pkCandidate = Object.keys(row).find(k => k.toLowerCase() === 'id' || k.toLowerCase() === 'uuid') || Object.keys(row)[0]
+        if (!pkCandidate) throw new Error('Could not identify primary key for update')
+
+        const pkValue = row[pkCandidate]
+        let query = ''
+
+        const formattedValue = typeof newValue === 'number' ? newValue : `'${String(newValue).replace(/'/g, "''")}'`
+
+        if (provider === 'mysql') {
+            query = `UPDATE \`${table}\` SET \`${column}\` = ${formattedValue} WHERE \`${pkCandidate}\` = ${typeof pkValue === 'number' ? pkValue : `'${pkValue}'`}`
+        } else if (provider === 'sqlite' || provider === 'postgres') {
+            query = `UPDATE "${table}" SET "${column}" = ${formattedValue} WHERE "${pkCandidate}" = ${typeof pkValue === 'number' ? pkValue : `'${pkValue}'`}`
+        } else if (provider === 'surrealdb') {
+            query = `UPDATE ${pkValue} SET ${column} = ${formattedValue}`
+        }
+
+        if (!query) throw new Error('Update not supported for this provider yet')
+
+        try {
+            await runQuery(viewer.value.connection, query)
+            toast.success('Cell updated successfully')
+            await reload()
+        } catch (err: any) {
+            toast.error('Failed to update cell: ' + err.message)
+            throw err
+        }
+    }
+
     return {
         viewer,
         zoomLevel,
+        zoomClasses,
         zoomClass,
         searchQuery,
         sortColumn,
@@ -115,6 +188,9 @@ export function useDataViewer() {
         openViewer,
         loadPage,
         closeViewer,
-        toggleSort
+        toggleSort,
+        deleteRow,
+        updateCell,
+        reload
     }
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { Check, X, AlertTriangle, Play, FileDown, ArrowRight, Loader2 } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import {
   Dialog,
   DialogContent,

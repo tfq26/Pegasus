@@ -41,7 +41,7 @@
 import { ref, computed } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import { RefreshCw } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const store = useDashboardStore()
 const isRefreshing = ref(false)

@@ -9,7 +9,7 @@ import { useRealtimeCursor } from '../../../composables/grid/useRealtimeCursor';
 import { useGridEditing } from '../../../composables/grid/useGridEditing';
 import type { CellPosition } from '../Engine/types';
 import { CellType } from '../Engine/types';
-import { toast } from 'vue-sonner';
+import { toast } from '@/composables/useNotifications';
 import { useFeatureFlags } from '@/composables/useFeatureFlags';
 import FindDialog from '../FindDialog.vue';
 import CommitBar from './CommitBar.vue';
@@ -34,7 +34,14 @@ import {
   MessageSquare
 } from 'lucide-vue-next';
 import { CSVExporter, ExcelExporter } from '../Engine/Exporters';
-import ContextMenu, { type ContextMenuItem } from '../ContextMenu.vue';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+  ContextMenuShortcut
+} from '@/components/ui/context-menu';
 import NoteThread from '../NoteThread.vue';
 import PresenceOverlay from '../PresenceOverlay.vue';
 import { connectToSurreal } from '@/lib/surreal';
@@ -268,9 +275,18 @@ const popoverPosition = ref({ x: 0, y: 0 });
 const isAnalyzingFormula = ref(false);
 
 // --- Context Menu State ---
+export interface GridContextMenuItem {
+    label?: string;
+    action?: string;
+    icon?: any;
+    type?: 'divider';
+    variant?: 'destructive' | 'default';
+    shortcut?: string;
+    disabled?: boolean;
+}
 const showContextMenu = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
-const contextMenuOptions = ref<ContextMenuItem[]>([]);
+const contextMenuOptions = ref<GridContextMenuItem[]>([]);
 const contextTarget = ref<{ type: 'cell' | 'row-header' | 'col-header', row?: number, col?: number } | null>(null);
 
 // Note State
@@ -302,7 +318,7 @@ const onContextMenu = (e: MouseEvent) => {
     const thRow = target.closest('th[data-row]');
     
     // Default options
-    let options: ContextMenuItem[] = [];
+    let options: GridContextMenuItem[] = [];
     
     if (thCol) {
         // Column Header Click
@@ -372,7 +388,7 @@ const onContextMenu = (e: MouseEvent) => {
     if (options.length > 0) {
         contextMenuOptions.value = options;
         contextMenuPos.value = { x: e.clientX, y: e.clientY };
-        showContextMenu.value = true;
+        // showContextMenu.value = true; // Handled by ContextMenuTrigger
     }
 };
 
@@ -1464,11 +1480,13 @@ const commitChanges = async () => {
 </script>
 
 <template>
-  <div 
-    class="flex flex-col w-full h-full bg-background transition-colors duration-300" 
-    :class="{ 'border-4 border-dashed border-amber-500/50 rounded-lg p-1': privateMode }"
-    @contextmenu.prevent="onContextMenu"
-  >
+  <ContextMenu>
+    <ContextMenuTrigger as-child>
+      <div 
+        class="flex flex-col w-full h-full bg-background transition-colors duration-300" 
+        :class="{ 'border-4 border-dashed border-amber-500/50 rounded-lg p-1': privateMode }"
+        @contextmenu="onContextMenu"
+      >
     <!-- Simple Text Input (Default - No Experimental Access) -->
     <div v-if="!showManualFormulaFeatures" class="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
       <div class="w-12 text-xs font-semibold text-muted-foreground text-center tabular-nums">
@@ -1992,14 +2010,25 @@ const commitChanges = async () => {
 
   </div>
   
-  <ContextMenu
-    :visible="showContextMenu"
-    :x="contextMenuPos.x"
-    :y="contextMenuPos.y"
-    :options="contextMenuOptions"
-    @close="showContextMenu = false"
-    @select="handleContextMenuAction"
-  />
+      <ContextMenuContent class="w-64 bg-slate-950/95 backdrop-blur-sm border-slate-800 text-slate-200">
+        <template v-for="(item, idx) in contextMenuOptions" :key="idx">
+          <ContextMenuSeparator v-if="item.type === 'divider'" class="bg-slate-800" />
+          <ContextMenuItem 
+            v-else 
+            @select="handleContextMenuAction(item.action!)"
+            :class="[
+              'flex items-center gap-2 focus:bg-slate-900 focus:text-white',
+              item.variant === 'destructive' ? 'text-rose-500 focus:text-rose-400' : ''
+            ].join(' ')"
+          >
+            <component :is="item.icon" v-if="item.icon" class="w-4 h-4 text-slate-500" />
+            <span class="flex-1">{{ item.label }}</span>
+            <ContextMenuShortcut v-if="item.shortcut">{{ item.shortcut }}</ContextMenuShortcut>
+          </ContextMenuItem>
+        </template>
+      </ContextMenuContent>
+    </ContextMenuTrigger>
+  </ContextMenu>
     
     <!-- Note Popover -->
     <div 

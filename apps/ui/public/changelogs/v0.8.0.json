@@ -1,0 +1,113 @@
+{
+    "version": "0.8.0",
+    "releaseDate": "December 27, 2025",
+    "title": "AI Intelligence & UI Modernization",
+    "description": "A massive architectural shift towards Shadcn standards, deep AI predictive intelligence, and controlled data mutation workflows.",
+    "highlights": [
+        "Predictive AI Insights & Reasoning",
+        "Secure AI Mutation Review Workflow",
+        "In-depth Data Summarization",
+        "Direct Data Editing in Preview",
+        "Zero-Lag Explorer Resizing"
+    ],
+    "sections": [
+        {
+            "category": "AI Features",
+            "items": [
+                {
+                    "title": "Predictive Intelligence",
+                    "description": "AI now goes beyond querying to providing data-driven predictions.",
+                    "details": [
+                        "Confidence scores for AI-generated predictions",
+                        "Detailed logic and reasoning for every insight",
+                        "Dedicated 'Insights' tab in the Results Panel",
+                        "Persistent AI metadata saved within chat history"
+                    ]
+                },
+                {
+                    "title": "Secure AI Data mutations",
+                    "description": "Implemented a 'Review & Commit' workflow for AI-driven data edits.",
+                    "details": [
+                        "Instant mutation review dialog before any data modification",
+                        "AI-generated 'Transformation Logic' for clear logic transparency",
+                        "Confirmation-first approach for all SQL/NoSQL edits",
+                        "Safe execution of complex queries with reasoning"
+                    ]
+                },
+                {
+                    "title": "In-depth Data Summarization",
+                    "description": "Comprehensive analysis of query results with a structured report format.",
+                    "details": [
+                        "Summaries now range from 1 to 5 paragraphs covering trends and outliers",
+                        "Read Full Report dialog for deep technical summaries",
+                        "Truncated chat view for improved message readability",
+                        "Copy-to-clipboard support for full analysis reports"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Direct Data Interaction",
+                    "description": "The Data Preview modal is now a fully functional editor.",
+                    "details": [
+                        "Delete rows directly from the preview with primary key awareness",
+                        "In-line cell editing with instant persistence and feedback",
+                        "One-click data reload to sync with backend changes",
+                        "Multi-row selection for batch operations"
+                    ]
+                },
+                {
+                    "title": "Dynamic Environment Navbar",
+                    "description": "Intelligent UI that adapts to the environment it's running in.",
+                    "details": [
+                        "Native-feel Desktop Navbar for Tauri application mode",
+                        "Flexible Web Navbar for standard browser usage",
+                        "Automatic environment detection and component switching",
+                        "Learn more in the [Introducing Desktop App](/docs/guide/introducing-desktop-app) guide"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Performance: Zero-Lag Resizing",
+                    "description": "The Explorer sidebar resizing has been rebuilt for fluid performance.",
+                    "details": [
+                        "Implemented requestAnimationFrame (rAF) throttling for 60fps interaction",
+                        "Auto-disabling CSS transitions during active drag to eliminate stutter",
+                        "Cursor persistence during complex resize operations"
+                    ]
+                },
+                {
+                    "title": "Shadcn Context Menus",
+                    "description": "Replaced custom context menus with standardized Radix-based menus.",
+                    "details": [
+                        "Premium dark-mode aesthetics with glassmorphism effects",
+                        "Consistent keyboard accessibility and focus management",
+                        "Context-aware actions for cells, rows, and headers"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Technical",
+            "items": [
+                {
+                    "title": "State & Reactivity Optimization",
+                    "description": "Deep architectural fixes for stable data handling.",
+                    "details": [
+                        "Refactored Set-based state to ensure immutable updates trigger reactivity",
+                        "Aligned component props with shadcn v-model standards",
+                        "Improved primary key heuristics for safe remote data updates",
+                        "SurrealDB query cleanup and improved parsing logic"
+                    ]
+                }
+            ]
+        }
+    ]
+}

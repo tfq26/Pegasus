@@ -2,7 +2,8 @@
   <transition name="sidebar-slide">
     <aside 
       v-if="visible" 
-      class="shrink-0 border-r border-border overflow-y-auto relative bg-background transition-all duration-75 ease-out"
+      class="shrink-0 border-r border-border overflow-y-auto relative bg-background"
+      :class="{ 'transition-all duration-75 ease-out': !isResizing }"
       :style="{ width: `${sidebarWidth}px` }"
     >
       <div class="h-full">
@@ -21,13 +22,20 @@
         />
       </div>
 
-      <!-- Resize Handle -->
+      <!-- Resize Handle - Enhanced for better visibility and interaction -->
       <div
-        class="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/50 transition-colors z-20"
+        class="absolute top-0 right-0 w-2 h-full cursor-col-resize z-20 group flex items-center justify-center"
+        :class="isResizing ? 'bg-primary/30' : 'hover:bg-primary/20'"
         @mousedown="startResize"
         @dblclick="$emit('toggle')"
-        title="Double-click to close sidebar"
-      ></div>
+        title="Drag to resize • Double-click to close"
+      >
+        <!-- Visual divider line -->
+        <div 
+          class="w-[2px] h-full transition-colors"
+          :class="isResizing ? 'bg-primary' : 'bg-border group-hover:bg-primary/60'"
+        />
+      </div>
     </aside>
   </transition>
 </template>
@@ -67,32 +75,52 @@ const sidebarWidth = ref(300)
 const isResizing = ref(false)
 
 const startResize = (e: MouseEvent) => {
+  e.preventDefault()
+  e.stopPropagation()
   isResizing.value = true
   document.addEventListener('mousemove', doResize)
   document.addEventListener('mouseup', stopResize)
-  // Prevent text selection while resizing
+  // Prevent text selection and set cursor while resizing
   document.body.style.userSelect = 'none'
+  document.body.style.webkitUserSelect = 'none'
+  document.body.style.cursor = 'col-resize'
 }
+
+let rafId: number | null = null
 
 const doResize = (e: MouseEvent) => {
   if (!isResizing.value) return
+  e.preventDefault()
   
-  // Calculate new width based on mouse position
-  // Assuming sidebar is on the left
-  let newWidth = e.clientX
+  if (rafId) return
   
-  // Constrain width
-  if (newWidth < 200) newWidth = 200
-  if (newWidth > 600) newWidth = 600
-  
-  sidebarWidth.value = newWidth
+  rafId = requestAnimationFrame(() => {
+    // Calculate new width based on mouse position
+    let newWidth = e.clientX
+    
+    // Constrain width
+    if (newWidth < 200) newWidth = 200
+    if (newWidth > 600) newWidth = 600
+    
+    sidebarWidth.value = newWidth
+    rafId = null
+  })
 }
 
 const stopResize = () => {
   isResizing.value = false
   document.removeEventListener('mousemove', doResize)
   document.removeEventListener('mouseup', stopResize)
+  
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+
+  // Restore selection and cursor
   document.body.style.userSelect = ''
+  document.body.style.webkitUserSelect = ''
+  document.body.style.cursor = ''
   
   // Save preference
   localStorage.setItem('pegasus-sidebar-width', String(sidebarWidth.value))

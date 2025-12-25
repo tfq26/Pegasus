@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, toRefs } from 'vue'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { Database, Plus, Trash, Search, Sparkles } from 'lucide-vue-next'
 import { useStorage } from '@vueuse/core'
 
@@ -68,7 +68,10 @@ const {
   openViewer,
   loadPage,
   closeViewer,
-  toggleSort
+  toggleSort,
+  deleteRow,
+  updateCell,
+  reload
 } = useDataViewer()
 
 // Persistent Zoom State for the Modal
@@ -184,7 +187,7 @@ const confirmClearAllChats = async () => {
 
 <template>
   <aside 
-    class="flex flex-col h-full bg-[#0a0a0b] border-r border-stone-800/50 w-80 shrink-0"
+    class="flex flex-col h-full bg-[#0a0a0b] border-r border-stone-800/50 w-full"
   >
     <!-- Header -->
     <header class="p-4 border-b border-stone-800/50">
@@ -286,6 +289,9 @@ const confirmClearAllChats = async () => {
         @toggle-sort="toggleSort"
         @page-change="loadPage"
         @limit-change="(limit) => loadPage(1, limit)"
+        @delete-row="deleteRow"
+        @update-cell="updateCell"
+        @reload="reload"
       />
 
       <RenameTableDialog 

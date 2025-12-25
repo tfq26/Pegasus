@@ -244,7 +244,7 @@ import {
   Cpu,
   Loader2
 } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const stocks = ref<any[]>([])
 const portfolio = ref<any[]>([])

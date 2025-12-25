@@ -98,7 +98,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
 import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import { Download } from 'lucide-vue-next'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 defineOptions({ name: 'SharedDashboard' })
 

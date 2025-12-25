@@ -30,6 +30,7 @@ export class StockService {
 
     async seed() {
         try {
+            // Check connection first implicitly by catching error
             for (const symbol of this.stocks) {
                 const id = `stock:${symbol}`;
                 const [existing] = await db.query(`SELECT id FROM ${id}`);
@@ -57,7 +58,13 @@ export class StockService {
                 }
             }
         } catch (e) {
-            console.error('[StockService] Seeding failed:', e);
+            // Gracefully handle NoActiveSocket (startup race condition)
+            if (e.message && e.message.includes('NoActiveSocket')) {
+                console.log('[StockService] DB not ready yet, retrying seed in 5s...');
+                setTimeout(() => this.seed(), 5000);
+            } else {
+                console.error('[StockService] Seeding failed:', e);
+            }
         }
     }
 
@@ -88,7 +95,15 @@ export class StockService {
             }
             // console.log('[StockService] Updated prices at', new Date().toLocaleTimeString());
         } catch (e) {
-            console.error('[StockService] Update failed:', e);
+            if (e.message && e.message.includes('NoActiveSocket')) {
+                // Determine if we should log verbose (only once per disconnection)
+                if (this.isRunning) {
+                    console.log('[StockService] DB disconnected, pausing updates...');
+                    // Don't retry immediately, let the next interval try
+                }
+            } else {
+                console.error('[StockService] Update failed:', e);
+            }
         }
     }
 

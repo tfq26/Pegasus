@@ -12,6 +12,16 @@ interface User {
 
 const user = ref<User | null>(null)
 const isLoading = ref(true)
+const isOnline = ref(navigator.onLine)
+
+// Check if running in Tauri desktop app
+const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+// Watch online status
+if (typeof window !== 'undefined') {
+    window.addEventListener('online', () => { isOnline.value = true })
+    window.addEventListener('offline', () => { isOnline.value = false })
+}
 
 const API_URL = import.meta.env.VITE_QUERY_API_URL || `${window.location.protocol}//${window.location.hostname}:3000`
 
@@ -45,6 +55,14 @@ export function useAuth() {
 
     const fetchUser = async () => {
         isLoading.value = true
+
+        // In Tauri + offline, skip web auth
+        if (isTauri() && !isOnline.value) {
+            console.log('[Auth] Tauri offline mode - skipping web auth')
+            isLoading.value = false
+            return
+        }
+
         try {
             // Get token from localStorage (mobile) or rely on cookie (desktop)
             const token = checkUrlToken()
@@ -81,6 +99,12 @@ export function useAuth() {
             console.log('[Auth] User fetched:', data.user ? 'Logged in' : 'Not logged in')
         } catch (e) {
             console.error('[Auth] Failed to fetch user:', e)
+
+            // In Tauri, network failures are expected when offline
+            if (isTauri()) {
+                console.log('[Auth] Network error in Tauri - will use local auth')
+            }
+
             user.value = null
             setUser(null)
         } finally {
@@ -88,12 +112,49 @@ export function useAuth() {
         }
     }
 
-    const login = () => {
+    const login = async () => {
+        // In Tauri + offline, redirect to local auth
+        if (isTauri() && !isOnline.value) {
+            window.location.href = '/local-auth'
+            return
+        }
+
+        // In Tauri + online, use Device Authorization Flow
+        if (isTauri()) {
+            try {
+                const { useDesktopAuth } = await import('./useDesktopAuth')
+                const { loginWithCloud } = useDesktopAuth()
+                const result = await loginWithCloud()
+
+                if (result.success && result.user) {
+                    // Refresh user state
+                    user.value = result.user
+                    setUser(result.user)
+                    console.log('[Auth] Device flow login successful:', result.user.email)
+                }
+                return
+            } catch (e) {
+                console.error('[Auth] Device flow login failed:', e)
+                // Could show error toast here
+                return
+            }
+        }
+
         const returnTo = window.location.origin;
         window.location.href = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
     }
 
     const logout = async () => {
+        // In Tauri, also clear local auth
+        if (isTauri()) {
+            try {
+                const { invoke } = await import('@tauri-apps/api/core')
+                await invoke('local_logout')
+            } catch (e) {
+                console.warn('[Auth] Tauri local logout failed:', e)
+            }
+        }
+
         try {
             await fetch(`${API_URL}/auth/logout`, { credentials: 'include' })
             localStorage.removeItem('auth_token')
@@ -109,8 +170,10 @@ export function useAuth() {
     return {
         user,
         isLoading,
+        isOnline,
         fetchUser,
         login,
-        logout
+        logout,
+        isTauri
     }
 }
