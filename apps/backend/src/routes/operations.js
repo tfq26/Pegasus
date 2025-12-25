@@ -8,13 +8,13 @@ const operations = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 
 // Helper to get userId from session
-const getUserId = async (c: any) => {
+const getUserId = async (c) => {
     const token = getCookie(c, "session")
     if (!token) {
         const authHeader = c.req.header("Authorization")
         if (authHeader && authHeader.startsWith("Bearer ")) {
             try {
-                const verified = (await verify(authHeader.substring(7), jwtSecret)) as any
+                const verified = (await verify(authHeader.substring(7), jwtSecret))
                 return verified.sub
             } catch (e) {
                 return null
@@ -23,7 +23,7 @@ const getUserId = async (c: any) => {
         return null
     }
     try {
-        const payload = (await verify(token, jwtSecret)) as any
+        const payload = (await verify(token, jwtSecret))
         return payload.sub
     } catch (e) {
         return null
@@ -31,7 +31,7 @@ const getUserId = async (c: any) => {
 }
 
 // Log or update an operation
-operations.post('/', async (c: any) => {
+operations.post('/', async (c) => {
     const userId = await getUserId(c)
     if (!userId) return c.json({ error: 'Unauthorized' }, 401)
 
@@ -49,12 +49,12 @@ operations.post('/', async (c: any) => {
 })
 
 // Get user operation history
-operations.get('/history', async (c: any) => {
+operations.get('/history', async (c) => {
     const userId = await getUserId(c)
     if (!userId) return c.json({ error: 'Unauthorized' }, 401)
 
     const limitStr = c.req.query('limit') || '50'
-    const limit = parseInt(limitStr as string)
+    const limit = parseInt(limitStr)
 
     try {
         const history = await getUserOperations(String(userId), limit)
@@ -66,14 +66,14 @@ operations.get('/history', async (c: any) => {
 })
 
 // Get performance analytics
-operations.get('/analytics', async (c: any) => {
+operations.get('/analytics', async (c) => {
     const userId = await getUserId(c)
     if (!userId) return c.json({ error: 'Unauthorized' }, 401)
 
     const range = c.req.query('range') || 'day'
 
     try {
-        const analytics = await getOperationAnalytics(String(userId), range as any)
+        const analytics = await getOperationAnalytics(String(userId), range)
         return c.json(analytics)
     } catch (error) {
         console.error('Error fetching operation analytics:', error)

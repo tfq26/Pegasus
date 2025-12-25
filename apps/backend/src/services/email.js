@@ -3,7 +3,7 @@ import { Resend } from 'resend'
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const DEVELOPER_EMAIL = process.env.DEVELOPER_EMAIL || 'developer@example.com'
 
-export async function sendCriticalFeedbackEmail(feedback: any) {
+export async function sendCriticalFeedbackEmail(feedback) {
   try {
     if (!resend) return;
     await resend.emails.send({
@@ -30,25 +30,25 @@ export async function sendCriticalFeedbackEmail(feedback: any) {
   }
 }
 
-export async function sendWeeklyDigest(feedbackList: any[]) {
+export async function sendWeeklyDigest(feedbackList) {
   if (feedbackList.length === 0) return
 
   const criticalFeedback = feedbackList.filter(f => f.priority === 'critical')
   const normalFeedback = feedbackList.filter(f => f.priority === 'normal')
 
-  const groupByCategory = (items: any[]) => {
+  const groupByCategory = (items) => {
     return items.reduce((acc, item) => {
       const cat = item.feature_category
       if (!acc[cat]) acc[cat] = []
       acc[cat].push(item)
       return acc
-    }, {} as Record<string, any[]>)
+    }, {})
   }
 
   const criticalByCategory = groupByCategory(criticalFeedback)
   const normalByCategory = groupByCategory(normalFeedback)
 
-  const renderFeedbackSection = (title: string, grouped: Record<string, any[]>) => {
+  const renderFeedbackSection = (title, grouped) => {
     if (Object.keys(grouped).length === 0) return ''
 
     return `

@@ -1,21 +1,6 @@
 import { sql } from '../db/neon.js'
 
-export interface OperationLog {
-  id: string
-  label: string
-  progress: number
-  status: string
-  details?: string
-  error?: string
-  started_at: string
-  completed_at?: string
-  duration?: number
-  category?: string
-  user_id?: string
-  group_id?: string
-}
-
-export async function logOperation(data: OperationLog) {
+export async function logOperation(data) {
   const db = sql
   if (!db) throw new Error("Neon database connection not configured")
 
@@ -62,7 +47,7 @@ export async function logOperation(data: OperationLog) {
   return result[0]
 }
 
-export async function getUserOperations(userId: string, limit = 100) {
+export async function getUserOperations(userId, limit = 100) {
   const db = sql
   if (!db) return []
 
@@ -74,7 +59,7 @@ export async function getUserOperations(userId: string, limit = 100) {
   `
 }
 
-export async function getOperationAnalytics(userId: string, range: 'day' | 'week' | 'month' | 'year' = 'day') {
+export async function getOperationAnalytics(userId, range = 'day') {
   const db = sql
   if (!db) return null
 

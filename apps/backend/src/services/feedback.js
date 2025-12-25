@@ -7,17 +7,7 @@ const CRITICAL_KEYWORDS = [
   "can't login", "can't access", "cannot login", "cannot access"
 ]
 
-export interface FeedbackData {
-  userEmail?: string
-  featureCategory: string
-  customFeature?: string
-  issueType: string
-  description: string
-  browserInfo?: string
-  isUrgent: boolean
-}
-
-export function detectPriority(description: string, isUrgent: boolean): string {
+export function detectPriority(description, isUrgent) {
   if (isUrgent) return 'critical'
 
   const lowerDesc = description.toLowerCase()
@@ -30,7 +20,7 @@ export function detectPriority(description: string, isUrgent: boolean): string {
 }
 
 
-export async function createFeedback(data: FeedbackData) {
+export async function createFeedback(data) {
   const db = sql
   if (!db) throw new Error("Neon database connection not configured")
 
@@ -73,7 +63,7 @@ export async function getUnnotifiedFeedback() {
   `
 }
 
-export async function markAsNotified(ids: number[]) {
+export async function markAsNotified(ids) {
   if (ids.length === 0) return
   const db = sql
   if (!db) return

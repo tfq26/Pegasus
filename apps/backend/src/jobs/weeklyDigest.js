@@ -13,7 +13,7 @@ export function initializeWeeklyDigest() {
 
             if (feedback.length > 0) {
                 await sendWeeklyDigest(feedback)
-                const ids = feedback.map((f: any) => f.id)
+                const ids = feedback.map((f) => f.id)
                 await markAsNotified(ids)
                 console.log(`Weekly digest sent with ${feedback.length} items`)
             } else {

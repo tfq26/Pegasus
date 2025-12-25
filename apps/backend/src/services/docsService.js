@@ -1,4 +1,4 @@
-import { sql } from '../db/neon.ts'
+import { sql } from '../db/neon.js'
 
 /**
  * Get all guides (list)
