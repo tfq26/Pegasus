@@ -1,0 +1,25 @@
+# Dependencies
+node_modules
+.pnpm-debug.log
+
+# Build artifacts
+dist
+.vite
+
+# Development
+.DS_Store
+*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+coverage
+.nyc_output
+
+# Misc
+*.log
+.cache

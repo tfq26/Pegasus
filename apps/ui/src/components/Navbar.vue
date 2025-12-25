@@ -317,15 +317,17 @@ defineOptions({ name: 'AppNavbar' })
 
 const route = useRoute()
 const { isPhone } = useMobileDetection()
+const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
 const { user, isLoading, fetchUser, logout } = useAuth()
 
 const links = [
-  { to: '/', label: 'Home', icon: Home, webOnly: true },
-  { to: '/about', label: 'About', icon: Info, webOnly: true },
+  // { to: '/', label: 'Home', icon: Home, webOnly: true },
+  // { to: '/about', label: 'About', icon: Info, webOnly: true },
   // { to: '/releases', label: 'Releases', icon: Info },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/query', label: 'Query', icon: MessageSquare },
-  // { to: '/stocks', label: 'Stocks', icon: TrendingUp },
+  { to: '/support', label: 'Support', icon: CircleHelp },
+  { to: '/docs', label: 'Docs', icon: BookOpen },
 ]
 
 // Check if running in Tauri desktop

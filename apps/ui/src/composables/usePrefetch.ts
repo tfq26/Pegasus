@@ -9,15 +9,11 @@ const prefetchedRoutes = new Set<string>()
 
 // Route to dynamic import mapping (mirrors router/index.js)
 const routeImports: Record<string, () => Promise<unknown>> = {
-    '/': () => import('@/views/Home.vue'),
-    '/about': () => import('@/views/About.vue'),
     '/query': () => import('@/views/Chat.vue'),
     '/dashboard': () => import('@/views/DashboardHome.vue'),
     '/profile': () => import('@/views/profile.vue'),
     '/settings': () => import('@/views/settings/settings.vue'),
-    '/releases': () => import('@/views/Releases.vue'),
     '/feedback': () => import('@/views/Feedback.vue'),
-    '/support': () => import('@/views/Support.vue'),
     '/login': () => import('@/views/Login.vue'),
     '/error': () => import('@/views/ErrorPage.vue'),
 }

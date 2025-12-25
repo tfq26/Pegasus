@@ -10,7 +10,7 @@ const router = createRouter({
     // Unified entry for desktop and web app
     {
       path: '/',
-      redirect: '/query'
+      redirect: '/dashboard'
     },
 
     // Main query interface with multi-tab workspace
@@ -43,6 +43,9 @@ const router = createRouter({
     { path: '/profile', component: () => import('../views/profile.vue') },
     { path: '/settings', component: () => import('../views/settings/settings.vue') },
     { path: '/feedback', component: () => import('../views/Feedback.vue') },
+    { path: '/support', component: () => import('../views/Support.vue') },
+    { path: '/docs', component: () => import('../views/DocsView.vue') },
+    { path: '/releases', component: () => import('../views/Releases.vue') },
     { path: '/login', component: () => import('../views/Login.vue') },
     { path: '/local-auth', component: () => import('../views/LocalAuth.vue') },
     { path: '/auth/device', component: () => import('../views/DeviceAuth.vue') },

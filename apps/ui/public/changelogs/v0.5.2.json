@@ -12,7 +12,6 @@
     ],
     "sections": [
         {
-            "title": "✨ Enhancements",
             "items": [
                 {
                     "title": "AI Query Generation Improvements",
@@ -55,10 +54,10 @@
                         "Added explicit guidance against using RETURN array::len() for data queries"
                     ]
                 }
-            ]
+            ],
+            "category": "✨ Enhancements"
         },
         {
-            "title": "🐛 Bug Fixes",
             "items": [
                 {
                     "title": "Fixed AI Analysis Response Extraction",
@@ -80,10 +79,10 @@
                     "description": "AI now properly filters by status fields instead of returning all records",
                     "technical": "Added WHERE clause examples for status/enum field queries"
                 }
-            ]
+            ],
+            "category": "🐛 Bug Fixes"
         },
         {
-            "title": "🔧 Technical Improvements",
             "items": [
                 {
                     "title": "Enhanced AI Prompt Engineering",
@@ -113,7 +112,8 @@
                         "Maintained whitespace-pre-wrap for formatting preservation"
                     ]
                 }
-            ]
+            ],
+            "category": "🔧 Technical Improvements"
         }
     ],
     "breaking": [],

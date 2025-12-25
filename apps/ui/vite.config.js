@@ -40,6 +40,16 @@ export default defineConfig({
     // Increase chunk size warning limit
     chunkSizeWarningLimit: 600,
   },
+  // Development server configuration
+  server: {
+    proxy: {
+      // Proxy API requests to backend
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
   // Optimize dependency pre-bundling
   optimizeDeps: {
     include: ['vue', 'vue-router', 'pinia', 'chart.js'],

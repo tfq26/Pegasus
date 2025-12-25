@@ -58,7 +58,7 @@ app.route('/operations', operationRoutes)
 app.route('/workspace', workspaceRoutes)
 app.route('/stocks', stockRoutes)
 app.route('/provision', provisionRoutes)
-app.route('/docs', docsRoutes)
+app.route('/api/docs', docsRoutes)
 
 
 
