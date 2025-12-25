@@ -162,7 +162,8 @@ const releaseData = ref<any>(null)
 const fetchIndex = async () => {
   isLoadingList.value = true
   try {
-    const response = await fetch('/api/docs')
+    // Fetch from static file instead of API
+    const response = await fetch('/docs/index.json')
     const data = await response.json()
     guides.value = data.guides || []
     
@@ -197,7 +198,8 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
   if (!slug) return
   isLoadingContent.value = true
   try {
-    const endpoint = type === 'guide' ? `/api/docs/guides/${slug}` : `/api/docs/releases/${slug}`
+    // Fetch from static files instead of API
+    const endpoint = type === 'guide' ? `/docs/guides/${slug}.json` : `/docs/releases/${slug}.json`
     const response = await fetch(endpoint)
     const data = await response.json()
     
@@ -210,9 +212,10 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
       }
       releaseData.value = null
     } else {
-      releaseData.value = data.data
+      // For releases, the data structure is already the release object
+      releaseData.value = data
       contentType.value = 'markdown'
-      content.value = md.render(data.data.description || '')
+      content.value = md.render(data.description || '')
     }
   } catch (e) {
     content.value = '<div class="text-center py-20 text-destructive">Failed to load content.</div>'

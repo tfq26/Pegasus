@@ -1,0 +1,81 @@
+{
+    "version": "0.5.0",
+    "releaseDate": "December 14, 2025",
+    "title": "Collaboration & Smart Notes",
+    "description": "Introducing real-time collaboration features, smart annotations, and the foundation for the 'Git for Data' workflow.",
+    "highlights": [
+        "Smart Notes System with threaded discussions",
+        "Real-time collaboration with live cursors and follow mode",
+        "Git for Data (Beta) with private mode and diff view",
+        "Complete SurrealDB migration for scalability"
+    ],
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Smart Notes System",
+                    "description": "Add context-aware notes and threaded discussions to any cell in your spreadsheets.",
+                    "details": [
+                        "Cell Annotations: Add context-aware notes to any cell using the right-click menu",
+                        "Threaded Discussions: Click on note indicators (amber triangles) to view and reply to threads",
+                        "Resolution Workflow: Mark notes as resolved to keep track of tasks",
+                        "Visual Indicators: Indicators for cells with active notes for quick visual scanning"
+                    ]
+                },
+                {
+                    "title": "Real-Time Collaboration",
+                    "description": "See what other users are doing in real-time with live cursors and presence tracking.",
+                    "details": [
+                        "Live Cursors: See where other users are working in real-time",
+                        "Follow Me Mode: Click on a user's cursor to automatically follow their navigation",
+                        "Presence Counter: Live count of active users on the dashboard (powered by SurrealDB)"
+                    ]
+                },
+                {
+                    "title": "Git for Data (Beta)",
+                    "description": "Work on your data in isolated branches and merge changes when ready.",
+                    "details": [
+                        "Private Mode: Toggle Private Mode to edit in an isolated branch without affecting the main view",
+                        "Diff View: Preview changes before merging them back to the main branch",
+                        "Branching Logic: Implementation of core branching and merging capabilities in the Data Engine"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Performance & Optimization",
+                    "description": "Significant performance improvements for large datasets and search operations.",
+                    "details": [
+                        "Engine Optimization: Verified stable performance with 10,000+ rows",
+                        "Search & Replace: Optimized search engine for large datasets",
+                        "SurrealDB Integration: Foundational setup for future real-time features"
+                    ]
+                },
+                {
+                    "title": "Backend Architecture & Stability",
+                    "description": "Complete backend migration to SurrealDB v2 with improved authentication and stability.",
+                    "details": [
+                        "SurrealDB Migration: Complete migration of core database to SurrealDB v2 for scalability",
+                        "Robust Authentication: Updated WorkOS integration with stable user management",
+                        "Server Stability: Resolved critical startup issues and improved experimental feature handling",
+                        "Legacy Compatibility: Added support for legacy endpoints to ensure smooth transition"
+                    ]
+                }
+            ]
+        }
+    ],
+    "authors": [
+        {
+            "name": "Taufeeq Ali",
+            "avatar": "/avatars/taufeeq.jpg"
+        },
+        {
+            "name": "Antigravity",
+            "avatar": "/avatars/ai.jpg"
+        }
+    ]
+}

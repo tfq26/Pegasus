@@ -1,0 +1,40 @@
+{
+    "version": "0.7.0.5",
+    "releaseDate": "December 21, 2025",
+    "title": "Architectural Improvements",
+    "description": "Major refactor introducing centralized API client for improved reliability and maintainability.",
+    "highlights": [
+        "Centralized API client",
+        "Automatic auth header injection",
+        "Consistent error handling"
+    ],
+    "sections": [
+        {
+            "category": "Architecture",
+            "items": [
+                {
+                    "title": "Centralized API Client",
+                    "description": "Improving API interaction reliability across the platform.",
+                    "details": [
+                        "New apiClient class handles authentication and error logic automatically",
+                        "Automatic injection of JWT headers from storage",
+                        "Consistent cross-origin (CORS) support for production environments"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "Authentication Fixes",
+                    "description": "Resolved critical production authentication issues.",
+                    "details": [
+                        "Fixed 401 Unauthorized errors affecting connections and settings",
+                        "Corrected header format for cross-origin requests"
+                    ]
+                }
+            ]
+        }
+    ]
+}

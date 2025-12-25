@@ -1,0 +1,162 @@
+{
+    "version": "0.5.1",
+    "releaseDate": "December 18, 2024",
+    "title": "AI Intelligence & UX Refinements",
+    "description": "Enhanced AI query generation with world knowledge, improved visualization workflows, and better data presentation.",
+    "highlights": [
+        "AI now uses world knowledge for geographic and common queries",
+        "Smarter 'how many' query handling returns actual data instead of just counts",
+        "Internal database IDs automatically hidden from users",
+        "Fully functional 'Analyze with AI' feature",
+        "Improved visualization preview with flexible chart type conversions",
+        "Mobile login now works with cross-domain authentication"
+    ],
+    "sections": [
+        {
+            "category": "AI & Query Generation",
+            "items": [
+                {
+                    "title": "World Knowledge Integration",
+                    "description": "AI can now use world knowledge to resolve queries without asking for unnecessary clarification",
+                    "details": [
+                        "Understands geographic regions (West Coast, East Coast, Midwest cities)",
+                        "Recognizes time periods (last quarter, this year, Q1, etc.)",
+                        "Infers common categories and industry standards",
+                        "Only asks for clarification when there's genuine database-level ambiguity"
+                    ]
+                },
+                {
+                    "title": "Intelligent 'How Many' Queries",
+                    "description": "Queries asking 'how many X' now return actual records instead of just counts",
+                    "details": [
+                        "Returns full data with all columns for better analysis",
+                        "Count is implied by the number of results shown",
+                        "Only returns bare count when explicitly requested",
+                        "Consistent behavior across all database types (MongoDB, SQL, SurrealDB)"
+                    ]
+                },
+                {
+                    "title": "Enhanced Ambiguity Handling",
+                    "description": "Improved clarity when AI needs user input",
+                    "details": [
+                        "Provides specific, actionable choices when clarification is needed",
+                        "Better explanation of why clarification is required",
+                        "Clearer distinction between world knowledge and database ambiguity"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Data Presentation",
+            "items": [
+                {
+                    "title": "Hidden Internal IDs",
+                    "description": "SurrealDB internal fields are now automatically filtered from query results",
+                    "details": [
+                        "Removes 'id', '__id', and '_row_order' fields from all results",
+                        "Cleaner, more user-friendly data display",
+                        "Applied to both query results and sample data",
+                        "No configuration required - works automatically"
+                    ]
+                },
+                {
+                    "title": "Improved AI Response Formatting",
+                    "description": "AI-generated analysis now displays with proper formatting",
+                    "details": [
+                        "Unicode bullet points (•) converted to proper HTML lists",
+                        "Better readability for multi-item responses",
+                        "Preserves line breaks and formatting",
+                        "Consistent markdown rendering across all AI responses"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Visualization & Analytics",
+            "items": [
+                {
+                    "title": "Functional 'Analyze with AI' Button",
+                    "description": "The Analyze with AI feature is now fully implemented and working",
+                    "details": [
+                        "Generates intelligent summaries of query results",
+                        "Uses original user question for context",
+                        "Shows loading states during analysis",
+                        "Displays formatted analysis in results panel",
+                        "Includes regenerate option for alternative insights"
+                    ]
+                },
+                {
+                    "title": "Enhanced Visualization Preview",
+                    "description": "Improved chart type conversion workflow in preview mode",
+                    "details": [
+                        "Freely convert between chart types and statistics in preview",
+                        "Original data preserved when converting stat ↔ chart",
+                        "Automatic restoration of full dataset when converting back",
+                        "Type-specific styling applied automatically",
+                        "Restriction only applies to saved dashboard elements"
+                    ]
+                },
+                {
+                    "title": "Smart Chart Conversions",
+                    "description": "Intelligent handling of chart type changes",
+                    "details": [
+                        "Stores original chart data when converting to statistic",
+                        "Restores complete dataset when converting back to chart",
+                        "Prevents data loss during experimentation",
+                        "Applies appropriate styling for each chart type"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "Mobile Login Authentication",
+                    "description": "Fixed authentication issues on mobile browsers with cross-domain deployments",
+                    "details": [
+                        "Implemented hybrid authentication supporting both cookies and localStorage",
+                        "Token now passed via URL parameter after OAuth redirect",
+                        "Authorization header support for cross-domain API requests",
+                        "Works seamlessly on both desktop (cookies) and mobile (localStorage)",
+                        "Solves Safari/iOS strict cookie policies"
+                    ]
+                },
+                {
+                    "title": "SurrealDB Query Syntax",
+                    "description": "Fixed count query generation for SurrealDB",
+                    "details": [
+                        "Corrected aggregation syntax to use SELECT count() instead of array::len()",
+                        "Added concrete examples to AI prompt for better query generation",
+                        "Eliminated syntax errors in count queries"
+                    ]
+                },
+                {
+                    "title": "Changelog Display",
+                    "description": "Fixed changelog loading issues on Support page",
+                    "details": [
+                        "Corrected JSON format for v0.5.0 and v0.4.2 changelogs",
+                        "Added missing release entries for v0.4.0, v0.4.1, and v0.4.2",
+                        "Ensured consistent schema across all changelog files",
+                        "Fixed date consistency between releases.json and changelog files"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Developer Experience",
+            "items": [
+                {
+                    "title": "Improved AI Prompts",
+                    "description": "Enhanced system prompts for better query generation",
+                    "details": [
+                        "Added world knowledge guidelines for all database types",
+                        "Included 'how many' query examples",
+                        "Better aggregation syntax documentation",
+                        "Clearer instructions for ambiguity handling"
+                    ]
+                }
+            ]
+        }
+    ]
+}

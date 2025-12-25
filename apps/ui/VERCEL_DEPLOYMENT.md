@@ -58,6 +58,16 @@ This is a **caching issue**. Solution:
 2. In Vercel dashboard: Settings → General → Clear Build Cache
 3. Redeploy
 
+### Error: "Failed to fetch docs index" or "Unexpected token '<'"
+**Status**: ✅ **FIXED!**
+
+The docs now use static JSON files instead of API calls. The build process automatically generates these files from your changelogs.
+
+If you still see this error:
+1. Verify `/docs/index.json` exists in your built `dist/` folder
+2. Check that the `prebuild` script ran successfully in the build logs
+3. See `docs/FIXING_DOCS_ON_VERCEL.md` for detailed explanation
+
 ### Build Fails on Vercel
 1. Check Node version matches (20.19.0+ or 22.12.0+)
 2. Clear Vercel build cache (Settings → General → Clear Build Cache)

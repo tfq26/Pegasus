@@ -1,0 +1,85 @@
+{
+    "version": "0.7.1",
+    "releaseDate": "December 24, 2025",
+    "title": "Improved Data Processing & Workspace Persistence",
+    "description": "Major overhaul of Excel parsing logic for complex spreadsheets, combined with connection-aware workspace persistence and enhanced data preview tools.",
+    "highlights": [
+        "Advanced Excel Parsing with ExcelJS",
+        "Multi-row Header Combination Logic",
+        "Local Pagination for Data Previews",
+        "Connection-aware Workspace Persistence"
+    ],
+    "sections": [
+        {
+            "category": "Data Processing",
+            "items": [
+                {
+                    "title": "Robust Excel Engine",
+                    "description": "A complete rewrite of our Excel parser using ExcelJS for extreme reliability with complex financial reports.",
+                    "details": [
+                        "Added support for formulas (calculates results instead of showing strings)",
+                        "Handles rich text and merged cells seamlessly",
+                        "Automatic multi-row header detection: intelligently combines parent categories with detail columns",
+                        "Integrated confidence scoring (0-1) to detect and flag potentially problematic parses",
+                        "Advanced post-processing to identify real headers buried under title rows"
+                    ]
+                },
+                {
+                    "title": "Enhanced Data Preview",
+                    "description": "Improved tools for exploring large datasets directly in the browser.",
+                    "details": [
+                        "Added local pagination controls (Page X of Y) for instant data navigation",
+                        "Adjustable rows per page: switch between 10, 25, and 50 rows per view",
+                        "Showing X of Y records count for better dataset visibility",
+                        "Performance optimizations for rendering hundreds of columns in the preview modal"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Features",
+            "items": [
+                {
+                    "title": "Workspace Persistence",
+                    "description": "Tabs (chats, spreadsheets, queries) are now saved per database connection.",
+                    "details": [
+                        "Tabs automatically restore when switching back to a connection",
+                        "Real-time state synchronization with backend persistence",
+                        "Auto-save mechanism to prevent data loss"
+                    ]
+                },
+                {
+                    "title": "Sidebar Improvements",
+                    "description": "Enhanced navigation with a new toggle in the connection list.",
+                    "details": [
+                        "Switch between database table view and saved tabs view",
+                        "Manage active tabs directly from the sidebar",
+                        "Compact TabList component for quick switching"
+                    ]
+                },
+                {
+                    "title": "Migration & Safety",
+                    "description": "Ensuring data integrity during workspace transitions.",
+                    "details": [
+                        "Visual warning when working in the Temporary Workspace",
+                        "Migration dialog prompts to move or discard unsaved tabs when switching connections"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Technical",
+            "items": [
+                {
+                    "title": "Infrastructure Upgrades",
+                    "description": "Backend services expanded to handle complex data state.",
+                    "details": [
+                        "Migrated backend parsing from custom XML logic to ExcelJS",
+                        "Connection-workspaces database table for persistent storage",
+                        "Metadata return support for parsing confidence and warnings"
+                    ]
+                }
+            ]
+        }
+    ]
+}

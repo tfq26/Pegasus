@@ -1,0 +1,130 @@
+{
+    "version": "0.5.2",
+    "releaseDate": "2025-12-18",
+    "title": "AI Response Quality & Chat Formatting Improvements",
+    "description": "Major improvements to AI query generation, response formatting, and chat message display quality.",
+    "highlights": [
+        "Enhanced AI query generation for company/supplier name searches",
+        "Fixed AI response formatting in chat bubbles and analysis panels",
+        "Improved status field query handling (cancelled, pending, completed)",
+        "Added case-insensitive matching for SurrealDB queries",
+        "Better handling of 'how many' questions to show data instead of just counts"
+    ],
+    "sections": [
+        {
+            "items": [
+                {
+                    "title": "AI Query Generation Improvements",
+                    "description": "Significantly enhanced the AI's ability to generate accurate database queries",
+                    "details": [
+                        "Added intelligent company/supplier name matching with partial string matching",
+                        "Implemented case-insensitive search for company names (TechCorp, techcorp, TECHCORP all match)",
+                        "Added support for status/enum field queries (e.g., 'cancelled orders', 'pending tasks')",
+                        "Improved 'how many' question handling to return actual data instead of just counts",
+                        "Enhanced world knowledge integration for better query interpretation"
+                    ]
+                },
+                {
+                    "title": "SurrealDB Query Syntax Fixes",
+                    "description": "Corrected AI-generated queries to use proper SurrealDB syntax",
+                    "details": [
+                        "Fixed company name matching to use 'CONTAINS' instead of unsupported 'LIKE' operator",
+                        "Implemented case-insensitive matching with string::lowercase() function",
+                        "Added regex pattern matching support with ~ operator",
+                        "Prevented AI from generating invalid LIKE queries for SurrealDB"
+                    ]
+                },
+                {
+                    "title": "AI Response Formatting",
+                    "description": "Fixed formatting issues in AI responses across chat and analysis",
+                    "details": [
+                        "Fixed chat message bubbles to properly display line breaks and formatting",
+                        "Corrected AI analysis panel to extract 'answer' field from JSON responses",
+                        "Added automatic conversion of escaped newlines (\\n) to actual line breaks",
+                        "Ensured consistent formatting between chat bubbles and analysis panels"
+                    ]
+                },
+                {
+                    "title": "Query Generation Accuracy",
+                    "description": "Improved AI's understanding of query requirements",
+                    "details": [
+                        "Added concrete examples for company/supplier queries in AI prompts",
+                        "Enhanced status field query examples (cancelled, pending, completed)",
+                        "Strengthened 'how many' rules to prevent count-only responses",
+                        "Added explicit guidance against using RETURN array::len() for data queries"
+                    ]
+                }
+            ],
+            "category": "✨ Enhancements"
+        },
+        {
+            "items": [
+                {
+                    "title": "Fixed AI Analysis Response Extraction",
+                    "description": "Backend now properly extracts 'answer' field from AI analysis JSON responses",
+                    "technical": "Updated /ai/analyze endpoint to check for both 'answer' and 'summary' fields"
+                },
+                {
+                    "title": "Fixed Chat Message Formatting",
+                    "description": "Chat bubbles now display properly formatted text with line breaks",
+                    "technical": "Added formatContent() function to convert literal \\n to actual newlines"
+                },
+                {
+                    "title": "Fixed Company Name Query Generation",
+                    "description": "AI now generates queries that find company names regardless of capitalization",
+                    "technical": "Implemented case-insensitive matching with string::lowercase() for SurrealDB"
+                },
+                {
+                    "title": "Fixed Status Field Queries",
+                    "description": "AI now properly filters by status fields instead of returning all records",
+                    "technical": "Added WHERE clause examples for status/enum field queries"
+                }
+            ],
+            "category": "🐛 Bug Fixes"
+        },
+        {
+            "items": [
+                {
+                    "title": "Enhanced AI Prompt Engineering",
+                    "description": "Improved system prompts for better query generation",
+                    "details": [
+                        "Added company/supplier name handling to world knowledge section",
+                        "Included concrete examples for common query patterns",
+                        "Strengthened rules against count-only responses",
+                        "Added SurrealDB-specific syntax guidance"
+                    ]
+                },
+                {
+                    "title": "Backend Response Processing",
+                    "description": "Improved AI response parsing and extraction",
+                    "details": [
+                        "Enhanced JSON response parsing to handle multiple field names",
+                        "Added fallback logic for different response formats",
+                        "Improved error handling for malformed AI responses"
+                    ]
+                },
+                {
+                    "title": "Frontend Display Logic",
+                    "description": "Better formatting and display of AI-generated content",
+                    "details": [
+                        "Added content preprocessing for chat messages",
+                        "Implemented proper newline conversion",
+                        "Maintained whitespace-pre-wrap for formatting preservation"
+                    ]
+                }
+            ],
+            "category": "🔧 Technical Improvements"
+        }
+    ],
+    "breaking": [],
+    "deprecations": [],
+    "notes": [
+        "AI query generation is now significantly more accurate for company/supplier searches",
+        "Chat messages display with proper formatting including line breaks and bullet points",
+        "SurrealDB queries now use correct syntax for pattern matching",
+        "'How many' questions return actual data for inspection, not just counts"
+    ],
+    "contributors": [
+        "AI Assistant"
+    ]
+}

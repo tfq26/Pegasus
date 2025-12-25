@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "node ../../scripts/generate-releases-index.js",
+    "prebuild": "node ../../scripts/generate-releases-index.js && node ../../scripts/generate-docs-from-changelogs.js",
     "build": "vite build",
     "preview": "vite preview",
     "test:unit": "vitest",
