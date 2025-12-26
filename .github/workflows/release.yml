@@ -41,6 +41,6 @@ jobs:
         run: |
           git add apps/ui/public/changelogs apps/ui/public/releases.json
           git commit -m "chore(release): v${{ inputs.version }}"
-          git tag v${{ inputs.version }}
-          git push origin HEAD:main
-          git push origin v${{ inputs.version }}
+          git tag -f v${{ inputs.version }}
+          git push origin main
+          git push origin v${{ inputs.version }} --force
