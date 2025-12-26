@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import Navbar from './components/Navbar.vue'
 import DesktopNavbar from './components/DesktopNavbar.vue'
 import { Toaster } from '@/components/ui/sonner'
@@ -12,6 +13,11 @@ import 'vue-sonner/style.css'
 // Check if running in Tauri
 const isTauri = () => '__TAURI_INTERNALS__' in window
 const isDesktop = ref(false)
+const route = useRoute()
+
+// Routes that should be minimal (no navbar)
+const minimalRoutes = ['/auth/device', '/signin', '/local-auth']
+const isMinimalRoute = computed(() => minimalRoutes.some(r => route.path.startsWith(r)))
 
 // Enable McMaster-Carr style link prefetching
 usePrefetch()
@@ -42,8 +48,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <!-- Unified App Layout (Phone, Tablet & Desktop) -->
-  <div class="h-full w-full flex flex-col bg-background text-foreground transition-colors duration-300">
+  <!-- Minimal layout for auth pages -->
+  <div v-if="isMinimalRoute" class="h-full w-full bg-stone-950">
+    <Toaster position="top-right" richColors />
+    <router-view class="w-full h-full" />
+  </div>
+
+  <!-- Full App Layout (Phone, Tablet & Desktop) -->
+  <div v-else class="h-full w-full flex flex-col bg-background text-foreground transition-colors duration-300">
     <!-- Navbar: Desktop version for Tauri, regular for web -->
     <DesktopNavbar v-if="isDesktop" />
     <Navbar v-else />

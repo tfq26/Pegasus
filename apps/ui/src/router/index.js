@@ -47,6 +47,7 @@ const router = createRouter({
     { path: '/docs', component: () => import('../views/DocsView.vue') },
     { path: '/releases', component: () => import('../views/Releases.vue') },
     { path: '/login', component: () => import('../views/Login.vue') },
+    { path: '/signin', component: () => import('../views/SignIn.vue') }, // Desktop device auth flow
     { path: '/local-auth', component: () => import('../views/LocalAuth.vue') },
     { path: '/auth/device', component: () => import('../views/DeviceAuth.vue') },
     { path: '/workspace-test', component: () => import('../views/WorkspaceTest.vue') },

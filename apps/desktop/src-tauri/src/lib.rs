@@ -249,11 +249,12 @@ pub fn run() {
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
-                    println!("Deep link received: {:?}", event.urls());
-                    let app_handle = app.handle();
-                    for url in event.urls() {
-                        let _ = app_handle.emit("deep-link://new-url", url.to_string());
+                    let urls = event.urls();
+                    println!("Deep link received: {:?}", urls);
+                    for url in urls {
+                        let _ = handle.emit("deep-link://new-url", url.to_string());
                     }
                 });
             }
