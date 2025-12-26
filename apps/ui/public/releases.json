@@ -2,9 +2,9 @@
     "releases": [
         {
             "version": "0.8.0",
-            "releaseDate": "December 27, 2025",
-            "title": "AI Intelligence & UI Modernization",
-            "description": "A massive architectural shift towards Shadcn standards, deep AI predictive intelligence, and controlled data mutation workflows.",
+            "releaseDate": "2025-12-26",
+            "title": "Intelligent Data Management & Desktop Launch",
+            "description": "Release v0.8.0",
             "changelogFile": "v0.8.0.json",
             "isLatest": true
         },
