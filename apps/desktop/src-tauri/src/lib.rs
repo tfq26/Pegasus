@@ -245,6 +245,19 @@ pub fn run() {
             link_to_cloud
         ])
         .setup(|app| {
+            // Handle deep links
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().on_open_url(move |event| {
+                    println!("Deep link received: {:?}", event.urls());
+                    let app_handle = app.handle();
+                    for url in event.urls() {
+                        let _ = app_handle.emit("deep-link://new-url", url.to_string());
+                    }
+                });
+            }
+
             // Set up native menu bar
             use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
 
