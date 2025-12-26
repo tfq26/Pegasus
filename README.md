@@ -62,3 +62,4 @@ Pegasus is built as a monorepo using:
 - **Frontend**: Vue 3, TailwindCSS, Pinia
 - **Backend**: Node.js/Bun, SurrealDB
 - **Tooling**: TurboRepo, Playwright (Testing)
+ 
