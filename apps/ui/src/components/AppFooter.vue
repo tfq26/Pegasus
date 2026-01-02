@@ -39,11 +39,10 @@ const version = ref('v0.5.1')
 // Fetch latest version from releases.json
 onMounted(async () => {
   try {
-    const response = await fetch('/releases.json')
+    const response = await fetch('/api/docs')
     const data = await response.json()
-    const latestRelease = data.releases.find((r: any) => r.isLatest)
-    if (latestRelease) {
-      version.value = `v${latestRelease.version}`
+    if (data.changelogs && data.changelogs.length > 0) {
+      version.value = data.changelogs[0]
     }
   } catch (error) {
     console.error('Failed to fetch version:', error)

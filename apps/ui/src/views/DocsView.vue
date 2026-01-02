@@ -84,7 +84,7 @@
           <div v-if="activeType === 'release' && releaseData" class="mb-10 space-y-4">
             <div class="flex items-center gap-3">
               <span class="px-3 py-1 rounded-lg text-xs font-bold bg-violet-600/10 text-violet-400 border border-violet-500/20">
-                v{{ releaseData.version }}
+                {{ releaseData.version }}
               </span>
               <span class="text-sm text-muted-foreground">{{ releaseData.date }}</span>
             </div>
@@ -215,7 +215,7 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
       const release = data.data || data
       releaseData.value = release
       contentType.value = 'markdown'
-      content.value = md.render(release.description || '')
+      content.value = ''
     }
   } catch (e) {
     content.value = '<div class="text-center py-20 text-destructive">Failed to load content.</div>'
