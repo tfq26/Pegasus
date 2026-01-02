@@ -2,7 +2,7 @@
   <nav
     class="w-full border-b border-border bg-background text-foreground shadow-sm fixed top-0 z-50 transition-all duration-300"
   >
-    <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 h-16">
+    <div class="flex items-center justify-between px-4 py-3 sm:px-8 h-16 w-full">
       <!-- Left: Logo -->
       <RouterLink to="/" class="flex items-center gap-3 group">
         <img
@@ -320,14 +320,18 @@ const { isPhone } = useMobileDetection()
 const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
 const { user, isLoading, fetchUser, logout } = useAuth()
 
-const links = [
-  // { to: '/', label: 'Home', icon: Home, webOnly: true },
-  // { to: '/about', label: 'About', icon: Info, webOnly: true },
-  // { to: '/releases', label: 'Releases', icon: Info },
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/query', label: 'Query', icon: MessageSquare },
-  { to: '/support', label: 'Support', icon: CircleHelp },
-  { to: '/docs', label: 'Docs', icon: BookOpen },
+interface NavLink {
+  to: string
+  label: string
+  icon: any
+  webOnly?: boolean
+}
+
+const links: NavLink[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, webOnly: false },
+  { to: '/query', label: 'Query', icon: MessageSquare, webOnly: false },
+  { to: '/support', label: 'Support', icon: CircleHelp, webOnly: false },
+  { to: '/docs', label: 'Docs', icon: BookOpen, webOnly: false },
 ]
 
 // Check if running in Tauri desktop
