@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { getCookie } from "hono/cookie"
+import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { aiClient } from "../../ai/AIClient.js"
@@ -196,19 +196,6 @@ function checkIfModifiesData(targetColumn, spreadsheetData, isOverwrite) {
     return isOverwrite === true;
 }
 
-// Helper to get token from cookie or header
-const getAuthToken = (c) => {
-    // Try cookie first
-    let token = getCookie(c, "session")
-    // Fallback to Authorization header
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
-    }
-    return token
-}
 
 // Chat Routes
 chat.get("/chats", async (c) => {
@@ -1124,7 +1111,7 @@ chat.get("/ai/models", async (c) => {
 })
 
 chat.post("/ai/analyze-dashboard", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -1158,7 +1145,7 @@ Keep the tone professional and helpful.
 })
 
 chat.post("/ai/search", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { query } = await c.req.json()

@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { getCookie } from "hono/cookie"
+import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { WorkspaceService } from "../services/WorkspaceService.js"
@@ -46,18 +46,6 @@ const upsertUser = async (payload) => {
         console.error("[Workspace] Failed to upsert user:", e)
         return null;
     }
-}
-
-// Helper to get token
-const getAuthToken = (c) => {
-    let token = getCookie(c, "session")
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
-    }
-    return token
 }
 
 // Middleware for Auth
