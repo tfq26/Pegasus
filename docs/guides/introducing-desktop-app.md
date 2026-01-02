@@ -1,42 +1,63 @@
-# Introducing the Pegasus Desktop App
+# Elevate Your Workflow: The All-New Pegasus Desktop
 
-![Pegasus Logo](/assets/branding/pegasus-logo-on-white.svg)
+> **Experience the raw power of the Pegasus engine in a dedicated, distraction-free environment.**
 
-Welcome to the next evolution of your data workflow. With the introduction of the **Pegasus Desktop App**, we are providing a dedicated, high-performance environment for your most demanding spreadsheet and AI tasks.
+Welcome to the next evolution of your data journey. The **Pegasus Desktop App** isn't just a port of our web interface; it's a high-performance workspace engineered for practitioners who demand the absolute best from their tools.
 
-## Why a Desktop App?
+---
 
-The Pegasus Desktop App is designed for users who spend their significant portion of the day within the platform. While the web app is perfect for quick access and mobility, the desktop app offers several distinct advantages:
+## ⚡ The Desktop Advantage
 
-1.  **Focused Environment**: By separating Pegasus from your browser tabs, you eliminate distractions and the risk of accidentally closing your workspace.
-2.  **Native Performance**: Built on the **Tauri** framework, the desktop app leverages native system features for smoother animations, faster UI responses, and localized data handling.
-3.  **Dedicated Navigation**: A custom-built desktop navbar integrates seamlessly with your operating system, providing a premium, native-feel experience.
-4.  **System Integration**: Future updates will bring deeper integration with local files, system notifications, and advanced keyboard shortcuts that are often limited in browser environments.
+While the web app offers unparalleled portability, the desktop application is your "Home Base." We've leveraged the native power of your machine to deliver an experience that feels instantaneous.
 
-## Desktop vs. Web: What's the Difference?
+### 🎯 Total Focus
+Eliminate the "tab tax." By separating Pegasus from your browser, you remove the distractions of social media and the risk of accidentally closing a complex analysis session.
 
-| Feature | Web App | Desktop App |
+### 🚀 Native Performance
+Built on the cutting-edge **Tauri** framework, the desktop app bypasses browser sandboxing limitations.
+- **Micro-animations**: Silky smooth UI transitions.
+- **Rapid Refresh**: Faster data hydration from your localized database connections.
+- **Native Navigation**: A custom-designed OS navbar that feels at home on macOS and Windows.
+
+### 🎹 Keyboard Mastery
+Take control with system-level shortcuts. Future updates will allow you to trigger Pegasus queries and AI analysis globally, even when the app is in the background.
+
+---
+
+## 🌓 Web vs. Desktop: Side-by-Side
+
+| Feature | Pegasus Web | Pegasus Desktop |
 | :--- | :--- | :--- |
-| **Access** | Any browser | Installed application |
-| **Navbar** | Standard Web UI | Native OS-style Navbar |
-| **Performance** | Browser-dependent | Native/System-optimized |
-| **Multi-tabbing** | Browser tabs | Internal workspace tabs |
-| **Offline Hints** | Limited | Advanced (coming soon) |
+| **Primary Use** | Mobility & Quick Access | Deep Work & High Volume |
+| **Interface** | Standard Browser UI | Native OS-Style Shell |
+| **Computing** | Cloud-Shared | Dedicated Local Resources |
+| **Stability** | Connection Dependent | Persistent Workspace |
+| **Status** | Available Everywhere | Installed (macOS/Windows) |
 
-## What Stays the Same?
+---
 
-Consistency is core to the Pegasus experience. Regardless of which version you choose, you will always have access to:
+## 🛡️ Built for Consistency
 
-*   **Identical Core Engine**: The custom spreadsheet engine, AI predictive intelligence, and formula generation are identical across both platforms.
-*   **Unified Connections**: Your database connections and credentials stay synced and secure.
-*   **AI Metadata**: Your chat history, predictive reasoning, and mutation review logs are shared across the platform.
-*   **Security Standards**: Both applications adhere to the same rigorous encryption and authentication protocols.
+Transitions should be seamless. No matter where you log in, your Pegasus environment follows you:
+- **Unified Engine**: The same custom spreadsheet logic and AI reasoning.
+- **Secure Keyring**: Your database credentials stay encrypted and synced.
+- **Tab Persistence**: (Coming Soon) Your open workspaces sync between web and desktop automatically.
 
-## Working Together
+---
 
-The Desktop and Web apps are designed to work in tandem:
+## 🏁 Getting Started
 
-*   **At your Desk**: Launch the Desktop app for a focused, multi-tabbed session with high-frequency data edits.
-*   **On the Go**: Use the Web app from any machine to check insights, run quick queries, or share reports without needing an installation.
+If you're ready to unlock the full potential of Pegasus, follow these simple steps:
 
-By providing both options, Pegasus ensures that your data is always exactly where you need it, in the format that works best for you.
+1. **Download**: Visit our [Download Page](/download) and grab the installer for your OS.
+2. **Install**: Drag to Applications (macOS) or run the Setup (Windows).
+3. **Connect**: Log in with your existing account, and your connections will be waiting for you.
+
+---
+
+> ### 💡 Pro Tip: Split-Screen Mastery
+> The Desktop App is optimized for split-screen. Use your OS tiling features to keep Pegasus open alongside your IDE or CRM for a data-driven workflow that never stops.
+
+---
+
+*Harness the power of native. Experience Pegasus Desktop today.*

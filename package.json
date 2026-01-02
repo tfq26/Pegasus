@@ -19,7 +19,7 @@
   },
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
+    "build": "bun run docs:generate && turbo run build",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
     "start": "bun run-apps.js",
@@ -29,7 +29,8 @@
     "desktop:dev": "cd apps/desktop && bun run tauri:dev",
     "desktop:build": "cd apps/desktop && bun run tauri:build",
     "changelog:generate": "node scripts/generate-releases-index.js",
-    "docs:migrate": "cd apps/backend && node scripts/migrate-docs.js"
+    "docs:migrate": "cd apps/backend && node scripts/migrate-docs.js",
+    "docs:generate": "bun run changelog:generate && cd apps/backend && node scripts/generate-static-docs.js"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"

@@ -37,3 +37,7 @@ Thumbs.db
 # Database
 pegasus.db/
 *.db
+
+# Generated Docs
+apps/ui/public/_docs/
+apps/ui/public/releases.json

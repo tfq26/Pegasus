@@ -39,24 +39,10 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: bun scripts/generate-changelog-entry.js --version=${{ inputs.version }} --title="${{ inputs.title }}"
 
-      - name: Update Releases Index
-        run: bun run changelog:generate
-
       - name: Sync to Neon
         run: bun run docs:migrate
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-
-      - name: Generate Static Docs
-        run: cd apps/backend && node scripts/generate-static-docs.js
-        env:
-          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-
-      - name: Commit Sync
-        run: |
-          git add apps/ui/public/changelogs apps/ui/public/_docs apps/ui/public/releases.json
-          git commit -m "chore(release): automated sync [skip ci]" || echo "No changes to commit"
-          git push origin main
 
       - name: Tag Release
         if: github.event_name == 'workflow_dispatch'
