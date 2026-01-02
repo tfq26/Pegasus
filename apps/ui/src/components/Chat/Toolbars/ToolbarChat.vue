@@ -59,7 +59,7 @@ const contextUsage = 45
   <div class="flex items-center gap-3 w-full">
     <!-- Model Selection -->
     <div class="flex items-center gap-2">
-      <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Model</span>
+      <span class="hidden md:inline text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Model</span>
       <Select 
         :model-value="aiOptions.model"
         @update:model-value="updateOption('model', $event)"
@@ -81,7 +81,7 @@ const contextUsage = 45
     
     <!-- Temperature Slider -->
     <div class="flex items-center gap-2">
-       <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Temp</span>
+       <span class="hidden md:inline text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Temp</span>
        <input
         :value="aiOptions.temperature"
         @input="updateOption('temperature', Number(($event.target as HTMLInputElement).value))"
@@ -96,7 +96,7 @@ const contextUsage = 45
 
     <!-- Context Usage Indicator -->
     <div class="flex items-center gap-2 px-2 border-l border-border ml-2" title="Context Token Usage">
-        <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Context</span>
+        <span class="hidden md:inline text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Context</span>
         <div class="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
             <div 
                 class="h-full bg-blue-500/70 rounded-full transition-all duration-500" 
@@ -117,7 +117,7 @@ const contextUsage = 45
       >
         <Zap v-if="!isExecuting" class="w-3.5 h-3.5" />
         <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
-        {{ isExecuting ? 'Running...' : 'Run' }}
+        <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
       </button>
       
       <!-- Clear -->

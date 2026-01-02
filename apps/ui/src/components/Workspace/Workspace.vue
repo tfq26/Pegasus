@@ -289,6 +289,9 @@ const getEngineForTab = (tabId: string) => {
         
         hasPendingChanges = true;
         
+        // Update dirty state in workspace store
+        workspaceStore.setTabDirty(tabId, engine.hasPendingModifications());
+        
         // Calculate time since last save
         const now = Date.now();
         const timeSinceLastSave = now - lastSaveTime;
@@ -715,7 +718,7 @@ const setGridRef = (el: any, id: string) => {
 };
 
 const setFormulaBarValue = (value: string) => {
-  const tabId = activeTabId.value;
+  const tabId = (activeTabId.value as unknown as string);
   if (!tabId) return;
   
   const activeGrid = gridRefs.value.get(tabId);

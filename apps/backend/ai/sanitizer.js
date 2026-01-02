@@ -52,7 +52,7 @@ export function profileData(rows) {
 export async function analyzeForSanitization(tableName, rows, optionsOrModel = {}) {
     // Basic argument normalization
     let options = typeof optionsOrModel === 'string' ? { model: optionsOrModel } : optionsOrModel;
-    let model = options.model || 'gpt-4';
+    let model = options.model || undefined; // Fallback to default model from settings
 
     // Handle empty tables
     if (!rows || rows.length === 0) {

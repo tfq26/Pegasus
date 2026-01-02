@@ -71,5 +71,6 @@ const handleSave = async () => {
     :is-edit-mode="false"
     :can-add-connection="canAddConnection"
     @save="handleSave"
+    @upload-success="handleSave"
   />
 </template>

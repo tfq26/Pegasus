@@ -9,18 +9,25 @@ export const EXPERIMENTAL_FEATURES = {
         category: 'spreadsheet',
         defaultEnabled: false
     },
-    ADVANCED_AI_MODES: {
-        id: 'advanced-ai-modes',
-        name: 'Advanced AI Modes',
-        description: 'Access to experimental AI features and models',
-        category: 'ai',
-        defaultEnabled: false
-    },
     QUERY_PERFORMANCE_INSIGHTS: {
         id: 'query-performance-insights',
         name: 'Query Performance Insights',
         description: 'Detailed query execution plans and performance metrics',
         category: 'query',
+        defaultEnabled: false
+    },
+    RAG_PIPELINE: {
+        id: 'rag-pipeline',
+        name: 'RAG Pipeline (Knowledge Base)',
+        description: 'Enable Retrieval-Augmented Generation for grounded AI answers with citations from your documentation and database tables',
+        category: 'ai',
+        defaultEnabled: false
+    },
+    REAL_TIME_TOOLS: {
+        id: 'real-time-tools',
+        name: 'Real-time API Tools',
+        description: 'Allow AI to call external APIs (Stocks, Weather, Custom) to get live information for inference',
+        category: 'ai',
         defaultEnabled: false
     }
 }
@@ -46,8 +53,21 @@ export async function initExperimentalTables(db) {
 }
 
 // Get user's experimental status
-export async function getExperimentalStatus(db, userId) {
+// Checks WorkOS metadata first (set via WorkOS Dashboard), then falls back to SurrealDB
+export async function getExperimentalStatus(db, userId, jwtPayload = null) {
     try {
+        // 1. Check WorkOS user metadata first (managed via WorkOS Dashboard)
+        if (jwtPayload && jwtPayload.experimental_access === true) {
+            console.log(`[Experimental] Access granted via WorkOS metadata for user: ${userId}`);
+            return {
+                hasAccess: true,
+                source: 'workos',
+                requested: false,
+                requestedAt: null
+            };
+        }
+
+        // 2. Fallback: Check SurrealDB for legacy/manual grants
         const userRec = `user:${userId}`;
 
         // Check if user has experimental access
@@ -73,6 +93,7 @@ export async function getExperimentalStatus(db, userId) {
 
         return {
             hasAccess,
+            source: hasAccess ? 'surrealdb' : null,
             requested,
             requestedAt: requested ? request[0].requested_at : null
         }
@@ -148,8 +169,8 @@ export async function grantExperimentalAccess(db, userId, grantedBy) {
             BEGIN TRANSACTION;
 
             -- 1. Upsert Access Record (Delete then Create to ensure state)
-            DELETE ${accessId};
-            CREATE ${accessId} CONTENT {
+            DELETE type::thing('experimental_access', $userId);
+            CREATE type::thing('experimental_access', $userId) CONTENT {
                 user: $user,
                 has_access: true,
                 granted_at: $grantedAt,
@@ -165,6 +186,7 @@ export async function grantExperimentalAccess(db, userId, grantedBy) {
 
             COMMIT TRANSACTION;
         `, {
+            userId,
             user: userRec,
             grantedAt,
             grantedBy,
@@ -188,14 +210,15 @@ export async function toggleUserFeature(db, userId, featureId, enabled) {
 
     try {
         await db.query(`
-            DELETE ${recordId};
-            CREATE ${recordId} CONTENT {
+            DELETE type::thing('user_feature_flag', $recordId);
+            CREATE type::thing('user_feature_flag', $recordId) CONTENT {
                 user: $user,
                 feature_id: $featureId,
                 enabled: $enabled,
                 enabled_at: $enabledAt
             };
         `, {
+            recordId: `${userId}_${featureId}`,
             user: userRec,
             featureId,
             enabled: !!enabled,

@@ -210,6 +210,12 @@ const temperatureValue = computed({
                 >
                   Gemini
                 </span>
+                <span 
+                   v-else-if="model.provider === 'local'" 
+                   class="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                >
+                  Local
+                </span>
                 <!--
                 <span 
                   v-else-if="model.provider === 'anthropic'" 

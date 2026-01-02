@@ -99,7 +99,7 @@ const doResize = (e: MouseEvent) => {
     let newWidth = e.clientX
     
     // Constrain width
-    if (newWidth < 200) newWidth = 200
+    if (newWidth < 180) newWidth = 180
     if (newWidth > 600) newWidth = 600
     
     sidebarWidth.value = newWidth
@@ -130,6 +130,11 @@ onMounted(() => {
   const saved = localStorage.getItem('pegasus-sidebar-width')
   if (saved) {
     sidebarWidth.value = Number(saved)
+  }
+  
+  // Auto-close sidebar on medium screens (< 1024px)
+  if (window.innerWidth < 1024) {
+    sidebarWidth.value = Math.min(sidebarWidth.value, 250) // Cap width on smaller screens
   }
 })
 </script>

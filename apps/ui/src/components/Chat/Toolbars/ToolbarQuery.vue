@@ -55,7 +55,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
       >
         <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
         <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
-        {{ isExecuting ? 'Running...' : 'Run' }}
+        <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
       </button>
 
       <button
@@ -143,7 +143,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
     <!-- Query Options -->
     <div class="flex items-center gap-3 text-xs text-muted-foreground">
         <div class="flex items-center gap-2" title="Query Timeout (seconds)">
-            <span class="text-[10px] uppercase tracking-wider font-semibold">Timeout</span>
+            <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Timeout</span>
             <input
                 :value="queryOptions.timeout"
                 @input="updateOption('timeout', Number(($event.target as HTMLInputElement).value))"
@@ -155,7 +155,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
         </div>
 
         <div class="flex items-center gap-2" title="Max Rows">
-            <span class="text-[10px] uppercase tracking-wider font-semibold">Limit</span>
+            <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Limit</span>
             <input
                 :value="queryOptions.limit"
                 @input="updateOption('limit', Number(($event.target as HTMLInputElement).value))"
@@ -174,7 +174,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
                 type="checkbox"
                 class="rounded border-border bg-background text-primary focus:ring-primary w-3.5 h-3.5"
                 />
-                <span class="text-[10px] uppercase tracking-wider font-semibold">Auto-commit</span>
+                <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Auto-commit</span>
             </label>
         </div>
     </div>

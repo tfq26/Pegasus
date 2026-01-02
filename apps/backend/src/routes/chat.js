@@ -6,6 +6,8 @@ import { aiClient } from "../../ai/AIClient.js"
 import { interpretDataset } from "../../ai/sanitizer.js"
 import { adapters } from "../../adapters/index.js"
 import { analyzeForSanitization } from "../../ai/sanitizer.js"
+import { RAGService } from "../services/ragService.js"
+import { getUserFeatureFlags } from "../../experimental-features.js"
 
 const chat = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
@@ -711,6 +713,30 @@ chat.post("/ai/generate", async (c) => {
                 } catch (e) {
                     console.warn(`[Chat] Semantic context fetch/interpretation failed:`, e);
                 }
+            }
+
+            // Perform RAG Search (Semantic Retrieval) - Only if experimental feature is enabled
+            try {
+                const userFlags = await getUserFeatureFlags(db, userId);
+                const ragEnabled = userFlags.includes('rag-pipeline');
+
+                if (ragEnabled) {
+                    const ragResults = await RAGService.hybridSearch(prompt, userId, 5, aiSettings.modelId || 'openai');
+                    if (ragResults && ragResults.length > 0) {
+                        semanticContext = semanticContext || {};
+                        semanticContext.knowledgeBase = ragResults.map(r => ({
+                            content: r.content,
+                            source: r.metadata.source,
+                            type: r.metadata.type,
+                            tableName: r.metadata.table_name
+                        }));
+                        console.log(`[Chat] RAG found ${ragResults.length} relevant chunks`);
+                    }
+                } else {
+                    console.log(`[Chat] RAG skipped - experimental feature not enabled for user`);
+                }
+            } catch (ragError) {
+                console.warn("[Chat] RAG Search failed:", ragError.message);
             }
 
         } catch (e) {

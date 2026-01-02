@@ -51,6 +51,7 @@ const router = createRouter({
     { path: '/local-auth', component: () => import('../views/LocalAuth.vue') },
     { path: '/auth/device', component: () => import('../views/DeviceAuth.vue') },
     { path: '/workspace-test', component: () => import('../views/WorkspaceTest.vue') },
+    { path: '/admin', component: () => import('../views/Admin.vue') },
     // { path: '/stocks', component: () => import('../views/StockDashboard.vue') },
     { path: '/error', component: () => import('../views/ErrorPage.vue') },
   ],
@@ -62,7 +63,7 @@ router.beforeEach(async (to, from) => {
   const token = localStorage.getItem('auth_token')
 
   // List of paths that require authentication
-  const protectedPaths = ['/query', '/dashboard', '/profile', '/settings', '/feedback']
+  const protectedPaths = ['/query', '/dashboard', '/profile', '/settings', '/feedback', '/admin']
   const isProtectedPath = protectedPaths.some(path => to.path.startsWith(path))
 
   // For Tauri desktop + offline, check local auth instead

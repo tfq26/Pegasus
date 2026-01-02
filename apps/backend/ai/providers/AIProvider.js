@@ -21,6 +21,16 @@ export class AIProvider {
     }
 
     /**
+     * Generates an embedding for the given text.
+     * @param {string} text - The text to embed.
+     * @param {object} options - Embedding options.
+     * @returns {Promise<Array<number>>} The embedding vector.
+     */
+    async embed(text, options = {}) {
+        throw new Error('embed must be implemented')
+    }
+
+    /**
      * Generates a database query from natural language.
      */
     async generateQuery(prompt, context, settings = {}) {

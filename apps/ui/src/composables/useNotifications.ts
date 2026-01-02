@@ -64,7 +64,11 @@ export const toast = {
     },
     // Proxy other methods if needed
     dismiss: sonnerToast.dismiss,
-    promise: sonnerToast.promise
+    promise: sonnerToast.promise,
+    loading: (message: string, options?: any) => {
+        // Don't add loading to persistent notifications (they're transient)
+        return sonnerToast.loading(message, options)
+    }
 }
 
 export const useNotifications = () => {

@@ -1,0 +1,123 @@
+{
+    "version": "0.8.1",
+    "releaseDate": "2026-01-02",
+    "date": "2026-01-02",
+    "title": "Connection-Scoped Tabs & Responsive UI",
+    "description": "Release v0.8.1 - Improved tab management with connection isolation, refactored API services, and enhanced responsive design for split-screen usage.",
+    "highlights": [
+        "feat: Connection-scoped tabs - each database connection now has its own isolated workspace",
+        "feat: RAG Pipeline - AI-powered semantic search across your database tables",
+        "feat: Responsive toolbar labels collapse to icons on medium screens (< 768px)",
+        "refactor: Generic APIService class for reusable API data synchronization"
+    ],
+    "sections": [
+        {
+            "category": "Features",
+            "items": [
+                {
+                    "title": "Connection-Scoped Tabs",
+                    "description": "Each database connection now maintains its own isolated set of tabs. Switching between connections no longer prompts to discard or migrate tabs - each connection remembers its own workspace state.",
+                    "details": [
+                        "Refactored workspace store to use `workspacesByConnection` map",
+                        "Added `switchConnection` action for seamless connection switching",
+                        "Removed the 'Unsaved Tabs' dialog - no longer needed"
+                    ]
+                },
+                {
+                    "title": "Tab Dirty State Indicator",
+                    "description": "Tabs now show a minimal amber dot indicator when they have unsaved changes.",
+                    "details": [
+                        "Added `isDirty` flag to Tab interface",
+                        "Engine changes automatically update tab dirty state",
+                        "Minimal visual indicator to reduce UI clutter"
+                    ]
+                },
+                {
+                    "title": "Generic APIService for Data Sync",
+                    "description": "Created a reusable APIService class that can fetch data from any external API and sync it to SurrealDB.",
+                    "details": [
+                        "Supports configurable URL, table, polling interval, and data mapper",
+                        "StockService refactored to extend APIService",
+                        "Added WeatherService using Open-Meteo API as demonstration"
+                    ]
+                },
+                {
+                    "title": "RAG Pipeline for Database Knowledge",
+                    "description": "Implemented a Retrieval-Augmented Generation (RAG) system that indexes database tables for AI-powered semantic search.",
+                    "details": [
+                        "RAGService with markdown and table data chunking",
+                        "Vector embeddings stored in SurrealDB `knowledge_chunk` table",
+                        "Hybrid search combining vector similarity and keyword matching",
+                        "API routes for indexing (`POST /rag/index`) and searching (`POST /rag/search`)",
+                        "Automatic re-indexing support with source clearing"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Responsive Toolbar for Split-Screen",
+                    "description": "Toolbar labels now collapse to icons only when the window is narrower than 768px, making the app usable in split-screen mode.",
+                    "details": [
+                        "ToolbarSpreadsheet: AI Mode, Visualize, Sanitize, Private/Live, Merge labels collapse",
+                        "ToolbarQuery: Run, Timeout, Limit, Auto-commit labels collapse",
+                        "ToolbarChat: Model, Temp, Context, Run labels collapse"
+                    ]
+                },
+                {
+                    "title": "Sidebar Responsiveness",
+                    "description": "Sidebar adapts better to smaller screens.",
+                    "details": [
+                        "Reduced minimum sidebar width from 200px to 180px",
+                        "Sidebar width capped at 250px on screens smaller than 1024px"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "Fixed SurrealDB Connection Errors",
+                    "description": "Resolved NoActiveSocket and IAM errors during service startup.",
+                    "details": [
+                        "Services now wait for database connection before starting",
+                        "Added isConnected guard in sync operations",
+                        "Fixed INSERT syntax for weather data upserts"
+                    ]
+                },
+                {
+                    "title": "Fixed Stock Symbols with Dots",
+                    "description": "Stock symbols containing dots (e.g., BRK.B) are now properly handled by converting dots to underscores in SurrealDB record IDs.",
+                    "details": [
+                        "Implemented safe ID formatting for stock symbols",
+                        "Maintains original symbol for display while using sanitized ID for database"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Pre-release Notes",
+            "items": [
+                {
+                    "title": "Known Issues",
+                    "description": "Issues to be addressed before full release.",
+                    "details": [
+                        "RAG indexing: Large tables (>10k rows) may timeout - pagination needed",
+                        "Connection-scoped tabs: Workspace backend persistence not yet implemented for new model"
+                    ]
+                },
+                {
+                    "title": "In Progress",
+                    "description": "Features still being completed.",
+                    "details": [
+                        "RAG: UI for indexing tables and searching - currently API-only",
+                        "Auto-save: Commit changes before tab switch (infrastructure done, needs testing)"
+                    ]
+                }
+            ]
+        }
+    ]
+}

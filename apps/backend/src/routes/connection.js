@@ -180,7 +180,17 @@ connections.post("/", async (c) => {
 
         console.log('[Connection] Connection saved successfully')
 
-        return c.json({ ok: true })
+        const [savedRows] = await db.query(`SELECT * FROM connection:${id}`);
+        const saved = savedRows[0];
+        const configData = typeof saved.config === 'string' ? JSON.parse(saved.config) : saved.config;
+
+        return c.json({
+            id: saved.id.toString().split(':')[1] || saved.id,
+            nickname: saved.nickname,
+            description: saved.description,
+            provider: saved.provider,
+            ...configData
+        })
     } catch (error) {
         console.error("Connection save error:", error)
         return c.json({ error: "Failed to save connection" }, 500)
@@ -234,7 +244,17 @@ connections.put("/:id", async (c) => {
         }
 
         console.log('[Connection] Connection updated successfully')
-        return c.json({ ok: true })
+        const [savedRows] = await db.query(`SELECT * FROM ${connectionId}`);
+        const saved = savedRows[0];
+        const configData = typeof saved.config === 'string' ? JSON.parse(saved.config) : saved.config;
+
+        return c.json({
+            id: saved.id.toString().split(':')[1] || saved.id,
+            nickname: saved.nickname,
+            description: saved.description,
+            provider: saved.provider,
+            ...configData
+        })
     } catch (error) {
         console.error("Connection update error:", error)
         return c.json({ error: "Failed to update connection" }, 500)

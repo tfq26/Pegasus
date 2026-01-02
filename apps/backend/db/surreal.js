@@ -8,7 +8,7 @@ const pass = process.env.SURREAL_PASS || 'root';
 const ns = process.env.SURREAL_NS || 'test';
 const dbName = process.env.SURREAL_DB || 'test';
 
-let isConnected = false;
+export let isConnected = false;
 
 export const connectDB = async (retries = 5, delay = 2000) => {
     if (isConnected) return db;
@@ -107,6 +107,25 @@ const initSchema = async () => {
             DEFINE FIELD expires_at ON TABLE connection_workspace TYPE datetime;
             
             DEFINE INDEX idx_workspace_conn ON TABLE connection_workspace COLUMNS connection_id, user UNIQUE;
+        `);
+
+        // Knowledge Base for RAG
+        await db.query(`
+            DEFINE TABLE knowledge_chunk SCHEMAFULL;
+            DEFINE FIELD content ON TABLE knowledge_chunk TYPE string;
+            DEFINE FIELD embedding ON TABLE knowledge_chunk TYPE array<number>;
+            DEFINE FIELD metadata ON TABLE knowledge_chunk TYPE object;
+            DEFINE FIELD user ON TABLE knowledge_chunk TYPE record<user>;
+            DEFINE FIELD created_at ON TABLE knowledge_chunk TYPE datetime DEFAULT time::now();
+
+            -- Vector Index for Semantic Search (MTREE)
+            -- Note: We use 1536 as a safe default for OpenAI, 
+            -- Gemini (768) will still work but might be less efficient with 1536 padding.
+            DEFINE INDEX idx_vector ON TABLE knowledge_chunk FIELDS embedding MTREE DIMENSION 1536;
+
+            -- Full-Text Index for Keyword Search
+            DEFINE ANALYZER rag_analyzer TOKENIZERS blank,class,camel,punct FILTERS lowercase,ascii;
+            DEFINE INDEX idx_content ON TABLE knowledge_chunk FIELDS content SEARCH ANALYZER rag_analyzer BM25;
         `);
 
         console.log('[SurrealDB] Schema initialized');

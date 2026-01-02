@@ -233,8 +233,26 @@ EXAMPLES:
    User: "How many employees are from California?"
    SELECT * FROM employees WHERE state = 'California' LIMIT 100
 `
+    }
 
-    } else if (dialect === 'surrealdb') {
+    // Add Knowledge Base (RAG) Context
+    if (context.semanticContext && context.semanticContext.knowledgeBase) {
+      const kb = context.semanticContext.knowledgeBase;
+      schemaPresentation += `\n\nKNOWLEDGE BASE (Prioritize this for factual context and documentation):\n`;
+      kb.forEach((item, i) => {
+        schemaPresentation += `[Source ${i + 1}: ${item.source}${item.tableName ? ` table ${item.tableName}` : ''}]\n${item.content}\n\n`;
+      });
+
+      formatInstructions += `
+GROUNDING & CITATION RULES:
+1. If the KNOWLEDGE BASE contains relevant information, use it as your PRIMARY source of truth for facts about the system, product, or procedures.
+2. Cite your sources using the [Source X] format whenever you use information from a specific chunk.
+3. If the answer is NOT present in the provided context or database schema, clearly state that you do not know the answer. DO NOT hallucinate or make up facts.
+4. Use the knowledge base to resolve ambiguities in the user's request if possible.
+`;
+    }
+
+    if (dialect === 'surrealdb') {
       if (schema.detailedSchema) {
         schemaPresentation = `\nDatabase Schema:\n`
         Object.entries(schema.detailedSchema).forEach(([table, columns]) => {

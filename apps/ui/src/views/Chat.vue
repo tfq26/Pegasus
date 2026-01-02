@@ -236,62 +236,18 @@ const handleSelectConnection = async (id: string | null) => {
         return
     }
     
-    // Check if we have unsaved work in current temp workspace
-    if (workspaceStore.isTempWorkspace && workspaceStore.hasUnsavedWork) {
-        // Smart handling: Can we auto-migrate?
-        // Check if any tabs are referencing a connection OTHER than the one selected
-        const referencedConnIds = new Set<string>()
-        if (Array.isArray(workspaceTabs.value)) {
-            workspaceTabs.value.forEach((tab: any) => {
-                const tabConnId = tab.data?.connection?.id || tab.data?.connectionId
-                if (tabConnId) referencedConnIds.add(String(tabConnId))
-            })
-        }
-
-        // Safe if no tabs have connection info, or all tabs match the target connection 'id'
-        const isSafe = referencedConnIds.size === 0 || 
-                      (referencedConnIds.size === 1 && referencedConnIds.has(String(id)))
-
-        if (isSafe) {
-            console.log('[Chat] Smarter assignment: Auto-migrating tabs to connection', id)
-            const success = await workspaceStore.migrateUnsavedTabs(id)
-            if (success) {
-                 await _selectConnection(id)
-                 toast.success('Tabs assigned to connection')
-                 return
-            }
-        }
-
-        // Show dialog if multiple connections referenced or migration fails
-        pendingConnectionId.value = id
-        unsavedDialogVisible.value = true
-        return
-    }
-    
-    // Normal switch
+    // Seamless switch: auto-save current workspace and load the new one
+    await workspaceStore.switchConnection(id)
     await _selectConnection(id)
-    await workspaceStore.loadWorkspace(id)
 }
 
+// Deprecated: No longer needed with connection-scoped tabs
 const handleMigrate = async () => {
-    if (pendingConnectionId.value) {
-        const success = await workspaceStore.migrateUnsavedTabs(pendingConnectionId.value)
-        if (success) {
-             await _selectConnection(pendingConnectionId.value)
-             unsavedDialogVisible.value = false
-             pendingConnectionId.value = null
-             toast.success('Workspace migrated')
-        }
-    }
+    console.warn('[Chat] handleMigrate is deprecated')
 }
 
 const handleDiscard = async () => {
-    if (pendingConnectionId.value) {
-        await _selectConnection(pendingConnectionId.value)
-        await workspaceStore.loadWorkspace(pendingConnectionId.value)
-        unsavedDialogVisible.value = false
-        pendingConnectionId.value = null
-    }
+    console.warn('[Chat] handleDiscard is deprecated')
 }
 
 

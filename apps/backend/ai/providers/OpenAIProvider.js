@@ -18,6 +18,17 @@ export class OpenAIProvider extends AIProvider {
             max_tokens: options.maxTokens || 2000
         }
 
+        if (options.tools) {
+            requestBody.tools = options.tools.map(t => ({
+                type: 'function',
+                function: {
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.parameters
+                }
+            }))
+        }
+
         if (options.json) {
             requestBody.response_format = { type: 'json_object' }
         }
@@ -38,11 +49,14 @@ export class OpenAIProvider extends AIProvider {
             }
 
             const data = await response.json()
-            const text = data.choices[0]?.message?.content || ''
+            const message = data.choices[0]?.message || {}
+            const text = message.content || ''
+            const toolCalls = message.tool_calls
             const usage = data.usage
 
             return {
                 text,
+                toolCalls,
                 usage: {
                     promptTokens: usage?.prompt_tokens || 0,
                     candidatesTokens: usage?.completion_tokens || 0,
@@ -118,5 +132,34 @@ export class OpenAIProvider extends AIProvider {
             'gpt-4': 8192
         }
         return windows[id] || 8192
+    }
+
+    async embed(text, options = {}) {
+        const model = options.model || 'text-embedding-3-small'
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/embeddings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.config.apiKey}`
+                },
+                body: JSON.stringify({
+                    input: text,
+                    model: model
+                })
+            })
+
+            if (!response.ok) {
+                const error = await response.json()
+                throw new Error(`OpenAI Embedding Error: ${error.error?.message || response.statusText}`)
+            }
+
+            const data = await response.json()
+            return data.data[0].embedding
+        } catch (e) {
+            console.error('[OpenAI] Embedding failed:', e)
+            throw e
+        }
     }
 }

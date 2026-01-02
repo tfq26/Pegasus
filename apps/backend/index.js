@@ -59,6 +59,9 @@ app.route('/workspace', workspaceRoutes)
 app.route('/stocks', stockRoutes)
 app.route('/provision', provisionRoutes)
 app.route('/api/docs', docsRoutes)
+app.route('/rag', ragRoutes)
+app.route('/agent', agentRoutes)
+app.route('/weather', weatherRoutes)
 
 
 
@@ -70,7 +73,14 @@ import { sign, verify } from "hono/jwt"
 import { db, connectDB } from "./db/surreal.js"
 // Initialize DB Connection
 const port = process.env.PORT || 3000;
+import { stockService } from "./src/services/StockService.js"
+import { weatherService } from "./src/routes/weather.js"
 await connectDB();
+console.log('[Main] Database connected. Starting background services...');
+
+// Start background services after DB is ready
+stockService.start();
+weatherService.start();
 import { dashboardRoutes } from "./src/routes/dashboard.js"
 import { connectionRoutes } from "./src/routes/connection.js"
 import { tableRoutes } from "./src/routes/table.js"
@@ -80,6 +90,9 @@ import { workspaceRoutes } from "./src/routes/workspace.js"
 import { stockRoutes } from "./src/routes/stock.js"
 import { provisionRoutes } from "./src/routes/provision.js"
 import docsRoutes from "./src/routes/docs.js"
+import { ragRoutes } from "./src/routes/rag.js"
+import { agentRoutes } from "./src/routes/agent.js"
+import { weatherRoutes } from "./src/routes/weather.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"
@@ -98,6 +111,8 @@ import {
   grantExperimentalAccess,
   toggleUserFeature
 } from "./experimental-features.js"
+import { notifyExperimentalRequest } from "./src/services/emailService.js"
+import { RAGService } from "./src/services/ragService.js"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder")
 
@@ -320,6 +335,27 @@ app.post("/upload", async (c) => {
 
 
       createdTables.push(baseTableId);
+    }
+
+    // --- C. Auto-Index for RAG (Experimental) ---
+    if (userId) {
+      try {
+        const enabledFeatures = await getUserFeatureFlags(db, userId);
+        if (enabledFeatures.includes('rag-pipeline')) {
+          console.log(`[RAG] Auto-indexing ${createdTables.length} tables for user ${userId}...`);
+          // Background task
+          (async () => {
+            for (const [rawTableName, rows] of Object.entries(data)) {
+              if (!rows || rows.length === 0) continue;
+              const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+              const sourceId = `upload_${uploadUuid}_${safeTableName}`;
+              await RAGService.indexTableData(rows, rawTableName, sourceId, userId);
+            }
+          })().catch(err => console.error('[RAG] Auto-indexing failed:', err));
+        }
+      } catch (err) {
+        console.error('[RAG] Auto-indexing feature check failed:', err);
+      }
     }
 
     return c.json({
@@ -586,7 +622,7 @@ app.get("/api/experimental/status", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
-    const status = await getExperimentalStatus(db, payload.sub)
+    const status = await getExperimentalStatus(db, payload.sub, payload)
     return c.json(status)
   } catch (error) {
     console.error("Error getting experimental status:", error)
@@ -608,6 +644,18 @@ app.post("/api/experimental/request", async (c) => {
     }
 
     const result = await createExperimentalRequest(db, payload.sub, reason, email)
+
+    // Send email notification to admin
+    const userName = payload.firstName
+      ? `${payload.firstName} ${payload.lastName || ''}`.trim()
+      : payload.email;
+
+    await notifyExperimentalRequest({
+      userEmail: email || payload.email,
+      userName,
+      reason
+    });
+
     return c.json(result)
   } catch (error) {
     console.error("Error creating experimental request:", error)
@@ -622,7 +670,7 @@ app.get("/api/experimental/features", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
-    const status = await getExperimentalStatus(db, payload.sub)
+    const status = await getExperimentalStatus(db, payload.sub, payload)
 
     if (!status.hasAccess) {
       return c.json({ error: "No experimental access" }, 403)
@@ -648,7 +696,7 @@ app.post("/api/experimental/features/:featureId/toggle", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
-    const status = await getExperimentalStatus(db, payload.sub)
+    const status = await getExperimentalStatus(db, payload.sub, payload)
 
     if (!status.hasAccess) {
       return c.json({ error: "No experimental access" }, 403)
@@ -670,20 +718,122 @@ app.post("/api/experimental/features/:featureId/toggle", async (c) => {
   }
 })
 
-// Admin: Grant experimental access
-app.post("/api/experimental/admin/grant", async (c) => {
+// Helper: Check if user is admin (matches DEVELOPER_EMAIL)
+const isAdminUser = (payload) => {
+  const adminEmail = process.env.DEVELOPER_EMAIL;
+  if (!adminEmail) {
+    console.warn('[Admin] DEVELOPER_EMAIL not set, no admin access available');
+    return false;
+  }
+  return payload.email === adminEmail;
+};
+
+// Admin: Check if current user is admin
+app.get("/api/admin/check", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ isAdmin: false }, 200)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    return c.json({ isAdmin: isAdminUser(payload) })
+  } catch (error) {
+    return c.json({ isAdmin: false })
+  }
+})
+
+// Admin: List pending experimental access requests
+app.get("/api/admin/experimental/requests", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+
+    if (!isAdminUser(payload)) {
+      return c.json({ error: "Admin access required" }, 403)
+    }
+
+    // Fetch all pending requests with user info
+    const [requests] = await db.query(`
+      SELECT 
+        id,
+        user,
+        reason,
+        email,
+        status,
+        requested_at
+      FROM experimental_request 
+      WHERE status = 'pending'
+      ORDER BY requested_at DESC
+    `);
+
+    return c.json({ requests: requests || [] })
+  } catch (error) {
+    console.error("Error fetching experimental requests:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Admin: Grant experimental access to a user
+app.post("/api/admin/experimental/grant", async (c) => {
   const token = getCookie(c, "session")
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
     const adminPayload = await verify(token, jwtSecret)
-    // TODO: Add admin role check here
+
+    if (!isAdminUser(adminPayload)) {
+      return c.json({ error: "Admin access required" }, 403)
+    }
 
     const { userId } = await c.req.json()
+
+    if (!userId) {
+      return c.json({ error: "userId is required" }, 400)
+    }
+
     const result = await grantExperimentalAccess(db, userId, adminPayload.sub)
-    return c.json(result)
+    return c.json({ success: true, ...result })
   } catch (error) {
     console.error("Error granting experimental access:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Admin: Reject experimental access request
+app.post("/api/admin/experimental/reject", async (c) => {
+  const token = getCookie(c, "session")
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const adminPayload = await verify(token, jwtSecret)
+
+    if (!isAdminUser(adminPayload)) {
+      return c.json({ error: "Admin access required" }, 403)
+    }
+
+    const { requestId, reason } = await c.req.json()
+
+    if (!requestId) {
+      return c.json({ error: "requestId is required" }, 400)
+    }
+
+    // Update request status to rejected
+    await db.query(`
+      UPDATE $requestId SET 
+        status = 'rejected',
+        rejection_reason = $reason,
+        reviewed_at = time::now(),
+        reviewed_by = $reviewedBy
+    `, {
+      requestId,
+      reason: reason || 'No reason provided',
+      reviewedBy: adminPayload.sub
+    });
+
+    return c.json({ success: true })
+  } catch (error) {
+    console.error("Error rejecting experimental request:", error)
     return c.json({ error: error.message }, 500)
   }
 })

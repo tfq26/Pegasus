@@ -7,6 +7,7 @@ export interface Tab {
   id: string;
   label: string;
   type: 'chat' | 'query' | 'table';
+  isDirty?: boolean;
   data?: {
       tableName?: string;
       connection?: any;
@@ -85,6 +86,13 @@ const addTab = (type: Tab['type']) => {
         <Database v-else-if="tab.type === 'query'" class="w-3 h-3 opacity-70" />
         
         <span class="truncate font-medium">{{ tab.label }}</span>
+        
+        <!-- Minimal dirty indicator (small dot) -->
+        <span 
+          v-if="tab.isDirty" 
+          class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+          title="Unsaved changes"
+        ></span>
         
         <!-- Close Button (visible on hover or active) -->
         <button 

@@ -16,7 +16,8 @@ import {
   Search, 
   Server, 
   Upload,
-  Link2
+  Link2,
+  CheckCircle2
 } from 'lucide-vue-next'
 
 import { 
@@ -59,6 +60,7 @@ const emit = defineEmits<{
   'update:open': [value: boolean]
   'save': []
   'update': []
+  'upload-success': []
 }>()
 
 const importKustoCreds = async () => {
@@ -249,6 +251,7 @@ const processFile = async (file: File) => {
       if (!props.connectionForm.nickname) {
         props.connectionForm.nickname = file.name.split('.')[0] ?? 'Untitled'
       }
+      emit('upload-success')
     } else {
       tempError.value = (result.error as string) || 'Upload failed'
     }
@@ -607,79 +610,93 @@ const processFile = async (file: File) => {
 
         <!-- SurrealDB -->
         <div v-else-if="props.connectionForm.provider === 'surrealdb'" class="space-y-4">
-          <!-- Provisioning CTA -->
-          <div 
-            @click="showProvisionModal = true"
-            class="p-4 bg-gradient-to-r from-violet-600/10 to-indigo-600/10 border border-violet-500/20 rounded-xl cursor-pointer hover:from-violet-600/20 hover:to-indigo-600/20 transition-all group"
-          >
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="p-2 bg-violet-600 rounded-lg shadow-lg shadow-violet-500/20 group-hover:scale-110 transition-transform">
-                  <Sparkles class="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h4 class="text-xs font-bold">Don't have an instance?</h4>
-                  <p class="text-[10px] text-muted-foreground">Provision a managed SurrealDB instance in one click.</p>
+          <!-- Managed File Info -->
+          <div v-if="props.connectionForm.surrealdb.uploadId" class="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 flex items-center gap-3">
+            <div class="p-2 rounded-lg bg-emerald-500/10">
+               <CheckCircle2 class="w-4 h-4 text-emerald-500" />
+            </div>
+            <div>
+              <p class="text-xs font-bold text-emerald-500 uppercase tracking-tight">Managed Data Source</p>
+              <p class="text-[10px] text-muted-foreground">This file is indexed in the internal SurrealDB engine for RAG and semantic search.</p>
+            </div>
+          </div>
+
+          <!-- Technical Connection Fields (Hidden for managed files) -->
+          <div v-if="!props.connectionForm.surrealdb.uploadId" class="space-y-4">
+              <!-- Provisioning CTA -->
+              <div 
+                @click="showProvisionModal = true"
+                class="p-4 bg-gradient-to-r from-violet-600/10 to-indigo-600/10 border border-violet-500/20 rounded-xl cursor-pointer hover:from-violet-600/20 hover:to-indigo-600/20 transition-all group"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="p-2 bg-violet-600 rounded-lg shadow-lg shadow-violet-500/20 group-hover:scale-110 transition-transform">
+                      <Sparkles class="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <h4 class="text-xs font-bold">Don't have an instance?</h4>
+                      <p class="text-[10px] text-muted-foreground">Provision a managed SurrealDB instance in one click.</p>
+                    </div>
+                  </div>
+                  <button class="text-[10px] font-bold uppercase tracking-widest text-violet-500 bg-violet-500/10 px-3 py-1.5 rounded-lg hover:bg-violet-500 hover:text-white transition-colors">
+                    Provision Now
+                  </button>
                 </div>
               </div>
-              <button class="text-[10px] font-bold uppercase tracking-widest text-violet-500 bg-violet-500/10 px-3 py-1.5 rounded-lg hover:bg-violet-500 hover:text-white transition-colors">
-                Provision Now
-              </button>
-            </div>
-          </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Protocol</label>
-              <Select v-model="props.connectionForm.surrealdb.protocol">
-                <SelectTrigger class="w-full rounded-lg border-input bg-background h-[38px]">
-                  <SelectValue placeholder="Protocol" />
-                </SelectTrigger>
-                <SelectContent class="bg-popover border-border">
-                  <SelectItem value="ws">ws</SelectItem>
-                  <SelectItem value="wss">wss</SelectItem>
-                  <SelectItem value="http">http</SelectItem>
-                  <SelectItem value="https">https</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">URL (Optional - Overrides Host/Port)</label>
-              <input v-model="props.connectionForm.surrealdb.url" placeholder="ws://localhost:8000/rpc" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" />
-            </div>
-          </div>
+              <div class="grid gap-4 md:grid-cols-2">
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Protocol</label>
+                  <Select v-model="props.connectionForm.surrealdb.protocol">
+                    <SelectTrigger class="w-full rounded-lg border-input bg-background h-[38px]">
+                      <SelectValue placeholder="Protocol" />
+                    </SelectTrigger>
+                    <SelectContent class="bg-popover border-border">
+                      <SelectItem value="ws">ws</SelectItem>
+                      <SelectItem value="wss">wss</SelectItem>
+                      <SelectItem value="http">http</SelectItem>
+                      <SelectItem value="https">https</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">URL (Optional - Overrides Host/Port)</label>
+                  <input v-model="props.connectionForm.surrealdb.url" placeholder="ws://localhost:8000/rpc" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" />
+                </div>
+              </div>
 
-          <div class="grid gap-4 md:grid-cols-3">
-            <div class="space-y-1.5 md:col-span-2">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
-              <input v-model="props.connectionForm.surrealdb.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
-            </div>
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
-              <input v-model.number="props.connectionForm.surrealdb.port" type="number" placeholder="8000" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
-            </div>
-          </div>
+              <div class="grid gap-4 md:grid-cols-3">
+                <div class="space-y-1.5 md:col-span-2">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
+                  <input v-model="props.connectionForm.surrealdb.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
+                  <input v-model.number="props.connectionForm.surrealdb.port" type="number" placeholder="8000" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+                </div>
+              </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Namespace</label>
-              <input v-model="props.connectionForm.surrealdb.namespace" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
-            </div>
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
-              <input v-model="props.connectionForm.surrealdb.database" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
-            </div>
-          </div>
+              <div class="grid gap-4 md:grid-cols-2">
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Namespace</label>
+                  <input v-model="props.connectionForm.surrealdb.namespace" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
+                  <input v-model="props.connectionForm.surrealdb.database" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+                </div>
+              </div>
 
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Username</label>
-              <input v-model="props.connectionForm.surrealdb.username" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
-            </div>
-            <div class="space-y-1.5">
-              <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
-              <input v-model="props.connectionForm.surrealdb.password" type="password" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
-            </div>
+              <div class="grid gap-4 md:grid-cols-2">
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Username</label>
+                  <input v-model="props.connectionForm.surrealdb.username" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+                </div>
+                <div class="space-y-1.5">
+                  <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
+                  <input v-model="props.connectionForm.surrealdb.password" type="password" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
+                </div>
+              </div>
           </div>
         </div>
 

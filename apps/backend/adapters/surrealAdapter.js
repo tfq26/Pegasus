@@ -5,13 +5,17 @@ import { Surreal } from 'surrealdb';
 export class SurrealAdapter extends DatabaseAdapter {
     constructor(connection) {
         super(connection);
-        this.isInternal = !connection?.url && !connection?.host; // If no URL/host, assume internal DB
+        // Robust check: it's internal if it has an uploadId OR if it's missing both URL and Host
+        this.isInternal = !!connection?.uploadId || (!connection?.url && !connection?.host);
+
+        console.log(`[SurrealDB] Creating adapter. isInternal: ${this.isInternal}, uploadId: ${connection?.uploadId}, host: ${connection?.host}`);
+
         this.db = this.isInternal ? globalDb : new Surreal();
     }
 
     async connect() {
         if (this.isInternal) {
-            // Global DB is already connected by index.js
+            console.log('[SurrealDB] Using managed internal connection');
             return;
         }
 

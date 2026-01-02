@@ -41,11 +41,23 @@ export class GeminiProvider extends AIProvider {
             generationConfig.responseMimeType = "application/json"
         }
 
+        let tools = undefined
+        if (options.tools) {
+            tools = [{
+                functionDeclarations: options.tools.map(t => ({
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.parameters
+                }))
+            }]
+        }
+
         // Initialize model with specific system instruction for this request
         const modelId = options.model || this.config.model || "gemini-2.5-flash"
         const model = this.genAI.getGenerativeModel({
             model: modelId,
-            systemInstruction: systemInstruction
+            systemInstruction: systemInstruction,
+            tools: tools
         })
 
         try {
@@ -59,8 +71,19 @@ export class GeminiProvider extends AIProvider {
                 const text = response.text()
                 const usage = response.usageMetadata
 
+                const functionCalls = response.candidates?.[0]?.content?.parts
+                    ?.filter(p => p.functionCall)
+                    ?.map(p => ({
+                        id: `call_${crypto.randomUUID().replace(/-/g, '')}`,
+                        function: {
+                            name: p.functionCall.name,
+                            arguments: JSON.stringify(p.functionCall.args)
+                        }
+                    }));
+
                 return {
                     text,
+                    toolCalls: functionCalls,
                     usage: {
                         promptTokens: usage?.promptTokenCount || 0,
                         candidatesTokens: usage?.candidatesTokenCount || 0,
@@ -79,13 +102,19 @@ export class GeminiProvider extends AIProvider {
                 const text = response.text()
                 const usage = response.usageMetadata
 
-                // Return object with text and usage if available, or just text if legacy caller expects string
-                // For now, let's attach usage to the string object or change return type
-                // To avoid breaking changes, let's return an object but we need to update AIClient to handle it
-                // OR we can return a custom object that toString() returns text
+                const functionCalls = response.candidates?.[0]?.content?.parts
+                    ?.filter(p => p.functionCall)
+                    ?.map(p => ({
+                        id: `call_${crypto.randomUUID().replace(/-/g, '')}`,
+                        function: {
+                            name: p.functionCall.name,
+                            arguments: JSON.stringify(p.functionCall.args)
+                        }
+                    }));
 
                 return {
                     text,
+                    toolCalls: functionCalls,
                     usage: {
                         promptTokens: usage?.promptTokenCount || 0,
                         candidatesTokens: usage?.candidatesTokenCount || 0,
@@ -100,42 +129,34 @@ export class GeminiProvider extends AIProvider {
     }
 
     async listModels() {
+        const relevantModels = [
+            'gemini-2.0-flash-exp',
+            'gemini-1.5-pro',
+            'gemini-1.5-flash',
+            'gemini-1.0-pro'
+        ]
+
+        return relevantModels.map(id => ({
+            id: id,
+            name: id === 'gemini-2.0-flash-exp' ? 'Gemini 2.0 Flash' :
+                id === 'gemini-1.5-pro' ? 'Gemini 1.5 Pro' :
+                    id === 'gemini-1.5-flash' ? 'Gemini 1.5 Flash' : 'Gemini 1.0 Pro',
+            provider: 'gemini',
+            description: 'Google Generative AI model',
+            contextWindow: id.includes('1.5') ? 1000000 : 32768
+        }))
+    }
+
+    async embed(text, options = {}) {
+        const modelId = options.model || "text-embedding-004"
+        const model = this.genAI.getGenerativeModel({ model: modelId })
+
         try {
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models?key=${this.config.apiKey}`
-            )
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-            }
-
-            const data = await response.json()
-
-            // Only show models relevant for SQL generation and data analysis
-            const relevantModels = [
-                'gemini-2.5-pro',
-                'gemini-2.5-flash',
-            ]
-
-            if (data.models) {
-                return data.models
-                    .filter(m => {
-                        const modelId = m.name.replace('models/', '')
-                        return m.supportedGenerationMethods?.includes('generateContent') &&
-                            relevantModels.includes(modelId)
-                    })
-                    .map(m => ({
-                        id: m.name.replace('models/', ''),
-                        name: m.displayName,
-                        description: m.description,
-                        contextWindow: m.inputTokenLimit,
-                        provider: 'gemini'
-                    }))
-            }
-            return []
-        } catch (error) {
-            console.error('Error listing models:', error)
-            return []
+            const result = await model.embedContent(text)
+            return result.embedding.values
+        } catch (e) {
+            console.error("[Gemini] Embedding failed:", e)
+            throw e
         }
     }
 }

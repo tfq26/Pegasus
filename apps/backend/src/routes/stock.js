@@ -7,9 +7,6 @@ import { stockService } from "../services/StockService.js"
 const stocks = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 
-// Start the service if not running
-stockService.start();
-
 stocks.get("/", async (c) => {
     try {
         const [results] = await db.query("SELECT * FROM stock ORDER BY symbol ASC");
@@ -21,8 +18,9 @@ stocks.get("/", async (c) => {
 
 stocks.get("/:symbol", async (c) => {
     const symbol = c.req.param("symbol");
+    const safeId = symbol.replace(/\./g, '_');
     try {
-        const [results] = await db.query(`SELECT * FROM stock:${symbol}`);
+        const [results] = await db.query(`SELECT * FROM stock:${safeId}`);
         if (!results || results.length === 0) return c.json({ error: "Stock not found" }, 404);
         return c.json(results[0]);
     } catch (e) {
@@ -38,7 +36,8 @@ stocks.post("/buy", async (c) => {
         const payload = await verify(token, jwtSecret)
         const { symbol, quantity } = await c.req.json()
         const userId = `user:${payload.sub}`
-        const stockId = `stock:${symbol}`
+        const symbolSafe = symbol.replace(/\./g, '_')
+        const stockId = `stock:${symbolSafe}`
 
         // Check if stock exists
         const [stock] = await db.query(`SELECT price FROM ${stockId}`);

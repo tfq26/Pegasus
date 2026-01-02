@@ -63,8 +63,8 @@ const emit = defineEmits<{
       >
         <Sparkles v-if="props.aiMode" class="w-3.5 h-3.5" />
         <FunctionSquare v-else class="w-3.5 h-3.5" />
-        <span v-if="props.aiMode">AI Mode</span>
-        <span v-else>Formula</span>
+        <span v-if="props.aiMode" class="hidden md:inline">AI Mode</span>
+        <span v-else class="hidden md:inline">Formula</span>
       </button>
     </div>
 
@@ -175,7 +175,7 @@ const emit = defineEmits<{
             title="Create Visualization"
         >
             <BarChart class="w-3.5 h-3.5" />
-            <span>Visualize</span>
+            <span class="hidden md:inline">Visualize</span>
         </button>
 
         <button
@@ -184,7 +184,7 @@ const emit = defineEmits<{
             title="Sanitize Data"
         >
             <Sparkles class="w-3.5 h-3.5" />
-            <span>Sanitize</span>
+            <span class="hidden md:inline">Sanitize</span>
         </button>
     </div>
 
@@ -208,7 +208,7 @@ const emit = defineEmits<{
             >
                 <Lock v-if="privateMode" class="w-3.5 h-3.5" />
                 <Users v-else class="w-3.5 h-3.5" />
-                <span>{{ privateMode ? 'Private' : 'Live' }}</span>
+                <span class="hidden md:inline">{{ privateMode ? 'Private' : 'Live' }}</span>
             </label>
         </div>
     </div>
@@ -221,7 +221,7 @@ const emit = defineEmits<{
             title="Merge changes to live dashboard"
             >
             <GitMerge class="w-3.5 h-3.5" />
-            Merge
+            <span class="hidden md:inline">Merge</span>
             </button>
     </div>
 
