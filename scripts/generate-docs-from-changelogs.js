@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 const CHANGELOGS_DIR = join(__dirname, '../apps/ui/public/changelogs')
-const DOCS_DIR = join(__dirname, '../apps/ui/public/docs')
+const DOCS_DIR = join(__dirname, '../apps/ui/public/_docs')
 const RELEASES_DIR = join(DOCS_DIR, 'releases')
 
 async function generateDocsFromChangelogs() {

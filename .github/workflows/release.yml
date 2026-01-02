@@ -37,9 +37,19 @@ jobs:
       - name: Update Releases Index
         run: bun run changelog:generate
 
+      - name: Sync to Neon
+        run: bun run docs:migrate
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Generate Static Docs
+        run: cd apps/backend && node scripts/generate-static-docs.js
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
       - name: Commit & Tag
         run: |
-          git add apps/ui/public/changelogs apps/ui/public/releases.json
+          git add apps/ui/public/changelogs apps/ui/public/_docs apps/ui/public/releases.json
           git commit -m "chore(release): v${{ inputs.version }}"
           git tag -f v${{ inputs.version }}
           git push origin main

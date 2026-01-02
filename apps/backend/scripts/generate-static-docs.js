@@ -5,9 +5,9 @@
  * that can be deployed with the frontend for standalone deployment.
  * 
  * Output structure:
- * - ui/public/docs/index.json - List of all guides and releases
- * - ui/public/docs/guides/{slug}.json - Individual guide content
- * - ui/public/docs/releases/{version}.json - Individual release content
+ * - ui/public/_docs/index.json - List of all guides and releases
+ * - ui/public/_docs/guides/{slug}.json - Individual guide content
+ * - ui/public/_docs/releases/{version}.json - Individual release content
  */
 
 import fs from 'fs'
@@ -32,7 +32,7 @@ if (fs.existsSync(envPath)) {
 }
 
 // Output directory in the UI public folder
-const DOCS_OUTPUT_DIR = path.join(__dirname, '../../ui/public/docs')
+const DOCS_OUTPUT_DIR = path.join(__dirname, '../../ui/public/_docs')
 const GUIDES_DIR = path.join(DOCS_OUTPUT_DIR, 'guides')
 const RELEASES_DIR = path.join(DOCS_OUTPUT_DIR, 'releases')
 

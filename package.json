@@ -28,7 +28,8 @@
     "start:all": "bun run-apps.js --all",
     "desktop:dev": "cd apps/desktop && bun run tauri:dev",
     "desktop:build": "cd apps/desktop && bun run tauri:build",
-    "changelog:generate": "node scripts/generate-releases-index.js"
+    "changelog:generate": "node scripts/generate-releases-index.js",
+    "docs:migrate": "cd apps/backend && node scripts/migrate-docs.js"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
