@@ -24,6 +24,9 @@ stocks.post("/refresh", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
+    console.log('[Stocks API] Refresh request received');
+    console.log('[Stocks API] ALPHAVANTAGE_KEY present:', !!process.env.ALPHAVANTAGE_KEY);
+
     if (!process.env.ALPHAVANTAGE_KEY) {
         return c.json({ error: "Alpha Vantage API key not configured on server" }, 400)
     }
@@ -52,18 +55,121 @@ stocks.get("/portfolio", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = `user:${payload.sub}`
 
-        // Query graph relations and fetch stock data in one go
-        const [results] = await db.query(`
-            SELECT 
-                quantity,
-                buy_price,
-                created_at,
-                ->owns->stock.* as stock_data
-            FROM ${userId}->owns
-            ORDER BY created_at DESC
-        `);
+        // 1. Get all transactions for this user
+        const [transactions] = await db.query(`
+            SELECT * FROM stock_transaction 
+            WHERE user = $user 
+            ORDER BY date ASC
+        `, { user: userId });
 
-        return c.json({ portfolio: results });
+        // 2. Fetch all unique stocks involved to get current prices
+        const symbols = [...new Set(transactions.map(t => t.symbol))];
+        const [currentStocks] = await db.query(`SELECT * FROM stock WHERE symbol IN $symbols`, { symbols });
+        const stockMap = currentStocks.reduce((map, s) => {
+            map[s.symbol] = s;
+            return map;
+        }, {});
+
+        // 3. Process transactions to get current holdings and realized gains
+        const holdings = {};
+        let totalRealizedGain = 0;
+        let totalInvested = 0;
+
+        for (const t of transactions) {
+            if (!holdings[t.symbol]) {
+                holdings[t.symbol] = {
+                    symbol: t.symbol,
+                    name: t.name || t.symbol,
+                    quantity: 0,
+                    totalCost: 0,
+                    avgBuyPrice: 0,
+                    history: []
+                };
+            }
+
+            if (t.type === 'BUY') {
+                holdings[t.symbol].quantity += t.quantity;
+                holdings[t.symbol].totalCost += (t.quantity * t.price);
+                holdings[t.symbol].avgBuyPrice = holdings[t.symbol].totalCost / holdings[t.symbol].quantity;
+                totalInvested += (t.quantity * t.price);
+            } else if (t.type === 'SELL') {
+                const profitPerShare = t.price - holdings[t.symbol].avgBuyPrice;
+                totalRealizedGain += (profitPerShare * t.quantity);
+                holdings[t.symbol].quantity -= t.quantity;
+                holdings[t.symbol].totalCost -= (t.quantity * holdings[t.symbol].avgBuyPrice);
+                totalInvested -= (t.quantity * holdings[t.symbol].avgBuyPrice);
+            }
+        }
+
+        // 4. Calculate unrealized gains and filter out zero holdings
+        const activeHoldings = Object.values(holdings).filter(h => h.quantity > 0).map(h => {
+            const currentPrice = stockMap[h.symbol]?.price || h.avgBuyPrice;
+            const marketValue = h.quantity * currentPrice;
+            const unrealizedGain = marketValue - h.totalCost;
+            const gainPercent = (unrealizedGain / h.totalCost) * 100;
+
+            return {
+                ...h,
+                currentPrice,
+                marketValue,
+                unrealizedGain,
+                gainPercent,
+                stock_data: stockMap[h.symbol]
+            };
+        });
+
+        // 5. Aggregate metrics
+        const totalMarketValue = activeHoldings.reduce((sum, h) => sum + h.marketValue, 0);
+        const totalUnrealizedGain = activeHoldings.reduce((sum, h) => sum + h.unrealizedGain, 0);
+
+        const sortedPerformance = [...activeHoldings].sort((a, b) => b.gainPercent - a.gainPercent);
+        const bestPerformer = sortedPerformance[0] || null;
+        const worstPerformer = sortedPerformance[sortedPerformance.length - 1] || null;
+
+        return c.json({
+            portfolio: activeHoldings,
+            metrics: {
+                totalMarketValue,
+                totalInvested,
+                totalUnrealizedGain,
+                totalRealizedGain,
+                bestPerformer,
+                worstPerformer
+            }
+        });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
+stocks.get("/history/:symbol", async (c) => {
+    const symbol = c.req.param("symbol");
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        // Find stock current price
+        const safeId = symbol.replace(/\./g, '_');
+        const [results] = await db.query(`SELECT price FROM stock:${safeId}`);
+        if (!results || results.length === 0) return c.json({ error: "Stock not found" }, 404);
+
+        const currentPrice = results[0].price;
+        const history = [];
+        const now = new Date();
+
+        // Generate simulated 30-day history based on current price
+        for (let i = 30; i >= 0; i--) {
+            const date = new Date(now);
+            date.setDate(now.getDate() - i);
+            // Random walk back from current price
+            const noise = (Math.random() - 0.5) * (currentPrice * 0.05);
+            history.push({
+                date: date.toISOString().split('T')[0],
+                price: currentPrice - (noise * (30 - i) / 30)
+            });
+        }
+
+        return c.json({ history });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -81,36 +187,41 @@ stocks.get("/:symbol", async (c) => {
     }
 });
 
-stocks.post("/buy", async (c) => {
+stocks.post("/transaction", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
         const payload = await verify(token, jwtSecret)
-        const { symbol, quantity } = await c.req.json()
+        const { symbol, quantity, price, type, date } = await c.req.json()
         const userId = `user:${payload.sub}`
-        const symbolSafe = symbol.replace(/\./g, '_')
-        const stockId = `stock:${symbolSafe}`
 
-        // Check if stock exists
-        const [stock] = await db.query(`SELECT price FROM ${stockId}`);
-        if (!stock || stock.length === 0) return c.json({ error: "Stock not found" }, 404);
+        const [stock] = await db.query(`SELECT name FROM stock WHERE symbol = $symbol`, { symbol });
+        const stockName = stock[0]?.name || symbol;
 
-        const buyPrice = stock[0].price;
-
-        // Use Graph Relation: user -> owns -> stock
-        await db.query(`
-            RELATE ${userId}->owns->${stockId} CONTENT {
+        // Record the transaction
+        const result = await db.query(`
+            CREATE stock_transaction CONTENT {
+                user: $user,
+                symbol: $symbol,
+                name: $name,
                 quantity: $quantity,
-                buy_price: $buyPrice,
+                price: $price,
+                type: $type,
+                date: $date || time::now(),
                 created_at: time::now()
             }
         `, {
+            user: userId,
+            symbol,
+            name: stockName,
             quantity,
-            buyPrice
+            price,
+            type, // BUY or SELL
+            date
         });
 
-        return c.json({ ok: true, message: `Bought ${quantity} shares of ${symbol}` });
+        return c.json({ ok: true, transaction: result[0] });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }

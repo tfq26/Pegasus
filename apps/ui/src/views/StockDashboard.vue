@@ -3,14 +3,14 @@
     <!-- Header -->
     <header class="flex items-center justify-between px-6 py-4 border-b border-border bg-card/30 backdrop-blur-md sticky top-0 z-10">
       <div class="flex items-center gap-3">
-        <div class="p-2 bg-emerald-500/10 rounded-lg">
-          <TrendingUp class="w-6 h-6 text-emerald-500" />
+        <div class="p-2 bg-primary/10 rounded-lg">
+          <BarChart3 class="w-6 h-6 text-primary" />
         </div>
         <div>
-          <h1 class="text-xl font-bold tracking-tight">Surreal Stocks</h1>
+          <h1 class="text-xl font-bold tracking-tight">Portfolio Analytics</h1>
           <p class="text-xs text-muted-foreground flex items-center gap-1">
-            <span class="inline-block w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-            Real-time SurrealDB Live Updates
+            <span class="inline-block w-2 h-2 bg-emerald-500 rounded-full"></span>
+            Live Performance Tracking
           </p>
         </div>
       </div>
@@ -19,21 +19,22 @@
         <button 
           @click="syncRealData"
           class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all text-xs font-bold uppercase tracking-wider"
-          title="Sync with real market data (Alpha Vantage)"
+          title="Sync with real market data"
           :disabled="isSyncing"
         >
           <Zap class="w-3.5 h-3.5" :class="{ 'animate-pulse text-orange-500': isSyncing }" />
-          {{ isSyncing ? 'Syncing...' : 'Sync Real Data' }}
+          {{ isSyncing ? 'Syncing...' : 'Sync Data' }}
         </button>
 
-        <div class="hidden md:flex flex-col items-end">
-          <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Portfolio Value</span>
-          <span class="text-lg font-mono font-bold">{{ formatCurrency(totalValue) }}</span>
+        <div class="hidden md:flex flex-col items-end border-l border-border pl-4">
+          <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Total Portfolio Value</span>
+          <span class="text-lg font-mono font-bold">{{ formatCurrency(metrics?.totalMarketValue || 0) }}</span>
         </div>
+        
         <button 
           @click="fetchPortfolio"
           class="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
-          title="Refresh Portfolio"
+          title="Refresh Data"
         >
           <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" />
         </button>
@@ -43,113 +44,148 @@
     <div class="flex-1 overflow-auto p-6 custom-scrollbar">
       <div class="max-w-7xl mx-auto space-y-8">
         
-        <!-- Market Overview -->
-        <section>
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-              <BarChart3 class="w-4 h-4" /> Market Live
-            </h2>
-            <div class="text-[10px] text-muted-foreground font-mono">
-              Auto-refreshing every 5s via SurrealQL simulation
+        <!-- Top Metrics -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="p-5 bg-card border border-border rounded-2xl shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invested Capital</span>
+              <Wallet class="w-4 h-4 text-muted-foreground/50" />
+            </div>
+            <div class="text-xl font-mono font-bold">{{ formatCurrency(metrics?.totalInvested || 0) }}</div>
+          </div>
+
+          <div class="p-5 bg-card border border-border rounded-2xl shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Unrealized Gain</span>
+              <div :class="[
+                'p-1 rounded bg-opacity-10',
+                (metrics?.totalUnrealizedGain || 0) >= 0 ? 'bg-emerald-500 text-emerald-500' : 'bg-rose-500 text-rose-500'
+              ]">
+                <TrendingUp v-if="(metrics?.totalUnrealizedGain || 0) >= 0" class="w-3 h-3" />
+                <TrendingDown v-else class="w-3 h-3" />
+              </div>
+            </div>
+            <div :class="['text-xl font-mono font-bold', (metrics?.totalUnrealizedGain || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500']">
+              {{ (metrics?.totalUnrealizedGain || 0) >= 0 ? '+' : '' }}{{ formatCurrency(metrics?.totalUnrealizedGain || 0) }}
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div 
-              v-for="stock in stocks" 
-              :key="stock.symbol"
-              class="group p-4 bg-card border border-border rounded-xl hover:border-emerald-500/50 transition-all cursor-pointer relative overflow-hidden active:scale-95"
-              @click="selectStock(stock)"
-            >
-              <div class="flex justify-between items-start mb-2">
-                <div>
-                  <div class="text-sm font-bold">{{ stock.symbol }}</div>
-                  <div class="text-[10px] text-muted-foreground truncate max-w-[80px]">{{ stock.name }}</div>
-                </div>
-                <div :class="[
-                  'text-xs font-mono font-bold',
-                  stock.change >= 0 ? 'text-emerald-500' : 'text-rose-500'
-                ]">
-                  {{ stock.change >= 0 ? '+' : '' }}{{ stock.change.toFixed(2) }}
-                </div>
-              </div>
-              <div class="text-xl font-mono font-bold mt-2">
-                {{ formatCurrency(stock.price) }}
-              </div>
-              <div class="mt-1 flex items-center gap-1">
-                <span :class="[
-                  'text-[10px] px-1 rounded font-bold',
-                  stock.change >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
-                ]">
-                  {{ stock.change_percent.toFixed(2) }}%
-                </span>
-              </div>
-              
-              <!-- Subtle Sparkline (Static placeholder for visual impact) -->
-              <div class="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent scale-x-0 group-hover:scale-x-100 transition-transform duration-500"></div>
+          <div class="p-5 bg-card border border-border rounded-2xl shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Realized Profit</span>
+              <DollarSign class="w-4 h-4 text-muted-foreground/50" />
+            </div>
+            <div class="text-xl font-mono font-bold text-amber-500">
+              {{ formatCurrency(metrics?.totalRealizedGain || 0) }}
             </div>
           </div>
-        </section>
+
+          <div class="p-5 bg-card border border-border rounded-2xl shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Best Performer</span>
+              <Trophy class="w-4 h-4 text-yellow-500/50" />
+            </div>
+            <div v-if="metrics?.bestPerformer" class="flex flex-col">
+              <span class="text-sm font-bold truncate">{{ metrics.bestPerformer.symbol }}</span>
+              <span class="text-xs font-mono text-emerald-500 font-bold">+{{ metrics.bestPerformer.gainPercent.toFixed(1) }}%</span>
+            </div>
+            <div v-else class="text-xl font-mono font-bold text-muted-foreground/30">—</div>
+          </div>
+        </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <!-- Portfolio Stats -->
+          <!-- Main Content -->
           <div class="lg:col-span-2 space-y-8">
+            
+            <!-- Performance Chart -->
+            <section class="p-6 bg-card border border-border rounded-2xl">
+              <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Portfolio History (30D)</h3>
+                <div class="flex gap-2">
+                  <span class="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">Performance Simulator</span>
+                </div>
+              </div>
+              <div class="h-[300px] w-full">
+                <Line v-if="chartData.labels.length" :data="chartData" :options="chartOptions" />
+                <div v-else class="h-full flex items-center justify-center text-muted-foreground/50 text-xs italic">
+                  Select a stock or add transactions to see performance trends.
+                </div>
+              </div>
+            </section>
+
+            <!-- Stock Selection -->
             <section>
               <div class="flex items-center gap-2 mb-4">
-                <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground">Your Portfolio</h2>
+                <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground">Markets</h2>
+                <div class="h-px flex-1 bg-border/50"></div>
+              </div>
+              <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div 
+                  v-for="stock in stocks" 
+                  :key="stock.symbol"
+                  @click="selectStock(stock)"
+                  class="p-3 bg-card border border-border rounded-xl hover:border-primary/50 transition-all cursor-pointer group active:scale-95"
+                  :class="{'border-primary bg-primary/5 shadow-sm': selectedStock?.symbol === stock.symbol}"
+                >
+                  <div class="flex justify-between items-start mb-1">
+                    <span class="text-xs font-bold">{{ stock.symbol }}</span>
+                    <span :class="['text-[10px] font-mono', stock.change >= 0 ? 'text-emerald-500' : 'text-rose-500']">
+                      {{ stock.change >= 0 ? '+' : '' }}{{ stock.change.toFixed(1) }}
+                    </span>
+                  </div>
+                  <div class="text-sm font-mono font-bold">{{ formatCurrency(stock.price) }}</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Portfolio Table -->
+            <section>
+              <div class="flex items-center gap-2 mb-4">
+                <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground">Active Holdings</h2>
                 <div class="h-px flex-1 bg-border/50"></div>
               </div>
               
               <div v-if="portfolio.length === 0" class="p-8 bg-muted/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center text-center">
-                <Wallet class="w-12 h-12 text-muted-foreground/30 mb-4" />
-                <h3 class="font-bold text-muted-foreground">Empty Portfolio</h3>
-                <p class="text-xs text-muted-foreground mt-1">Select a stock from the market to start buying.</p>
+                <History class="w-12 h-12 text-muted-foreground/30 mb-4" />
+                <h3 class="font-bold text-muted-foreground">No Holdings</h3>
+                <p class="text-[10px] text-muted-foreground mt-1 max-w-[200px]">Log your first transaction to start tracking performance.</p>
               </div>
 
-              <div v-else class="bg-card border border-border rounded-2xl overflow-hidden">
-                <table class="w-full text-left text-sm">
-                  <thead>
-                    <tr class="bg-muted/50 text-[10px] uppercase tracking-wider font-bold">
-                      <th class="px-6 py-3">Asset</th>
-                      <th class="px-6 py-3">Holdings</th>
-                      <th class="px-6 py-3 text-right">Latest Price</th>
-                      <th class="px-6 py-3 text-right">Market Value</th>
-                      <th class="px-6 py-3 text-right">Gain/Loss</th>
+              <div v-else class="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-muted/50 text-muted-foreground font-bold border-b border-border">
+                    <tr>
+                      <th class="px-5 py-3">Asset</th>
+                      <th class="px-5 py-3">Holdings</th>
+                      <th class="px-5 py-3 text-right">Avg Buy</th>
+                      <th class="px-5 py-3 text-right">Mkt Value</th>
+                      <th class="px-5 py-3 text-right">Return</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-border">
-                    <tr v-for="item in portfolio" :key="item.id" class="hover:bg-muted/30 transition-colors">
-                      <td class="px-6 py-4">
-                        <div class="flex items-center gap-3">
-                          <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center font-bold text-xs">
-                            {{ item.stock_data?.symbol?.[0] || '?' }}
+                  <tbody class="divide-y divide-border/50">
+                    <tr v-for="item in portfolio" :key="item.symbol" class="hover:bg-muted/30 transition-colors">
+                      <td class="px-5 py-4">
+                        <div class="flex items-center gap-2">
+                          <div class="w-7 h-7 rounded bg-primary/10 flex items-center justify-center font-bold text-[10px]">
+                            {{ item.symbol[0] }}
                           </div>
                           <div>
-                            <div class="font-bold">{{ item.stock_data?.symbol }}</div>
-                            <div class="text-[10px] text-muted-foreground">{{ item.stock_data?.name }}</div>
+                            <div class="font-bold">{{ item.symbol }}</div>
+                            <div class="text-[9px] text-muted-foreground truncate max-w-[100px]">{{ item.name }}</div>
                           </div>
                         </div>
                       </td>
-                      <td class="px-6 py-4">
-                        <div class="font-mono">{{ item.quantity }} shares</div>
-                        <div class="text-[10px] text-muted-foreground">Avg: {{ formatCurrency(item.buy_price) }}</div>
+                      <td class="px-5 py-4 font-mono font-medium">{{ item.quantity }} shrs</td>
+                      <td class="px-5 py-4 text-right font-mono text-muted-foreground">{{ formatCurrency(item.avgBuyPrice) }}</td>
+                      <td class="px-5 py-4 text-right">
+                        <div class="font-mono font-bold">{{ formatCurrency(item.marketValue) }}</div>
+                        <div class="text-[9px] text-muted-foreground">@ {{ formatCurrency(item.currentPrice) }}</div>
                       </td>
-                      <td class="px-6 py-4 text-right font-mono">
-                        {{ formatCurrency(getLatestPrice(item.stock_data?.symbol)) }}
-                      </td>
-                      <td class="px-6 py-4 text-right font-mono font-bold">
-                        {{ formatCurrency(item.quantity * getLatestPrice(item.stock_data?.symbol)) }}
-                      </td>
-                      <td class="px-6 py-4 text-right">
-                        <div :class="[
-                          'font-mono font-bold',
-                          getGains(item) >= 0 ? 'text-emerald-500' : 'text-rose-500'
-                        ]">
-                          {{ getGains(item).toFixed(2) }}%
+                      <td class="px-5 py-4 text-right">
+                        <div :class="['font-mono font-bold', item.gainPercent >= 0 ? 'text-emerald-500' : 'text-rose-500']">
+                          {{ item.gainPercent >= 0 ? '+' : '' }}{{ item.gainPercent.toFixed(2) }}%
                         </div>
-                        <div class="text-[10px] text-muted-foreground">
-                          {{ getGainsVal(item) >= 0 ? '+' : '' }}{{ formatCurrency(getGainsVal(item)) }}
-                        </div>
+                        <div class="text-[9px] text-muted-foreground">{{ formatCurrency(item.unrealizedGain) }}</div>
                       </td>
                     </tr>
                   </tbody>
@@ -158,78 +194,83 @@
             </section>
           </div>
 
-          <!-- Transaction Card -->
+          <!-- Sidebar: Logging -->
           <div class="space-y-6">
-            <section class="p-6 bg-card border border-border rounded-2xl shadow-xl shadow-black/5">
-              <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-6 flex items-center gap-2">
-                <Zap class="w-4 h-4 text-amber-500" /> Quick Trade
-              </h2>
+            <section class="p-6 bg-card border border-border rounded-2xl shadow-xl shadow-black/5 flex flex-col gap-5 sticky top-24">
+              <div class="flex flex-col gap-1">
+                <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <PlusCircle class="w-4 h-4 text-primary" /> Log Transaction
+                </h2>
+                <p class="text-[10px] text-muted-foreground">Record your trades manually to update your analytics.</p>
+              </div>
 
-              <div v-if="selectedStock" class="space-y-6 animate-in fade-in slide-in-from-right-4">
-                <div class="p-4 bg-muted/50 rounded-xl border border-border flex justify-between items-center">
-                  <div>
-                    <div class="text-lg font-black">{{ selectedStock.symbol }}</div>
-                    <div class="text-xs text-muted-foreground">{{ selectedStock.name }}</div>
+              <div class="flex gap-2 p-1 bg-muted/50 rounded-lg">
+                <button 
+                  v-for="type in ['BUY', 'SELL']" 
+                  :key="type"
+                  @click="txType = type"
+                  class="flex-1 py-1.5 text-[10px] font-bold rounded-md transition-all"
+                  :class="txType === type ? 'bg-background text-primary shadow-sm border border-border' : 'text-muted-foreground hover:text-foreground'"
+                >
+                  {{ type }}
+                </button>
+              </div>
+
+              <div v-if="selectedStock" class="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                <div class="p-4 rounded-xl border border-primary/20 bg-primary/5">
+                  <div class="flex justify-between items-center">
+                    <span class="text-xs font-black">{{ selectedStock.symbol }}</span>
+                    <span class="text-xs font-mono font-bold">{{ formatCurrency(selectedStock.price) }}</span>
                   </div>
-                  <div class="text-right">
-                    <div class="text-lg font-mono font-black">{{ formatCurrency(selectedStock.price) }}</div>
-                    <div :class="['text-[10px] font-bold', selectedStock.change >= 0 ? 'text-emerald-500' : 'text-rose-500']">
-                      {{ selectedStock.change >= 0 ? '+' : '' }}{{ selectedStock.change.toFixed(2) }} ({{ selectedStock.change_percent.toFixed(2) }}%)
-                    </div>
-                  </div>
+                  <p class="text-[9px] text-muted-foreground mt-0.5">{{ selectedStock.name }}</p>
                 </div>
 
-                <div class="space-y-2">
-                  <label class="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Amount to Buy</label>
-                  <div class="flex items-center gap-3">
-                    <button @click="buyAmount = Math.max(1, buyAmount - 1)" class="w-10 h-10 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition shadow-sm border border-border">
-                      <Minus class="w-4 h-4" />
-                    </button>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="space-y-1.5">
+                    <label class="text-[9px] font-bold uppercase text-muted-foreground">Quantity</label>
                     <input 
-                      v-model.number="buyAmount" 
-                      type="number" 
-                      min="1"
-                      class="flex-1 h-10 bg-background border border-border rounded-lg text-center font-mono font-bold focus:border-primary outline-none"
+                      v-model.number="txAmount" 
+                      type="number"
+                      class="w-full h-9 bg-background border border-border rounded-lg px-3 text-xs font-mono focus:border-primary outline-none"
                     />
-                    <button @click="buyAmount++" class="w-10 h-10 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition shadow-sm border border-border">
-                      <Plus class="w-4 h-4" />
-                    </button>
+                  </div>
+                  <div class="space-y-1.5">
+                    <label class="text-[9px] font-bold uppercase text-muted-foreground">Execution Price</label>
+                    <input 
+                      v-model.number="txPrice" 
+                      type="number"
+                      class="w-full h-9 bg-background border border-border rounded-lg px-3 text-xs font-mono focus:border-primary outline-none"
+                    />
                   </div>
                 </div>
 
-                <div class="pt-4 border-t border-border">
-                  <div class="flex justify-between items-center mb-4">
-                    <span class="text-xs text-muted-foreground">Total Estimate</span>
-                    <span class="text-lg font-mono font-black">{{ formatCurrency(buyAmount * selectedStock.price) }}</span>
-                  </div>
+                <div class="space-y-1.5">
+                  <label class="text-[9px] font-bold uppercase text-muted-foreground">Transaction Date</label>
+                  <input 
+                    v-model="txDate" 
+                    type="date"
+                    class="w-full h-9 bg-background border border-border rounded-lg px-3 text-xs font-mono focus:border-primary outline-none"
+                  />
+                </div>
+
+                <div class="pt-2">
                   <button 
-                    @click="handleBuy"
-                    :disabled="isBuying"
-                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                    @click="handleTransaction"
+                    :disabled="isLogging"
+                    class="w-full py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2"
                   >
-                    <ShoppingCart v-if="!isBuying" class="w-4 h-4" />
-                    <Loader2 v-else class="w-4 h-4 animate-spin" />
-                    {{ isBuying ? 'Processing...' : `Buy ${buyAmount} Shares` }}
+                    <Save v-if="!isLogging" class="w-3 h-3" />
+                    <Loader2 v-else class="w-3 h-3 animate-spin" />
+                    {{ isLogging ? 'Saving...' : 'Record Transaction' }}
                   </button>
                 </div>
               </div>
 
-              <div v-else class="flex flex-col items-center justify-center py-12 text-center opacity-40">
-                <MousePointer2 class="w-10 h-10 mb-4" />
-                <p class="text-xs font-medium">Select a stock to trade</p>
+              <div v-else class="py-12 flex flex-col items-center justify-center text-center opacity-30">
+                <MousePointer2 class="w-10 h-10 mb-2" />
+                <p class="text-[10px] font-medium max-w-[120px]">Select a symbol from the market to log a trade</p>
               </div>
             </section>
-
-            <!-- SurrealDB Insight -->
-            <div class="p-6 bg-violet-600/10 border border-violet-500/20 rounded-2xl">
-              <div class="flex items-center gap-2 mb-3">
-                <Cpu class="w-4 h-4 text-violet-500" />
-                <h3 class="text-xs font-bold uppercase tracking-wider text-violet-500">SurrealQL Logic</h3>
-              </div>
-              <p class="text-[10px] text-muted-foreground leading-relaxed italic">
-                Using Graph Relations (<code>RELATE</code>) to link users to assets, allowing for instant portfolio aggregation without complex JOINs. Live updates are pushed via simulated Live Queries.
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -238,37 +279,119 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { api } from '@/lib/apiClient'
 import { 
   TrendingUp, 
   RefreshCw, 
   Wallet, 
-  ShoppingCart, 
   TrendingDown, 
-  Plus, 
-  Minus,
   BarChart3,
   MousePointer2,
   Zap,
   Cpu,
-  Loader2
+  Loader2,
+  DollarSign,
+  Trophy,
+  History,
+  PlusCircle,
+  Save
 } from 'lucide-vue-next'
 import { toast } from '@/composables/useNotifications'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js'
+import { Line } from 'vue-chartjs'
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+)
 
 const stocks = ref<any[]>([])
 const portfolio = ref<any[]>([])
+const metrics = ref<any>(null)
+const history = ref<any[]>([])
+
 const selectedStock = ref<any>(null)
-const buyAmount = ref(1)
 const isRefreshing = ref(false)
-const isBuying = ref(false)
+const isLogging = ref(false)
 const isSyncing = ref(false)
 
-const totalValue = computed(() => {
-  return portfolio.value.reduce((sum, item) => {
-    const currentPrice = getLatestPrice(item.stock_data?.symbol)
-    return sum + (item.quantity * currentPrice)
-  }, 0)
+// Transaction form state
+const txType = ref('BUY')
+const txAmount = ref(1)
+const txPrice = ref(0)
+const txDate = ref(new Date().toISOString().split('T')[0])
+
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      mode: 'index',
+      intersect: false,
+      backgroundColor: 'rgba(20, 20, 20, 0.9)',
+      titleColor: '#fff',
+      bodyColor: '#A1A1AA',
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      borderWidth: 1,
+      padding: 10,
+      displayColors: false,
+      font: { family: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }
+    }
+  },
+  scales: {
+    x: { display: false },
+    y: {
+      display: true,
+      grid: { color: 'rgba(255, 255, 255, 0.05)' },
+      ticks: { 
+        color: '#71717A', 
+        font: { size: 10 },
+        callback: (val: any) => formatCurrency(val)
+      }
+    }
+  },
+  elements: {
+    point: { radius: 0, hoverRadius: 4, hitRadius: 20 },
+    line: { tension: 0.4 }
+  }
+}
+
+const chartData = computed(() => {
+  if (!history.value || history.value.length === 0) {
+    return { labels: [], datasets: [] }
+  }
+  
+  return {
+    labels: history.value.map(h => h.date),
+    datasets: [
+      {
+        label: 'Portfolio Value',
+        data: history.value.map(h => h.price),
+        borderColor: '#8B5CF6',
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        fill: true,
+        borderWidth: 2,
+      }
+    ]
+  }
 })
 
 const formatCurrency = (val: number) => {
@@ -283,12 +406,6 @@ const fetchStocks = async () => {
   try {
     const data = await api.get<any>('/stocks')
     stocks.value = data.stocks || []
-    
-    // Update selected stock price if it exists
-    if (selectedStock.value) {
-      const updated = stocks.value.find(s => s.symbol === selectedStock.value.symbol)
-      if (updated) selectedStock.value = updated
-    }
   } catch (e) {
     console.error('Failed to fetch stocks', e)
   }
@@ -299,11 +416,27 @@ const fetchPortfolio = async () => {
   try {
     const data = await api.get<any>('/stocks/portfolio')
     portfolio.value = data.portfolio || []
+    metrics.value = data.metrics || null
+    
+    // If we have portfolio items, fetch history for the best one to show a trend
+    if (portfolio.value.length > 0) {
+        const primarySymbol = metrics.value?.bestPerformer?.symbol || portfolio.value[0].symbol
+        fetchHistory(primarySymbol)
+    }
   } catch (e) {
     console.error('Failed to fetch portfolio', e)
   } finally {
     isRefreshing.value = false
   }
+}
+
+const fetchHistory = async (symbol: string) => {
+    try {
+        const data = await api.get<any>(`/stocks/history/${symbol}`)
+        history.value = data.history || []
+    } catch (e) {
+        console.error('Failed to fetch history', e)
+    }
 }
 
 const syncRealData = async () => {
@@ -313,11 +446,7 @@ const syncRealData = async () => {
         const response = await api.post<any>('/stocks/refresh')
         toast.success(response.message || 'Alpha Vantage sync started.')
     } catch (e: any) {
-        if (e.message.includes('cooldown')) {
-            toast.info(e.message)
-        } else {
-            toast.error(e.message || 'Sync failed')
-        }
+        toast.error(e.message || 'Sync failed')
     } finally {
         isSyncing.value = false
     }
@@ -325,45 +454,34 @@ const syncRealData = async () => {
 
 const selectStock = (stock: any) => {
   selectedStock.value = stock
-  buyAmount.value = 1
+  txAmount.value = 1
+  txPrice.value = parseFloat(stock.price.toFixed(2))
+  fetchHistory(stock.symbol)
 }
 
-const getLatestPrice = (symbol: string) => {
-  const stock = stocks.value.find(s => s.symbol === symbol)
-  return stock ? stock.price : 0
-}
-
-const getGains = (item: any) => {
-  const current = getLatestPrice(item.stock_data?.symbol)
-  if (!item.buy_price) return 0
-  return ((current - item.buy_price) / item.buy_price) * 100
-}
-
-const getGainsVal = (item: any) => {
-  const current = getLatestPrice(item.stock_data?.symbol)
-  return (current - item.buy_price) * item.quantity
-}
-
-const handleBuy = async () => {
-    if (!selectedStock.value || isBuying.value) return
+const handleTransaction = async () => {
+    if (!selectedStock.value || isLogging.value) return
     
-    isBuying.value = true
+    isLogging.value = true
     try {
-        await api.post('/stocks/buy', {
+        await api.post('/stocks/transaction', {
             symbol: selectedStock.value.symbol,
-            quantity: buyAmount.value
+            quantity: txAmount.value,
+            price: txPrice.value,
+            type: txType.value,
+            date: txDate.value
         })
 
-        toast.success(`Bought ${buyAmount.value} shares of ${selectedStock.value.symbol}!`, {
-            description: 'SurrealDB graph relation created successfully.'
+        toast.success('Transaction Recorded', {
+            description: `${txType.value} ${txAmount.value} shares of ${selectedStock.value.symbol}`
         })
         
         await fetchPortfolio()
         selectedStock.value = null
     } catch (e: any) {
-        toast.error(e.message || 'Purchase failed')
+        toast.error(e.message || 'Failed to save transaction')
     } finally {
-        isBuying.value = false
+        isLogging.value = false
     }
 }
 
@@ -372,9 +490,7 @@ let interval: any = null
 onMounted(() => {
   fetchStocks()
   fetchPortfolio()
-  
-  // Simulate Live Queries via polling every 5s
-  interval = setInterval(fetchStocks, 5000)
+  interval = setInterval(fetchStocks, 10000)
 })
 
 onBeforeUnmount(() => {
@@ -395,5 +511,15 @@ onBeforeUnmount(() => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(120, 120, 120, 0.2);
+}
+
+/* Hide spin buttons for number inputs */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
 }
 </style>
