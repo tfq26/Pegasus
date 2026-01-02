@@ -163,7 +163,7 @@ const fetchIndex = async () => {
   isLoadingList.value = true
   try {
     // Fetch from static file instead of API
-    const response = await fetch('/docs/index.json')
+    const response = await fetch('/_docs/index.json')
     const data = await response.json()
     guides.value = data.guides || []
     
@@ -199,7 +199,7 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
   isLoadingContent.value = true
   try {
     // Fetch from static files instead of API
-    const endpoint = type === 'guide' ? `/docs/guides/${slug}.json` : `/docs/releases/${slug}.json`
+    const endpoint = type === 'guide' ? `/_docs/guides/${slug}.json` : `/_docs/releases/${slug}.json`
     const response = await fetch(endpoint)
     const data = await response.json()
     
