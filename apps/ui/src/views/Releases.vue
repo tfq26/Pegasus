@@ -185,11 +185,11 @@ import { ref, computed, onMounted } from 'vue'
 import { Sparkles, Check, Plus, Wrench, Bug, Beaker, Clock } from 'lucide-vue-next'
 import { toast } from '@/composables/useNotifications'
 import { useAuth } from '@/composables/useAuth'
+import { api } from '@/lib/apiClient'
 
 defineOptions({ name: 'ReleasesPage' })
 
 const { user } = useAuth()
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const releases = ref<any[]>([])
 const releaseDetails = ref<Record<string, any>>({})
@@ -215,8 +215,7 @@ const toggleExpanded = async (index: number) => {
     // Fetch details if not already loaded
     if (!releaseDetails.value[release.version]) {
       try {
-        const response = await fetch(`/api/docs/releases/${release.version}`)
-        const result = await response.json()
+        const result = await api.get<any>(`/api/docs/releases/${release.version}`)
         releaseDetails.value[release.version] = result.data || result
       } catch (error) {
         console.error('Failed to fetch release details:', error)
@@ -248,27 +247,19 @@ const handleExperimentalRequest = async () => {
 
   isSubmittingExperimental.value = true
   try {
-    const response = await fetch(`${API_URL}/experimental/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
+    const result = await api.post<any>('/api/experimental/request', {
         reason: experimentalForm.value.reason,
         email: experimentalForm.value.email || undefined
-      })
     })
 
-    if (response.ok) {
+    if (result) {
       toast.success('Request submitted successfully!')
       experimentalForm.value = { reason: '', email: '', agreedToTerms: false }
       await fetchExperimentalStatus()
-    } else {
-      const error = await response.json()
-      toast.error(error.error || 'Failed to submit request')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error submitting experimental request:', error)
-    toast.error('Failed to submit request')
+    toast.error(error.message || 'Failed to submit request')
   } finally {
     isSubmittingExperimental.value = false
   }
@@ -278,11 +269,9 @@ const fetchExperimentalStatus = async () => {
   if (!user.value) return
   
   try {
-    const response = await fetch(`${API_URL}/experimental/status`, {
-      credentials: 'include'
-    })
-    if (response.ok) {
-      experimentalStatus.value = await response.json()
+    const status = await api.get<any>('/api/experimental/status')
+    if (status) {
+      experimentalStatus.value = status
     }
   } catch (error) {
     console.error('Error fetching experimental status:', error)
@@ -292,12 +281,7 @@ const fetchExperimentalStatus = async () => {
 onMounted(async () => {
   try {
     // Fetch releases list from API
-    const response = await fetch('/api/docs')
-    const data = await response.json()
-    
-    // The API now returns refined release objects
-    const releasesResponse = await fetch('/api/docs/releases')
-    const releasesData = await releasesResponse.json()
+    const releasesData = await api.get<any[]>('/api/docs/releases')
     releases.value = releasesData || []
 
     // Map versions to our local state if needed (though API should be primary)

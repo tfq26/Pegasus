@@ -245,8 +245,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { submitFeedback } from '@/lib/api'
 import { useNotifications, toast } from '@/composables/useNotifications'
-import { Sparkles, MessageSquare, Check, Send, Beaker, Clock } from 'lucide-vue-next'
-import { BookOpen, ArrowRight } from 'lucide-vue-next'
+import { Sparkles, MessageSquare, Check, Send, Beaker, Clock, BookOpen, ArrowRight } from 'lucide-vue-next'
+import { api } from '@/lib/apiClient'
 
 defineOptions({ name: 'SupportView' })
 
@@ -273,11 +273,9 @@ const isExperimentalFormValid = computed(() => {
 // Load experimental status
 const loadExperimentalStatus = async () => {
   try {
-    const response = await fetch('/api/experimental/status', {
-      credentials: 'include'
-    })
-    if (response.ok) {
-      experimentalStatus.value = await response.json()
+    const status = await api.get<any>('/api/experimental/status')
+    if (status) {
+      experimentalStatus.value = status
     }
   } catch (error) {
     console.error('Failed to load experimental status:', error)
@@ -292,35 +290,30 @@ const handleExperimentalRequest = async () => {
 
   isSubmittingExperimental.value = true
   try {
-    const response = await fetch('/api/experimental/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
+    const result = await api.post<any>('/api/experimental/request', {
         reason: experimentalForm.value.reason,
         email: experimentalForm.value.email || undefined
-      })
     })
 
-    if (!response.ok) throw new Error('Failed to submit request')
+    if (result) {
+        toast.success('Request submitted!', {
+          description: 'We\'ll review your request and notify you once approved.'
+        })
 
-    toast.success('Request submitted!', {
-      description: 'We\'ll review your request and notify you once approved.'
-    })
+        // Reload status
+        await loadExperimentalStatus()
 
-    // Reload status
-    await loadExperimentalStatus()
-
-    // Reset form
-    experimentalForm.value = {
-      reason: '',
-      email: '',
-      agreedToTerms: false
+        // Reset form
+        experimentalForm.value = {
+          reason: '',
+          email: '',
+          agreedToTerms: false
+        }
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to submit experimental request:', error)
     toast.error('Failed to submit request', {
-      description: 'Please try again later.'
+      description: error.message || 'Please try again later.'
     })
   } finally {
     isSubmittingExperimental.value = false

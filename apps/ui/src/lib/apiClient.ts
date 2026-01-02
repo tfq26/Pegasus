@@ -9,7 +9,9 @@
  * - Request/response logging
  */
 
-const DEFAULT_QUERY_API_URL = 'http://localhost:3000'
+const DEFAULT_QUERY_API_URL = typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:3000`
+    : 'http://localhost:3000'
 
 const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
     (typeof window !== 'undefined'

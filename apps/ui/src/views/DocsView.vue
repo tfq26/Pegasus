@@ -144,6 +144,7 @@ import {
   Bug
 } from 'lucide-vue-next'
 import MarkdownIt from 'markdown-it'
+import { api } from '@/lib/apiClient'
 
 const route = useRoute()
 const router = useRouter()
@@ -162,9 +163,8 @@ const releaseData = ref<any>(null)
 const fetchIndex = async () => {
   isLoadingList.value = true
   try {
-    // Fetch from API instead of static files
-    const response = await fetch('/api/docs')
-    const data = await response.json()
+    // Use centralized API client instead of raw fetch
+    const data = await api.get<any>('/api/docs')
     guides.value = data.guides || []
     
     // Sort changelogs by version (latest first)
@@ -198,10 +198,9 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
   if (!slug) return
   isLoadingContent.value = true
   try {
-    // Fetch from API instead of static files
+    // Use centralized API client instead of raw fetch
     const endpoint = type === 'guide' ? `/api/docs/guides/${slug}` : `/api/docs/releases/${slug}`
-    const response = await fetch(endpoint)
-    const data = await response.json()
+    const data = await api.get<any>(endpoint)
     
     if (type === 'guide') {
       contentType.value = data.content_type || 'markdown'
