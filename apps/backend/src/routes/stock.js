@@ -7,9 +7,10 @@ import { getAuthToken } from "../../lib/auth.js"
 const stocks = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 
-// Status for manual refresh cooldown
-let lastManualRefresh = 0;
-const MANUAL_REFRESH_COOLDOWN = 10 * 60 * 1000; // 10 minutes
+// Tracking manual refresh cooldowns per user
+const userRefreshCooldowns = new Map();
+const COOLDOWN_PRO = 30 * 60 * 1000; // 30 minutes
+const COOLDOWN_FREE = 60 * 60 * 1000; // 1 hour
 
 stocks.get("/search", async (c) => {
     const keywords = c.req.query("q");
@@ -42,13 +43,12 @@ stocks.post("/cleanup", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
-        // Reset the market data completely to fix the ID corruption once and for all
+        // Reset the market data by deleting records, not the table itself
         await db.query(`
-            REMOVE TABLE stock;
-            REMOVE TABLE stock_history;
+            DELETE stock;
+            DELETE stock_history;
         `);
 
-        // This will trigger the service to re-seed correctly on next internal sync or request
         return c.json({ ok: true, message: "Market data reset. Click SYNC again to repopulate." });
     } catch (e) {
         return c.json({ error: e.message }, 500);
@@ -75,17 +75,28 @@ stocks.post("/refresh", async (c) => {
         return c.json({ error: "Alpha Vantage API key not configured on server" }, 400)
     }
 
-    const now = Date.now();
-    if (now - lastManualRefresh < MANUAL_REFRESH_COOLDOWN) {
-        const remaining = Math.ceil((MANUAL_REFRESH_COOLDOWN - (now - lastManualRefresh)) / 60000);
-        return c.json({ error: `Manual refresh on cooldown. Please wait ${remaining} minutes.` }, 429)
-    }
-
     try {
-        lastManualRefresh = now;
+        const payload = await verify(token, jwtSecret);
+        const userId = payload.sub;
+
+        // Determine user tier
+        const [user] = await db.query(`SELECT subscription_tier FROM user:${userId}`);
+        const tier = user[0]?.subscription_tier || 'free';
+        const cooldown = tier === 'pro' ? COOLDOWN_PRO : COOLDOWN_FREE;
+
+        const now = Date.now();
+        const lastRefresh = userRefreshCooldowns.get(userId) || 0;
+
+        if (now - lastRefresh < cooldown) {
+            const remaining = Math.ceil((cooldown - (now - lastRefresh)) / 60000);
+            return c.json({ error: `Refresh on cooldown. Please wait ${remaining} minutes. Tier: ${tier.toUpperCase()}` }, 429)
+        }
+
+        userRefreshCooldowns.set(userId, now);
+
         // Trigger background sync
         stockService.updateFromAlphaVantage();
-        return c.json({ message: "Alpha Vantage sync started in background." });
+        return c.json({ message: `Alpha Vantage sync started. Next refresh available in ${tier === 'pro' ? '30' : '60'} mins.` });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }

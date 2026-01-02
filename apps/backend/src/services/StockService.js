@@ -7,7 +7,7 @@ export class StockService extends APIService {
         this.stocks = new Set(['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'TSLA', 'META', 'NVDA', 'QQQ', 'BRK.B', 'V']);
         this.apiKey = process.env.ALPHAVANTAGE_KEY;
         this.lastRealSync = 0;
-        this.syncInterval = 8 * 60 * 60 * 1000; // 8 hours (3 times a day)
+        this.syncInterval = 1 * 60 * 60 * 1000; // 1 hour
         this.isSyncingReal = false;
         this.rateLimitCooldown = 0;
     }
