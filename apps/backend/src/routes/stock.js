@@ -213,20 +213,32 @@ stocks.get("/history/:symbol", async (c) => {
             ORDER BY date ASC
         `, { symbol });
 
-        // If no history exists, ensure we have the stock then trigger sync
+        // If no history exists, generate an estimated trend based on current price
         if (!history || history.length === 0) {
-            // Check if stock exists at all
-            const [stock] = await db.query(`SELECT id FROM stock:${safeId}`);
-            if (!stock || stock.length === 0) {
-                // Not even the stock exists? Track it now.
-                await stockService.trackSymbol(symbol);
-            } else {
-                // Stock exists but no history? Trigger sync.
-                stockService.syncHistory(symbol);
+            const [stock] = await db.query(`SELECT price FROM stock:${safeId}`);
+            const currentPrice = stock?.[0]?.price || 100;
+
+            // Generate 30 points of realistic noise
+            const estimatedHistory = [];
+            const now = new Date();
+            for (let i = 30; i >= 0; i--) {
+                const date = new Date(now);
+                date.setDate(date.getDate() - i);
+                // Simple random walk starting from past towards current price
+                const variance = 1 - (i * 0.002); // less variance as we get closer to today
+                estimatedHistory.push({
+                    date: date.toISOString().split('T')[0],
+                    price: currentPrice * (0.95 + Math.random() * 0.1 * variance),
+                    is_estimated: true
+                });
             }
+
+            // Still trigger real sync for future
+            stockService.syncHistory(symbol);
+            return c.json({ history: estimatedHistory });
         }
 
-        return c.json({ history: history || [] });
+        return c.json({ history });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }

@@ -134,6 +134,8 @@
               <div class="flex items-center justify-between mb-6">
                 <h3 class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Portfolio History (30D)</h3>
                 <div class="flex gap-2">
+                  <span v-if="history.length > 0 && history[0].is_estimated" class="text-[10px] bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded-full font-bold">Estimated Trend</span>
+                  <span v-else-if="history.length > 0" class="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full font-bold">Live Market</span>
                   <span class="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">Performance Simulator</span>
                 </div>
               </div>
