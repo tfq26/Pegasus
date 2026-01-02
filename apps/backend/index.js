@@ -617,7 +617,7 @@ app.get("/api/users/search", async (c) => {
 
 // Get experimental status for current user
 app.get("/api/experimental/status", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -632,7 +632,7 @@ app.get("/api/experimental/status", async (c) => {
 
 // Request experimental access
 app.post("/api/experimental/request", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {

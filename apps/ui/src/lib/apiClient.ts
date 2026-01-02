@@ -24,6 +24,7 @@ interface RequestOptions {
     headers?: HeadersInit
     body?: unknown
     credentials?: RequestCredentials
+    skipAuthRedirect?: boolean
 }
 
 class ApiClient {
@@ -77,6 +78,10 @@ class ApiClient {
 
         // Handle unauthorized responses centrally
         if (response.status === 401) {
+            if (options?.skipAuthRedirect) {
+                throw new Error('Unauthorized')
+            }
+
             console.warn('[ApiClient] Unauthorized (401). Clearing token and redirecting to login.')
             localStorage.removeItem('auth_token')
             if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {

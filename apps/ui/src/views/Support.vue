@@ -270,10 +270,9 @@ const isExperimentalFormValid = computed(() => {
          experimentalForm.value.agreedToTerms
 })
 
-// Load experimental status
 const loadExperimentalStatus = async () => {
   try {
-    const status = await api.get<any>('/api/experimental/status')
+    const status = await api.get<any>('/api/experimental/status', { skipAuthRedirect: true })
     if (status) {
       experimentalStatus.value = status
     }

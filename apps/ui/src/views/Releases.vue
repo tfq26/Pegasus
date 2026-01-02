@@ -269,7 +269,7 @@ const fetchExperimentalStatus = async () => {
   if (!user.value) return
   
   try {
-    const status = await api.get<any>('/api/experimental/status')
+    const status = await api.get<any>('/api/experimental/status', { skipAuthRedirect: true })
     if (status) {
       experimentalStatus.value = status
     }
