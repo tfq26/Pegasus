@@ -28,6 +28,7 @@ async function createTables() {
             slug VARCHAR(255) UNIQUE NOT NULL,
             title VARCHAR(500) NOT NULL,
             content TEXT NOT NULL,
+            content_type VARCHAR(50) DEFAULT 'markdown',
             category VARCHAR(100),
             order_index INTEGER DEFAULT 0,
             published BOOLEAN DEFAULT true,
@@ -35,6 +36,9 @@ async function createTables() {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `
+
+    // Ensure column exists for older tables
+    await sql`ALTER TABLE guides ADD COLUMN IF NOT EXISTS content_type VARCHAR(50) DEFAULT 'markdown'`
 
     // Create releases table
     await sql`
@@ -120,12 +124,13 @@ async function migrateGuides() {
             }
 
             await sql`
-                INSERT INTO guides (slug, title, content, published)
-                VALUES (${slug}, ${title}, ${content}, true)
+                INSERT INTO guides (slug, title, content, content_type, published)
+                VALUES (${slug}, ${title}, ${content}, 'markdown', true)
                 ON CONFLICT (slug) 
                 DO UPDATE SET 
                     title = EXCLUDED.title,
                     content = EXCLUDED.content,
+                    content_type = EXCLUDED.content_type,
                     updated_at = CURRENT_TIMESTAMP
             `
 
