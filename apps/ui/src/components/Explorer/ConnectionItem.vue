@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp, Lock } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import type { ConnectionSchemaState } from '@/composables/useExplorerSchema'
 import TableList from './TableList.vue'
 import TabList from './TabList.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { storeToRefs } from 'pinia'
 
 const workspaceStore = useWorkspaceStore()
+const { tabs, activeTabId } = storeToRefs(workspaceStore)
 const viewMode = ref<'tables' | 'tabs'>('tables')
 
 const props = defineProps<{
@@ -46,7 +48,7 @@ function statusLabel(state?: ConnectionSchemaState) {
   <div class="group relative">
     <div 
       v-if="selected"
-      class="absolute -inset-1 bg-gradient-to-r from-violet-600/10 to-fuchsia-600/10 blur-md rounded-xl"
+      class="absolute -inset-1 bg-gradient-to-r from-purple-600/10 to-fuchsia-600/10 blur-md rounded-xl"
     ></div>
 
     <article
@@ -54,8 +56,8 @@ function statusLabel(state?: ConnectionSchemaState) {
       class="relative cursor-pointer rounded-xl border p-3 transition-all duration-300 overflow-hidden"
       :class="[
         selected 
-          ? 'bg-stone-900/90 border-violet-500/30 ring-1 ring-violet-500/10' 
-          : 'bg-stone-900/40 border-stone-800/80 hover:border-stone-700 hover:bg-stone-900/60'
+          ? 'bg-card border-purple-500/30 ring-1 ring-purple-500/10 shadow-lg shadow-purple-900/5' 
+          : 'bg-card/40 border-border/80 hover:border-border hover:bg-muted/50'
       ]"
     >
       <div class="flex items-start justify-between relative z-10">
@@ -64,18 +66,21 @@ function statusLabel(state?: ConnectionSchemaState) {
             class="w-8 h-8 rounded-lg flex items-center justify-center border transition-all"
             :class="[
               selected 
-                ? 'bg-violet-500/10 border-violet-500/20 text-violet-400 shadow-[0_0_15px_-5px_theme(colors.violet.500)]' 
-                : 'bg-stone-800/50 border-stone-700/50 text-stone-500 group-hover:text-stone-300 group-hover:border-stone-600'
+                ? 'bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400 shadow-[0_0_15px_-5px_theme(colors.purple.500)]' 
+                : 'bg-muted/50 border-border/50 text-muted-foreground group-hover:text-foreground group-hover:border-border'
             ]"
           >
             <Database class="w-4 h-4" />
           </div>
           <div>
-            <p class="font-semibold text-stone-200 group-hover:text-white transition-colors truncate max-w-[120px]">{{ connection.nickname }}</p>
+            <div class="flex items-center gap-1.5">
+              <p class="font-semibold text-foreground transition-colors truncate max-w-[120px]">{{ connection.nickname }}</p>
+              <Lock v-if="connection.isLocked" class="w-3 h-3 text-amber-500/80" />
+            </div>
             <div class="flex items-center gap-2 mt-0.5">
-              <span class="text-[9px] font-bold uppercase tracking-widest text-stone-500">{{ connection.provider }}</span>
-              <div class="w-1 h-1 rounded-full bg-stone-700"></div>
-              <div class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest" :class="schema?.status === 'error' ? 'text-rose-500' : 'text-stone-500'">
+              <span class="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{{ connection.provider }}</span>
+              <div class="w-1 h-1 rounded-full bg-border"></div>
+              <div class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest" :class="schema?.status === 'error' ? 'text-rose-500' : 'text-muted-foreground'">
                 <span :class="['h-1.5 w-1.5 rounded-full', statusDotClasses(schema?.status)]"></span>
                 {{ statusLabel(schema) }}
               </div>
@@ -87,7 +92,7 @@ function statusLabel(state?: ConnectionSchemaState) {
           <button 
             @click.stop="emit('select', selected ? '' : connection.id)"
             class="p-1 rounded-md transition-all sm:opacity-0 sm:group-hover:opacity-100"
-            :class="selected ? 'text-violet-400 opacity-100' : 'text-stone-500 hover:bg-stone-800'"
+            :class="selected ? 'text-purple-500 opacity-100' : 'text-muted-foreground hover:bg-muted'"
             :title="selected ? 'Collapse' : 'Expand'"
           >
             <ChevronUp v-if="selected" class="w-4 h-4" />
@@ -96,7 +101,7 @@ function statusLabel(state?: ConnectionSchemaState) {
           
           <button 
             @click.stop="emit('delete', connection)"
-            class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-stone-800 text-stone-600 hover:text-rose-400 transition-all"
+            class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-rose-500 transition-all"
             title="Delete Connection"
           >
             <Trash class="w-3.5 h-3.5" />
@@ -105,11 +110,11 @@ function statusLabel(state?: ConnectionSchemaState) {
       </div>
 
       <!-- View Toggle -->
-      <div v-if="selected" class="px-1 mt-3 mb-1 flex items-center bg-stone-900/50 p-1 rounded-lg border border-stone-800/50" @click.stop>
+      <div v-if="selected" class="px-1 mt-3 mb-1 flex items-center bg-muted/40 p-1 rounded-lg border border-border/50" @click.stop>
         <button 
           @click.stop="viewMode = 'tables'"
           class="flex-1 text-[10px] font-bold uppercase tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
-          :class="viewMode === 'tables' ? 'bg-stone-800 text-stone-100 shadow-sm ring-1 ring-stone-700/50' : 'text-stone-500 hover:text-stone-300'"
+          :class="viewMode === 'tables' ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
         >
           <Table2 class="w-3 h-3" />
           Tables
@@ -117,7 +122,7 @@ function statusLabel(state?: ConnectionSchemaState) {
         <button 
           @click.stop="viewMode = 'tabs'"
           class="flex-1 text-[10px] font-bold uppercase tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
-          :class="viewMode === 'tabs' ? 'bg-stone-800 text-stone-100 shadow-sm ring-1 ring-stone-700/50' : 'text-stone-500 hover:text-stone-300'"
+          :class="viewMode === 'tabs' ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
         >
           <Layers class="w-3 h-3" />
           Tabs
@@ -137,8 +142,8 @@ function statusLabel(state?: ConnectionSchemaState) {
 
       <TabList
         v-if="selected && viewMode === 'tabs'"
-        :tabs="workspaceStore.tabs"
-        :active-tab-id="workspaceStore.activeTabId"
+        :tabs="tabs"
+        :active-tab-id="activeTabId"
         @select="(id) => workspaceStore.setActiveTab(id)"
         @close="(id) => workspaceStore.closeTab(id)"
       />

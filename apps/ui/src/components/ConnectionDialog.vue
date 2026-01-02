@@ -17,7 +17,9 @@ import {
   Server, 
   Upload,
   Link2,
-  CheckCircle2
+  CheckCircle2,
+  Lock,
+  Unlock
 } from 'lucide-vue-next'
 
 import { 
@@ -307,6 +309,29 @@ const processFile = async (file: File) => {
                 <SelectItem value="file">File Import (Excel/JSON/XML)</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </div>
+
+        <!-- Lock Toggle -->
+        <div class="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/20">
+          <div class="space-y-0.5">
+            <div class="flex items-center gap-2">
+               <component :is="props.connectionForm.isLocked ? 'Lock' : 'Unlock'" class="w-3.5 h-3.5" :class="props.connectionForm.isLocked ? 'text-amber-500' : 'text-stone-500'" />
+               <span class="text-xs font-bold uppercase tracking-tight">Lock Connection</span>
+            </div>
+            <p class="text-[10px] text-muted-foreground">Require typing the nickname to delete this connection.</p>
+          </div>
+          <div 
+            @click="props.connectionForm.isLocked = !props.connectionForm.isLocked"
+            class="w-10 h-5 rounded-full p-1 cursor-pointer transition-colors duration-200"
+            :class="props.connectionForm.isLocked ? 'bg-amber-500/20 border border-amber-500/30' : 'bg-stone-800 border border-stone-700'"
+          >
+            <div 
+              class="w-3 h-3 rounded-full transition-transform duration-200 shadow-sm"
+              :class="[
+                props.connectionForm.isLocked ? 'bg-amber-400 translate-x-5' : 'bg-stone-500'
+              ]"
+            ></div>
           </div>
         </div>
 

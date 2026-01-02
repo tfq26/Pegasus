@@ -28,11 +28,11 @@ function formatDate(timestamp: any) {
 <template>
   <div class="space-y-6">
     <div class="flex items-center justify-between px-1">
-      <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">Session History</h3>
+      <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Session History</h3>
       <div class="flex gap-2">
         <button 
           @click="emit('create-chat')"
-          class="p-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-violet-400 hover:bg-stone-800 transition-all"
+          class="p-1.5 rounded-lg bg-muted border border-border text-muted-foreground hover:text-purple-500 hover:bg-muted/80 transition-all"
           title="New Session"
         >
           <Plus class="w-3.5 h-3.5" />
@@ -40,7 +40,7 @@ function formatDate(timestamp: any) {
         <button 
           v-if="props.chats?.length"
           @click="emit('clear-all')"
-          class="p-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-400 hover:text-rose-400 hover:bg-stone-800 transition-all"
+          class="p-1.5 rounded-lg bg-muted border border-border text-muted-foreground hover:text-rose-400 hover:bg-muted/80 transition-all"
           title="Clear All"
         >
           <Trash class="w-3.5 h-3.5" />
@@ -50,10 +50,10 @@ function formatDate(timestamp: any) {
 
     <div class="space-y-2">
       <div v-if="!props.chats?.length" class="py-12 text-center space-y-3">
-        <div class="w-10 h-10 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center mx-auto opacity-50">
-          <Search class="w-5 h-5 text-stone-700" />
+        <div class="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center mx-auto opacity-50">
+          <Search class="w-5 h-5 text-muted-foreground" />
         </div>
-        <p class="text-[10px] font-bold uppercase tracking-widest text-stone-600">No session history</p>
+        <p class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No session history</p>
       </div>
 
       <div
@@ -63,18 +63,18 @@ function formatDate(timestamp: any) {
         class="group relative cursor-pointer px-4 py-3 rounded-xl border transition-all duration-300"
         :class="[
           props.selectedChatId === chat.id 
-            ? 'bg-violet-500/5 border-violet-500/20 text-stone-100 shadow-[0_0_20px_-10px_theme(colors.violet.500)]' 
-            : 'bg-stone-900/40 border-stone-800/80 hover:border-stone-700 hover:bg-stone-900/60 text-stone-400'
+            ? 'bg-purple-500/10 border-purple-500/20 text-foreground shadow-sm shadow-purple-500/20' 
+            : 'bg-card/40 border-border/80 hover:border-border hover:bg-muted/50 text-muted-foreground'
         ]"
       >
         <div class="flex justify-between items-start gap-3">
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium truncate group-hover:text-stone-100 transition-colors">{{ chat.title }}</p>
-            <p class="text-[10px] font-bold uppercase tracking-tighter text-stone-600 mt-1">{{ formatDate(chat.updated_at) }}</p>
+            <p class="text-sm font-medium truncate group-hover:text-foreground transition-colors">{{ chat.title }}</p>
+            <p class="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground mt-1">{{ formatDate(chat.updated_at) }}</p>
           </div>
           <button 
             @click.stop="emit('delete-chat', chat)"
-            class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-stone-800 text-stone-500 hover:text-rose-400 transition-all"
+            class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted text-muted-foreground hover:text-rose-400 transition-all"
           >
             <Trash class="w-3 h-3" />
           </button>

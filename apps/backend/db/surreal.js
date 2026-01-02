@@ -128,6 +128,17 @@ const initSchema = async () => {
             DEFINE INDEX idx_content ON TABLE knowledge_chunk FIELDS content SEARCH ANALYZER rag_analyzer BM25;
         `);
 
+        // User Secrets Table (Secure storage for API keys, etc)
+        await db.query(`
+            DEFINE TABLE user_secret SCHEMALESS;
+            DEFINE FIELD user ON TABLE user_secret TYPE record<user>;
+            DEFINE FIELD name ON TABLE user_secret TYPE string;
+            DEFINE FIELD value ON TABLE user_secret TYPE string; -- Should ideally be encrypted
+            DEFINE FIELD created_at ON TABLE user_secret TYPE datetime DEFAULT time::now();
+            
+            DEFINE INDEX idx_user_secret ON TABLE user_secret COLUMNS user, name UNIQUE;
+        `);
+
         console.log('[SurrealDB] Schema initialized');
     } catch (e) {
         // Ignore "table already exists" errors

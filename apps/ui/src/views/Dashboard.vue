@@ -62,15 +62,23 @@
           <span class="hidden sm:inline">Add Element</span>
         </button>
 
-        <button
-          @click="showChat = !showChat"
-          class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
-          :class="{ 'bg-muted text-foreground': showChat }"
-          title="Chat"
-        >
-          <MessageSquare class="w-4 h-4" />
-          <span class="hidden sm:inline">Chat</span>
-        </button>
+        <TooltipProvider :delay-duration="0">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button
+                @click="showChat = !showChat"
+                class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
+                :class="{ 'bg-muted text-foreground': showChat }"
+              >
+                <MessageSquare class="w-4 h-4" />
+                <span class="hidden sm:inline">Chat</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              Dashboard Assistant
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         <button
           v-if="currentDashboard && layout.length > 0"
@@ -492,6 +500,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,

@@ -129,21 +129,62 @@ export class GeminiProvider extends AIProvider {
     }
 
     async listModels() {
-        const relevantModels = [
-            'gemini-2.0-flash-exp',
-            'gemini-1.5-pro',
-            'gemini-1.5-flash',
-            'gemini-1.0-pro'
-        ]
+        // The specific models we want to support
+        const supportedModels = [
+            'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'gemini-3-pro-preview',
+            'gemini-3-flash-preview'
+        ];
 
-        return relevantModels.map(id => ({
+        try {
+            // Try to fetch dynamic list to get up-to-date metadata
+            const apiKey = this.config.apiKey;
+            if (apiKey) {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+                );
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.models) {
+                        const mapped = data.models
+                            .map(m => {
+                                const id = m.name.replace('models/', '');
+                                return {
+                                    id: id,
+                                    name: m.displayName,
+                                    provider: 'gemini',
+                                    description: m.description,
+                                    contextWindow: m.inputTokenLimit
+                                }
+                            })
+                            // STRICTLY filter for only the models we want
+                            .filter(m => supportedModels.includes(m.id))
+                            .sort((a, b) => {
+                                // Sort order: 2.5 Pro, 2.5 Flash, 3 Pro, 3 Flash
+                                return supportedModels.indexOf(a.id) - supportedModels.indexOf(b.id);
+                            });
+
+                        // Only return if we found matches
+                        if (mapped.length > 0) return mapped;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[Gemini] Failed to fetch dynamic model list, using fallback:", e.message);
+        }
+
+        // Fallback hardcoded list matching exactly what was requested
+        return supportedModels.map(id => ({
             id: id,
-            name: id === 'gemini-2.0-flash-exp' ? 'Gemini 2.0 Flash' :
-                id === 'gemini-1.5-pro' ? 'Gemini 1.5 Pro' :
-                    id === 'gemini-1.5-flash' ? 'Gemini 1.5 Flash' : 'Gemini 1.0 Pro',
+            name: id === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' :
+                id === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' :
+                    id === 'gemini-3-pro-preview' ? 'Gemini 3.0 Pro Preview' : 'Gemini 3.0 Flash Preview',
             provider: 'gemini',
             description: 'Google Generative AI model',
-            contextWindow: id.includes('1.5') ? 1000000 : 32768
+            // Default context windows if API fetch fails
+            contextWindow: id.includes('3') ? 1048576 : 1048576
         }))
     }
 

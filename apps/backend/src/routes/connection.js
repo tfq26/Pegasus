@@ -78,8 +78,6 @@ const upsertUser = async (payload) => {
 
 connections.get("/", async (c) => {
     const token = getAuthToken(c)
-    console.log('[Connection GET] Token present:', !!token)
-
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
@@ -90,7 +88,27 @@ connections.get("/", async (c) => {
             user: `user:${userId}`
         });
 
-        return c.json({ connections: results });
+        // Map results to format frontend expects (using provider/nickname)
+        const mapped = (results || []).map(row => {
+            let config = {}
+            if (row.config) {
+                try {
+                    config = typeof row.config === 'string' ? JSON.parse(row.config) : row.config
+                } catch (e) {
+                    console.error('[Connection] Failed to parse config JSON:', e.message)
+                }
+            }
+
+            return {
+                ...row,
+                provider: row.type || row.provider,
+                nickname: row.name || row.nickname,
+                isLocked: row.is_locked ?? false,
+                ...config
+            }
+        })
+
+        return c.json({ connections: mapped });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -105,25 +123,90 @@ connections.post("/", async (c) => {
         const resolvedId = await upsertUser(payload)
 
         const body = await c.req.json()
-        const { type, name, config } = body
+        const { type, provider, name, nickname, config, isLocked, ...rest } = body
 
-        const result = await db.query(`
+        // Support both formats
+        const finalType = provider || type
+        const finalName = nickname || name
+
+        // If config is missing but we have provider-specific keys in the root (flat format), use those
+        const finalConfig = config || rest
+
+        const [result] = await db.query(`
             CREATE connection CONTENT {
                 user: $user,
                 type: $type,
                 name: $name,
                 config: $config,
+                is_locked: $isLocked,
                 created_at: time::now(),
                 updated_at: time::now()
             }
         `, {
             user: resolvedId || `user:${payload.sub}`,
-            type,
-            name,
-            config: JSON.stringify(config)
+            type: finalType,
+            name: finalName,
+            config: typeof finalConfig === 'string' ? finalConfig : JSON.stringify(finalConfig),
+            isLocked: !!isLocked
         });
 
-        return c.json({ connection: result[0][0] });
+        const saved = result[0];
+        // Return mapped version for immediate UI use
+        const mappedSaved = {
+            ...saved,
+            provider: saved.type,
+            nickname: saved.name,
+            isLocked: saved.is_locked,
+            ...(typeof finalConfig === 'string' ? JSON.parse(finalConfig) : finalConfig)
+        }
+
+        return c.json(mappedSaved);
+    } catch (e) {
+        console.error('[Connection POST] Error:', e)
+        return c.json({ error: e.message }, 500);
+    }
+});
+
+connections.put("/:id", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    const id = c.req.param("id")
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const body = await c.req.json()
+        const { type, provider, name, nickname, config, isLocked, ...rest } = body
+
+        const finalType = provider || type
+        const finalName = nickname || name
+        const finalConfig = config || rest
+
+        const [result] = await db.query(`
+            UPDATE connection SET 
+                type = $type,
+                name = $name,
+                config = $config,
+                is_locked = $isLocked,
+                updated_at = time::now()
+            WHERE id = type::thing('connection', $id)
+        `, {
+            id: id.includes(':') ? id.split(':')[1] : id,
+            type: finalType,
+            name: finalName,
+            config: typeof finalConfig === 'string' ? finalConfig : JSON.stringify(finalConfig),
+            isLocked: !!isLocked
+        });
+
+        const updated = result[0];
+        const mappedUpdated = {
+            ...updated,
+            provider: updated.type,
+            nickname: updated.name,
+            isLocked: updated.is_locked,
+            ...(typeof finalConfig === 'string' ? JSON.parse(finalConfig) : finalConfig)
+        }
+
+        return c.json(mappedUpdated);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -133,11 +216,18 @@ connections.delete("/:id", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
-    const id = c.req.param("id")
+    // We expect the ID to be the UUID part, but if it comes as 'connection:uuid', we handle it.
+    let id = c.req.param("id")
+    if (id.includes(':')) {
+        id = id.split(':')[1]
+    }
+
     try {
-        await db.query("DELETE $id", { id });
+        // Use type::thing to ensure it's treated as a Record ID
+        await db.query(`DELETE type::thing('connection', $id)`, { id });
         return c.json({ ok: true });
     } catch (e) {
+        console.error("Delete connection error:", e)
         return c.json({ error: e.message }, 500);
     }
 });

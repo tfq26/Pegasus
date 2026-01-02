@@ -1,0 +1,65 @@
+{
+    "version": "0.8.2",
+    "releaseDate": "January 2, 2026",
+    "date": "2026-01-02",
+    "title": "Query History & AI Model Updates",
+    "description": "Release v0.8.2 - Enhanced query history management, updated AI model support (Gemini 2.5/3.0, OpenAI o1/4.5), and improved usage tracking accuracy.",
+    "highlights": [
+        "Query History: Delete, Copy, Share, and 'Clear All' actions",
+        "Updated AI Models: Support for Gemini 2.5/3.0 & OpenAI o1/4.5",
+        "Backend-side AI token usage tracking",
+        "Connection deletion stability fixes"
+    ],
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Enhanced Query History",
+                    "description": "Full management of your query log directly from the sidebar.",
+                    "details": [
+                        "Added 'Clear All' button (trash icon) to wipe history",
+                        "Added context menu for individual queries with Copy, Share, and Delete options",
+                        "Implemented backend endpoints for secure query deletion"
+                    ]
+                },
+                {
+                    "title": "Updated AI Models",
+                    "description": "Access the latest and most efficient models from Google and OpenAI.",
+                    "details": [
+                        "Gemini: Added Gemini 2.5 Pro, 2.5 Flash, 3.0 Pro Preview, 3.0 Flash Preview",
+                        "OpenAI: Refined available list to o1-mini, GPT-4o-mini, and GPT-4.5 Preview",
+                        "Prioritized 'Flash' models for faster default responses"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Robust AI Usage Tracking",
+                    "description": "Migrated token usage tracking to the backend to ensure complete accuracy.",
+                    "details": [
+                        "Tokens are now logged immediately upon generation, analysis, or formula creation",
+                        "Eliminated potential data loss from frontend reporting issues",
+                        "Ensures accurate quota management for Pro/Free tiers"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "Connection Management",
+                    "description": "Resolved critical issues preventing connection cleanup.",
+                    "details": [
+                        "Fixed `Can not execute DELETE statement` error when deleting connections",
+                        "Improved ID handling for SurrealDB record deletion"
+                    ]
+                }
+            ]
+        }
+    ]
+}

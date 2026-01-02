@@ -62,6 +62,7 @@ export type ConnectionEntry = {
   kusto?: KustoConfig
   sqlite?: SQLiteConfig
   surrealdb?: SurrealConfig
+  isLocked?: boolean
 }
 
 export const CONNECTION_STORAGE_KEY = 'pegasus-db-connections'

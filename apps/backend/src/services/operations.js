@@ -95,7 +95,9 @@ export async function getOperationAnalytics(userId, range = 'day') {
   const usageHistory = await db`
         SELECT 
             date_trunc(${trunc}, started_at) as bucket,
-            COUNT(*) as count
+            COUNT(*) as total_count,
+            COUNT(*) FILTER (WHERE status = 'completed') as success_count,
+            COUNT(*) FILTER (WHERE status = 'error') as error_count
         FROM operations
         WHERE user_id = ${userId}
           AND started_at > NOW() - CAST(${interval} AS INTERVAL)

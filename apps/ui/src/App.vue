@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onErrorCaptured, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Navbar from './components/Navbar.vue'
 import DesktopNavbar from './components/DesktopNavbar.vue'
@@ -8,12 +8,55 @@ import { useAuth } from '@/composables/useAuth'
 import { usePrefetch } from '@/composables/usePrefetch'
 import { useConnections } from '@/composables/useConnections'
 import { useDesktopMenu } from '@/composables/useDesktopMenu'
+import ErrorPage from '@/views/ErrorPage.vue'
 import 'vue-sonner/style.css'
 
 // Check if running in Tauri
 const isTauri = () => '__TAURI_INTERNALS__' in window
 const isDesktop = ref(false)
 const route = useRoute()
+
+// Global Error State
+const capturedError = ref<{
+    code: string | number
+    title: string
+    message: string
+    details: string
+    fatal: boolean
+} | null>(null)
+
+// Error Handling
+const handleGlobalError = (error: any, info?: string) => {
+    console.error('[App] Global error captured:', error, info)
+    
+    // Ignore harmless known warnings/errors if needed
+    if (error?.message?.includes('ResizeObserver')) return false
+
+    // Format error for display
+    capturedError.value = {
+        code: error?.code || 'RUNTIME_ERR',
+        title: 'Application Error',
+        message: error?.message || 'An unexpected error occurred.',
+        details: `${error?.stack || String(error)}\n\nContext: ${info || 'Global Scope'}`,
+        fatal: true
+    }
+    
+    return false // propagate if needed, or false to stop propagation in onErrorCaptured
+}
+
+// Vue Component Errors
+onErrorCaptured((err, instance, info) => {
+    return handleGlobalError(err, info)
+})
+
+// Window/Promise Errors
+const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    handleGlobalError(event.reason, 'Unhandled Promise Rejection')
+}
+
+const handleWindowError = (event: ErrorEvent) => {
+    handleGlobalError(event.error, 'Window Error')
+}
 
 // Routes that should be minimal (no navbar)
 const minimalRoutes = ['/auth/device', '/signin', '/local-auth']
@@ -30,6 +73,10 @@ const { loadConnections } = useConnections()
 
 // Fetch user on app mount - skip for Tauri when offline
 onMounted(async () => {
+  // Setup Global Listeners
+  window.addEventListener('unhandledrejection', handleUnhandledRejection)
+  window.addEventListener('error', handleWindowError)
+
   // Detect if running in Tauri
   isDesktop.value = isTauri()
 
@@ -45,13 +92,28 @@ onMounted(async () => {
   }
 })
 
+onUnmounted(() => {
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    window.removeEventListener('error', handleWindowError)
+})
+
 </script>
 
 <template>
   <!-- Minimal layout for auth pages -->
-  <div v-if="isMinimalRoute" class="h-full w-full bg-stone-950">
+  <div v-if="isMinimalRoute" class="h-full w-full bg-black">
     <Toaster position="top-right" richColors />
-    <router-view class="w-full h-full" />
+    <!-- For minimal routes, we still overlay the error entirely if it happens -->
+    <ErrorPage 
+      v-if="capturedError" 
+      :code="capturedError.code"
+      :title="capturedError.title"
+      :message="capturedError.message"
+      :details="capturedError.details"
+      :fatal="capturedError.fatal"
+      class="fixed inset-0 z-[100] bg-black"
+    />
+    <router-view v-else class="w-full h-full" />
   </div>
 
   <!-- Full App Layout (Phone, Tablet & Desktop) -->
@@ -65,8 +127,16 @@ onMounted(async () => {
 
     <!-- Main layout: Adjust padding for navbar height -->
     <div class="flex flex-1 overflow-hidden" :class="isDesktop ? 'pt-12' : 'pt-16'">
-      <main class="flex-1 bg-background overflow-y-auto w-full">
-        <router-view class="w-full" />
+      <main class="flex-1 bg-background overflow-y-auto w-full relative">
+        <ErrorPage 
+            v-if="capturedError" 
+            :code="capturedError.code"
+            :title="capturedError.title"
+            :message="capturedError.message"
+            :details="capturedError.details"
+            :fatal="capturedError.fatal"
+        />
+        <router-view v-else class="w-full" />
       </main>
     </div>
   </div>

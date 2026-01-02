@@ -1,76 +1,190 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
-    <div class="max-w-md w-full bg-card border border-border rounded-xl p-8 shadow-2xl text-center">
-      <!-- Icon -->
-      <div class="mb-6 flex justify-center">
-        <div v-if="severity === 'warning'" class="h-16 w-16 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-500">
-           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </div>
-        <div v-else class="h-16 w-16 rounded-lg bg-destructive/10 flex items-center justify-center text-destructive">
-           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        </div>
+  <div 
+    class="h-full w-full flex items-center justify-center p-6 animate-in fade-in duration-500"
+    :class="isDark ? 'bg-black/90 text-foreground' : 'bg-stone-50/90 text-stone-900'"
+  >
+    <div 
+      class="max-w-xl w-full border rounded-3xl p-12 shadow-2xl relative overflow-hidden text-center group transition-all duration-300"
+      :class="[
+        isDark 
+          ? 'bg-[#0a0a0b] border-white/5 ring-1 ring-purple-500/20 shadow-purple-900/10' 
+          : 'bg-white border-stone-200 ring-1 ring-purple-100 shadow-xl shadow-purple-900/5'
+      ]"
+    >
+      
+      <!-- Ambient Glow (Pegasus Purple) -->
+      <div 
+        class="absolute -top-32 -right-32 w-80 h-80 rounded-full blur-[100px] transition-all duration-1000"
+        :class="isDark ? 'bg-purple-600/30 group-hover:bg-purple-600/40' : 'bg-purple-200/50 group-hover:bg-purple-300/40'"
+      ></div>
+      <div 
+        class="absolute -bottom-40 -left-32 w-80 h-80 rounded-full blur-[100px] transition-all duration-1000"
+        :class="isDark ? 'bg-blue-600/20 group-hover:bg-blue-600/30' : 'bg-blue-100/60 group-hover:bg-blue-200/50'"
+      ></div>
+      
+      <!-- Pegasus Brand Icon -->
+      <div class="absolute top-8 left-1/2 -translate-x-1/2 opacity-50">
+        <img 
+          :src="isDark ? '/pegasus-white.svg' : '/pegasus.svg'" 
+          alt="Pegasus Logo" 
+          class="w-16 h-16 transition-all duration-500"
+          :class="isDark ? 'drop-shadow-[0_0_15px_rgba(168,85,247,0.5)]' : 'drop-shadow-[0_0_15px_rgba(168,85,247,0.2)]'"
+        />
       </div>
 
-      <h1 class="text-2xl font-bold mb-2">{{ title }}</h1>
-      <p class="text-muted-foreground mb-8">{{ message }}</p>
+      <!-- Main Icon Spacer -->
+      <div class="h-12 w-full"></div>
 
-      <div class="space-y-3">
-        <button 
-          v-if="actionLabel"
-          @click="handleAction"
-          class="w-full px-4 py-3 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-medium transition-colors"
+      <!-- Content -->
+      <div class="relative z-10 space-y-4 mb-10">
+        <h1 
+          class="text-4xl font-bold tracking-tight bg-clip-text text-transparent pb-1"
+          :class="isDark 
+            ? 'bg-gradient-to-br from-white via-purple-50 to-purple-200' 
+            : 'bg-gradient-to-br from-stone-900 via-stone-800 to-purple-900'"
         >
-          {{ actionLabel }}
+          {{ displayTitle }}
+        </h1>
+        <p 
+          class="text-base leading-relaxed max-w-sm mx-auto transition-colors duration-300"
+          :class="isDark ? 'text-stone-400' : 'text-stone-500'"
+        >
+          {{ displayMessage }}
+        </p>
+      </div>
+
+      <!-- Actions -->
+      <div class="space-y-3 relative z-10 max-w-xs mx-auto mb-10">
+        <button 
+          @click="handleReload"
+          class="w-full px-5 py-3.5 rounded-xl font-bold transition-all duration-200 shadow-lg flex items-center justify-center gap-2 group/btn active:scale-95"
+          :class="isDark 
+            ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-500/20' 
+            : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/30'"
+        >
+          <RefreshCcw class="w-4 h-4 group-hover/btn:rotate-180 transition-transform duration-500" />
+          Reload Application
         </button>
         
         <button 
-          @click="goHome"
-          class="w-full px-4 py-3 rounded-lg bg-secondary hover:bg-secondary/80 text-secondary-foreground font-medium transition-colors"
+          @click="goDashboard"
+          class="w-full px-5 py-3.5 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2 border"
+          :class="isDark
+            ? 'bg-white/5 hover:bg-white/10 text-white border-white/5 hover:border-purple-500/30'
+            : 'bg-white hover:bg-stone-50 text-stone-700 border-stone-200 hover:border-purple-300 shadow-sm'"
         >
-          {{ actionLabel ? 'Cancel' : 'Return Home' }}
+          <LayoutDashboard class="w-4 h-4 text-stone-500" :class="{ 'text-purple-300': isDark, 'text-stone-500': !isDark }" />
+          Back to Dashboard
         </button>
       </div>
+
+      <!-- Footer: Error Code & Details -->
+      <div class="relative z-10 border-t pt-6 flex flex-col items-center gap-4 transition-colors duration-300" :class="isDark ? 'border-white/5' : 'border-stone-100'">
+          <div 
+            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] uppercase tracking-widest font-bold"
+            :class="isDark 
+              ? 'bg-purple-500/10 border-purple-500/20 text-purple-300' 
+              : 'bg-purple-50 border-purple-100 text-purple-700'"
+          >
+            <span>Code</span>
+            <span class="font-mono" :class="isDark ? 'text-purple-200' : 'text-purple-900'">{{ errorCode }}</span>
+        </div>
+
+        <!-- Technical Details (Collapsible) -->
+        <div v-if="errorDetails" class="w-full">
+            <button 
+              @click="showDetails = !showDetails" 
+              class="text-[10px] uppercase font-bold tracking-widest flex items-center justify-center gap-1.5 mx-auto transition-colors duration-300"
+              :class="isDark ? 'text-stone-600 hover:text-purple-400' : 'text-stone-400 hover:text-purple-600'"
+            >
+                <component :is="showDetails ? ChevronUp : ChevronDown" class="w-3 h-3" />
+                Wait, what happened?
+            </button>
+            <div 
+              v-if="showDetails" 
+              class="mt-4 rounded-xl border p-4 text-left overflow-x-auto custom-scrollbar max-h-48 shadow-inner animate-in slide-in-from-top-2 duration-200"
+              :class="isDark 
+                ? 'bg-black/50 border-purple-500/20' 
+                : 'bg-stone-50 border-stone-200'"
+            >
+                <pre class="text-[10px] font-mono whitespace-pre-wrap break-all leading-relaxed" :class="isDark ? 'text-purple-300/90' : 'text-purple-800/80'">{{ errorDetails }}</pre>
+            </div>
+        </div>
+
+        <div class="mt-2">
+            <a 
+              href="mailto:support@pegasus.com" 
+              class="text-xs font-medium transition-colors"
+              :class="isDark ? 'text-stone-600 hover:text-stone-400' : 'text-stone-400 hover:text-stone-600'"
+            >Contact Support</a>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ErrorCodes, ErrorHandlers, type ErrorCode } from '@/lib/errorCodes'
+import { AlertTriangle, AlertOctagon, RefreshCcw, ChevronDown, ChevronUp, Sparkles, LayoutDashboard } from 'lucide-vue-next'
+import { useColorMode, usePreferredDark } from '@vueuse/core'
+
+const props = defineProps<{
+    code?: string | number
+    title?: string
+    message?: string
+    details?: string
+    fatal?: boolean
+}>()
 
 const route = useRoute()
-const router = useRouter()
-
-const code = computed(() => route.query.code as ErrorCode | undefined)
-const customMessage = computed(() => route.query.message as string | undefined)
-
-const handler = computed(() => {
-  if (code.value && ErrorHandlers[code.value]) {
-    return ErrorHandlers[code.value]
-  }
-  return ErrorHandlers[ErrorCodes.UNKNOWN_ERROR]
+const useRouterObj = useRouter()
+const preferredDark = usePreferredDark()
+const mode = useColorMode({
+  emitAuto: true,
+  selector: 'html',
+  attribute: 'class',
+  storageKey: 'pegasus-theme',
 })
 
-const title = computed(() => handler.value.title)
-const message = computed(() => customMessage.value || 'An unexpected error occurred.')
-const actionLabel = computed(() => handler.value.actionLabel)
-const severity = computed(() => handler.value.severity)
+const isDark = computed(() => mode.value === 'dark' || (mode.value === 'auto' && preferredDark.value))
 
-const handleAction = () => {
-  if (handler.value.redirect) {
-    router.push(handler.value.redirect)
-  } else {
-    // Retry or go back for unknown/misc errors
-    if (window.history.length > 2) {
-       router.go(-1) 
-    } else {
-       router.push('/')
-    }
-  }
+const showDetails = ref(false)
+
+// Determine values: Props take precedence, then route query, then defaults
+const errorCode = computed(() => props.code || route.query.code || 'ERR_UNKNOWN')
+const displayTitle = computed(() => props.title || (route.query.title as string) || 'Application Error')
+const displayMessage = computed(() => props.message || (route.query.message as string) || 'An unexpected runtime error has occurred. We have logged this issue and are working to resolve it.')
+const errorDetails = computed(() => props.details || (route.query.details as string) || null)
+const isFatal = computed(() => props.fatal ?? true)
+
+const severity = computed(() => {
+    const c = String(errorCode.value)
+    if (c === '404' || c.startsWith('WARN')) return 'warning'
+    return 'critical'
+})
+
+const handleReload = () => {
+    window.location.reload()
 }
 
-const goHome = () => {
-  router.push('/')
+const goDashboard = () => {
+    // Force a full reload to clear any corrupted state
+    window.location.href = '/dashboard'
 }
 </script>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+</style>

@@ -1,12 +1,21 @@
 import * as XLSX from 'xlsx'
-import { writeFileSync } from 'fs'
+import { writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+const MOCK_DATA_DIR = join(process.cwd(), 'mock-data')
+
+// Ensure directory exists
+if (!existsSync(MOCK_DATA_DIR)) {
+    mkdirSync(MOCK_DATA_DIR, { recursive: true })
+}
 
 // ============================================================================
 // TEST DATA SETS FOR UNIVERSAL DATA EDITOR
 // ============================================================================
-
-// Dataset 1: Sales Data (with clear headers - tests named-headers mode)
+// ... (rest of data remains same)
 const salesData = [
     { Name: 'John Smith', Age: 28, Department: 'Sales', Salary: 65000, City: 'New York', Status: 'Active' },
     { Name: 'Jane Doe', Age: 34, Department: 'Marketing', Salary: 72000, City: 'Los Angeles', Status: 'Active' },
@@ -62,9 +71,9 @@ console.log('🚀 Generating test data for Universal Data Editor...\n')
 const employeeWorkbook = XLSX.utils.book_new()
 const employeeSheet = XLSX.utils.json_to_sheet(salesData)
 XLSX.utils.book_append_sheet(employeeWorkbook, employeeSheet, 'Employees')
-XLSX.writeFile(employeeWorkbook, 'test-employees.xlsx')
-writeFileSync('test-employees.json', JSON.stringify(salesData, null, 2))
-console.log('✅ Created: test-employees.xlsx & test-employees.json')
+XLSX.writeFile(employeeWorkbook, join(MOCK_DATA_DIR, 'test-employees.xlsx'))
+writeFileSync(join(MOCK_DATA_DIR, 'test-employees.json'), JSON.stringify(salesData, null, 2))
+console.log('✅ Created: test-employees.xlsx & test-employees.json in ' + MOCK_DATA_DIR)
 console.log('   Purpose: Test named-headers mode with employee data')
 console.log('   AI Tests: Convert names to uppercase, calculate average salary\n')
 
@@ -72,9 +81,9 @@ console.log('   AI Tests: Convert names to uppercase, calculate average salary\n
 const inventoryWorkbook = XLSX.utils.book_new()
 const inventorySheet = XLSX.utils.json_to_sheet(inventoryData)
 XLSX.utils.book_append_sheet(inventoryWorkbook, inventorySheet, 'Inventory')
-XLSX.writeFile(inventoryWorkbook, 'test-inventory.xlsx')
-writeFileSync('test-inventory.json', JSON.stringify(inventoryData, null, 2))
-console.log('✅ Created: test-inventory.xlsx & test-inventory.json')
+XLSX.writeFile(inventoryWorkbook, join(MOCK_DATA_DIR, 'test-inventory.xlsx'))
+writeFileSync(join(MOCK_DATA_DIR, 'test-inventory.json'), JSON.stringify(inventoryData, null, 2))
+console.log('✅ Created: test-inventory.xlsx & test-inventory.json in ' + MOCK_DATA_DIR)
 console.log('   Purpose: Test calculations and formatting')
 console.log('   AI Tests: Calculate total stock value, format prices\n')
 
@@ -82,9 +91,9 @@ console.log('   AI Tests: Calculate total stock value, format prices\n')
 const ordersWorkbook = XLSX.utils.book_new()
 const ordersSheet = XLSX.utils.json_to_sheet(ordersData)
 XLSX.utils.book_append_sheet(ordersWorkbook, ordersSheet, 'Orders')
-XLSX.writeFile(ordersWorkbook, 'test-orders.xlsx')
-writeFileSync('test-orders.json', JSON.stringify(ordersData, null, 2))
-console.log('✅ Created: test-orders.xlsx & test-orders.json')
+XLSX.writeFile(ordersWorkbook, join(MOCK_DATA_DIR, 'test-orders.xlsx'))
+writeFileSync(join(MOCK_DATA_DIR, 'test-orders.json'), JSON.stringify(ordersData, null, 2))
+console.log('✅ Created: test-orders.xlsx & test-orders.json in ' + MOCK_DATA_DIR)
 console.log('   Purpose: Test data cleaning operations')
 console.log('   AI Tests: Fill blank notes, remove duplicates, uppercase status\n')
 
@@ -92,9 +101,9 @@ console.log('   AI Tests: Fill blank notes, remove duplicates, uppercase status\
 const numericWorkbook = XLSX.utils.book_new()
 const numericSheet = XLSX.utils.json_to_sheet(numericData)
 XLSX.utils.book_append_sheet(numericWorkbook, numericSheet, 'Data')
-XLSX.writeFile(numericWorkbook, 'test-numeric.xlsx')
-writeFileSync('test-numeric.json', JSON.stringify(numericData, null, 2))
-console.log('✅ Created: test-numeric.xlsx & test-numeric.json')
+XLSX.writeFile(numericWorkbook, join(MOCK_DATA_DIR, 'test-numeric.xlsx'))
+writeFileSync(join(MOCK_DATA_DIR, 'test-numeric.json'), JSON.stringify(numericData, null, 2))
+console.log('✅ Created: test-numeric.xlsx & test-numeric.json in ' + MOCK_DATA_DIR)
 console.log('   Purpose: Test column-letters mode (A, B, C, D)')
 console.log('   AI Tests: Calculate row sums, multiply columns\n')
 
@@ -103,8 +112,8 @@ const combinedWorkbook = XLSX.utils.book_new()
 XLSX.utils.book_append_sheet(combinedWorkbook, XLSX.utils.json_to_sheet(salesData), 'Employees')
 XLSX.utils.book_append_sheet(combinedWorkbook, XLSX.utils.json_to_sheet(inventoryData), 'Inventory')
 XLSX.utils.book_append_sheet(combinedWorkbook, XLSX.utils.json_to_sheet(ordersData), 'Orders')
-XLSX.writeFile(combinedWorkbook, 'test-combined.xlsx')
-console.log('✅ Created: test-combined.xlsx')
+XLSX.writeFile(combinedWorkbook, join(MOCK_DATA_DIR, 'test-combined.xlsx'))
+console.log('✅ Created: test-combined.xlsx in ' + MOCK_DATA_DIR)
 console.log('   Purpose: Test multi-sheet workbook handling\n')
 
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')

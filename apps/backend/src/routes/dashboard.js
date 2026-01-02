@@ -4,6 +4,7 @@ import { verify } from "hono/jwt"
 import { WorkOS } from "@workos-inc/node"
 import crypto from "crypto"
 import { db } from "../../db/surreal.js"
+import { SecretService } from "../services/SecretService.js"
 
 const dashboard = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
@@ -339,7 +340,8 @@ dashboard.post("/dashboards/:id/elements/widget", async (c) => {
                 query = widgetTemplateService.getWeatherQuery(config.location)
                 // Trigger initial sync
                 if (config.location) {
-                    fetch(`${c.req.url.split('/dashboards')[0]}/weather/sync/${encodeURIComponent(config.location)}`, {
+                    const syncUrl = `${c.req.url.split('/dashboards')[0]}/weather/sync/${encodeURIComponent(config.location)}?elementId=${elementId}`;
+                    fetch(syncUrl, {
                         method: 'POST',
                         headers: { 'Authorization': c.req.header('Authorization') || '' }
                     }).catch(err => console.warn('[Widget] Failed to trigger weather sync:', err))
@@ -353,11 +355,22 @@ dashboard.post("/dashboards/:id/elements/widget", async (c) => {
         const elementId = crypto.randomUUID()
 
         // Merge user config with defaults
-        const finalConfig = {
+        let finalConfig = {
             ...metadata.defaultConfig,
             ...config,
             widgetType // Store widget type in config for frontend
         }
+
+        // --- SECURITY ACTION: Move secrets to secure table ---
+        if (finalConfig.apiKey) {
+            console.log(`[Dashboard] Moving apiKey to secure storage for widget ${elementId}`);
+            await SecretService.storeSecret(userId, `widget_secret_${elementId}`, finalConfig.apiKey);
+
+            // Remove from config that goes into DB
+            delete finalConfig.apiKey;
+            finalConfig.hasSecret = true;
+        }
+        // ---------------------------------------------------
 
         // Create the element in the dashboard's data
         const [dashboard] = await db.query(`SELECT data FROM ${dashboardId}`)
@@ -521,10 +534,12 @@ dashboard.get("/dashboards/:id", async (c) => {
                         });
                     }
 
-                    // Replace ID with Name in the response (not DB)
+                    // Mask sensitive config
+                    const isOwner = role === 'owner';
                     elements = elements.map(el => ({
                         ...el,
-                        created_by: userMap[el.created_by] || 'Unknown'
+                        created_by: userMap[el.created_by] || 'Unknown',
+                        config: SecretService.maskConfig(el.config, isOwner)
                     }));
                 } catch (err) {
                     console.error('[Dashboard] Failed to fetch creator details:', err);

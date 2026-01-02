@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+// Force reload timestamp: 1735851000
 import { cors } from "hono/cors"
 import { adapters } from "./adapters/index.js"
 import { serve } from '@hono/node-server'
@@ -79,7 +80,7 @@ await connectDB();
 console.log('[Main] Database connected. Starting background services...');
 
 // Start background services after DB is ready
-stockService.start();
+// stockService.start();
 weatherService.start();
 import { dashboardRoutes } from "./src/routes/dashboard.js"
 import { connectionRoutes } from "./src/routes/connection.js"
@@ -1374,6 +1375,46 @@ app.post("/queries", async (c) => {
   } catch (e) {
     console.error("Save query error:", e)
     return c.json({ error: "Failed to save query" }, 500)
+  }
+})
+
+app.delete("/queries/:id", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const { id } = c.req.param()
+
+    // User can only delete their own queries
+    const queryId = `query_history:${id}`
+    await db.query(`DELETE ${queryId} WHERE user = $user`, {
+      user: `user:${payload.sub}`
+    })
+
+    return c.json({ success: true })
+  } catch (e) {
+    console.error("Delete query error:", e)
+    return c.json({ error: "Failed to delete query" }, 500)
+  }
+})
+
+app.delete("/queries", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+
+    // Delete all queries for this user
+    await db.query(`DELETE query_history WHERE user = $user`, {
+      user: `user:${payload.sub}`
+    })
+
+    return c.json({ success: true })
+  } catch (e) {
+    console.error("Clear queries error:", e)
+    return c.json({ error: "Failed to clear queries" }, 500)
   }
 })
 

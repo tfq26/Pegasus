@@ -70,20 +70,6 @@
       <div class="border-t pt-4 mt-2">
         <h3 class="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">API Widgets</h3>
         <div class="grid grid-cols-2 gap-4">
-          <!-- Stock Portfolio Widget -->
-          <button
-            @click="selectWidget('stock_portfolio')"
-            class="flex flex-col items-center justify-center gap-3 p-6 border rounded-sm hover:bg-muted/50 hover:border-primary/50 transition-all group"
-          >
-            <div class="p-3 rounded-lg bg-green-500/10 text-green-500 group-hover:scale-110 transition-transform">
-              <TrendingUp class="w-8 h-8" />
-            </div>
-            <div class="text-center">
-              <h3 class="font-medium">Stock Portfolio</h3>
-              <p class="text-xs text-muted-foreground mt-1">Your stock holdings and performance</p>
-            </div>
-          </button>
-
           <!-- Weather Widget -->
           <button
             @click="selectWidget('weather')"
@@ -102,11 +88,6 @@
     </DialogContent>
   </Dialog>
 
-  <!-- Widget Config Modals -->
-  <StockPortfolioConfig 
-    v-model:open="showStockConfig"
-    @save="handleWidgetConfig('stock_portfolio', $event)"
-  />
   <WeatherConfig
     v-model:open="showWeatherConfig"
     @save="handleWidgetConfig('weather', $event)"
@@ -122,8 +103,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { BarChart2, Table, Type, FileUp, TrendingUp, Cloud } from 'lucide-vue-next'
-import StockPortfolioConfig from './WidgetConfig/StockPortfolioConfig.vue'
+import { BarChart2, Table, Type, FileUp, Cloud } from 'lucide-vue-next'
 import WeatherConfig from './WidgetConfig/WeatherConfig.vue'
 
 defineProps<{
@@ -136,7 +116,6 @@ const emit = defineEmits<{
   'select-widget': [widgetType: string, config: any]
 }>()
 
-const showStockConfig = ref(false)
 const showWeatherConfig = ref(false)
 
 const selectType = (type: 'visualization' | 'table' | 'text' | 'file') => {
@@ -149,9 +128,7 @@ const selectWidget = (widgetType: string) => {
   emit('update:open', false)
   
   // Open appropriate config modal
-  if (widgetType === 'stock_portfolio') {
-    showStockConfig.value = true
-  } else if (widgetType === 'weather') {
+  if (widgetType === 'weather') {
     showWeatherConfig.value = true
   }
 }

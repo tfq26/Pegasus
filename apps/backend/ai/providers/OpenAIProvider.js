@@ -12,7 +12,7 @@ export class OpenAIProvider extends AIProvider {
         }))
 
         const requestBody = {
-            model: options.model || this.config.model || 'gpt-4o',
+            model: options.model || this.config.model || 'gpt-4o-mini',
             messages: apiMessages,
             temperature: options.temperature ?? 0.7,
             max_tokens: options.maxTokens || 2000
@@ -74,13 +74,8 @@ export class OpenAIProvider extends AIProvider {
         // We could verify against the API, but for now this ensures the user sees the models we support.
         const relevantModels = [
             'gpt-4.5-preview',
-            'gpt-4.1-turbo',
-            'o1-preview',
             'o1-mini',
-            'gpt-4o',
-            'gpt-4o-mini',
-            'gpt-4-turbo',
-            'gpt-4'
+            'gpt-4o-mini'
         ]
 
         return relevantModels.map(id => ({

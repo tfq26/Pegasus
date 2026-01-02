@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-background text-foreground p-6">
+  <div class="h-full min-h-[calc(100vh-64px)] w-full flex flex-col items-center justify-center bg-black text-foreground p-6">
     <div class="max-w-md w-full">
       <!-- Logo/Branding -->
       <div class="text-center mb-8">
@@ -7,8 +7,8 @@
         <p class="text-muted-foreground">You're a step away from flying with your data</p>
       </div>
 
-      <!-- Login Card -->
-      <div class="bg-card border border-border rounded-2xl p-8 shadow-lg">
+      <!-- Login Content (Gray section/border/shadow removed) -->
+      <div class="p-8">
         <div v-if="isLoading" class="text-center py-8">
           <div class="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
           <p class="mt-4 text-muted-foreground">Checking authentication...</p>

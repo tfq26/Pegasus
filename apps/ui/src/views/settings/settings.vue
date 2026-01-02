@@ -25,6 +25,17 @@
       <div class="flex-1 overflow-y-auto p-10 pb-24">
         <section v-if="activeTab === 'general'" class="fade-section">
           <GeneralTab :settings="settings" :is-dark="isDark" :toggle-theme="toggleTheme" />
+          
+          <!-- Debug Area -->
+          <div class="mt-8 pt-8 border-t border-border">
+             <h3 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Debug Actions</h3>
+             <button 
+                @click="() => { throw new Error('This is a simulated crash to test the global error boundary.') }"
+                class="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 rounded-lg text-sm font-medium transition-colors"
+             >
+                Trigger Test Error
+             </button>
+          </div>
         </section>
 
         <section v-if="activeTab === 'ai'" class="fade-section">
@@ -218,7 +229,8 @@ const connectionForm = reactive<ConnectionFormState>({
     database: 'postgres',
     ssl: false
   },
-  surrealdb: {}
+  surrealdb: {},
+  isLocked: false
 })
 
 const canAddConnection = computed(() => connectionForm.nickname.trim().length > 0)
@@ -333,7 +345,8 @@ const resetConnectionForm = () => {
       database: 'postgres',
       ssl: false
     },
-    surrealdb: {}
+    surrealdb: {},
+    isLocked: false
   }
   Object.assign(connectionForm, fresh)
 }

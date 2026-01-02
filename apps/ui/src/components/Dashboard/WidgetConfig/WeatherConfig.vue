@@ -51,9 +51,7 @@
         </div>
         
         <div class="space-y-2">
-          <label class="text-sm font-medium">
-            Auto-Refresh Interval
-          </label>
+          <label class="text-sm font-medium">Auto-Refresh Interval</label>
           <select
             v-model="config.autoRefresh"
             class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -63,6 +61,22 @@
             <option :value="1800000">30 minutes</option>
             <option :value="3600000">1 hour</option>
           </select>
+        </div>
+
+        <div class="space-y-2 border-t pt-4 mt-4">
+          <label class="text-sm font-medium flex items-center justify-between">
+            Custom API Key
+            <span class="text-[10px] uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Optional</span>
+          </label>
+          <input
+            v-model="config.apiKey"
+            type="password"
+            placeholder="OpenWeatherMap API Key"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+          />
+          <p class="text-xs text-muted-foreground">
+            If provided, this dashboard will use your own key. It will be stored securely and hidden from other viewers.
+          </p>
         </div>
       </div>
       
@@ -108,7 +122,8 @@ const emit = defineEmits<{
 const config = ref({
   location: 'San Francisco',
   units: 'imperial' as 'imperial' | 'metric',
-  autoRefresh: 600000
+  autoRefresh: 600000,
+  apiKey: ''
 })
 
 // Reset config when dialog opens
@@ -117,7 +132,8 @@ watch(() => props.open, (isOpen) => {
     config.value = {
       location: 'San Francisco',
       units: 'imperial',
-      autoRefresh: 600000
+      autoRefresh: 600000,
+      apiKey: ''
     }
   }
 })

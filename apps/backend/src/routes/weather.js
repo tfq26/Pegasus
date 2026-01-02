@@ -44,7 +44,18 @@ weather.post("/sync/:location", async (c) => {
         }
 
         // Fetch fresh data from API
-        const apiKey = process.env.OPENWEATHER_API_KEY;
+        let apiKey = process.env.OPENWEATHER_API_KEY;
+        const elementId = c.req.query("elementId");
+
+        if (elementId) {
+            const { SecretService } = await import("../services/SecretService.js");
+            const customKey = await SecretService.getSecret(payload.sub, `widget_secret_${elementId}`);
+            if (customKey) {
+                console.log(`[Weather] Using custom API key for widget ${elementId}`);
+                apiKey = customKey;
+            }
+        }
+
         if (!apiKey) {
             return c.json({ error: "Weather API key not configured" }, 500);
         }

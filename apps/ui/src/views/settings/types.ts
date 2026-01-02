@@ -11,6 +11,7 @@ export type ConnectionFormState = {
   kusto: KustoConfig
   sqlite: SQLiteConfig
   surrealdb: SurrealConfig
+  isLocked: boolean
 }
 
 export const defaultConnectionForm: ConnectionFormState = {
@@ -22,7 +23,8 @@ export const defaultConnectionForm: ConnectionFormState = {
   mongodb: { url: '', database: '', collection: '' },
   kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '' },
   sqlite: { path: '', authToken: '' },
-  surrealdb: { protocol: 'ws', host: '127.0.0.1', port: 8000, namespace: 'test', database: 'test', username: 'root', password: 'root' }
+  surrealdb: { protocol: 'ws', host: '127.0.0.1', port: 8000, namespace: 'test', database: 'test', username: 'root', password: 'root' },
+  isLocked: false
 }
 
 export type ConnectionStatusState = {

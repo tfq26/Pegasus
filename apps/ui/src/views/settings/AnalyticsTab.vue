@@ -93,7 +93,10 @@
                 </div>
             </div>
 
-            <div class="h-64">
+            <div class="h-64 relative">
+                <div v-if="!hasActivityData" class="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm z-10 bg-background/50 backdrop-blur-[1px]">
+                    No activity recorded in this period
+                </div>
                 <component 
                     :is="chartType === 'line' ? Line : Bar" 
                     v-if="chartData.usage" 
@@ -237,7 +240,8 @@ const chartData = computed(() => {
         if (timeRange.value === 'year') return date.toLocaleDateString([], { month: 'short' })
         return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
     })
-    const historyCounts = historyData.map((h: any) => parseInt(h.count))
+    const historySuccessCounts = historyData.map((h: any) => parseInt(h.success_count || '0'))
+    const historyErrorCounts = historyData.map((h: any) => parseInt(h.error_count || '0'))
 
     return {
         category: {
@@ -279,27 +283,56 @@ const chartData = computed(() => {
         },
         usage: {
             labels: historyLabels,
-            datasets: [{
-                label: 'Operations',
-                backgroundColor: (context: any) => {
-                    const ctx = context.chart.ctx;
-                    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-                    gradient.addColorStop(0, 'rgba(168, 85, 247, 0.4)');
-                    gradient.addColorStop(1, 'rgba(168, 85, 247, 0.0)');
-                    return gradient;
+            datasets: [
+                {
+                    label: 'Successful Operations',
+                    backgroundColor: (context: any) => {
+                        const ctx = context.chart.ctx;
+                        const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+                        gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); // Emerald-500
+                        gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+                        return gradient;
+                    },
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(16, 185, 129, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverRadius: 5,
+                    fill: true,
+                    tension: 0.4,
+                    borderRadius: chartType.value === 'bar' ? 4 : 0,
+                    data: historySuccessCounts
                 },
-                borderColor: 'rgba(168, 85, 247, 1)',
-                borderWidth: 2,
-                pointBackgroundColor: 'rgba(168, 85, 247, 1)',
-                pointBorderColor: '#fff',
-                pointHoverRadius: 5,
-                fill: true,
-                tension: 0.4,
-                borderRadius: chartType.value === 'bar' ? 4 : 0,
-                data: historyCounts
-            }]
+                {
+                    label: 'Failed Operations',
+                    backgroundColor: (context: any) => {
+                        const ctx = context.chart.ctx;
+                        const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+                        gradient.addColorStop(0, 'rgba(244, 63, 94, 0.4)'); // Rose-500
+                        gradient.addColorStop(1, 'rgba(244, 63, 94, 0.0)');
+                        return gradient;
+                    },
+                    borderColor: 'rgba(244, 63, 94, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(244, 63, 94, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverRadius: 5,
+                    fill: true,
+                    tension: 0.4,
+                    borderRadius: chartType.value === 'bar' ? 4 : 0,
+                    data: historyErrorCounts
+                }
+            ]
         }
     }
+})
+
+const hasActivityData = computed(() => {
+    if (!chartData.value?.usage?.datasets) return false
+    const totalOps = chartData.value.usage.datasets.reduce((acc: number, ds: any) => {
+        return acc + ds.data.reduce((a: number, b: number) => a + b, 0)
+    }, 0)
+    return totalOps > 0
 })
 
 const lineOptions = {

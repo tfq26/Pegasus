@@ -460,6 +460,26 @@ export async function saveQuery(query: string, source: 'user' | 'ai', status: 's
   return response.json()
 }
 
+export async function deleteQuery(queryId: string) {
+  const response = await fetch(`${QUERY_API_URL}/queries/${queryId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to delete query')
+  return response.json()
+}
+
+export async function clearAllQueries() {
+  const response = await fetch(`${QUERY_API_URL}/queries`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+    credentials: 'include'
+  })
+  if (!response.ok) throw new Error('Failed to clear queries')
+  return response.json()
+}
+
 // Dashboard V2 API (Multi-dashboard)
 export async function fetchDashboards() {
   const response = await fetch(`${QUERY_API_URL}/dashboards`, {

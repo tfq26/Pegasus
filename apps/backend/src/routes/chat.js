@@ -196,6 +196,35 @@ function checkIfModifiesData(targetColumn, spreadsheetData, isOverwrite) {
     return isOverwrite === true;
 }
 
+// Helper to log AI usage
+const logAiUsage = async (userId, tokens, model, type, content, connectionId) => {
+    if (!tokens || tokens <= 0) return;
+    try {
+        await db.query(`
+            CREATE query_history CONTENT {
+                user: $user,
+                query: $content,
+                source: $source,
+                model: $model,
+                status: 'success',
+                connection: $connection,
+                tokens_used: $tokens,
+                created_at: time::now()
+            }
+        `, {
+            user: `user:${userId}`,
+            content: content ? content.substring(0, 500) : 'AI Operation',
+            source: type,
+            model: model,
+            connection: connectionId ? (connectionId.includes(':') ? connectionId : `connection:${connectionId}`) : null,
+            tokens: tokens
+        });
+        console.log(`[Usage] Logged ${tokens} tokens for ${userId} (${type})`);
+    } catch (e) {
+        console.error("Failed to log AI usage:", e);
+    }
+}
+
 
 // Chat Routes
 chat.get("/chats", async (c) => {
@@ -416,14 +445,17 @@ chat.post("/ai/generate-formula", async (c) => {
             { role: 'user', content: prompt }
         ], { json: true, model })
 
+        const usage = response.usage
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'ai_formula', request)
+
         let result
         try {
-            result = JSON.parse(response)
+            result = JSON.parse(response.text || response)
         } catch (parseError) {
             console.error('Failed to parse AI response:', response)
             return c.json({
                 error: 'AI returned invalid response format',
-                details: response?.substring(0, 200)
+                details: (response.text || response)?.substring(0, 200)
             }, 500)
         }
 
@@ -490,7 +522,10 @@ Return JSON:
             { role: 'user', content: prompt }
         ], { json: true, model })
 
-        return c.json(JSON.parse(response))
+        const usage = response.usage
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'ai_formula_debug', 'Debug Formula')
+
+        return c.json(JSON.parse(response.text || response))
     } catch (e) {
         return c.json({ error: "Analysis failed" }, 500)
     }
@@ -758,6 +793,10 @@ chat.post("/ai/generate", async (c) => {
         let generatedQuery = typeof result === 'string' ? result : result.text
         const usage = typeof result === 'string' ? null : result.usage
 
+        if (usage) {
+            await logAiUsage(userId, usage.totalTokens || usage.total_tokens, aiSettings.modelId, 'ai_generation', prompt, connectionId)
+        }
+
         // Clean markdown code blocks
         generatedQuery = generatedQuery.replace(/^```(?:surrealql|sql)?\s*([\s\S]*?)\s*```$/i, '$1').trim()
         // Clean leading label if present (e.g. "surrealql\nSELECT...")
@@ -991,7 +1030,15 @@ chat.post("/ai/analyze", async (c) => {
         } catch (e) { }
 
         console.log('[AI Analyze] Calling aiClient.analyzeResults...')
-        const analysis = await aiClient.analyzeResults(question, results, query, activeModel)
+        const analysisResult = await aiClient.analyzeResults(question, results, query, activeModel)
+        // Check if analysisResult is object with text/usage or string (backwards compat)
+        const analysis = typeof analysisResult === 'object' && analysisResult.text ? analysisResult.text : analysisResult
+        const usage = typeof analysisResult === 'object' ? analysisResult.usage : null
+
+        if (usage) {
+            await logAiUsage(userId, usage.totalTokens || usage.total_tokens, activeModel, 'ai_analyze', question)
+        }
+
         console.log('[AI Analyze] Analysis received (type:', typeof analysis, ', length:', analysis?.length, ')')
 
         // Parse the AI response - it might be JSON with a "summary" field
@@ -1137,7 +1184,17 @@ Keep the tone professional and helpful.
 `;
 
         const response = await aiClient.generateText(prompt, null)
-        return c.json({ analysis: response })
+        // With AIClient update, response is now { text, usage }
+        const analysisText = response.text || response
+        const usage = response.usage
+
+        // Log usage (using payload.sub as we don't have resolved userId here easily but we did verify token)
+        const payload = await verify(token, jwtSecret)
+        if (usage) {
+            await logAiUsage(payload.sub, usage.totalTokens || usage.total_tokens, 'openai', 'ai_dashboard_summary', dashboardTitle)
+        }
+
+        return c.json({ analysis: analysisText })
     } catch (e) {
         console.error("[Chat] Analyze dashboard failed:", e)
         return c.json({ error: e.message || "Failed to analyze dashboard" }, 500)

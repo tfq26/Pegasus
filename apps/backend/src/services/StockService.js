@@ -10,13 +10,14 @@ export class StockService extends APIService {
         this.syncInterval = 1 * 60 * 60 * 1000; // 1 hour
         this.isSyncingReal = false;
         this.rateLimitCooldown = 0;
+        this.isDeactivated = true; // Set to true to kill all Alpha Vantage calls
     }
 
     /**
      * Search for stocks using Alpha Vantage SYMBOL_SEARCH
      */
     async searchStocks(keywords) {
-        if (!this.apiKey) return [];
+        if (this.isDeactivated || !this.apiKey) return [];
         try {
             const url = `https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${keywords}&apikey=${this.apiKey}`;
             const response = await fetch(url);
@@ -55,7 +56,7 @@ export class StockService extends APIService {
      * Fetch historical daily data from Alpha Vantage and persist it
      */
     async syncHistory(symbol) {
-        if (!this.apiKey) return;
+        if (this.isDeactivated || !this.apiKey) return;
         if (Date.now() < this.rateLimitCooldown) return;
 
         try {
@@ -170,7 +171,7 @@ export class StockService extends APIService {
     }
 
     async refreshStock(symbol) {
-        if (!this.apiKey) return;
+        if (this.isDeactivated || !this.apiKey) return;
         if (Date.now() < this.rateLimitCooldown) return;
 
         try {

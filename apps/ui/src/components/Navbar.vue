@@ -8,7 +8,7 @@
         <img
           src="/pegasus-purple.svg"
           alt="Pegasus Logo"
-          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110 shadow-lg shadow-primary/20 rounded-full"
+          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
         />
         <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block">Pegasus</span>
       </RouterLink>
@@ -50,6 +50,9 @@
             {{ isOnline ? 'Connected' : 'Offline' }}
           </span>
         </div>
+
+        <!-- Global Notifications -->
+        <NotificationCenter v-if="!isPhone" />
 
         <!-- Global Progress Bar -->
         <GlobalProgressBar v-if="!isPhone" />
@@ -291,6 +294,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useMobileDetection } from '@/composables/useMobileDetection'
 import { useColorMode } from '@vueuse/core'
 import { getSubscriptionStatus } from '@/lib/api'
+import NotificationCenter from './NotificationCenter.vue'
 import GlobalProgressBar from './GlobalProgressBar.vue'
 import {
   Home,
@@ -330,9 +334,6 @@ interface NavLink {
 const links: NavLink[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, webOnly: false },
   { to: '/query', label: 'Query', icon: MessageSquare, webOnly: false },
-  { to: '/stocks', label: 'Stocks', icon: TrendingUp, webOnly: false },
-  { to: '/support', label: 'Support', icon: CircleHelp, webOnly: false },
-  { to: '/docs', label: 'Docs', icon: BookOpen, webOnly: false },
 ]
 
 // Check if running in Tauri desktop

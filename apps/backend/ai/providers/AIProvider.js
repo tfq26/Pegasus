@@ -68,8 +68,8 @@ export class AIProvider {
 
         const response = await this.generateContent(messages, { json: true })
         const text = typeof response === 'string' ? response : response.text
-        // Usage is lost here for now unless we change return type
-        return text
+        const usage = typeof response === 'string' ? null : response.usage
+        return { text, usage }
     }
 
     /**

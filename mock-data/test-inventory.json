@@ -1,0 +1,66 @@
+[
+  {
+    "Product": "Laptop",
+    "Category": "Electronics",
+    "Price": 1299.99,
+    "Stock": 45,
+    "Supplier": "TechCorp",
+    "LastRestocked": "2024-01-15"
+  },
+  {
+    "Product": "Mouse",
+    "Category": "Electronics",
+    "Price": 29.99,
+    "Stock": 150,
+    "Supplier": "TechCorp",
+    "LastRestocked": "2024-01-20"
+  },
+  {
+    "Product": "Keyboard",
+    "Category": "Electronics",
+    "Price": 79.99,
+    "Stock": 89,
+    "Supplier": "TechCorp",
+    "LastRestocked": "2024-01-18"
+  },
+  {
+    "Product": "Monitor",
+    "Category": "Electronics",
+    "Price": 399.99,
+    "Stock": 32,
+    "Supplier": "DisplayPro",
+    "LastRestocked": "2024-01-22"
+  },
+  {
+    "Product": "Desk Chair",
+    "Category": "Furniture",
+    "Price": 249.99,
+    "Stock": 28,
+    "Supplier": "OfficePlus",
+    "LastRestocked": "2024-01-10"
+  },
+  {
+    "Product": "Standing Desk",
+    "Category": "Furniture",
+    "Price": 599.99,
+    "Stock": 15,
+    "Supplier": "OfficePlus",
+    "LastRestocked": "2024-01-12"
+  },
+  {
+    "Product": "Webcam",
+    "Category": "Electronics",
+    "Price": 89.99,
+    "Stock": 67,
+    "Supplier": "TechCorp",
+    "LastRestocked": "2024-01-25"
+  },
+  {
+    "Product": "Headphones",
+    "Category": "Electronics",
+    "Price": 149.99,
+    "Stock": 103,
+    "Supplier": "AudioMax",
+    "LastRestocked": "2024-01-23"
+  }
+]
