@@ -475,7 +475,7 @@ import DashboardInsights from '@/components/Dashboard/DashboardInsights.vue'
 import DashboardFilters from '@/components/Dashboard/DashboardFilters.vue'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
-import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy } from '@/lib/api'
+import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy, api } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 import {
   ContextMenu,
