@@ -49,27 +49,20 @@
         </div>
 
         <button 
-          @click="syncRealData"
-          class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all text-xs font-bold uppercase tracking-wider"
+          @click="refreshAllData"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all text-xs font-bold uppercase tracking-wider disabled:opacity-50"
           title="Sync with real market data"
-          :disabled="isSyncing"
+          :disabled="isSyncing || isRefreshing"
         >
-          <Zap class="w-3.5 h-3.5" :class="{ 'animate-pulse text-orange-500': isSyncing }" />
-          {{ isSyncing ? 'Syncing...' : 'Sync Data' }}
+          <Zap v-if="!isSyncing" class="w-3.5 h-3.5" />
+          <RefreshCw v-else class="w-3.5 h-3.5 animate-spin" />
+          {{ isSyncing || isRefreshing ? 'Syncing...' : 'Sync Data' }}
         </button>
 
         <div class="hidden md:flex flex-col items-end border-l border-border pl-4">
           <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Total Portfolio Value</span>
           <span class="text-lg font-mono font-bold">{{ formatCurrency(metrics?.totalMarketValue || 0) }}</span>
         </div>
-        
-        <button 
-          @click="fetchPortfolio"
-          class="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
-          title="Refresh Data"
-        >
-          <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" />
-        </button>
       </div>
     </header>
 
@@ -132,7 +125,9 @@
             <!-- Performance Chart -->
             <section class="p-6 bg-card border border-border rounded-2xl">
               <div class="flex items-center justify-between mb-6">
-                <h3 class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Portfolio History (30D)</h3>
+                <h3 class="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  {{ selectedStock ? `${selectedStock.symbol} Performance` : 'Portfolio History' }} (30D)
+                </h3>
                 <div class="flex gap-2">
                   <span v-if="history.length > 0 && history[0].is_estimated" class="text-[10px] bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded-full font-bold">Estimated Trend</span>
                   <span v-else-if="history.length > 0" class="text-[10px] bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full font-bold">Live Market</span>
@@ -542,15 +537,17 @@ const trackAndSelect = async (result: any) => {
     }
 }
 
-const syncRealData = async () => {
-    if (isSyncing.value) return
+const refreshAllData = async () => {
+    if (isSyncing.value || isRefreshing.value) return
     isSyncing.value = true
     try {
-        // Clean up duplicates first
+        // Full Sync: Cleanup duplicates + Fetch real market prices
         await api.post('/stocks/cleanup')
-        
         const response = await api.post<any>('/stocks/refresh')
         toast.success(response.message || 'Alpha Vantage sync started.')
+        
+        // Refresh local portfolio metrics immediately
+        await fetchPortfolio()
     } catch (e: any) {
         toast.error(e.message || 'Sync failed')
     } finally {
@@ -560,6 +557,12 @@ const syncRealData = async () => {
 }
 
 const selectStock = (stock: any) => {
+  if (selectedStock.value?.symbol === stock.symbol) {
+    selectedStock.value = null
+    history.value = []
+    fetchPortfolio() // This will refresh top-level history
+    return
+  }
   selectedStock.value = stock
   txAmount.value = 1
   txPrice.value = stock.price ? parseFloat(stock.price.toFixed(2)) : 0
