@@ -44,6 +44,31 @@ stocks.post("/refresh", async (c) => {
     }
 });
 
+stocks.get("/portfolio", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = `user:${payload.sub}`
+
+        // Query graph relations and fetch stock data in one go
+        const [results] = await db.query(`
+            SELECT 
+                quantity,
+                buy_price,
+                created_at,
+                ->owns->stock.* as stock_data
+            FROM ${userId}->owns
+            ORDER BY created_at DESC
+        `);
+
+        return c.json({ portfolio: results });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
 stocks.get("/:symbol", async (c) => {
     const symbol = c.req.param("symbol");
     const safeId = symbol.replace(/\./g, '_');
@@ -86,31 +111,6 @@ stocks.post("/buy", async (c) => {
         });
 
         return c.json({ ok: true, message: `Bought ${quantity} shares of ${symbol}` });
-    } catch (e) {
-        return c.json({ error: e.message }, 500);
-    }
-});
-
-stocks.get("/portfolio", async (c) => {
-    const token = getCookie(c, "session")
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const userId = `user:${payload.sub}`
-
-        // Query graph relations and fetch stock data in one go
-        const [results] = await db.query(`
-            SELECT 
-                quantity,
-                buy_price,
-                created_at,
-                ->owns->stock.* as stock_data
-            FROM ${userId}->owns
-            ORDER BY created_at DESC
-        `);
-
-        return c.json({ portfolio: results });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
