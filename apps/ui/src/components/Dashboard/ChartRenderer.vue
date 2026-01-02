@@ -1,5 +1,6 @@
 <template>
   <div class="w-full h-full relative">
+    <!-- Stat Display -->
     <div v-if="type === 'stat'" class="flex flex-col items-center justify-center h-full p-4 text-center">
       <div class="text-4xl font-bold text-primary mb-2">{{ formatStatValue(data) }}</div>
       <div class="text-sm text-muted-foreground uppercase tracking-wider">{{ options?.label || '' }}</div>
@@ -7,6 +8,62 @@
         {{ customization.description }}
       </div>
     </div>
+    
+    <!-- Weather Display -->
+    <div v-else-if="type === 'weather'" class="flex flex-col h-full p-4 overflow-auto">
+      <div v-if="weatherData" class="space-y-4">
+        <!-- Current Weather -->
+        <div class="flex items-center gap-4 p-4 bg-muted/30 rounded-lg">
+          <img 
+            v-if="weatherData.icon" 
+            :src="weatherData.icon" 
+            alt="Weather icon"
+            class="w-16 h-16"
+          />
+          <div class="flex-1">
+            <div class="text-3xl font-bold">{{ formatTemp(weatherData.temp) }}</div>
+            <div class="text-sm text-muted-foreground">{{ weatherData.condition }}</div>
+          </div>
+          <div class="text-right text-xs text-muted-foreground space-y-1">
+            <div v-if="weatherData.feels_like">Feels like {{ formatTemp(weatherData.feels_like) }}</div>
+            <div v-if="weatherData.humidity">Humidity {{ weatherData.humidity }}%</div>
+            <div v-if="weatherData.wind_speed">Wind {{ weatherData.wind_speed }} mph</div>
+          </div>
+        </div>
+        
+        <!-- 5-Day Forecast -->
+        <div v-if="weatherData.forecast && weatherData.forecast.length > 0" class="space-y-2">
+          <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">5-Day Forecast</h4>
+          <div class="grid grid-cols-5 gap-2">
+            <div 
+              v-for="day in weatherData.forecast" 
+              :key="day.date"
+              class="flex flex-col items-center p-2 bg-muted/20 rounded-lg"
+            >
+              <div class="text-xs text-muted-foreground mb-1">{{ formatDate(day.date) }}</div>
+              <img 
+                v-if="day.icon" 
+                :src="day.icon" 
+                alt="Weather icon"
+                class="w-8 h-8"
+              />
+              <div class="text-sm font-semibold">{{ formatTemp(day.temp) }}</div>
+              <div class="text-xs text-muted-foreground truncate w-full text-center">{{ day.condition }}</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Cache Info -->
+        <div v-if="weatherData.cached_at" class="text-xs text-muted-foreground text-center">
+          Last updated: {{ formatTime(weatherData.cached_at) }}
+        </div>
+      </div>
+      <div v-else class="flex items-center justify-center h-full text-muted-foreground">
+        No weather data available
+      </div>
+    </div>
+    
+    <!-- Chart Display -->
     <component v-else :is="chartComponent" :data="computedData" :options="computedOptions" />
   </div>
 </template>
@@ -46,6 +103,41 @@ const formatStatValue = (val: any) => {
       if (val.value !== undefined) return val.value
   }
   return val
+}
+
+// Weather data extraction
+const weatherData = computed(() => {
+  if (props.type !== 'weather' || !props.data) return null
+  
+  // Data might be in different formats depending on query result
+  if (Array.isArray(props.data) && props.data.length > 0) {
+    return props.data[0]
+  }
+  
+  return props.data
+})
+
+// Format temperature
+const formatTemp = (temp: number) => {
+  if (temp === undefined || temp === null) return '—'
+  return `${Math.round(temp)}°`
+}
+
+// Format date for forecast
+const formatDate = (dateStr: string) => {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// Format timestamp
+const formatTime = (timestamp: string) => {
+  const date = new Date(timestamp)
+  return date.toLocaleString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    hour: 'numeric', 
+    minute: '2-digit' 
+  })
 }
 
 const computedData = computed(() => {
