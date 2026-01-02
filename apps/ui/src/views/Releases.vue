@@ -32,7 +32,7 @@
                     <span v-if="release.isLatest" class="px-2 py-0.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
                       Latest
                     </span>
-                    <span class="text-sm text-muted-foreground">{{ release.releaseDate }}</span>
+                    <span class="text-sm text-muted-foreground">{{ release.date ? new Date(release.date).toLocaleDateString() : '' }}</span>
                   </div>
                   <h3 class="text-lg font-semibold text-foreground mb-2">{{ release.title }}</h3>
                   <p class="text-muted-foreground">{{ release.description }}</p>
@@ -206,11 +206,22 @@ const isExperimentalFormValid = computed(() => {
   return experimentalForm.value.reason.trim().length >= 20 && experimentalForm.value.agreedToTerms
 })
 
-const toggleExpanded = (index: number) => {
+const toggleExpanded = async (index: number) => {
+  const release = releases.value[index]
   if (expandedItems.value.has(index)) {
     expandedItems.value.delete(index)
   } else {
     expandedItems.value.add(index)
+    // Fetch details if not already loaded
+    if (!releaseDetails.value[release.version]) {
+      try {
+        const response = await fetch(`/api/docs/releases/${release.version}`)
+        const result = await response.json()
+        releaseDetails.value[release.version] = result.data || result
+      } catch (error) {
+        console.error('Failed to fetch release details:', error)
+      }
+    }
   }
 }
 
@@ -280,16 +291,19 @@ const fetchExperimentalStatus = async () => {
 
 onMounted(async () => {
   try {
-    // Fetch releases index
-    const releasesResponse = await fetch('/releases.json')
+    // Fetch releases list from API
+    const response = await fetch('/api/docs')
+    const data = await response.json()
+    
+    // The API now returns refined release objects
+    const releasesResponse = await fetch('/api/docs/releases')
     const releasesData = await releasesResponse.json()
-    releases.value = releasesData.releases || []
+    releases.value = releasesData || []
 
-    // Fetch details for each release
+    // Map versions to our local state if needed (though API should be primary)
     for (const release of releases.value) {
-      const detailResponse = await fetch(`/changelogs/${release.changelogFile}`)
-      const details = await detailResponse.json()
-      releaseDetails.value[release.version] = details
+      // Lazy load details when expanded, or pre-fetch here if small number
+      // For now, details will be fetched in fetchReleaseDetails when toggled
     }
 
     // Fetch experimental status if user is logged in

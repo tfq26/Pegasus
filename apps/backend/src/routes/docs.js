@@ -25,6 +25,23 @@ docs.get("/", async (c) => {
 });
 
 /**
+ * GET /api/docs/releases
+ * Get list of all releases with summary info
+ */
+docs.get("/releases", async (c) => {
+    try {
+        const releases = await getReleases()
+        return c.json(releases)
+    } catch (error) {
+        console.error('Error fetching releases list:', error)
+        return c.json({
+            error: 'Failed to fetch releases list',
+            message: error.message
+        }, 500)
+    }
+});
+
+/**
  * GET /api/docs/guides/:slug
  * Get a specific guide by slug
  */

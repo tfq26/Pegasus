@@ -50,6 +50,9 @@ export async function getReleases() {
 
     return releases.map(r => ({
         version: r.version,
+        title: r.title,
+        description: r.description,
+        date: r.date ? new Date(r.date).toISOString().split('T')[0] : null,
         isLatest: r.is_latest
     }))
 }
@@ -95,7 +98,7 @@ export async function getRelease(version) {
         version: release.version,
         title: release.title,
         description: release.description,
-        date: release.date,
+        date: release.date ? new Date(release.date).toISOString().split('T')[0] : null,
         isLatest: release.is_latest,
         sections: sections.map(s => ({
             category: s.category,
