@@ -5,6 +5,10 @@ export class StockService extends APIService {
     constructor() {
         super(API_DEFAULTS.STOCK_SIMULATOR);
         this.stocks = ['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'TSLA', 'META', 'NVDA', 'BRK.B', 'JNJ', 'V'];
+        this.apiKey = process.env.ALPHAVANTAGE_KEY;
+        this.lastRealSync = 0;
+        this.syncInterval = 8 * 60 * 60 * 1000; // 8 hours (3 times a day)
+        this.isSyncingReal = false;
     }
 
     /**
@@ -17,12 +21,84 @@ export class StockService extends APIService {
             // First time seeding
             await this.seed();
 
-            // Then update prices
+            // Check if we need to sync real data from Alpha Vantage
+            const now = Date.now();
+            if (this.apiKey && (now - this.lastRealSync > this.syncInterval) && !this.isSyncingReal) {
+                // Run real sync in background so we don't block simulation
+                this.updateFromAlphaVantage();
+            }
+
+            // Then update prices (simulation for micro-movements)
             await this.updatePrices();
         } catch (e) {
             if (!e.message.includes('NoActiveSocket')) {
                 console.error('[StockService] Simulation step failed:', e);
             }
+        }
+    }
+
+    async updateFromAlphaVantage() {
+        if (!this.apiKey || this.isSyncingReal) return;
+
+        this.isSyncingReal = true;
+        console.log('[StockService] Starting Alpha Vantage real price sync...');
+
+        try {
+            for (const symbol of this.stocks) {
+                await this.refreshStock(symbol);
+                // Throttling: Alpha Vantage free tier is 5 requests per minute.
+                // We wait 15 seconds between stocks to be safe (4 calls per minute).
+                await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            this.lastRealSync = Date.now();
+            console.log('[StockService] Alpha Vantage sync completed.');
+        } catch (error) {
+            console.error('[StockService] Alpha Vantage sync failed:', error.message);
+        } finally {
+            this.isSyncingReal = false;
+        }
+    }
+
+    async refreshStock(symbol) {
+        if (!this.apiKey) return;
+
+        try {
+            const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${this.apiKey}`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            const quote = data['Global Quote'];
+            if (!quote || !quote['05. price']) {
+                console.warn(`[StockService] No quote found for ${symbol}`, data);
+                return;
+            }
+
+            const price = parseFloat(quote['05. price']);
+            const change = parseFloat(quote['09. change']);
+            const changePercent = parseFloat(quote['10. change percent'].replace('%', ''));
+            const volume = parseInt(quote['06. volume']);
+
+            const safeId = symbol.replace(/\./g, '_');
+            const id = `stock:${safeId}`;
+
+            await db.query(`
+                UPDATE ${id} SET 
+                    price = $price,
+                    change = $change,
+                    change_percent = $change_percent,
+                    volume = $volume,
+                    last_updated = time::now(),
+                    is_real_data = true
+            `, {
+                price,
+                change,
+                change_percent: changePercent,
+                volume
+            });
+
+            console.log(`[StockService] Updated ${symbol} with REAL data: $${price}`);
+        } catch (error) {
+            console.error(`[StockService] Failed to refresh ${symbol}:`, error.message);
         }
     }
 
@@ -67,9 +143,14 @@ export class StockService extends APIService {
             if (!results || results.length === 0) continue;
 
             const currentPrice = results[0].price;
-            const change = (Math.random() - 0.5) * (currentPrice * 0.02);
+            // Micro-fluctuation (0.05% max per simulation step)
+            const change = (Math.random() - 0.5) * (currentPrice * 0.0005);
             const newPrice = currentPrice + change;
-            const changePercent = (change / currentPrice) * 100;
+            const [stock] = await db.query(`SELECT change, change_percent FROM ${id}`);
+
+            // We accumulate the simulation change on top of whatever the last real change was
+            const totalChange = (stock[0]?.change || 0) + change;
+            const changePercent = (totalChange / (newPrice - totalChange)) * 100;
 
             await db.query(`
                 UPDATE ${id} SET 
@@ -79,7 +160,7 @@ export class StockService extends APIService {
                     last_updated = time::now()
             `, {
                 price: newPrice,
-                change,
+                change: totalChange,
                 change_percent: changePercent
             });
         }

@@ -16,6 +16,16 @@
       </div>
 
       <div class="flex items-center gap-4">
+        <button 
+          @click="syncRealData"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all text-xs font-bold uppercase tracking-wider"
+          title="Sync with real market data (Alpha Vantage)"
+          :disabled="isSyncing"
+        >
+          <Zap class="w-3.5 h-3.5" :class="{ 'animate-pulse text-orange-500': isSyncing }" />
+          {{ isSyncing ? 'Syncing...' : 'Sync Real Data' }}
+        </button>
+
         <div class="hidden md:flex flex-col items-end">
           <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Portfolio Value</span>
           <span class="text-lg font-mono font-bold">{{ formatCurrency(totalValue) }}</span>
@@ -252,6 +262,7 @@ const selectedStock = ref<any>(null)
 const buyAmount = ref(1)
 const isRefreshing = ref(false)
 const isBuying = ref(false)
+const isSyncing = ref(false)
 
 const totalValue = computed(() => {
   return portfolio.value.reduce((sum, item) => {
@@ -293,6 +304,23 @@ const fetchPortfolio = async () => {
   } finally {
     isRefreshing.value = false
   }
+}
+
+const syncRealData = async () => {
+    if (isSyncing.value) return
+    isSyncing.value = true
+    try {
+        const response = await api.post<any>('/stocks/refresh')
+        toast.success(response.message || 'Alpha Vantage sync started.')
+    } catch (e: any) {
+        if (e.message.includes('cooldown')) {
+            toast.info(e.message)
+        } else {
+            toast.error(e.message || 'Sync failed')
+        }
+    } finally {
+        isSyncing.value = false
+    }
 }
 
 const selectStock = (stock: any) => {

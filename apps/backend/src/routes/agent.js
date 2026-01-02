@@ -1,25 +1,13 @@
 import { Hono } from "hono"
-import { getCookie } from "hono/cookie"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { aiClient } from "../../ai/AIClient.js"
 import { toolService } from "../services/ToolService.js"
 import { getUserFeatureFlags } from "../../experimental-features.js"
+import { getAuthToken } from "../../lib/auth.js"
 
 const agent = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-
-// Helper to get token from cookie or header
-const getAuthToken = (c) => {
-    let token = getCookie(c, "session")
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
-    }
-    return token
-}
 
 /**
  * Agentic Chat with Tool Calling

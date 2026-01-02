@@ -119,16 +119,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder"
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
 
-const getAuthToken = (c) => {
-  let token = getCookie(c, "session")
-  if (!token) {
-    const authHeader = c.req.header("Authorization")
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7)
-    }
-  }
-  return token
-}
+import { getAuthToken } from "./lib/auth.js"
+export { getAuthToken }
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {

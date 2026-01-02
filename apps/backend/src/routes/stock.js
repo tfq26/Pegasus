@@ -1,16 +1,44 @@
 import { Hono } from "hono"
-import { getCookie } from "hono/cookie"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { stockService } from "../services/StockService.js"
+import { getAuthToken } from "../../lib/auth.js"
 
 const stocks = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
+
+// Status for manual refresh cooldown
+let lastManualRefresh = 0;
+const MANUAL_REFRESH_COOLDOWN = 10 * 60 * 1000; // 10 minutes
 
 stocks.get("/", async (c) => {
     try {
         const [results] = await db.query("SELECT * FROM stock ORDER BY symbol ASC");
         return c.json({ stocks: results });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
+stocks.post("/refresh", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    if (!process.env.ALPHAVANTAGE_KEY) {
+        return c.json({ error: "Alpha Vantage API key not configured on server" }, 400)
+    }
+
+    const now = Date.now();
+    if (now - lastManualRefresh < MANUAL_REFRESH_COOLDOWN) {
+        const remaining = Math.ceil((MANUAL_REFRESH_COOLDOWN - (now - lastManualRefresh)) / 60000);
+        return c.json({ error: `Manual refresh on cooldown. Please wait ${remaining} minutes.` }, 429)
+    }
+
+    try {
+        lastManualRefresh = now;
+        // Trigger background sync
+        stockService.updateFromAlphaVantage();
+        return c.json({ message: "Alpha Vantage sync started in background." });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -29,7 +57,7 @@ stocks.get("/:symbol", async (c) => {
 });
 
 stocks.post("/buy", async (c) => {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
