@@ -1,0 +1,66 @@
+{
+  "version": "v0.8.1",
+  "title": "v0.8.1 Pre-release",
+  "description": "Release v0.8.1",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "Features",
+      "items": [
+        {
+          "title": "feat: Add desktop device authentication flow, including a new OTP input component and dependency updates.",
+          "description": "feat: Add desktop device authentication flow, including a new OTP input component and dependency updates.",
+          "details": [
+            "feat: Add desktop device authentication flow, including a new OTP input component and dependency updates."
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Improvements",
+      "items": [
+        {
+          "title": "style: full light mode support for download page",
+          "description": "style: full light mode support for download page",
+          "details": [
+            "style: full light mode support for download page"
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Other",
+      "items": [
+        {
+          "title": "v0.8.1 fix: Fixed actions workslow to be automatic on push",
+          "description": "v0.8.1 fix: Fixed actions workslow to be automatic on push",
+          "details": [
+            "v0.8.1 fix: Fixed actions workslow to be automatic on push"
+          ]
+        },
+        {
+          "title": "v0.8.1 fix: Fix to docs upload and retrieval",
+          "description": "v0.8.1 fix: Fix to docs upload and retrieval",
+          "details": [
+            "v0.8.1 fix: Fix to docs upload and retrieval"
+          ]
+        },
+        {
+          "title": "v0.8.1 Fix: Fix to docs refresh to serve proper page",
+          "description": "v0.8.1 Fix: Fix to docs refresh to serve proper page",
+          "details": [
+            "v0.8.1 Fix: Fix to docs refresh to serve proper page"
+          ]
+        },
+        {
+          "title": "v0.8.1 Pre-release",
+          "description": "v0.8.1 Pre-release",
+          "details": [
+            "v0.8.1 Pre-release"
+          ]
+        }
+      ]
+    }
+  ]
+}

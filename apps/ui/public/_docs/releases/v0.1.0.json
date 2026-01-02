@@ -1,53 +1,48 @@
 {
-    "version": "0.1.0",
-    "releaseDate": "December 3, 2025",
-    "title": "Support System & Dashboard Sharing",
-    "description": "Initial release with support page, feedback system, and dashboard sharing capabilities.",
-    "highlights": [
-        "Dedicated support page with feedback system",
-        "Dashboard sharing and import functionality",
-        "Priority-based feedback handling",
-        "Weekly digest emails for non-urgent feedback"
-    ],
-    "sections": [
+  "version": "v0.1.0",
+  "title": "Support System & Dashboard Sharing",
+  "description": "Initial release with support page, feedback system, and dashboard sharing capabilities.",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "New Features",
+      "items": [
         {
-            "category": "New Features",
-            "items": [
-                {
-                    "title": "Support Page & Email Feedback System",
-                    "description": "We've added a dedicated support page where you can view the latest updates and send us feedback.",
-                    "details": [
-                        "Priority-based feedback system with critical escalation",
-                        "Weekly digest emails for non-urgent feedback",
-                        "Automatic keyword detection for urgent issues",
-                        "Experimental features request form",
-                        "Real-time status updates for experimental access"
-                    ]
-                },
-                {
-                    "title": "Dashboard Sharing & Import",
-                    "description": "Share your dashboards with others and import shared dashboards via links.",
-                    "details": [
-                        "Generate shareable links for dashboards",
-                        "Import dashboards from shared links",
-                        "Automatic duplicate title handling"
-                    ]
-                }
-            ]
+          "title": "Support Page & Email Feedback System",
+          "description": "We've added a dedicated support page where you can view the latest updates and send us feedback.",
+          "details": [
+            "Priority-based feedback system with critical escalation",
+            "Weekly digest emails for non-urgent feedback",
+            "Automatic keyword detection for urgent issues",
+            "Experimental features request form",
+            "Real-time status updates for experimental access"
+          ]
         },
         {
-            "category": "Improvements",
-            "items": [
-                {
-                    "title": "Dashboard Management Enhancements",
-                    "description": "Improved dashboard management with better modals and notifications.",
-                    "details": [
-                        "Modal dialogs for rename and delete operations",
-                        "Toast notifications for all dashboard actions",
-                        "Better light mode support across all UI components"
-                    ]
-                }
-            ]
+          "title": "Dashboard Sharing & Import",
+          "description": "Share your dashboards with others and import shared dashboards via links.",
+          "details": [
+            "Generate shareable links for dashboards",
+            "Import dashboards from shared links",
+            "Automatic duplicate title handling"
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "Improvements",
+      "items": [
+        {
+          "title": "Dashboard Management Enhancements",
+          "description": "Improved dashboard management with better modals and notifications.",
+          "details": [
+            "Modal dialogs for rename and delete operations",
+            "Toast notifications for all dashboard actions",
+            "Better light mode support across all UI components"
+          ]
+        }
+      ]
+    }
+  ]
 }

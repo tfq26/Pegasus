@@ -1,130 +1,125 @@
 {
-    "version": "0.7.0",
-    "releaseDate": "December 21, 2025",
-    "title": "AI Chat & UX Enhancements",
-    "description": "A major overhaul of the Chat interface for improved usability, cleaner data presentation, and smarter AI interactions.",
-    "highlights": [
-        "Smart AI Response Sanitization",
-        "Compact & Auto-Growing Chat Input",
-        "Dynamic User & AI Avatars",
-        "New Analytics & Logs Tab"
-    ],
-    "sections": [
+  "version": "v0.7.0",
+  "title": "AI Chat & UX Enhancements",
+  "description": "A major overhaul of the Chat interface for improved usability, cleaner data presentation, and smarter AI interactions.",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "New Features",
+      "items": [
         {
-            "category": "New Features",
-            "items": [
-                {
-                    "title": "Chat Interface Experience",
-                    "description": "A refined and modern chat experience focusing on clarity and ease of use.",
-                    "details": [
-                        "Compact, single-line input box that auto-expands as you type",
-                        "Dynamic \"Retry\" button to quickly reload previous messages into the input",
-                        "User profile pictures are now displayed in chat bubbles",
-                        "New \"Pegasus\" AI avatar that adapts to Light/Dark mode",
-                        "Added \"Copy\" button to all chat messages for quick access"
-                    ]
-                },
-                {
-                    "title": "Analytics & Logs",
-                    "description": "New dedicated settings tab for system monitoring (Desktop only).",
-                    "details": [
-                        "View system analytics and operation logs directly in Settings",
-                        "Automatically hides settings access on mobile devices for better UX"
-                    ]
-                }
-            ]
+          "title": "Chat Interface Experience",
+          "description": "A refined and modern chat experience focusing on clarity and ease of use.",
+          "details": [
+            "Compact, single-line input box that auto-expands as you type",
+            "Dynamic \"Retry\" button to quickly reload previous messages into the input",
+            "User profile pictures are now displayed in chat bubbles",
+            "New \"Pegasus\" AI avatar that adapts to Light/Dark mode",
+            "Added \"Copy\" button to all chat messages for quick access"
+          ]
         },
         {
-            "category": "New Features",
-            "items": [
-                {
-                    "title": "Data Exploration & Workflow",
-                    "description": "Enhanced tools for interacting with your data directly from the sidebar and results.",
-                    "details": [
-                        "Added right-click Context Menu to Explorer tables (Preview, Edit, Rename, Delete)",
-                        "New inline \"Preview\" (Eye) and \"Edit\" (Pencil) quick actions in the sidebar",
-                        "\"Open in Spreadsheet\" button added to Results Panel for instant analysis",
-                        "Ability to rename tables directly from the Explorer"
-                    ]
-                }
-            ]
-        },
-        {
-            "category": "New Features",
-            "items": [
-                {
-                    "title": "Pro Subscription System",
-                    "description": "Complete payment and subscription management integration.",
-                    "details": [
-                        "Stripe integration with support for coupons and promotion codes",
-                        "Automatic subscription syncing on profile load",
-                        "Manual 'Sync' capability for immediate status updates",
-                        "Pro users get 900k AI tokens/month (vs 100k free)",
-                        "Visual 'PRO' badge and ring indicator for subscribers"
-                    ]
-                },
-                {
-                    "title": "Performance Engineering",
-                    "description": "McMaster-Carr inspired optimizations for instant interactions.",
-                    "details": [
-                        "Link Prefetching: Route chunks load on hover for instant navigation",
-                        "Font Preloading & DNS Prefetching for faster LCP",
-                        "Optimized vendor chunk splitting for aggressive caching",
-                        "Enhanced build configuration for smaller bundle sizes"
-                    ]
-                }
-            ]
-        },
-        {
-            "category": "Improvements",
-            "items": [
-                {
-                    "title": "System Reliability",
-                    "description": "Hardened error handling and authentication.",
-                    "details": [
-                        "New dedicated Error Page with actionable steps",
-                        "Standardized error codes across the application",
-                        "Fixed cross-origin authentication for reliable production deployments",
-                        "Improved webhook logging for better observability"
-                    ]
-                },
-                {
-                    "title": "Redefined UI Experience",
-                    "description": "A tighter, higher-density UI designed for data professionals.",
-                    "details": [
-                        "Reduced chat input height and padding for maximum screen real estate",
-                        "Compacted Results Panel toolbar and spacing",
-                        "Refined button styles for a sleeker, more professional look"
-                    ]
-                },
-                {
-                    "title": "AI Sanitization Engine",
-                    "description": "Smart interception of raw data outputs to keep the chat clean.",
-                    "details": [
-                        "Prevents raw JSON data dumps from cluttering the conversation",
-                        "Automatically replaces technical outputs with friendly status messages",
-                        "Directs users to the Results Panel for detailed data viewing"
-                    ]
-                },
-                {
-                    "title": "In-Stream Intelligence",
-                    "description": "Better integration of AI reasoning into the conversation flow.",
-                    "details": [
-                        "Moved AI analysis and insights directly into the main chat history",
-                        "Removed the redundant \"Synthesized Insights\" side panel",
-                        "Renamed AI label to \"PEGASUS\" for consistent branding"
-                    ]
-                },
-                {
-                    "title": "Reduced Cognitive Load",
-                    "description": "Optimized when and how information is presented.",
-                    "details": [
-                        "Disabled automatic post-analysis for manual query re-runs to reduce noise",
-                        "Chat input automatically clears immediately after sending a message",
-                        "Visual cleanups to remove distracting artifacts"
-                    ]
-                }
-            ]
+          "title": "Analytics & Logs",
+          "description": "New dedicated settings tab for system monitoring (Desktop only).",
+          "details": [
+            "View system analytics and operation logs directly in Settings",
+            "Automatically hides settings access on mobile devices for better UX"
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "New Features",
+      "items": [
+        {
+          "title": "Data Exploration & Workflow",
+          "description": "Enhanced tools for interacting with your data directly from the sidebar and results.",
+          "details": [
+            "Added right-click Context Menu to Explorer tables (Preview, Edit, Rename, Delete)",
+            "New inline \"Preview\" (Eye) and \"Edit\" (Pencil) quick actions in the sidebar",
+            "\"Open in Spreadsheet\" button added to Results Panel for instant analysis",
+            "Ability to rename tables directly from the Explorer"
+          ]
+        }
+      ]
+    },
+    {
+      "category": "New Features",
+      "items": [
+        {
+          "title": "Pro Subscription System",
+          "description": "Complete payment and subscription management integration.",
+          "details": [
+            "Stripe integration with support for coupons and promotion codes",
+            "Automatic subscription syncing on profile load",
+            "Manual 'Sync' capability for immediate status updates",
+            "Pro users get 900k AI tokens/month (vs 100k free)",
+            "Visual 'PRO' badge and ring indicator for subscribers"
+          ]
+        },
+        {
+          "title": "Performance Engineering",
+          "description": "McMaster-Carr inspired optimizations for instant interactions.",
+          "details": [
+            "Link Prefetching: Route chunks load on hover for instant navigation",
+            "Font Preloading & DNS Prefetching for faster LCP",
+            "Optimized vendor chunk splitting for aggressive caching",
+            "Enhanced build configuration for smaller bundle sizes"
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Improvements",
+      "items": [
+        {
+          "title": "System Reliability",
+          "description": "Hardened error handling and authentication.",
+          "details": [
+            "New dedicated Error Page with actionable steps",
+            "Standardized error codes across the application",
+            "Fixed cross-origin authentication for reliable production deployments",
+            "Improved webhook logging for better observability"
+          ]
+        },
+        {
+          "title": "Redefined UI Experience",
+          "description": "A tighter, higher-density UI designed for data professionals.",
+          "details": [
+            "Reduced chat input height and padding for maximum screen real estate",
+            "Compacted Results Panel toolbar and spacing",
+            "Refined button styles for a sleeker, more professional look"
+          ]
+        },
+        {
+          "title": "AI Sanitization Engine",
+          "description": "Smart interception of raw data outputs to keep the chat clean.",
+          "details": [
+            "Prevents raw JSON data dumps from cluttering the conversation",
+            "Automatically replaces technical outputs with friendly status messages",
+            "Directs users to the Results Panel for detailed data viewing"
+          ]
+        },
+        {
+          "title": "In-Stream Intelligence",
+          "description": "Better integration of AI reasoning into the conversation flow.",
+          "details": [
+            "Moved AI analysis and insights directly into the main chat history",
+            "Removed the redundant \"Synthesized Insights\" side panel",
+            "Renamed AI label to \"PEGASUS\" for consistent branding"
+          ]
+        },
+        {
+          "title": "Reduced Cognitive Load",
+          "description": "Optimized when and how information is presented.",
+          "details": [
+            "Disabled automatic post-analysis for manual query re-runs to reduce noise",
+            "Chat input automatically clears immediately after sending a message",
+            "Visual cleanups to remove distracting artifacts"
+          ]
+        }
+      ]
+    }
+  ]
 }

@@ -1,92 +1,87 @@
 {
-    "version": "0.3.1",
-    "releaseDate": "December 7, 2025",
-    "title": "Vercel Deployment & Visualization Enhancements",
-    "description": "Critical deployment fixes for Vercel serverless environment and major improvements to dashboard visualization capabilities with user-controlled chart types.",
-    "highlights": [
-        "Full Vercel serverless compatibility with native Node.js operations",
-        "User-controlled chart type selection in dashboard previews",
-        "AI now generates diverse visualization types (pie, doughnut, area, scatter)",
-        "Mobile footer component for consistent branding across all pages"
-    ],
-    "sections": [
+  "version": "v0.3.1",
+  "title": "Vercel Deployment & Visualization Enhancements",
+  "description": "Critical deployment fixes for Vercel serverless environment and major improvements to dashboard visualization capabilities with user-controlled chart types.",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "Bug Fixes",
+      "items": [
         {
-            "category": "Bug Fixes",
-            "items": [
-                {
-                    "title": "Vercel Serverless Compatibility",
-                    "description": "Fixed critical deployment issues preventing the application from running on Vercel's serverless infrastructure.",
-                    "details": [
-                        "Removed incompatible bun:sqlite import that caused runtime errors on Vercel",
-                        "Replaced shell commands (unzip, rm) with pure Node.js operations using adm-zip",
-                        "Fixed file upload directory to use os.tmpdir() instead of read-only project directory",
-                        "Excel file parsing now works in serverless environment without system utilities",
-                        "All backend operations now use Node.js native APIs for cross-platform compatibility"
-                    ]
-                },
-                {
-                    "title": "Platform-Specific Binary Dependencies",
-                    "description": "Resolved build errors caused by missing native binaries for build tools on Vercel's Linux environment.",
-                    "details": [
-                        "Added @rollup/rollup-linux-x64-gnu to optionalDependencies for Vite builds",
-                        "Added lightningcss-linux-x64-gnu for Tailwind CSS v4 compilation",
-                        "Added @tailwindcss/oxide-linux-x64-gnu for Tailwind's Rust engine",
-                        "Added @esbuild/linux-x64 to prevent potential Vite build issues",
-                        "All platform-specific packages now in optionalDependencies for flexible installation"
-                    ]
-                }
-            ]
+          "title": "Vercel Serverless Compatibility",
+          "description": "Fixed critical deployment issues preventing the application from running on Vercel's serverless infrastructure.",
+          "details": [
+            "Removed incompatible bun:sqlite import that caused runtime errors on Vercel",
+            "Replaced shell commands (unzip, rm) with pure Node.js operations using adm-zip",
+            "Fixed file upload directory to use os.tmpdir() instead of read-only project directory",
+            "Excel file parsing now works in serverless environment without system utilities",
+            "All backend operations now use Node.js native APIs for cross-platform compatibility"
+          ]
         },
         {
-            "category": "New Features",
-            "items": [
-                {
-                    "title": "Chart Type Selector in Dashboard Preview",
-                    "description": "Users can now manually change visualization types in the dashboard element preview modal before saving to their dashboard.",
-                    "details": [
-                        "Dropdown selector with 6 chart types: Bar, Line, Area, Pie, Doughnut, and Statistic",
-                        "Instant preview updates when switching chart types",
-                        "Smart data transformation when converting between chart types",
-                        "Automatic color palette adjustment for pie and doughnut charts",
-                        "Handles edge cases like converting between stat cards and charts"
-                    ]
-                },
-                {
-                    "title": "Reusable Mobile Footer Component",
-                    "description": "Created a consistent footer component that appears across all mobile pages for better branding and user experience.",
-                    "details": [
-                        "Centralized MobileFooter component for easy maintenance",
-                        "Automatically displays on all mobile routes",
-                        "Consistent copyright and branding information",
-                        "Removed duplicate inline footers from individual pages"
-                    ]
-                }
-            ]
-        },
-        {
-            "category": "Improvements",
-            "items": [
-                {
-                    "title": "Enhanced AI Visualization Detection",
-                    "description": "AI now generates more diverse chart types and respects user intent when specific visualization types are requested.",
-                    "details": [
-                        "AI can now suggest pie, doughnut, area, and scatter charts (not just bar/line)",
-                        "User prompts containing 'pie', 'doughnut', 'area', or 'scatter' skip basic heuristics",
-                        "Falls back to AI recommendation for complex visualization requests",
-                        "Heuristic detection still handles common cases (time series → line, categorical → bar)",
-                        "Better balance between speed (heuristics) and flexibility (AI)"
-                    ]
-                },
-                {
-                    "title": "Profile Page Refinements",
-                    "description": "Improved user profile display with better organization field handling and cleaner interface.",
-                    "details": [
-                        "Organization field now always visible, showing 'None' when not part of an organization",
-                        "Removed redundant 'Dashboard' button from profile page",
-                        "Cleaner, more consistent profile information display"
-                    ]
-                }
-            ]
+          "title": "Platform-Specific Binary Dependencies",
+          "description": "Resolved build errors caused by missing native binaries for build tools on Vercel's Linux environment.",
+          "details": [
+            "Added @rollup/rollup-linux-x64-gnu to optionalDependencies for Vite builds",
+            "Added lightningcss-linux-x64-gnu for Tailwind CSS v4 compilation",
+            "Added @tailwindcss/oxide-linux-x64-gnu for Tailwind's Rust engine",
+            "Added @esbuild/linux-x64 to prevent potential Vite build issues",
+            "All platform-specific packages now in optionalDependencies for flexible installation"
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "New Features",
+      "items": [
+        {
+          "title": "Chart Type Selector in Dashboard Preview",
+          "description": "Users can now manually change visualization types in the dashboard element preview modal before saving to their dashboard.",
+          "details": [
+            "Dropdown selector with 6 chart types: Bar, Line, Area, Pie, Doughnut, and Statistic",
+            "Instant preview updates when switching chart types",
+            "Smart data transformation when converting between chart types",
+            "Automatic color palette adjustment for pie and doughnut charts",
+            "Handles edge cases like converting between stat cards and charts"
+          ]
+        },
+        {
+          "title": "Reusable Mobile Footer Component",
+          "description": "Created a consistent footer component that appears across all mobile pages for better branding and user experience.",
+          "details": [
+            "Centralized MobileFooter component for easy maintenance",
+            "Automatically displays on all mobile routes",
+            "Consistent copyright and branding information",
+            "Removed duplicate inline footers from individual pages"
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Improvements",
+      "items": [
+        {
+          "title": "Enhanced AI Visualization Detection",
+          "description": "AI now generates more diverse chart types and respects user intent when specific visualization types are requested.",
+          "details": [
+            "AI can now suggest pie, doughnut, area, and scatter charts (not just bar/line)",
+            "User prompts containing 'pie', 'doughnut', 'area', or 'scatter' skip basic heuristics",
+            "Falls back to AI recommendation for complex visualization requests",
+            "Heuristic detection still handles common cases (time series → line, categorical → bar)",
+            "Better balance between speed (heuristics) and flexibility (AI)"
+          ]
+        },
+        {
+          "title": "Profile Page Refinements",
+          "description": "Improved user profile display with better organization field handling and cleaner interface.",
+          "details": [
+            "Organization field now always visible, showing 'None' when not part of an organization",
+            "Removed redundant 'Dashboard' button from profile page",
+            "Cleaner, more consistent profile information display"
+          ]
+        }
+      ]
+    }
+  ]
 }

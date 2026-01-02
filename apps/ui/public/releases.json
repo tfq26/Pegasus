@@ -1,12 +1,20 @@
 {
     "releases": [
         {
+            "version": "0.8.1",
+            "releaseDate": "2026-01-02",
+            "title": "v0.8.1 Pre-release",
+            "description": "Release v0.8.1",
+            "changelogFile": "v0.8.1.json",
+            "isLatest": true
+        },
+        {
             "version": "0.8.0",
             "releaseDate": "2025-12-26",
             "title": "Intelligent Data Management & Desktop Launch",
             "description": "Release v0.8.0",
             "changelogFile": "v0.8.0.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.7.2",

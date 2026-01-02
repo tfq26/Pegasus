@@ -1,71 +1,66 @@
 {
-    "version": "0.6.0",
-    "releaseDate": "December 20, 2025",
-    "title": "Real-time Collaboration & Performance",
-    "description": "A major update introducing real-time collaboration features (Chat, Live Cursors) and significant performance optimizations for a fluid experience.",
-    "highlights": [
-        "Real-time Dashboard Chat",
-        "Live Collaborator Cursors & Presence",
-        "Mobile-First Dashboard Experience",
-        "Major Performance & Fluidity Improvements"
-    ],
-    "sections": [
+  "version": "v0.6.0",
+  "title": "Real-time Collaboration & Performance",
+  "description": "A major update introducing real-time collaboration features (Chat, Live Cursors) and significant performance optimizations for a fluid experience.",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "New Features",
+      "items": [
         {
-            "category": "New Features",
-            "items": [
-                {
-                    "title": "Real-time Collaboration",
-                    "description": "Collaborate with your team in real-time directly on dashboards.",
-                    "details": [
-                        "**Dashboard Chat**: Integrated sidebar for discussing insights without leaving the data.",
-                        "**Live Cursors**: See where other users are pointing and highlighting in real-time.",
-                        "**Presence**: View active collaborators via avatars in the dashboard header."
-                    ]
-                },
-                {
-                    "title": "Unified Share Menu",
-                    "description": "A consistent and powerful sharing experience across the application.",
-                    "details": [
-                        "New `ShareDialog` component used globally.",
-                        "Easily manage permissions (Viewer/Editor) and public links from one place."
-                    ]
-                }
-            ]
+          "title": "Real-time Collaboration",
+          "description": "Collaborate with your team in real-time directly on dashboards.",
+          "details": [
+            "**Dashboard Chat**: Integrated sidebar for discussing insights without leaving the data.",
+            "**Live Cursors**: See where other users are pointing and highlighting in real-time.",
+            "**Presence**: View active collaborators via avatars in the dashboard header."
+          ]
         },
         {
-            "category": "Mobile Experience",
-            "items": [
-                {
-                    "title": "Responsive Dashboard",
-                    "description": "Dashboards now adapt perfectly to mobile screens.",
-                    "details": [
-                        "**Stack View**: Grid items automatically stack on smaller screens for better readability.",
-                        "**Mobile Chat**: Chat sidebar becomes a slide-over drawer on mobile.",
-                        "**Optimized Header**: Navigation and actions are condensed for touch interactions."
-                    ]
-                }
-            ]
-        },
-        {
-            "category": "Performance & Efficiency",
-            "items": [
-                {
-                    "title": "Fluidity Improvements",
-                    "description": "Eliminated UI flickering and blocking states.",
-                    "details": [
-                        "**Silent Schema Refresh**: Explorer sidebar updates connections in the background without clearing the list.",
-                        "**Optimistic Saving**: moving and resizing dashboard widgets saves instantly in the UI while syncing in the background."
-                    ]
-                },
-                {
-                    "title": "Initial Load Speed",
-                    "description": "Significant reduction in initial bundle size.",
-                    "details": [
-                        "Lazy loaded heavy components (Code Editor, Excel Editor).",
-                        "Implemented Route-level lazy loading for all main views."
-                    ]
-                }
-            ]
+          "title": "Unified Share Menu",
+          "description": "A consistent and powerful sharing experience across the application.",
+          "details": [
+            "New `ShareDialog` component used globally.",
+            "Easily manage permissions (Viewer/Editor) and public links from one place."
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "Mobile Experience",
+      "items": [
+        {
+          "title": "Responsive Dashboard",
+          "description": "Dashboards now adapt perfectly to mobile screens.",
+          "details": [
+            "**Stack View**: Grid items automatically stack on smaller screens for better readability.",
+            "**Mobile Chat**: Chat sidebar becomes a slide-over drawer on mobile.",
+            "**Optimized Header**: Navigation and actions are condensed for touch interactions."
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Performance & Efficiency",
+      "items": [
+        {
+          "title": "Fluidity Improvements",
+          "description": "Eliminated UI flickering and blocking states.",
+          "details": [
+            "**Silent Schema Refresh**: Explorer sidebar updates connections in the background without clearing the list.",
+            "**Optimistic Saving**: moving and resizing dashboard widgets saves instantly in the UI while syncing in the background."
+          ]
+        },
+        {
+          "title": "Initial Load Speed",
+          "description": "Significant reduction in initial bundle size.",
+          "details": [
+            "Lazy loaded heavy components (Code Editor, Excel Editor).",
+            "Implemented Route-level lazy loading for all main views."
+          ]
+        }
+      ]
+    }
+  ]
 }

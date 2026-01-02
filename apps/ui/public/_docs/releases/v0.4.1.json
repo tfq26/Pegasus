@@ -1,65 +1,60 @@
 {
-    "version": "0.4.1",
-    "releaseDate": "December 9, 2025",
-    "title": "Dashboard Editor Improvements & Quick Creation",
-    "description": "Enhanced the dashboard editing experience with a wider modal layout, quick dashboard creation from visualizations, and improved validation.",
-    "highlights": [
-        "Significantly wider dashboard element editor for better usability",
-        "Create new dashboards directly from visualization preview",
-        "Smarter size controls that only appear when relevant",
-        "Improved validation prevents invalid chart type conversions"
-    ],
-    "sections": [
+  "version": "v0.4.1",
+  "title": "Dashboard Editor Improvements & Quick Creation",
+  "description": "Enhanced the dashboard editing experience with a wider modal layout, quick dashboard creation from visualizations, and improved validation.",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "Improvements",
+      "items": [
         {
-            "category": "Improvements",
-            "items": [
-                {
-                    "title": "Expanded Dashboard Element Editor",
-                    "description": "The editor modal is now much wider and better utilizes large screens.",
-                    "details": [
-                        "Modal width increased to 95% of viewport (up to 95vw)",
-                        "Editor controls now occupy 60% of modal width for better spacing",
-                        "Preview panel takes 40% with optimized layout",
-                        "Form inputs and controls no longer feel cramped",
-                        "Better visual hierarchy with increased gap spacing"
-                    ]
-                },
-                {
-                    "title": "Quick Dashboard Creation",
-                    "description": "Create new dashboards on-the-fly while exploring your data.",
-                    "details": [
-                        "New '+ Create New Dashboard...' option in visualization preview dropdown",
-                        "Simple modal prompts for dashboard name",
-                        "Automatically adds the current visualization to the new dashboard",
-                        "Seamless workflow from query to dashboard without leaving the page"
-                    ]
-                },
-                {
-                    "title": "Contextual Size Controls",
-                    "description": "Size toggles now only appear when they're actually useful.",
-                    "details": [
-                        "Small/Medium/Large buttons only show for statistic elements",
-                        "Charts auto-scale based on dashboard grid size",
-                        "Cleaner preview interface for chart elements",
-                        "More intuitive user experience"
-                    ]
-                }
-            ]
+          "title": "Expanded Dashboard Element Editor",
+          "description": "The editor modal is now much wider and better utilizes large screens.",
+          "details": [
+            "Modal width increased to 95% of viewport (up to 95vw)",
+            "Editor controls now occupy 60% of modal width for better spacing",
+            "Preview panel takes 40% with optimized layout",
+            "Form inputs and controls no longer feel cramped",
+            "Better visual hierarchy with increased gap spacing"
+          ]
         },
         {
-            "category": "Bug Fixes",
-            "items": [
-                {
-                    "title": "Chart Type Conversion Validation",
-                    "description": "Prevents invalid conversions that would break visualizations.",
-                    "details": [
-                        "Cannot convert multi-value charts to single-value stats",
-                        "Clear error message explains why conversion isn't possible",
-                        "Dropdown automatically reverts to previous valid type",
-                        "Suggests creating a new stat element instead"
-                    ]
-                }
-            ]
+          "title": "Quick Dashboard Creation",
+          "description": "Create new dashboards on-the-fly while exploring your data.",
+          "details": [
+            "New '+ Create New Dashboard...' option in visualization preview dropdown",
+            "Simple modal prompts for dashboard name",
+            "Automatically adds the current visualization to the new dashboard",
+            "Seamless workflow from query to dashboard without leaving the page"
+          ]
+        },
+        {
+          "title": "Contextual Size Controls",
+          "description": "Size toggles now only appear when they're actually useful.",
+          "details": [
+            "Small/Medium/Large buttons only show for statistic elements",
+            "Charts auto-scale based on dashboard grid size",
+            "Cleaner preview interface for chart elements",
+            "More intuitive user experience"
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "Bug Fixes",
+      "items": [
+        {
+          "title": "Chart Type Conversion Validation",
+          "description": "Prevents invalid conversions that would break visualizations.",
+          "details": [
+            "Cannot convert multi-value charts to single-value stats",
+            "Clear error message explains why conversion isn't possible",
+            "Dropdown automatically reverts to previous valid type",
+            "Suggests creating a new stat element instead"
+          ]
+        }
+      ]
+    }
+  ]
 }

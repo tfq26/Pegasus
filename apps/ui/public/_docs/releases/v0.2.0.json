@@ -1,45 +1,40 @@
 {
-    "version": "0.2.0",
-    "releaseDate": "December 6, 2025",
-    "title": "Query Tab Isolation & Bug Fixes",
-    "description": "Improved query tab management with SSMS-style isolation and critical bug fixes for formula handling.",
-    "highlights": [
-        "Complete query tab isolation like SQL Server Management Studio",
-        "Fixed formula history saving and query execution",
-        "Modern results panel aesthetic",
-        "Better dark mode and light mode integration"
-    ],
-    "sections": [
+  "version": "v0.2.0",
+  "title": "Query Tab Isolation & Bug Fixes",
+  "description": "Improved query tab management with SSMS-style isolation and critical bug fixes for formula handling.",
+  "date": "2026-01-02T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "Improvements",
+      "items": [
         {
-            "category": "Improvements",
-            "items": [
-                {
-                    "title": "Query Tab Isolation & Results Panel",
-                    "description": "Query tabs now work like SQL Server Management Studio (SSMS) with complete content isolation and improved results display.",
-                    "details": [
-                        "Each query tab maintains its own independent content",
-                        "Loading queries from history creates new isolated tabs",
-                        "Results panel now has transparent, modern aesthetic",
-                        "Reduced visual clutter with subtle borders and hover effects",
-                        "Better integration with dark mode and light mode themes"
-                    ]
-                }
-            ]
-        },
-        {
-            "category": "Bug Fixes",
-            "items": [
-                {
-                    "title": "Formula History & Query Execution",
-                    "description": "Fixed critical issues with formula saving and query execution in isolated tabs.",
-                    "details": [
-                        "AI-generated formulas now save actual Excel formulas (e.g., '=B2*C2') instead of natural language",
-                        "Run button correctly executes queries from active tab content",
-                        "Fixed crash when loading queries from history",
-                        "Formula queries properly switch to spreadsheet mode with AI enabled"
-                    ]
-                }
-            ]
+          "title": "Query Tab Isolation & Results Panel",
+          "description": "Query tabs now work like SQL Server Management Studio (SSMS) with complete content isolation and improved results display.",
+          "details": [
+            "Each query tab maintains its own independent content",
+            "Loading queries from history creates new isolated tabs",
+            "Results panel now has transparent, modern aesthetic",
+            "Reduced visual clutter with subtle borders and hover effects",
+            "Better integration with dark mode and light mode themes"
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "Bug Fixes",
+      "items": [
+        {
+          "title": "Formula History & Query Execution",
+          "description": "Fixed critical issues with formula saving and query execution in isolated tabs.",
+          "details": [
+            "AI-generated formulas now save actual Excel formulas (e.g., '=B2*C2') instead of natural language",
+            "Run button correctly executes queries from active tab content",
+            "Fixed crash when loading queries from history",
+            "Formula queries properly switch to spreadsheet mode with AI enabled"
+          ]
+        }
+      ]
+    }
+  ]
 }

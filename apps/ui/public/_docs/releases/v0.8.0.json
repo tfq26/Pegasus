@@ -1,1175 +1,1170 @@
 {
-    "version": "0.8.0",
-    "releaseDate": "2025-12-26",
-    "date": "2025-12-26",
-    "title": "Intelligent Data Management & Desktop Launch",
-    "description": "Release v0.8.0",
-    "highlights": [
-        "fix(ci): make release workflow robust to existing tags",
-        "chore: bump UI version and update desktop build commands to use npm workspace.",
-        "fix: implement robust build paths and full architecture support"
-    ],
-    "sections": [
+  "version": "v0.8.0",
+  "title": "Intelligent Data Management & Desktop Launch",
+  "description": "Release v0.8.0",
+  "date": "2025-12-26T00:00:00.000Z",
+  "isLatest": false,
+  "sections": [
+    {
+      "category": "Features",
+      "items": [
         {
-            "category": "Features",
-            "items": [
-                {
-                    "title": "feat: Add GitHub Actions workflow for desktop release, local macOS publish script, and update desktop app version to 0.8.0.",
-                    "description": "feat: Add GitHub Actions workflow for desktop release, local macOS publish script, and update desktop app version to 0.8.0.",
-                    "details": [
-                        "feat: Add GitHub Actions workflow for desktop release, local macOS publish script, and update desktop app version to 0.8.0."
-                    ]
-                },
-                {
-                    "title": "feat: Allow closing all tabs without auto-creating new one",
-                    "description": "feat: Allow closing all tabs without auto-creating new one",
-                    "details": [
-                        "feat: Allow closing all tabs without auto-creating new one"
-                    ]
-                },
-                {
-                    "title": "feat: Create focused view components (Phase 2B)",
-                    "description": "feat: Create focused view components (Phase 2B)",
-                    "details": [
-                        "feat: Create focused view components (Phase 2B)"
-                    ]
-                },
-                {
-                    "title": "feat: Extract composables from Chat.vue (Phase 2A)",
-                    "description": "feat: Extract composables from Chat.vue (Phase 2A)",
-                    "details": [
-                        "feat: Extract composables from Chat.vue (Phase 2A)"
-                    ]
-                },
-                {
-                    "title": "feat: Complete Phase 1 - Integrate chat and connection stores",
-                    "description": "feat: Complete Phase 1 - Integrate chat and connection stores",
-                    "details": [
-                        "feat: Complete Phase 1 - Integrate chat and connection stores"
-                    ]
-                },
-                {
-                    "title": "feat: Implement per-tab chat history isolation",
-                    "description": "feat: Implement per-tab chat history isolation",
-                    "details": [
-                        "feat: Implement per-tab chat history isolation"
-                    ]
-                },
-                {
-                    "title": "feat: Centralized API client architecture (v0.7.0.5)",
-                    "description": "feat: Centralized API client architecture (v0.7.0.5)",
-                    "details": [
-                        "feat: Centralized API client architecture (v0.7.0.5)"
-                    ]
-                },
-                {
-                    "title": "feat: add chat view and editor component with message history and input modes",
-                    "description": "feat: add chat view and editor component with message history and input modes",
-                    "details": [
-                        "feat: add chat view and editor component with message history and input modes"
-                    ]
-                },
-                {
-                    "title": "feat: Introduce automated changelog generation and release indexing for the UI.",
-                    "description": "feat: Introduce automated changelog generation and release indexing for the UI.",
-                    "details": [
-                        "feat: Introduce automated changelog generation and release indexing for the UI."
-                    ]
-                },
-                {
-                    "title": "feat: Implement WorkOS-based authentication routes for user login, logout, and session management.",
-                    "description": "feat: Implement WorkOS-based authentication routes for user login, logout, and session management.",
-                    "details": [
-                        "feat: Implement WorkOS-based authentication routes for user login, logout, and session management."
-                    ]
-                },
-                {
-                    "title": "feat: add WorkOS authentication routes for login, callback, logout, and user details, including SurrealDB user upsertion.",
-                    "description": "feat: add WorkOS authentication routes for login, callback, logout, and user details, including SurrealDB user upsertion.",
-                    "details": [
-                        "feat: add WorkOS authentication routes for login, callback, logout, and user details, including SurrealDB user upsertion."
-                    ]
-                },
-                {
-                    "title": "feat: add mobile header component and update router with new routes and auth handling.",
-                    "description": "feat: add mobile header component and update router with new routes and auth handling.",
-                    "details": [
-                        "feat: add mobile header component and update router with new routes and auth handling."
-                    ]
-                },
-                {
-                    "title": "feat: add `AppFooter` and `MobileFooter` components with dynamic version display and copyright information.",
-                    "description": "feat: add `AppFooter` and `MobileFooter` components with dynamic version display and copyright information.",
-                    "details": [
-                        "feat: add `AppFooter` and `MobileFooter` components with dynamic version display and copyright information."
-                    ]
-                },
-                {
-                    "title": "feat: Implement core backend services, AI chat, data upload, and SurrealDB integration.",
-                    "description": "feat: Implement core backend services, AI chat, data upload, and SurrealDB integration.",
-                    "details": [
-                        "feat: Implement core backend services, AI chat, data upload, and SurrealDB integration."
-                    ]
-                },
-                {
-                    "title": "feat: Add table management backend route with rename functionality, SurrealDB adapter, and new UI components for data exploration and AI assistance.",
-                    "description": "feat: Add table management backend route with rename functionality, SurrealDB adapter, and new UI components for data exploration and AI assistance.",
-                    "details": [
-                        "feat: Add table management backend route with rename functionality, SurrealDB adapter, and new UI components for data exploration and AI assistance."
-                    ]
-                },
-                {
-                    "title": "feat: implement real-time collaboration with live cursors, smart notes system, and git-like data branching; migrate backend to SurrealDB; fix mobile auth",
-                    "description": "feat: implement real-time collaboration with live cursors, smart notes system, and git-like data branching; migrate backend to SurrealDB; fix mobile auth",
-                    "details": [
-                        "feat: implement real-time collaboration with live cursors, smart notes system, and git-like data branching; migrate backend to SurrealDB; fix mobile auth"
-                    ]
-                },
-                {
-                    "title": "feat: Phase 3 - Dashboard Labels & Annotations",
-                    "description": "feat: Phase 3 - Dashboard Labels & Annotations",
-                    "details": [
-                        "feat: Phase 3 - Dashboard Labels & Annotations"
-                    ]
-                },
-                {
-                    "title": "feat: Phase 2 - Dashboard Color Customization",
-                    "description": "feat: Phase 2 - Dashboard Color Customization",
-                    "details": [
-                        "feat: Phase 2 - Dashboard Color Customization"
-                    ]
-                },
-                {
-                    "title": "feat: Phase 1 - Dashboard Element Editor foundation",
-                    "description": "feat: Phase 1 - Dashboard Element Editor foundation",
-                    "details": [
-                        "feat: Phase 1 - Dashboard Element Editor foundation"
-                    ]
-                },
-                {
-                    "title": "feat: implement auto-save for spreadsheet and fix formula parser",
-                    "description": "feat: implement auto-save for spreadsheet and fix formula parser",
-                    "details": [
-                        "feat: implement auto-save for spreadsheet and fix formula parser"
-                    ]
-                },
-                {
-                    "title": "feat: support nested functions in formula parser",
-                    "description": "feat: support nested functions in formula parser",
-                    "details": [
-                        "feat: support nested functions in formula parser"
-                    ]
-                },
-                {
-                    "title": "feat: add black hole background to mobile about page",
-                    "description": "feat: add black hole background to mobile about page",
-                    "details": [
-                        "feat: add black hole background to mobile about page"
-                    ]
-                },
-                {
-                    "title": "feat: add column/row selection in spreadsheet editor",
-                    "description": "feat: add column/row selection in spreadsheet editor",
-                    "details": [
-                        "feat: add column/row selection in spreadsheet editor"
-                    ]
-                },
-                {
-                    "title": "feat: implement rounding and math functions in formula engine",
-                    "description": "feat: implement rounding and math functions in formula engine",
-                    "details": [
-                        "feat: implement rounding and math functions in formula engine"
-                    ]
-                }
-            ]
+          "title": "feat: Add GitHub Actions workflow for desktop release, local macOS publish script, and update desktop app version to 0.8.0.",
+          "description": "feat: Add GitHub Actions workflow for desktop release, local macOS publish script, and update desktop app version to 0.8.0.",
+          "details": [
+            "feat: Add GitHub Actions workflow for desktop release, local macOS publish script, and update desktop app version to 0.8.0."
+          ]
         },
         {
-            "category": "Bug Fixes",
-            "items": [
-                {
-                    "title": "fix(ci): make release workflow robust to existing tags",
-                    "description": "fix(ci): make release workflow robust to existing tags",
-                    "details": [
-                        "fix(ci): make release workflow robust to existing tags"
-                    ]
-                },
-                {
-                    "title": "fix: implement robust build paths and full architecture support",
-                    "description": "fix: implement robust build paths and full architecture support",
-                    "details": [
-                        "fix: implement robust build paths and full architecture support"
-                    ]
-                },
-                {
-                    "title": "fix: correct frontend asset paths in tauri.conf.json",
-                    "description": "fix: correct frontend asset paths in tauri.conf.json",
-                    "details": [
-                        "fix: correct frontend asset paths in tauri.conf.json"
-                    ]
-                },
-                {
-                    "title": "fix: update release workflow and rust versioning for v0.8.0",
-                    "description": "fix: update release workflow and rust versioning for v0.8.0",
-                    "details": [
-                        "fix: update release workflow and rust versioning for v0.8.0"
-                    ]
-                },
-                {
-                    "title": "fix: Update desktop guide download link from `/downloads` to `/download`",
-                    "description": "fix: Update desktop guide download link from `/downloads` to `/download`",
-                    "details": [
-                        "fix: Update desktop guide download link from `/downloads` to `/download`"
-                    ]
-                },
-                {
-                    "title": "fix(changelog): correct JSON structure and remove CI workflow",
-                    "description": "fix(changelog): correct JSON structure and remove CI workflow",
-                    "details": [
-                        "fix(changelog): correct JSON structure and remove CI workflow"
-                    ]
-                },
-                {
-                    "title": "fix: Remove immediate:true from Workspace watcher to prevent nav loops",
-                    "description": "fix: Remove immediate:true from Workspace watcher to prevent nav loops",
-                    "details": [
-                        "fix: Remove immediate:true from Workspace watcher to prevent nav loops"
-                    ]
-                },
-                {
-                    "title": "fix: Rewrite useConnections to avoid computed reactive loops",
-                    "description": "fix: Rewrite useConnections to avoid computed reactive loops",
-                    "details": [
-                        "fix: Rewrite useConnections to avoid computed reactive loops"
-                    ]
-                },
-                {
-                    "title": "fix: Use nextTick to prevent recursive updates in useConnections",
-                    "description": "fix: Use nextTick to prevent recursive updates in useConnections",
-                    "details": [
-                        "fix: Use nextTick to prevent recursive updates in useConnections"
-                    ]
-                },
-                {
-                    "title": "fix: Prevent recursive loading in useConnections",
-                    "description": "fix: Prevent recursive loading in useConnections",
-                    "details": [
-                        "fix: Prevent recursive loading in useConnections"
-                    ]
-                },
-                {
-                    "title": "fix: Add null safety checks for connections",
-                    "description": "fix: Add null safety checks for connections",
-                    "details": [
-                        "fix: Add null safety checks for connections"
-                    ]
-                },
-                {
-                    "title": "fix: Add null check for connections in Explorer",
-                    "description": "fix: Add null check for connections in Explorer",
-                    "details": [
-                        "fix: Add null check for connections in Explorer"
-                    ]
-                },
-                {
-                    "title": "fix: Make connections reactive to store changes",
-                    "description": "fix: Make connections reactive to store changes",
-                    "details": [
-                        "fix: Make connections reactive to store changes"
-                    ]
-                },
-                {
-                    "title": "fix: Update AddConnectionModal to use connection store",
-                    "description": "fix: Update AddConnectionModal to use connection store",
-                    "details": [
-                        "fix: Update AddConnectionModal to use connection store"
-                    ]
-                },
-                {
-                    "title": "fix: Correct import paths in QueryView.vue",
-                    "description": "fix: Correct import paths in QueryView.vue",
-                    "details": [
-                        "fix: Correct import paths in QueryView.vue"
-                    ]
-                },
-                {
-                    "title": "fix: Clear chatHistory when new chat tab is created from + button",
-                    "description": "fix: Clear chatHistory when new chat tab is created from + button",
-                    "details": [
-                        "fix: Clear chatHistory when new chat tab is created from + button"
-                    ]
-                },
-                {
-                    "title": "fix: Simplify chat history binding - always use props.chatHistory directly",
-                    "description": "fix: Simplify chat history binding - always use props.chatHistory directly",
-                    "details": [
-                        "fix: Simplify chat history binding - always use props.chatHistory directly"
-                    ]
-                },
-                {
-                    "title": "fix: Add null check for activeTab in chatHistory watch",
-                    "description": "fix: Add null check for activeTab in chatHistory watch",
-                    "details": [
-                        "fix: Add null check for activeTab in chatHistory watch"
-                    ]
-                },
-                {
-                    "title": "fix: Add immediate: true to chatHistory watch to sync on component mount",
-                    "description": "fix: Add immediate: true to chatHistory watch to sync on component mount",
-                    "details": [
-                        "fix: Add immediate: true to chatHistory watch to sync on component mount"
-                    ]
-                },
-                {
-                    "title": "fix: Use props.chatHistory as fallback to display message bubbles",
-                    "description": "fix: Use props.chatHistory as fallback to display message bubbles",
-                    "details": [
-                        "fix: Use props.chatHistory as fallback to display message bubbles"
-                    ]
-                },
-                {
-                    "title": "fix: Add null safety check in getActiveTable function",
-                    "description": "fix: Add null safety check in getActiveTable function",
-                    "details": [
-                        "fix: Add null safety check in getActiveTable function"
-                    ]
-                },
-                {
-                    "title": "fix: Use workspaceStore properties in template instead of undefined variables",
-                    "description": "fix: Use workspaceStore properties in template instead of undefined variables",
-                    "details": [
-                        "fix: Use workspaceStore properties in template instead of undefined variables"
-                    ]
-                },
-                {
-                    "title": "fix: Remove activeTabId from return statement",
-                    "description": "fix: Remove activeTabId from return statement",
-                    "details": [
-                        "fix: Remove activeTabId from return statement"
-                    ]
-                },
-                {
-                    "title": "fix: Add optional chaining for activeTabId in watch",
-                    "description": "fix: Add optional chaining for activeTabId in watch",
-                    "details": [
-                        "fix: Add optional chaining for activeTabId in watch"
-                    ]
-                },
-                {
-                    "title": "fix: Extract activeTab to variable to avoid chaining .value access",
-                    "description": "fix: Extract activeTab to variable to avoid chaining .value access",
-                    "details": [
-                        "fix: Extract activeTab to variable to avoid chaining .value access"
-                    ]
-                },
-                {
-                    "title": "fix: Add null check for activeTabId in watch statement",
-                    "description": "fix: Add null check for activeTabId in watch statement",
-                    "details": [
-                        "fix: Add null check for activeTabId in watch statement"
-                    ]
-                },
-                {
-                    "title": "fix: Add authentication headers to all query and table update fetch calls",
-                    "description": "fix: Add authentication headers to all query and table update fetch calls",
-                    "details": [
-                        "fix: Add authentication headers to all query and table update fetch calls"
-                    ]
-                },
-                {
-                    "title": "fix: Sync chatHistory prop to active tab data",
-                    "description": "fix: Sync chatHistory prop to active tab data",
-                    "details": [
-                        "fix: Sync chatHistory prop to active tab data"
-                    ]
-                },
-                {
-                    "title": "fix: Each chat tab now has independent history",
-                    "description": "fix: Each chat tab now has independent history",
-                    "details": [
-                        "fix: Each chat tab now has independent history"
-                    ]
-                },
-                {
-                    "title": "fix: Clear preview state in auto-create chat path",
-                    "description": "fix: Clear preview state in auto-create chat path",
-                    "details": [
-                        "fix: Clear preview state in auto-create chat path"
-                    ]
-                },
-                {
-                    "title": "fix: Clear preview state when creating new chat",
-                    "description": "fix: Clear preview state when creating new chat",
-                    "details": [
-                        "fix: Clear preview state when creating new chat"
-                    ]
-                },
-                {
-                    "title": "fix: Add getAuthHeaders to all remaining fetch calls for production auth",
-                    "description": "fix: Add getAuthHeaders to all remaining fetch calls for production auth",
-                    "details": [
-                        "fix: Add getAuthHeaders to all remaining fetch calls for production auth"
-                    ]
-                },
-                {
-                    "title": "fix: Add CORS exposeHeaders and maxAge for Authorization header",
-                    "description": "fix: Add CORS exposeHeaders and maxAge for Authorization header",
-                    "details": [
-                        "fix: Add CORS exposeHeaders and maxAge for Authorization header"
-                    ]
-                },
-                {
-                    "title": "fix: enable auto-save for uploaded Excel files",
-                    "description": "fix: enable auto-save for uploaded Excel files",
-                    "details": [
-                        "fix: enable auto-save for uploaded Excel files"
-                    ]
-                },
-                {
-                    "title": "fix: auto-save visual indicator and persistence reliability",
-                    "description": "fix: auto-save visual indicator and persistence reliability",
-                    "details": [
-                        "fix: auto-save visual indicator and persistence reliability"
-                    ]
-                },
-                {
-                    "title": "fix: enable Delete key to clear entire selected columns/rows",
-                    "description": "fix: enable Delete key to clear entire selected columns/rows",
-                    "details": [
-                        "fix: enable Delete key to clear entire selected columns/rows"
-                    ]
-                },
-                {
-                    "title": "fix: fetch user on app mount to reflect login state on mobile",
-                    "description": "fix: fetch user on app mount to reflect login state on mobile",
-                    "details": [
-                        "fix: fetch user on app mount to reflect login state on mobile"
-                    ]
-                },
-                {
-                    "title": "Fix: Correctly structure SQLiteAdapter class",
-                    "description": "Fix: Correctly structure SQLiteAdapter class",
-                    "details": [
-                        "Fix: Correctly structure SQLiteAdapter class"
-                    ]
-                },
-                {
-                    "title": "Fix: Use QUERY_API_URL in Chat.vue",
-                    "description": "Fix: Use QUERY_API_URL in Chat.vue",
-                    "details": [
-                        "Fix: Use QUERY_API_URL in Chat.vue"
-                    ]
-                },
-                {
-                    "title": "Fix: Use QUERY_API_URL in Settings and restore file content",
-                    "description": "Fix: Use QUERY_API_URL in Settings and restore file content",
-                    "details": [
-                        "Fix: Use QUERY_API_URL in Settings and restore file content"
-                    ]
-                }
-            ]
+          "title": "feat: Allow closing all tabs without auto-creating new one",
+          "description": "feat: Allow closing all tabs without auto-creating new one",
+          "details": [
+            "feat: Allow closing all tabs without auto-creating new one"
+          ]
         },
         {
-            "category": "Improvements",
-            "items": [
-                {
-                    "title": "chore: bump UI version and update desktop build commands to use npm workspace.",
-                    "description": "chore: bump UI version and update desktop build commands to use npm workspace.",
-                    "details": [
-                        "chore: bump UI version and update desktop build commands to use npm workspace."
-                    ]
-                },
-                {
-                    "title": "refactor: Migrate backend services, routes, jobs, and database modules from TypeScript to JavaScript.",
-                    "description": "refactor: Migrate backend services, routes, jobs, and database modules from TypeScript to JavaScript.",
-                    "details": [
-                        "refactor: Migrate backend services, routes, jobs, and database modules from TypeScript to JavaScript."
-                    ]
-                },
-                {
-                    "title": "chore: Add devcontainer config for GitHub Codespaces",
-                    "description": "chore: Add devcontainer config for GitHub Codespaces",
-                    "details": [
-                        "chore: Add devcontainer config for GitHub Codespaces"
-                    ]
-                },
-                {
-                    "title": "style: Brighten chat input background for better visibility",
-                    "description": "style: Brighten chat input background for better visibility",
-                    "details": [
-                        "style: Brighten chat input background for better visibility"
-                    ]
-                },
-                {
-                    "title": "chore: Checkpoint before Pinia migration - stores created",
-                    "description": "chore: Checkpoint before Pinia migration - stores created",
-                    "details": [
-                        "chore: Checkpoint before Pinia migration - stores created"
-                    ]
-                },
-                {
-                    "title": "Refactor: Extract Dashboard, Connection, and Table routes to modular files",
-                    "description": "Refactor: Extract Dashboard, Connection, and Table routes to modular files",
-                    "details": [
-                        "Refactor: Extract Dashboard, Connection, and Table routes to modular files"
-                    ]
-                },
-                {
-                    "title": "chore: remove obsolete turso/sqlite legacy backend files",
-                    "description": "chore: remove obsolete turso/sqlite legacy backend files",
-                    "details": [
-                        "chore: remove obsolete turso/sqlite legacy backend files"
-                    ]
-                },
-                {
-                    "title": "refactor: migrate file uploads from turso to surrealdb",
-                    "description": "refactor: migrate file uploads from turso to surrealdb",
-                    "details": [
-                        "refactor: migrate file uploads from turso to surrealdb"
-                    ]
-                },
-                {
-                    "title": "perf: batch SQLite updates for faster spreadsheet saving",
-                    "description": "perf: batch SQLite updates for faster spreadsheet saving",
-                    "details": [
-                        "perf: batch SQLite updates for faster spreadsheet saving"
-                    ]
-                },
-                {
-                    "title": "chore: explicitly configure global fetch for the database client.",
-                    "description": "chore: explicitly configure global fetch for the database client.",
-                    "details": [
-                        "chore: explicitly configure global fetch for the database client."
-                    ]
-                }
-            ]
+          "title": "feat: Create focused view components (Phase 2B)",
+          "description": "feat: Create focused view components (Phase 2B)",
+          "details": [
+            "feat: Create focused view components (Phase 2B)"
+          ]
         },
         {
-            "category": "Other",
-            "items": [
-                {
-                    "title": "v0.8.0 fix: Docs fix",
-                    "description": "v0.8.0 fix: Docs fix",
-                    "details": [
-                        "v0.8.0 fix: Docs fix"
-                    ]
-                },
-                {
-                    "title": "v0.8.0 fix: Fix to deployments",
-                    "description": "v0.8.0 fix: Fix to deployments",
-                    "details": [
-                        "v0.8.0 fix: Fix to deployments"
-                    ]
-                },
-                {
-                    "title": "v0.8.0 Release",
-                    "description": "v0.8.0 Release",
-                    "details": [
-                        "v0.8.0 Release"
-                    ]
-                },
-                {
-                    "title": "v0.7.2 release",
-                    "description": "v0.7.2 release",
-                    "details": [
-                        "v0.7.2 release"
-                    ]
-                },
-                {
-                    "title": "docs: update project README",
-                    "description": "docs: update project README",
-                    "details": [
-                        "docs: update project README"
-                    ]
-                },
-                {
-                    "title": "ci: setup github actions for tests and release automation",
-                    "description": "ci: setup github actions for tests and release automation",
-                    "details": [
-                        "ci: setup github actions for tests and release automation"
-                    ]
-                },
-                {
-                    "title": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
-                    "description": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
-                    "details": [
-                        "Release v0.7.1: Workspace Persistence & Sidebar Improvements"
-                    ]
-                },
-                {
-                    "title": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
-                    "description": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
-                    "details": [
-                        "Release v0.7.1: Workspace Persistence & Sidebar Improvements"
-                    ]
-                },
-                {
-                    "title": "WIP: Pinia migration - fixed most TypeScript errors, ~20 remaining",
-                    "description": "WIP: Pinia migration - fixed most TypeScript errors, ~20 remaining",
-                    "details": [
-                        "WIP: Pinia migration - fixed most TypeScript errors, ~20 remaining"
-                    ]
-                },
-                {
-                    "title": "WIP: Pinia migration - added storeToRefs, still fixing TypeScript errors",
-                    "description": "WIP: Pinia migration - added storeToRefs, still fixing TypeScript errors",
-                    "details": [
-                        "WIP: Pinia migration - added storeToRefs, still fixing TypeScript errors"
-                    ]
-                },
-                {
-                    "title": "docs: Add detailed status for resuming migration tomorrow",
-                    "description": "docs: Add detailed status for resuming migration tomorrow",
-                    "details": [
-                        "docs: Add detailed status for resuming migration tomorrow"
-                    ]
-                },
-                {
-                    "title": "WIP: Pinia migration in progress - automated replacements done, manual fixes needed",
-                    "description": "WIP: Pinia migration in progress - automated replacements done, manual fixes needed",
-                    "details": [
-                        "WIP: Pinia migration in progress - automated replacements done, manual fixes needed"
-                    ]
-                },
-                {
-                    "title": "docs: Add comprehensive Pinia migration checklist",
-                    "description": "docs: Add comprehensive Pinia migration checklist",
-                    "details": [
-                        "docs: Add comprehensive Pinia migration checklist"
-                    ]
-                },
-                {
-                    "title": "debug: Fix null-safe logging in connection route",
-                    "description": "debug: Fix null-safe logging in connection route",
-                    "details": [
-                        "debug: Fix null-safe logging in connection route"
-                    ]
-                },
-                {
-                    "title": "debug: Add CORS origin logging",
-                    "description": "debug: Add CORS origin logging",
-                    "details": [
-                        "debug: Add CORS origin logging"
-                    ]
-                },
-                {
-                    "title": "v0.7.0 Added logs for debugging",
-                    "description": "v0.7.0 Added logs for debugging",
-                    "details": [
-                        "v0.7.0 Added logs for debugging"
-                    ]
-                },
-                {
-                    "title": "v0.7.0 Added logs for debugging",
-                    "description": "v0.7.0 Added logs for debugging",
-                    "details": [
-                        "v0.7.0 Added logs for debugging"
-                    ]
-                },
-                {
-                    "title": "v0.7.0: Fix for cookies for connections error",
-                    "description": "v0.7.0: Fix for cookies for connections error",
-                    "details": [
-                        "v0.7.0: Fix for cookies for connections error"
-                    ]
-                },
-                {
-                    "title": "v0.7.0 fix: Added headers to fetch commands to fix connection",
-                    "description": "v0.7.0 fix: Added headers to fetch commands to fix connection",
-                    "details": [
-                        "v0.7.0 fix: Added headers to fetch commands to fix connection"
-                    ]
-                },
-                {
-                    "title": "v0.7.0 Fix: Fix to connections 401",
-                    "description": "v0.7.0 Fix: Fix to connections 401",
-                    "details": [
-                        "v0.7.0 Fix: Fix to connections 401"
-                    ]
-                },
-                {
-                    "title": "v0.7.0 fix: fixed releases order",
-                    "description": "v0.7.0 fix: fixed releases order",
-                    "details": [
-                        "v0.7.0 fix: fixed releases order"
-                    ]
-                },
-                {
-                    "title": "v0.7.0 Release",
-                    "description": "v0.7.0 Release",
-                    "details": [
-                        "v0.7.0 Release"
-                    ]
-                },
-                {
-                    "title": "v0.6.3 fix: Webhook and subscription fix",
-                    "description": "v0.6.3 fix: Webhook and subscription fix",
-                    "details": [
-                        "v0.6.3 fix: Webhook and subscription fix"
-                    ]
-                },
-                {
-                    "title": "v0.6.3 fix: Fixed usage endpoint and closest prefetch error",
-                    "description": "v0.6.3 fix: Fixed usage endpoint and closest prefetch error",
-                    "details": [
-                        "v0.6.3 fix: Fixed usage endpoint and closest prefetch error"
-                    ]
-                },
-                {
-                    "title": "v0.6.3 fix: Added coupon flag to allow for coupons",
-                    "description": "v0.6.3 fix: Added coupon flag to allow for coupons",
-                    "details": [
-                        "v0.6.3 fix: Added coupon flag to allow for coupons"
-                    ]
-                },
-                {
-                    "title": "v0.6.3 Fix: Fixed 401 error with Stripe checkout",
-                    "description": "v0.6.3 Fix: Fixed 401 error with Stripe checkout",
-                    "details": [
-                        "v0.6.3 Fix: Fixed 401 error with Stripe checkout"
-                    ]
-                },
-                {
-                    "title": "v0.6.3 release",
-                    "description": "v0.6.3 release",
-                    "details": [
-                        "v0.6.3 release"
-                    ]
-                },
-                {
-                    "title": "v0.6.2 release",
-                    "description": "v0.6.2 release",
-                    "details": [
-                        "v0.6.2 release"
-                    ]
-                },
-                {
-                    "title": "v0.6.1 release",
-                    "description": "v0.6.1 release",
-                    "details": [
-                        "v0.6.1 release"
-                    ]
-                },
-                {
-                    "title": "v0.6.0 release",
-                    "description": "v0.6.0 release",
-                    "details": [
-                        "v0.6.0 release"
-                    ]
-                },
-                {
-                    "title": "fix to dashbaord creation",
-                    "description": "fix to dashbaord creation",
-                    "details": [
-                        "fix to dashbaord creation"
-                    ]
-                },
-                {
-                    "title": "fixed shared dashboard issue",
-                    "description": "fixed shared dashboard issue",
-                    "details": [
-                        "fixed shared dashboard issue"
-                    ]
-                },
-                {
-                    "title": "v0.5.4 1st release",
-                    "description": "v0.5.4 1st release",
-                    "details": [
-                        "v0.5.4 1st release"
-                    ]
-                },
-                {
-                    "title": "v0.5.3: Rich text blocks with markdown editor and formatting toolbar File attachment support with upload/download functionality Dashboard privacy toggle with collaborator management Element editing with type-specific interfaces",
-                    "description": "v0.5.3: Rich text blocks with markdown editor and formatting toolbar File attachment support with upload/download functionality Dashboard privacy toggle with collaborator management Element editing with type-specific interfaces",
-                    "details": [
-                        "v0.5.3: Rich text blocks with markdown editor and formatting toolbar File attachment support with upload/download functionality Dashboard privacy toggle with collaborator management Element editing with type-specific interfaces"
-                    ]
-                },
-                {
-                    "title": "v0.5.2: AI Response Quality & Chat Formatting Improvements",
-                    "description": "v0.5.2: AI Response Quality & Chat Formatting Improvements",
-                    "details": [
-                        "v0.5.2: AI Response Quality & Chat Formatting Improvements"
-                    ]
-                },
-                {
-                    "title": "Fixed about page viewing issue",
-                    "description": "Fixed about page viewing issue",
-                    "details": [
-                        "Fixed about page viewing issue"
-                    ]
-                },
-                {
-                    "title": "v0.5.1 changelog.: Add SurrealDB adapter, AI prompt builder, and new UI components for chat and dashboard",
-                    "description": "v0.5.1 changelog.: Add SurrealDB adapter, AI prompt builder, and new UI components for chat and dashboard",
-                    "details": [
-                        "v0.5.1 changelog.: Add SurrealDB adapter, AI prompt builder, and new UI components for chat and dashboard"
-                    ]
-                },
-                {
-                    "title": "fixed changelogs",
-                    "description": "fixed changelogs",
-                    "details": [
-                        "fixed changelogs"
-                    ]
-                },
-                {
-                    "title": "fix to mobile routing",
-                    "description": "fix to mobile routing",
-                    "details": [
-                        "fix to mobile routing"
-                    ]
-                },
-                {
-                    "title": "fixed deployment command",
-                    "description": "fixed deployment command",
-                    "details": [
-                        "fixed deployment command"
-                    ]
-                },
-                {
-                    "title": "Fixed footer and about page",
-                    "description": "Fixed footer and about page",
-                    "details": [
-                        "Fixed footer and about page"
-                    ]
-                },
-                {
-                    "title": "Adding push to save progress",
-                    "description": "Adding push to save progress",
-                    "details": [
-                        "Adding push to save progress"
-                    ]
-                },
-                {
-                    "title": "docs: update env example for surrealdb migration",
-                    "description": "docs: update env example for surrealdb migration",
-                    "details": [
-                        "docs: update env example for surrealdb migration"
-                    ]
-                },
-                {
-                    "title": "v0.5.0: SurrealDB V2 Migration & Backend Stability",
-                    "description": "v0.5.0: SurrealDB V2 Migration & Backend Stability",
-                    "details": [
-                        "v0.5.0: SurrealDB V2 Migration & Backend Stability"
-                    ]
-                },
-                {
-                    "title": "v0.4.2 Fixed excel error with column deletion and more bug fixes",
-                    "description": "v0.4.2 Fixed excel error with column deletion and more bug fixes",
-                    "details": [
-                        "v0.4.2 Fixed excel error with column deletion and more bug fixes"
-                    ]
-                },
-                {
-                    "title": "Added fixes for Excel editor",
-                    "description": "Added fixes for Excel editor",
-                    "details": [
-                        "Added fixes for Excel editor"
-                    ]
-                },
-                {
-                    "title": "v0.3.1: Vercel deployment fixes and visualization enhancements",
-                    "description": "v0.3.1: Vercel deployment fixes and visualization enhancements",
-                    "details": [
-                        "v0.3.1: Vercel deployment fixes and visualization enhancements"
-                    ]
-                },
-                {
-                    "title": "Fixed OS upload feature for backend",
-                    "description": "Fixed OS upload feature for backend",
-                    "details": [
-                        "Fixed OS upload feature for backend"
-                    ]
-                },
-                {
-                    "title": "Removed Bun dependency for vercel deployment",
-                    "description": "Removed Bun dependency for vercel deployment",
-                    "details": [
-                        "Removed Bun dependency for vercel deployment"
-                    ]
-                },
-                {
-                    "title": "Fixing Package.json for vercel deployment",
-                    "description": "Fixing Package.json for vercel deployment",
-                    "details": [
-                        "Fixing Package.json for vercel deployment"
-                    ]
-                },
-                {
-                    "title": "Fixing package.json",
-                    "description": "Fixing package.json",
-                    "details": [
-                        "Fixing package.json"
-                    ]
-                },
-                {
-                    "title": "Made packages optional for deployment",
-                    "description": "Made packages optional for deployment",
-                    "details": [
-                        "Made packages optional for deployment"
-                    ]
-                },
-                {
-                    "title": "Fixed Pacakge.json for vercel",
-                    "description": "Fixed Pacakge.json for vercel",
-                    "details": [
-                        "Fixed Pacakge.json for vercel"
-                    ]
-                },
-                {
-                    "title": "Deploying Version 0.3.0 (Fingers Crossed)",
-                    "description": "Deploying Version 0.3.0 (Fingers Crossed)",
-                    "details": [
-                        "Deploying Version 0.3.0 (Fingers Crossed)"
-                    ]
-                },
-                {
-                    "title": "Working on implementing Excel spreadsheet view",
-                    "description": "Working on implementing Excel spreadsheet view",
-                    "details": [
-                        "Working on implementing Excel spreadsheet view"
-                    ]
-                },
-                {
-                    "title": "Implementing Excel editor Functionality",
-                    "description": "Implementing Excel editor Functionality",
-                    "details": [
-                        "Implementing Excel editor Functionality"
-                    ]
-                },
-                {
-                    "title": "Fixing and implementing Excel support",
-                    "description": "Fixing and implementing Excel support",
-                    "details": [
-                        "Fixing and implementing Excel support"
-                    ]
-                },
-                {
-                    "title": "adding tests for sqlite",
-                    "description": "adding tests for sqlite",
-                    "details": [
-                        "adding tests for sqlite"
-                    ]
-                },
-                {
-                    "title": "Fixed ui for SQLite fix",
-                    "description": "Fixed ui for SQLite fix",
-                    "details": [
-                        "Fixed ui for SQLite fix"
-                    ]
-                },
-                {
-                    "title": "Fixed SQLite adapter to work with Turos",
-                    "description": "Fixed SQLite adapter to work with Turos",
-                    "details": [
-                        "Fixed SQLite adapter to work with Turos"
-                    ]
-                },
-                {
-                    "title": "added vercel.json to fix routing issues",
-                    "description": "added vercel.json to fix routing issues",
-                    "details": [
-                        "added vercel.json to fix routing issues"
-                    ]
-                },
-                {
-                    "title": "fix to map args to positional",
-                    "description": "fix to map args to positional",
-                    "details": [
-                        "fix to map args to positional"
-                    ]
-                },
-                {
-                    "title": "fix to cookie issue",
-                    "description": "fix to cookie issue",
-                    "details": [
-                        "fix to cookie issue"
-                    ]
-                },
-                {
-                    "title": "added fix for email error turso",
-                    "description": "added fix for email error turso",
-                    "details": [
-                        "added fix for email error turso"
-                    ]
-                },
-                {
-                    "title": "fix for email error turso",
-                    "description": "fix for email error turso",
-                    "details": [
-                        "fix for email error turso"
-                    ]
-                },
-                {
-                    "title": "fixed turso map error",
-                    "description": "fixed turso map error",
-                    "details": [
-                        "fixed turso map error"
-                    ]
-                },
-                {
-                    "title": "added custom turso client",
-                    "description": "added custom turso client",
-                    "details": [
-                        "added custom turso client"
-                    ]
-                },
-                {
-                    "title": "added test-fetch route",
-                    "description": "added test-fetch route",
-                    "details": [
-                        "added test-fetch route"
-                    ]
-                },
-                {
-                    "title": "fix for env newline",
-                    "description": "fix for env newline",
-                    "details": [
-                        "fix for env newline"
-                    ]
-                },
-                {
-                    "title": "added websocket change to http for turso",
-                    "description": "added websocket change to http for turso",
-                    "details": [
-                        "added websocket change to http for turso"
-                    ]
-                },
-                {
-                    "title": "added more logging",
-                    "description": "added more logging",
-                    "details": [
-                        "added more logging"
-                    ]
-                },
-                {
-                    "title": "added db test endpoint",
-                    "description": "added db test endpoint",
-                    "details": [
-                        "added db test endpoint"
-                    ]
-                },
-                {
-                    "title": "logging fixes",
-                    "description": "logging fixes",
-                    "details": [
-                        "logging fixes"
-                    ]
-                },
-                {
-                    "title": "deploying logging",
-                    "description": "deploying logging",
-                    "details": [
-                        "deploying logging"
-                    ]
-                },
-                {
-                    "title": "changed to use redirect URI",
-                    "description": "changed to use redirect URI",
-                    "details": [
-                        "changed to use redirect URI"
-                    ]
-                },
-                {
-                    "title": "attempt to fix auth",
-                    "description": "attempt to fix auth",
-                    "details": [
-                        "attempt to fix auth"
-                    ]
-                },
-                {
-                    "title": "fixed bun specific imports",
-                    "description": "fixed bun specific imports",
-                    "details": [
-                        "fixed bun specific imports"
-                    ]
-                },
-                {
-                    "title": "fixed turso import",
-                    "description": "fixed turso import",
-                    "details": [
-                        "fixed turso import"
-                    ]
-                },
-                {
-                    "title": "converted db to js",
-                    "description": "converted db to js",
-                    "details": [
-                        "converted db to js"
-                    ]
-                },
-                {
-                    "title": "Moved db to backend folder",
-                    "description": "Moved db to backend folder",
-                    "details": [
-                        "Moved db to backend folder"
-                    ]
-                },
-                {
-                    "title": "Pushing to Vercel 12/3/2025",
-                    "description": "Pushing to Vercel 12/3/2025",
-                    "details": [
-                        "Pushing to Vercel 12/3/2025"
-                    ]
-                },
-                {
-                    "title": "Fixed some styling for the home and about pages",
-                    "description": "Fixed some styling for the home and about pages",
-                    "details": [
-                        "Fixed some styling for the home and about pages"
-                    ]
-                },
-                {
-                    "title": "Added a lot of features, flushed out dasshboard to the best of our ability, added support for kusto and sqlite, need to test other db options and optimize",
-                    "description": "Added a lot of features, flushed out dasshboard to the best of our ability, added support for kusto and sqlite, need to test other db options and optimize",
-                    "details": [
-                        "Added a lot of features, flushed out dasshboard to the best of our ability, added support for kusto and sqlite, need to test other db options and optimize"
-                    ]
-                },
-                {
-                    "title": "Fixed issue where the Chat and Write window shared the same contexts, added support for Postgress and SQLite and implemented QOL features to chat and working on Dashboard integration",
-                    "description": "Fixed issue where the Chat and Write window shared the same contexts, added support for Postgress and SQLite and implemented QOL features to chat and working on Dashboard integration",
-                    "details": [
-                        "Fixed issue where the Chat and Write window shared the same contexts, added support for Postgress and SQLite and implemented QOL features to chat and working on Dashboard integration"
-                    ]
-                },
-                {
-                    "title": "Finally have a 1.0 prototype, need to implement kusto further but got mongo working",
-                    "description": "Finally have a 1.0 prototype, need to implement kusto further but got mongo working",
-                    "details": [
-                        "Finally have a 1.0 prototype, need to implement kusto further but got mongo working"
-                    ]
-                },
-                {
-                    "title": "added some changes to dashboard and need to implement sql connection",
-                    "description": "added some changes to dashboard and need to implement sql connection",
-                    "details": [
-                        "added some changes to dashboard and need to implement sql connection"
-                    ]
-                },
-                {
-                    "title": "Merge pull request #1 from tfq26/master",
-                    "description": "Merge pull request #1 from tfq26/master",
-                    "details": [
-                        "Merge pull request #1 from tfq26/master"
-                    ]
-                },
-                {
-                    "title": "added files",
-                    "description": "added files",
-                    "details": [
-                        "added files"
-                    ]
-                },
-                {
-                    "title": "init commit",
-                    "description": "init commit",
-                    "details": [
-                        "init commit"
-                    ]
-                }
-            ]
+          "title": "feat: Extract composables from Chat.vue (Phase 2A)",
+          "description": "feat: Extract composables from Chat.vue (Phase 2A)",
+          "details": [
+            "feat: Extract composables from Chat.vue (Phase 2A)"
+          ]
+        },
+        {
+          "title": "feat: Complete Phase 1 - Integrate chat and connection stores",
+          "description": "feat: Complete Phase 1 - Integrate chat and connection stores",
+          "details": [
+            "feat: Complete Phase 1 - Integrate chat and connection stores"
+          ]
+        },
+        {
+          "title": "feat: Implement per-tab chat history isolation",
+          "description": "feat: Implement per-tab chat history isolation",
+          "details": [
+            "feat: Implement per-tab chat history isolation"
+          ]
+        },
+        {
+          "title": "feat: Centralized API client architecture (v0.7.0.5)",
+          "description": "feat: Centralized API client architecture (v0.7.0.5)",
+          "details": [
+            "feat: Centralized API client architecture (v0.7.0.5)"
+          ]
+        },
+        {
+          "title": "feat: add chat view and editor component with message history and input modes",
+          "description": "feat: add chat view and editor component with message history and input modes",
+          "details": [
+            "feat: add chat view and editor component with message history and input modes"
+          ]
+        },
+        {
+          "title": "feat: Introduce automated changelog generation and release indexing for the UI.",
+          "description": "feat: Introduce automated changelog generation and release indexing for the UI.",
+          "details": [
+            "feat: Introduce automated changelog generation and release indexing for the UI."
+          ]
+        },
+        {
+          "title": "feat: Implement WorkOS-based authentication routes for user login, logout, and session management.",
+          "description": "feat: Implement WorkOS-based authentication routes for user login, logout, and session management.",
+          "details": [
+            "feat: Implement WorkOS-based authentication routes for user login, logout, and session management."
+          ]
+        },
+        {
+          "title": "feat: add WorkOS authentication routes for login, callback, logout, and user details, including SurrealDB user upsertion.",
+          "description": "feat: add WorkOS authentication routes for login, callback, logout, and user details, including SurrealDB user upsertion.",
+          "details": [
+            "feat: add WorkOS authentication routes for login, callback, logout, and user details, including SurrealDB user upsertion."
+          ]
+        },
+        {
+          "title": "feat: add mobile header component and update router with new routes and auth handling.",
+          "description": "feat: add mobile header component and update router with new routes and auth handling.",
+          "details": [
+            "feat: add mobile header component and update router with new routes and auth handling."
+          ]
+        },
+        {
+          "title": "feat: add `AppFooter` and `MobileFooter` components with dynamic version display and copyright information.",
+          "description": "feat: add `AppFooter` and `MobileFooter` components with dynamic version display and copyright information.",
+          "details": [
+            "feat: add `AppFooter` and `MobileFooter` components with dynamic version display and copyright information."
+          ]
+        },
+        {
+          "title": "feat: Implement core backend services, AI chat, data upload, and SurrealDB integration.",
+          "description": "feat: Implement core backend services, AI chat, data upload, and SurrealDB integration.",
+          "details": [
+            "feat: Implement core backend services, AI chat, data upload, and SurrealDB integration."
+          ]
+        },
+        {
+          "title": "feat: Add table management backend route with rename functionality, SurrealDB adapter, and new UI components for data exploration and AI assistance.",
+          "description": "feat: Add table management backend route with rename functionality, SurrealDB adapter, and new UI components for data exploration and AI assistance.",
+          "details": [
+            "feat: Add table management backend route with rename functionality, SurrealDB adapter, and new UI components for data exploration and AI assistance."
+          ]
+        },
+        {
+          "title": "feat: implement real-time collaboration with live cursors, smart notes system, and git-like data branching; migrate backend to SurrealDB; fix mobile auth",
+          "description": "feat: implement real-time collaboration with live cursors, smart notes system, and git-like data branching; migrate backend to SurrealDB; fix mobile auth",
+          "details": [
+            "feat: implement real-time collaboration with live cursors, smart notes system, and git-like data branching; migrate backend to SurrealDB; fix mobile auth"
+          ]
+        },
+        {
+          "title": "feat: Phase 3 - Dashboard Labels & Annotations",
+          "description": "feat: Phase 3 - Dashboard Labels & Annotations",
+          "details": [
+            "feat: Phase 3 - Dashboard Labels & Annotations"
+          ]
+        },
+        {
+          "title": "feat: Phase 2 - Dashboard Color Customization",
+          "description": "feat: Phase 2 - Dashboard Color Customization",
+          "details": [
+            "feat: Phase 2 - Dashboard Color Customization"
+          ]
+        },
+        {
+          "title": "feat: Phase 1 - Dashboard Element Editor foundation",
+          "description": "feat: Phase 1 - Dashboard Element Editor foundation",
+          "details": [
+            "feat: Phase 1 - Dashboard Element Editor foundation"
+          ]
+        },
+        {
+          "title": "feat: implement auto-save for spreadsheet and fix formula parser",
+          "description": "feat: implement auto-save for spreadsheet and fix formula parser",
+          "details": [
+            "feat: implement auto-save for spreadsheet and fix formula parser"
+          ]
+        },
+        {
+          "title": "feat: support nested functions in formula parser",
+          "description": "feat: support nested functions in formula parser",
+          "details": [
+            "feat: support nested functions in formula parser"
+          ]
+        },
+        {
+          "title": "feat: add black hole background to mobile about page",
+          "description": "feat: add black hole background to mobile about page",
+          "details": [
+            "feat: add black hole background to mobile about page"
+          ]
+        },
+        {
+          "title": "feat: add column/row selection in spreadsheet editor",
+          "description": "feat: add column/row selection in spreadsheet editor",
+          "details": [
+            "feat: add column/row selection in spreadsheet editor"
+          ]
+        },
+        {
+          "title": "feat: implement rounding and math functions in formula engine",
+          "description": "feat: implement rounding and math functions in formula engine",
+          "details": [
+            "feat: implement rounding and math functions in formula engine"
+          ]
         }
-    ]
+      ]
+    },
+    {
+      "category": "Bug Fixes",
+      "items": [
+        {
+          "title": "fix(ci): make release workflow robust to existing tags",
+          "description": "fix(ci): make release workflow robust to existing tags",
+          "details": [
+            "fix(ci): make release workflow robust to existing tags"
+          ]
+        },
+        {
+          "title": "fix: implement robust build paths and full architecture support",
+          "description": "fix: implement robust build paths and full architecture support",
+          "details": [
+            "fix: implement robust build paths and full architecture support"
+          ]
+        },
+        {
+          "title": "fix: correct frontend asset paths in tauri.conf.json",
+          "description": "fix: correct frontend asset paths in tauri.conf.json",
+          "details": [
+            "fix: correct frontend asset paths in tauri.conf.json"
+          ]
+        },
+        {
+          "title": "fix: update release workflow and rust versioning for v0.8.0",
+          "description": "fix: update release workflow and rust versioning for v0.8.0",
+          "details": [
+            "fix: update release workflow and rust versioning for v0.8.0"
+          ]
+        },
+        {
+          "title": "fix: Update desktop guide download link from `/downloads` to `/download`",
+          "description": "fix: Update desktop guide download link from `/downloads` to `/download`",
+          "details": [
+            "fix: Update desktop guide download link from `/downloads` to `/download`"
+          ]
+        },
+        {
+          "title": "fix(changelog): correct JSON structure and remove CI workflow",
+          "description": "fix(changelog): correct JSON structure and remove CI workflow",
+          "details": [
+            "fix(changelog): correct JSON structure and remove CI workflow"
+          ]
+        },
+        {
+          "title": "fix: Remove immediate:true from Workspace watcher to prevent nav loops",
+          "description": "fix: Remove immediate:true from Workspace watcher to prevent nav loops",
+          "details": [
+            "fix: Remove immediate:true from Workspace watcher to prevent nav loops"
+          ]
+        },
+        {
+          "title": "fix: Rewrite useConnections to avoid computed reactive loops",
+          "description": "fix: Rewrite useConnections to avoid computed reactive loops",
+          "details": [
+            "fix: Rewrite useConnections to avoid computed reactive loops"
+          ]
+        },
+        {
+          "title": "fix: Use nextTick to prevent recursive updates in useConnections",
+          "description": "fix: Use nextTick to prevent recursive updates in useConnections",
+          "details": [
+            "fix: Use nextTick to prevent recursive updates in useConnections"
+          ]
+        },
+        {
+          "title": "fix: Prevent recursive loading in useConnections",
+          "description": "fix: Prevent recursive loading in useConnections",
+          "details": [
+            "fix: Prevent recursive loading in useConnections"
+          ]
+        },
+        {
+          "title": "fix: Add null safety checks for connections",
+          "description": "fix: Add null safety checks for connections",
+          "details": [
+            "fix: Add null safety checks for connections"
+          ]
+        },
+        {
+          "title": "fix: Add null check for connections in Explorer",
+          "description": "fix: Add null check for connections in Explorer",
+          "details": [
+            "fix: Add null check for connections in Explorer"
+          ]
+        },
+        {
+          "title": "fix: Make connections reactive to store changes",
+          "description": "fix: Make connections reactive to store changes",
+          "details": [
+            "fix: Make connections reactive to store changes"
+          ]
+        },
+        {
+          "title": "fix: Update AddConnectionModal to use connection store",
+          "description": "fix: Update AddConnectionModal to use connection store",
+          "details": [
+            "fix: Update AddConnectionModal to use connection store"
+          ]
+        },
+        {
+          "title": "fix: Correct import paths in QueryView.vue",
+          "description": "fix: Correct import paths in QueryView.vue",
+          "details": [
+            "fix: Correct import paths in QueryView.vue"
+          ]
+        },
+        {
+          "title": "fix: Clear chatHistory when new chat tab is created from + button",
+          "description": "fix: Clear chatHistory when new chat tab is created from + button",
+          "details": [
+            "fix: Clear chatHistory when new chat tab is created from + button"
+          ]
+        },
+        {
+          "title": "fix: Simplify chat history binding - always use props.chatHistory directly",
+          "description": "fix: Simplify chat history binding - always use props.chatHistory directly",
+          "details": [
+            "fix: Simplify chat history binding - always use props.chatHistory directly"
+          ]
+        },
+        {
+          "title": "fix: Add null check for activeTab in chatHistory watch",
+          "description": "fix: Add null check for activeTab in chatHistory watch",
+          "details": [
+            "fix: Add null check for activeTab in chatHistory watch"
+          ]
+        },
+        {
+          "title": "fix: Add immediate: true to chatHistory watch to sync on component mount",
+          "description": "fix: Add immediate: true to chatHistory watch to sync on component mount",
+          "details": [
+            "fix: Add immediate: true to chatHistory watch to sync on component mount"
+          ]
+        },
+        {
+          "title": "fix: Use props.chatHistory as fallback to display message bubbles",
+          "description": "fix: Use props.chatHistory as fallback to display message bubbles",
+          "details": [
+            "fix: Use props.chatHistory as fallback to display message bubbles"
+          ]
+        },
+        {
+          "title": "fix: Add null safety check in getActiveTable function",
+          "description": "fix: Add null safety check in getActiveTable function",
+          "details": [
+            "fix: Add null safety check in getActiveTable function"
+          ]
+        },
+        {
+          "title": "fix: Use workspaceStore properties in template instead of undefined variables",
+          "description": "fix: Use workspaceStore properties in template instead of undefined variables",
+          "details": [
+            "fix: Use workspaceStore properties in template instead of undefined variables"
+          ]
+        },
+        {
+          "title": "fix: Remove activeTabId from return statement",
+          "description": "fix: Remove activeTabId from return statement",
+          "details": [
+            "fix: Remove activeTabId from return statement"
+          ]
+        },
+        {
+          "title": "fix: Add optional chaining for activeTabId in watch",
+          "description": "fix: Add optional chaining for activeTabId in watch",
+          "details": [
+            "fix: Add optional chaining for activeTabId in watch"
+          ]
+        },
+        {
+          "title": "fix: Extract activeTab to variable to avoid chaining .value access",
+          "description": "fix: Extract activeTab to variable to avoid chaining .value access",
+          "details": [
+            "fix: Extract activeTab to variable to avoid chaining .value access"
+          ]
+        },
+        {
+          "title": "fix: Add null check for activeTabId in watch statement",
+          "description": "fix: Add null check for activeTabId in watch statement",
+          "details": [
+            "fix: Add null check for activeTabId in watch statement"
+          ]
+        },
+        {
+          "title": "fix: Add authentication headers to all query and table update fetch calls",
+          "description": "fix: Add authentication headers to all query and table update fetch calls",
+          "details": [
+            "fix: Add authentication headers to all query and table update fetch calls"
+          ]
+        },
+        {
+          "title": "fix: Sync chatHistory prop to active tab data",
+          "description": "fix: Sync chatHistory prop to active tab data",
+          "details": [
+            "fix: Sync chatHistory prop to active tab data"
+          ]
+        },
+        {
+          "title": "fix: Each chat tab now has independent history",
+          "description": "fix: Each chat tab now has independent history",
+          "details": [
+            "fix: Each chat tab now has independent history"
+          ]
+        },
+        {
+          "title": "fix: Clear preview state in auto-create chat path",
+          "description": "fix: Clear preview state in auto-create chat path",
+          "details": [
+            "fix: Clear preview state in auto-create chat path"
+          ]
+        },
+        {
+          "title": "fix: Clear preview state when creating new chat",
+          "description": "fix: Clear preview state when creating new chat",
+          "details": [
+            "fix: Clear preview state when creating new chat"
+          ]
+        },
+        {
+          "title": "fix: Add getAuthHeaders to all remaining fetch calls for production auth",
+          "description": "fix: Add getAuthHeaders to all remaining fetch calls for production auth",
+          "details": [
+            "fix: Add getAuthHeaders to all remaining fetch calls for production auth"
+          ]
+        },
+        {
+          "title": "fix: Add CORS exposeHeaders and maxAge for Authorization header",
+          "description": "fix: Add CORS exposeHeaders and maxAge for Authorization header",
+          "details": [
+            "fix: Add CORS exposeHeaders and maxAge for Authorization header"
+          ]
+        },
+        {
+          "title": "fix: enable auto-save for uploaded Excel files",
+          "description": "fix: enable auto-save for uploaded Excel files",
+          "details": [
+            "fix: enable auto-save for uploaded Excel files"
+          ]
+        },
+        {
+          "title": "fix: auto-save visual indicator and persistence reliability",
+          "description": "fix: auto-save visual indicator and persistence reliability",
+          "details": [
+            "fix: auto-save visual indicator and persistence reliability"
+          ]
+        },
+        {
+          "title": "fix: enable Delete key to clear entire selected columns/rows",
+          "description": "fix: enable Delete key to clear entire selected columns/rows",
+          "details": [
+            "fix: enable Delete key to clear entire selected columns/rows"
+          ]
+        },
+        {
+          "title": "fix: fetch user on app mount to reflect login state on mobile",
+          "description": "fix: fetch user on app mount to reflect login state on mobile",
+          "details": [
+            "fix: fetch user on app mount to reflect login state on mobile"
+          ]
+        },
+        {
+          "title": "Fix: Correctly structure SQLiteAdapter class",
+          "description": "Fix: Correctly structure SQLiteAdapter class",
+          "details": [
+            "Fix: Correctly structure SQLiteAdapter class"
+          ]
+        },
+        {
+          "title": "Fix: Use QUERY_API_URL in Chat.vue",
+          "description": "Fix: Use QUERY_API_URL in Chat.vue",
+          "details": [
+            "Fix: Use QUERY_API_URL in Chat.vue"
+          ]
+        },
+        {
+          "title": "Fix: Use QUERY_API_URL in Settings and restore file content",
+          "description": "Fix: Use QUERY_API_URL in Settings and restore file content",
+          "details": [
+            "Fix: Use QUERY_API_URL in Settings and restore file content"
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Improvements",
+      "items": [
+        {
+          "title": "chore: bump UI version and update desktop build commands to use npm workspace.",
+          "description": "chore: bump UI version and update desktop build commands to use npm workspace.",
+          "details": [
+            "chore: bump UI version and update desktop build commands to use npm workspace."
+          ]
+        },
+        {
+          "title": "refactor: Migrate backend services, routes, jobs, and database modules from TypeScript to JavaScript.",
+          "description": "refactor: Migrate backend services, routes, jobs, and database modules from TypeScript to JavaScript.",
+          "details": [
+            "refactor: Migrate backend services, routes, jobs, and database modules from TypeScript to JavaScript."
+          ]
+        },
+        {
+          "title": "chore: Add devcontainer config for GitHub Codespaces",
+          "description": "chore: Add devcontainer config for GitHub Codespaces",
+          "details": [
+            "chore: Add devcontainer config for GitHub Codespaces"
+          ]
+        },
+        {
+          "title": "style: Brighten chat input background for better visibility",
+          "description": "style: Brighten chat input background for better visibility",
+          "details": [
+            "style: Brighten chat input background for better visibility"
+          ]
+        },
+        {
+          "title": "chore: Checkpoint before Pinia migration - stores created",
+          "description": "chore: Checkpoint before Pinia migration - stores created",
+          "details": [
+            "chore: Checkpoint before Pinia migration - stores created"
+          ]
+        },
+        {
+          "title": "Refactor: Extract Dashboard, Connection, and Table routes to modular files",
+          "description": "Refactor: Extract Dashboard, Connection, and Table routes to modular files",
+          "details": [
+            "Refactor: Extract Dashboard, Connection, and Table routes to modular files"
+          ]
+        },
+        {
+          "title": "chore: remove obsolete turso/sqlite legacy backend files",
+          "description": "chore: remove obsolete turso/sqlite legacy backend files",
+          "details": [
+            "chore: remove obsolete turso/sqlite legacy backend files"
+          ]
+        },
+        {
+          "title": "refactor: migrate file uploads from turso to surrealdb",
+          "description": "refactor: migrate file uploads from turso to surrealdb",
+          "details": [
+            "refactor: migrate file uploads from turso to surrealdb"
+          ]
+        },
+        {
+          "title": "perf: batch SQLite updates for faster spreadsheet saving",
+          "description": "perf: batch SQLite updates for faster spreadsheet saving",
+          "details": [
+            "perf: batch SQLite updates for faster spreadsheet saving"
+          ]
+        },
+        {
+          "title": "chore: explicitly configure global fetch for the database client.",
+          "description": "chore: explicitly configure global fetch for the database client.",
+          "details": [
+            "chore: explicitly configure global fetch for the database client."
+          ]
+        }
+      ]
+    },
+    {
+      "category": "Other",
+      "items": [
+        {
+          "title": "v0.8.0 fix: Docs fix",
+          "description": "v0.8.0 fix: Docs fix",
+          "details": [
+            "v0.8.0 fix: Docs fix"
+          ]
+        },
+        {
+          "title": "v0.8.0 fix: Fix to deployments",
+          "description": "v0.8.0 fix: Fix to deployments",
+          "details": [
+            "v0.8.0 fix: Fix to deployments"
+          ]
+        },
+        {
+          "title": "v0.8.0 Release",
+          "description": "v0.8.0 Release",
+          "details": [
+            "v0.8.0 Release"
+          ]
+        },
+        {
+          "title": "v0.7.2 release",
+          "description": "v0.7.2 release",
+          "details": [
+            "v0.7.2 release"
+          ]
+        },
+        {
+          "title": "docs: update project README",
+          "description": "docs: update project README",
+          "details": [
+            "docs: update project README"
+          ]
+        },
+        {
+          "title": "ci: setup github actions for tests and release automation",
+          "description": "ci: setup github actions for tests and release automation",
+          "details": [
+            "ci: setup github actions for tests and release automation"
+          ]
+        },
+        {
+          "title": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
+          "description": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
+          "details": [
+            "Release v0.7.1: Workspace Persistence & Sidebar Improvements"
+          ]
+        },
+        {
+          "title": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
+          "description": "Release v0.7.1: Workspace Persistence & Sidebar Improvements",
+          "details": [
+            "Release v0.7.1: Workspace Persistence & Sidebar Improvements"
+          ]
+        },
+        {
+          "title": "WIP: Pinia migration - fixed most TypeScript errors, ~20 remaining",
+          "description": "WIP: Pinia migration - fixed most TypeScript errors, ~20 remaining",
+          "details": [
+            "WIP: Pinia migration - fixed most TypeScript errors, ~20 remaining"
+          ]
+        },
+        {
+          "title": "WIP: Pinia migration - added storeToRefs, still fixing TypeScript errors",
+          "description": "WIP: Pinia migration - added storeToRefs, still fixing TypeScript errors",
+          "details": [
+            "WIP: Pinia migration - added storeToRefs, still fixing TypeScript errors"
+          ]
+        },
+        {
+          "title": "docs: Add detailed status for resuming migration tomorrow",
+          "description": "docs: Add detailed status for resuming migration tomorrow",
+          "details": [
+            "docs: Add detailed status for resuming migration tomorrow"
+          ]
+        },
+        {
+          "title": "WIP: Pinia migration in progress - automated replacements done, manual fixes needed",
+          "description": "WIP: Pinia migration in progress - automated replacements done, manual fixes needed",
+          "details": [
+            "WIP: Pinia migration in progress - automated replacements done, manual fixes needed"
+          ]
+        },
+        {
+          "title": "docs: Add comprehensive Pinia migration checklist",
+          "description": "docs: Add comprehensive Pinia migration checklist",
+          "details": [
+            "docs: Add comprehensive Pinia migration checklist"
+          ]
+        },
+        {
+          "title": "debug: Fix null-safe logging in connection route",
+          "description": "debug: Fix null-safe logging in connection route",
+          "details": [
+            "debug: Fix null-safe logging in connection route"
+          ]
+        },
+        {
+          "title": "debug: Add CORS origin logging",
+          "description": "debug: Add CORS origin logging",
+          "details": [
+            "debug: Add CORS origin logging"
+          ]
+        },
+        {
+          "title": "v0.7.0 Added logs for debugging",
+          "description": "v0.7.0 Added logs for debugging",
+          "details": [
+            "v0.7.0 Added logs for debugging"
+          ]
+        },
+        {
+          "title": "v0.7.0 Added logs for debugging",
+          "description": "v0.7.0 Added logs for debugging",
+          "details": [
+            "v0.7.0 Added logs for debugging"
+          ]
+        },
+        {
+          "title": "v0.7.0: Fix for cookies for connections error",
+          "description": "v0.7.0: Fix for cookies for connections error",
+          "details": [
+            "v0.7.0: Fix for cookies for connections error"
+          ]
+        },
+        {
+          "title": "v0.7.0 fix: Added headers to fetch commands to fix connection",
+          "description": "v0.7.0 fix: Added headers to fetch commands to fix connection",
+          "details": [
+            "v0.7.0 fix: Added headers to fetch commands to fix connection"
+          ]
+        },
+        {
+          "title": "v0.7.0 Fix: Fix to connections 401",
+          "description": "v0.7.0 Fix: Fix to connections 401",
+          "details": [
+            "v0.7.0 Fix: Fix to connections 401"
+          ]
+        },
+        {
+          "title": "v0.7.0 fix: fixed releases order",
+          "description": "v0.7.0 fix: fixed releases order",
+          "details": [
+            "v0.7.0 fix: fixed releases order"
+          ]
+        },
+        {
+          "title": "v0.7.0 Release",
+          "description": "v0.7.0 Release",
+          "details": [
+            "v0.7.0 Release"
+          ]
+        },
+        {
+          "title": "v0.6.3 fix: Webhook and subscription fix",
+          "description": "v0.6.3 fix: Webhook and subscription fix",
+          "details": [
+            "v0.6.3 fix: Webhook and subscription fix"
+          ]
+        },
+        {
+          "title": "v0.6.3 fix: Fixed usage endpoint and closest prefetch error",
+          "description": "v0.6.3 fix: Fixed usage endpoint and closest prefetch error",
+          "details": [
+            "v0.6.3 fix: Fixed usage endpoint and closest prefetch error"
+          ]
+        },
+        {
+          "title": "v0.6.3 fix: Added coupon flag to allow for coupons",
+          "description": "v0.6.3 fix: Added coupon flag to allow for coupons",
+          "details": [
+            "v0.6.3 fix: Added coupon flag to allow for coupons"
+          ]
+        },
+        {
+          "title": "v0.6.3 Fix: Fixed 401 error with Stripe checkout",
+          "description": "v0.6.3 Fix: Fixed 401 error with Stripe checkout",
+          "details": [
+            "v0.6.3 Fix: Fixed 401 error with Stripe checkout"
+          ]
+        },
+        {
+          "title": "v0.6.3 release",
+          "description": "v0.6.3 release",
+          "details": [
+            "v0.6.3 release"
+          ]
+        },
+        {
+          "title": "v0.6.2 release",
+          "description": "v0.6.2 release",
+          "details": [
+            "v0.6.2 release"
+          ]
+        },
+        {
+          "title": "v0.6.1 release",
+          "description": "v0.6.1 release",
+          "details": [
+            "v0.6.1 release"
+          ]
+        },
+        {
+          "title": "v0.6.0 release",
+          "description": "v0.6.0 release",
+          "details": [
+            "v0.6.0 release"
+          ]
+        },
+        {
+          "title": "fix to dashbaord creation",
+          "description": "fix to dashbaord creation",
+          "details": [
+            "fix to dashbaord creation"
+          ]
+        },
+        {
+          "title": "fixed shared dashboard issue",
+          "description": "fixed shared dashboard issue",
+          "details": [
+            "fixed shared dashboard issue"
+          ]
+        },
+        {
+          "title": "v0.5.4 1st release",
+          "description": "v0.5.4 1st release",
+          "details": [
+            "v0.5.4 1st release"
+          ]
+        },
+        {
+          "title": "v0.5.3: Rich text blocks with markdown editor and formatting toolbar File attachment support with upload/download functionality Dashboard privacy toggle with collaborator management Element editing with type-specific interfaces",
+          "description": "v0.5.3: Rich text blocks with markdown editor and formatting toolbar File attachment support with upload/download functionality Dashboard privacy toggle with collaborator management Element editing with type-specific interfaces",
+          "details": [
+            "v0.5.3: Rich text blocks with markdown editor and formatting toolbar File attachment support with upload/download functionality Dashboard privacy toggle with collaborator management Element editing with type-specific interfaces"
+          ]
+        },
+        {
+          "title": "v0.5.2: AI Response Quality & Chat Formatting Improvements",
+          "description": "v0.5.2: AI Response Quality & Chat Formatting Improvements",
+          "details": [
+            "v0.5.2: AI Response Quality & Chat Formatting Improvements"
+          ]
+        },
+        {
+          "title": "Fixed about page viewing issue",
+          "description": "Fixed about page viewing issue",
+          "details": [
+            "Fixed about page viewing issue"
+          ]
+        },
+        {
+          "title": "v0.5.1 changelog.: Add SurrealDB adapter, AI prompt builder, and new UI components for chat and dashboard",
+          "description": "v0.5.1 changelog.: Add SurrealDB adapter, AI prompt builder, and new UI components for chat and dashboard",
+          "details": [
+            "v0.5.1 changelog.: Add SurrealDB adapter, AI prompt builder, and new UI components for chat and dashboard"
+          ]
+        },
+        {
+          "title": "fixed changelogs",
+          "description": "fixed changelogs",
+          "details": [
+            "fixed changelogs"
+          ]
+        },
+        {
+          "title": "fix to mobile routing",
+          "description": "fix to mobile routing",
+          "details": [
+            "fix to mobile routing"
+          ]
+        },
+        {
+          "title": "fixed deployment command",
+          "description": "fixed deployment command",
+          "details": [
+            "fixed deployment command"
+          ]
+        },
+        {
+          "title": "Fixed footer and about page",
+          "description": "Fixed footer and about page",
+          "details": [
+            "Fixed footer and about page"
+          ]
+        },
+        {
+          "title": "Adding push to save progress",
+          "description": "Adding push to save progress",
+          "details": [
+            "Adding push to save progress"
+          ]
+        },
+        {
+          "title": "docs: update env example for surrealdb migration",
+          "description": "docs: update env example for surrealdb migration",
+          "details": [
+            "docs: update env example for surrealdb migration"
+          ]
+        },
+        {
+          "title": "v0.5.0: SurrealDB V2 Migration & Backend Stability",
+          "description": "v0.5.0: SurrealDB V2 Migration & Backend Stability",
+          "details": [
+            "v0.5.0: SurrealDB V2 Migration & Backend Stability"
+          ]
+        },
+        {
+          "title": "v0.4.2 Fixed excel error with column deletion and more bug fixes",
+          "description": "v0.4.2 Fixed excel error with column deletion and more bug fixes",
+          "details": [
+            "v0.4.2 Fixed excel error with column deletion and more bug fixes"
+          ]
+        },
+        {
+          "title": "Added fixes for Excel editor",
+          "description": "Added fixes for Excel editor",
+          "details": [
+            "Added fixes for Excel editor"
+          ]
+        },
+        {
+          "title": "v0.3.1: Vercel deployment fixes and visualization enhancements",
+          "description": "v0.3.1: Vercel deployment fixes and visualization enhancements",
+          "details": [
+            "v0.3.1: Vercel deployment fixes and visualization enhancements"
+          ]
+        },
+        {
+          "title": "Fixed OS upload feature for backend",
+          "description": "Fixed OS upload feature for backend",
+          "details": [
+            "Fixed OS upload feature for backend"
+          ]
+        },
+        {
+          "title": "Removed Bun dependency for vercel deployment",
+          "description": "Removed Bun dependency for vercel deployment",
+          "details": [
+            "Removed Bun dependency for vercel deployment"
+          ]
+        },
+        {
+          "title": "Fixing Package.json for vercel deployment",
+          "description": "Fixing Package.json for vercel deployment",
+          "details": [
+            "Fixing Package.json for vercel deployment"
+          ]
+        },
+        {
+          "title": "Fixing package.json",
+          "description": "Fixing package.json",
+          "details": [
+            "Fixing package.json"
+          ]
+        },
+        {
+          "title": "Made packages optional for deployment",
+          "description": "Made packages optional for deployment",
+          "details": [
+            "Made packages optional for deployment"
+          ]
+        },
+        {
+          "title": "Fixed Pacakge.json for vercel",
+          "description": "Fixed Pacakge.json for vercel",
+          "details": [
+            "Fixed Pacakge.json for vercel"
+          ]
+        },
+        {
+          "title": "Deploying Version 0.3.0 (Fingers Crossed)",
+          "description": "Deploying Version 0.3.0 (Fingers Crossed)",
+          "details": [
+            "Deploying Version 0.3.0 (Fingers Crossed)"
+          ]
+        },
+        {
+          "title": "Working on implementing Excel spreadsheet view",
+          "description": "Working on implementing Excel spreadsheet view",
+          "details": [
+            "Working on implementing Excel spreadsheet view"
+          ]
+        },
+        {
+          "title": "Implementing Excel editor Functionality",
+          "description": "Implementing Excel editor Functionality",
+          "details": [
+            "Implementing Excel editor Functionality"
+          ]
+        },
+        {
+          "title": "Fixing and implementing Excel support",
+          "description": "Fixing and implementing Excel support",
+          "details": [
+            "Fixing and implementing Excel support"
+          ]
+        },
+        {
+          "title": "adding tests for sqlite",
+          "description": "adding tests for sqlite",
+          "details": [
+            "adding tests for sqlite"
+          ]
+        },
+        {
+          "title": "Fixed ui for SQLite fix",
+          "description": "Fixed ui for SQLite fix",
+          "details": [
+            "Fixed ui for SQLite fix"
+          ]
+        },
+        {
+          "title": "Fixed SQLite adapter to work with Turos",
+          "description": "Fixed SQLite adapter to work with Turos",
+          "details": [
+            "Fixed SQLite adapter to work with Turos"
+          ]
+        },
+        {
+          "title": "added vercel.json to fix routing issues",
+          "description": "added vercel.json to fix routing issues",
+          "details": [
+            "added vercel.json to fix routing issues"
+          ]
+        },
+        {
+          "title": "fix to map args to positional",
+          "description": "fix to map args to positional",
+          "details": [
+            "fix to map args to positional"
+          ]
+        },
+        {
+          "title": "fix to cookie issue",
+          "description": "fix to cookie issue",
+          "details": [
+            "fix to cookie issue"
+          ]
+        },
+        {
+          "title": "added fix for email error turso",
+          "description": "added fix for email error turso",
+          "details": [
+            "added fix for email error turso"
+          ]
+        },
+        {
+          "title": "fix for email error turso",
+          "description": "fix for email error turso",
+          "details": [
+            "fix for email error turso"
+          ]
+        },
+        {
+          "title": "fixed turso map error",
+          "description": "fixed turso map error",
+          "details": [
+            "fixed turso map error"
+          ]
+        },
+        {
+          "title": "added custom turso client",
+          "description": "added custom turso client",
+          "details": [
+            "added custom turso client"
+          ]
+        },
+        {
+          "title": "added test-fetch route",
+          "description": "added test-fetch route",
+          "details": [
+            "added test-fetch route"
+          ]
+        },
+        {
+          "title": "fix for env newline",
+          "description": "fix for env newline",
+          "details": [
+            "fix for env newline"
+          ]
+        },
+        {
+          "title": "added websocket change to http for turso",
+          "description": "added websocket change to http for turso",
+          "details": [
+            "added websocket change to http for turso"
+          ]
+        },
+        {
+          "title": "added more logging",
+          "description": "added more logging",
+          "details": [
+            "added more logging"
+          ]
+        },
+        {
+          "title": "added db test endpoint",
+          "description": "added db test endpoint",
+          "details": [
+            "added db test endpoint"
+          ]
+        },
+        {
+          "title": "logging fixes",
+          "description": "logging fixes",
+          "details": [
+            "logging fixes"
+          ]
+        },
+        {
+          "title": "deploying logging",
+          "description": "deploying logging",
+          "details": [
+            "deploying logging"
+          ]
+        },
+        {
+          "title": "changed to use redirect URI",
+          "description": "changed to use redirect URI",
+          "details": [
+            "changed to use redirect URI"
+          ]
+        },
+        {
+          "title": "attempt to fix auth",
+          "description": "attempt to fix auth",
+          "details": [
+            "attempt to fix auth"
+          ]
+        },
+        {
+          "title": "fixed bun specific imports",
+          "description": "fixed bun specific imports",
+          "details": [
+            "fixed bun specific imports"
+          ]
+        },
+        {
+          "title": "fixed turso import",
+          "description": "fixed turso import",
+          "details": [
+            "fixed turso import"
+          ]
+        },
+        {
+          "title": "converted db to js",
+          "description": "converted db to js",
+          "details": [
+            "converted db to js"
+          ]
+        },
+        {
+          "title": "Moved db to backend folder",
+          "description": "Moved db to backend folder",
+          "details": [
+            "Moved db to backend folder"
+          ]
+        },
+        {
+          "title": "Pushing to Vercel 12/3/2025",
+          "description": "Pushing to Vercel 12/3/2025",
+          "details": [
+            "Pushing to Vercel 12/3/2025"
+          ]
+        },
+        {
+          "title": "Fixed some styling for the home and about pages",
+          "description": "Fixed some styling for the home and about pages",
+          "details": [
+            "Fixed some styling for the home and about pages"
+          ]
+        },
+        {
+          "title": "Added a lot of features, flushed out dasshboard to the best of our ability, added support for kusto and sqlite, need to test other db options and optimize",
+          "description": "Added a lot of features, flushed out dasshboard to the best of our ability, added support for kusto and sqlite, need to test other db options and optimize",
+          "details": [
+            "Added a lot of features, flushed out dasshboard to the best of our ability, added support for kusto and sqlite, need to test other db options and optimize"
+          ]
+        },
+        {
+          "title": "Fixed issue where the Chat and Write window shared the same contexts, added support for Postgress and SQLite and implemented QOL features to chat and working on Dashboard integration",
+          "description": "Fixed issue where the Chat and Write window shared the same contexts, added support for Postgress and SQLite and implemented QOL features to chat and working on Dashboard integration",
+          "details": [
+            "Fixed issue where the Chat and Write window shared the same contexts, added support for Postgress and SQLite and implemented QOL features to chat and working on Dashboard integration"
+          ]
+        },
+        {
+          "title": "Finally have a 1.0 prototype, need to implement kusto further but got mongo working",
+          "description": "Finally have a 1.0 prototype, need to implement kusto further but got mongo working",
+          "details": [
+            "Finally have a 1.0 prototype, need to implement kusto further but got mongo working"
+          ]
+        },
+        {
+          "title": "added some changes to dashboard and need to implement sql connection",
+          "description": "added some changes to dashboard and need to implement sql connection",
+          "details": [
+            "added some changes to dashboard and need to implement sql connection"
+          ]
+        },
+        {
+          "title": "Merge pull request #1 from tfq26/master",
+          "description": "Merge pull request #1 from tfq26/master",
+          "details": [
+            "Merge pull request #1 from tfq26/master"
+          ]
+        },
+        {
+          "title": "added files",
+          "description": "added files",
+          "details": [
+            "added files"
+          ]
+        },
+        {
+          "title": "init commit",
+          "description": "init commit",
+          "details": [
+            "init commit"
+          ]
+        }
+      ]
+    }
+  ]
 }
