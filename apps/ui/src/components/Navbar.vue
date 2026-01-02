@@ -330,6 +330,7 @@ interface NavLink {
 const links: NavLink[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, webOnly: false },
   { to: '/query', label: 'Query', icon: MessageSquare, webOnly: false },
+  { to: '/stocks', label: 'Stocks', icon: TrendingUp, webOnly: false },
   { to: '/support', label: 'Support', icon: CircleHelp, webOnly: false },
   { to: '/docs', label: 'Docs', icon: BookOpen, webOnly: false },
 ]

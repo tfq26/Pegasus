@@ -52,7 +52,7 @@ const router = createRouter({
     { path: '/auth/device', component: () => import('../views/DeviceAuth.vue') },
     { path: '/workspace-test', component: () => import('../views/WorkspaceTest.vue') },
     { path: '/admin', component: () => import('../views/Admin.vue') },
-    // { path: '/stocks', component: () => import('../views/StockDashboard.vue') },
+    { path: '/stocks', component: () => import('../views/StockDashboard.vue') },
     { path: '/error', component: () => import('../views/ErrorPage.vue') },
   ],
 })
