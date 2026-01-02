@@ -665,7 +665,7 @@ app.post("/api/experimental/request", async (c) => {
 
 // Get available experimental features
 app.get("/api/experimental/features", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -691,7 +691,7 @@ app.get("/api/experimental/features", async (c) => {
 
 // Toggle a feature flag
 app.post("/api/experimental/features/:featureId/toggle", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {

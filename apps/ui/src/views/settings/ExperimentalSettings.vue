@@ -69,8 +69,7 @@
 import { ref, onMounted } from 'vue'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/composables/useNotifications'
-
-const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
+import { api } from '@/lib/apiClient'
 
 interface ExperimentalFeature {
   id: string
@@ -87,21 +86,16 @@ const hasAccess = ref(false)
 
 const loadFeatures = async () => {
   try {
-    const response = await fetch(`${API_URL}/api/experimental/features`, {
-      credentials: 'include'
-    })
-    
-    if (response.status === 403) {
-      hasAccess.value = false
-      return
-    }
-    
-    const data = await response.json()
+    const data = await api.get<any>('/api/experimental/features', { skipAuthRedirect: true })
     features.value = data.features
     hasAccess.value = true
-  } catch (error) {
-    console.error('Failed to load experimental features:', error)
-    toast.error('Failed to load experimental features')
+  } catch (error: any) {
+    if (error.message === 'Unauthorized' || error.message.includes('403')) {
+      hasAccess.value = false
+    } else {
+      console.error('Failed to load experimental features:', error)
+      toast.error('Failed to load experimental features')
+    }
   } finally {
     loading.value = false
   }
@@ -109,14 +103,7 @@ const loadFeatures = async () => {
 
 const toggleFeature = async (featureId: string, enabled: boolean) => {
   try {
-    const response = await fetch(`${API_URL}/api/experimental/features/${featureId}/toggle`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ enabled })
-    })
-    
-    if (!response.ok) throw new Error('Failed to toggle feature')
+    await api.post(`/api/experimental/features/${featureId}/toggle`, { enabled })
     
     toast.success(enabled ? 'Feature enabled' : 'Feature disabled')
     
