@@ -1,6 +1,10 @@
 name: Release
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/ui/public/changelogs/v*.json"
   workflow_dispatch:
     inputs:
       version:
@@ -32,6 +36,7 @@ jobs:
         run: bun install
 
       - name: Generate Changelog Entry
+        if: github.event_name == 'workflow_dispatch'
         run: bun scripts/generate-changelog-entry.js --version=${{ inputs.version }} --title="${{ inputs.title }}"
 
       - name: Update Releases Index
@@ -47,10 +52,14 @@ jobs:
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
 
-      - name: Commit & Tag
+      - name: Commit Sync
         run: |
           git add apps/ui/public/changelogs apps/ui/public/_docs apps/ui/public/releases.json
-          git commit -m "chore(release): v${{ inputs.version }}"
-          git tag -f v${{ inputs.version }}
+          git commit -m "chore(release): automated sync [skip ci]" || echo "No changes to commit"
           git push origin main
+
+      - name: Tag Release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git tag -f v${{ inputs.version }}
           git push origin v${{ inputs.version }} --force
