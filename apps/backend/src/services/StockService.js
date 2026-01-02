@@ -4,11 +4,12 @@ import { APIService, API_DEFAULTS } from "./APIService.js";
 export class StockService extends APIService {
     constructor() {
         super(API_DEFAULTS.STOCK_SIMULATOR);
-        this.stocks = new Set(['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'TSLA', 'META', 'NVDA', 'BRK.B', 'JNJ', 'V']);
+        this.stocks = new Set(['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'TSLA', 'META', 'NVDA', 'QQQ', 'BRK.B', 'V']);
         this.apiKey = process.env.ALPHAVANTAGE_KEY;
         this.lastRealSync = 0;
         this.syncInterval = 8 * 60 * 60 * 1000; // 8 hours (3 times a day)
         this.isSyncingReal = false;
+        this.rateLimitCooldown = 0;
     }
 
     /**
@@ -55,12 +56,19 @@ export class StockService extends APIService {
      */
     async syncHistory(symbol) {
         if (!this.apiKey) return;
+        if (Date.now() < this.rateLimitCooldown) return;
 
         try {
             console.log(`[StockService] Fetching history for ${symbol}...`);
             const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${this.apiKey}`;
             const response = await fetch(url);
             const data = await response.json();
+
+            if (data['Note'] || data['Information']) {
+                console.warn('[StockService] Alpha Vantage rate limit hit. Cooling down for 1 min...');
+                this.rateLimitCooldown = Date.now() + 60000;
+                return;
+            }
 
             const timeSeries = data['Time Series (Daily)'];
             if (!timeSeries) {
@@ -135,6 +143,7 @@ export class StockService extends APIService {
 
     async updateFromAlphaVantage() {
         if (!this.apiKey || this.isSyncingReal) return;
+        if (Date.now() < this.rateLimitCooldown) return;
 
         this.isSyncingReal = true;
         console.log('[StockService] Starting Alpha Vantage real price sync...');
@@ -162,9 +171,18 @@ export class StockService extends APIService {
 
     async refreshStock(symbol) {
         if (!this.apiKey) return;
+        if (Date.now() < this.rateLimitCooldown) return;
 
         try {
             const quote = await this.getQuote(symbol);
+
+            // Check for rate limit message in quote
+            if (quote && (quote['Note'] || quote['Information'])) {
+                console.warn('[StockService] Alpha Vantage rate limit hit during quote. Cooling down...');
+                this.rateLimitCooldown = Date.now() + 65000;
+                return;
+            }
+
             if (!quote || !quote['05. price']) {
                 console.warn(`[StockService] No quote found for ${symbol}`);
                 return;
@@ -172,50 +190,32 @@ export class StockService extends APIService {
 
             const price = parseFloat(quote['05. price']);
             const change = parseFloat(quote['09. change']);
-            const changePercent = parseFloat(quote['10. change percent'].replace('%', ''));
-            const volume = parseInt(quote['06. volume']);
+            const changePercent = parseFloat(quote['10. change percent']?.replace('%', '') || 0);
+            const volume = parseInt(quote['06. volume'] || 0);
 
             const safeId = symbol.replace(/\./g, '_');
-            const id = `stock:${safeId}`;
 
-            // Check if exists to determine if we need a full seed or just update
-            const [existing] = await db.query(`SELECT id FROM ${id}`);
-
-            if (!existing || existing.length === 0) {
-                // Fetch name if not already tracked
-                const searchResults = await this.searchStocks(symbol);
-                const info = searchResults.find(r => r.symbol === symbol);
-                const name = info ? info.name : symbol;
-
-                await db.query(`
-                    INSERT INTO stock (id, symbol, name, price, change, change_percent, last_updated, volume, market_cap)
-                    VALUES ($id, $symbol, $name, $price, $change, $change_percent, time::now(), $volume, $market_cap)
-                `, {
-                    id,
-                    symbol,
-                    name,
-                    price,
-                    change,
-                    change_percent: changePercent,
-                    volume,
-                    market_cap: 0
-                });
-            } else {
-                await db.query(`
-                    UPDATE ${id} SET 
-                        price = $price,
-                        change = $change,
-                        change_percent = $change_percent,
-                        volume = $volume,
-                        last_updated = time::now(),
-                        is_real_data = true
-                `, {
-                    price,
-                    change,
-                    change_percent: changePercent,
-                    volume
-                });
-            }
+            // In SurrealDB INSERT, the 'id' field should just be the part AFTER the colon
+            // because SurrealDB automatically prepends 'stock:' from the table name
+            await db.query(`
+                INSERT INTO stock (id, symbol, name, price, change, change_percent, last_updated, volume, market_cap, is_real_data)
+                VALUES ($id, $symbol, $name, $price, $change, $change_percent, time::now(), $volume, 0, true)
+                ON DUPLICATE KEY UPDATE 
+                    price = $price,
+                    change = $change,
+                    change_percent = $change_percent,
+                    volume = $volume,
+                    last_updated = time::now(),
+                    is_real_data = true;
+            `, {
+                id: safeId,
+                symbol,
+                name: symbol,
+                price,
+                change,
+                change_percent: changePercent,
+                volume
+            });
 
             console.log(`[StockService] Updated ${symbol} with REAL data: $${price}`);
         } catch (error) {
@@ -227,59 +227,89 @@ export class StockService extends APIService {
         const currentSymbols = Array.from(this.stocks);
         for (const symbol of currentSymbols) {
             const safeId = symbol.replace(/\./g, '_');
-            const id = `stock:${safeId}`;
+            const recordId = `stock:${safeId}`;
+
             try {
-                const [existing] = await db.query(`SELECT id FROM ${id}`);
+                // Check if exists using full record ID
+                const [existing] = await db.query(`SELECT id FROM ${recordId}`);
 
                 if (!existing || existing.length === 0) {
-                    const price = 100 + Math.random() * 500;
-                    console.log(`[StockService] Seeding ${symbol} at $${price.toFixed(2)}`);
+                    // Small delay to prevent write conflicts during batch seed
+                    await new Promise(resolve => setTimeout(resolve, Math.random() * 50));
+
+                    const price = this.getInitialPrice(symbol);
                     await db.query(`
-                        INSERT INTO stock (id, symbol, name, price, change, change_percent, last_updated, volume, market_cap)
-                        VALUES ($id, $symbol, $name, $price, 0, 0, time::now(), $volume, $market_cap)
+                        INSERT INTO stock (id, symbol, name, price, change, change_percent, last_updated, volume, market_cap, is_real_data)
+                        VALUES ($id, $symbol, $name, $price, 0, 0, time::now(), $volume, $market_cap, false)
                     `, {
-                        id,
+                        id: safeId, // Use simple ID for INSERT
                         symbol,
                         name: this.getStockName(symbol),
                         price,
                         volume: Math.floor(Math.random() * 1000000),
                         market_cap: Math.floor(Math.random() * 2000000000)
                     });
+                    console.log(`[StockService] Seeded ${symbol} at initial price $${price}`);
                 }
             } catch (e) {
-                console.error(`[StockService] Failed to seed ${symbol}:`, e.message);
-                throw e;
+                // Silently log conflict but don't stop the loop
+                if (!e.message.includes('conflict')) {
+                    console.error(`[StockService] Seed failed for ${symbol}:`, e.message);
+                }
             }
         }
+    }
+
+    getInitialPrice(symbol) {
+        const prices = {
+            'AAPL': 271.86,
+            'GOOGL': 312.34,
+            'AMZN': 230.88,
+            'MSFT': 482.62,
+            'TSLA': 449.39,
+            'META': 661.45,
+            'NVDA': 186.50,
+            'QQQ': 614.31,
+            'BRK.B': 503.36,
+            'V': 350.85
+        };
+        // If unknown, use a random but sane range (100-300)
+        return prices[symbol] || (100 + Math.random() * 200);
     }
 
     async updatePrices() {
         const currentSymbols = Array.from(this.stocks);
         for (const symbol of currentSymbols) {
             const safeId = symbol.replace(/\./g, '_');
-            const id = `stock:${safeId}`;
-            const [results] = await db.query(`SELECT price FROM ${id}`);
-            if (!results || results.length === 0) continue;
+            const recordId = `stock:${safeId}`;
 
-            const currentPrice = results[0].price;
-            const change = (Math.random() - 0.5) * (currentPrice * 0.0005);
-            const newPrice = currentPrice + change;
-            const [stock] = await db.query(`SELECT change FROM ${id}`);
+            try {
+                const [results] = await db.query(`SELECT price, change FROM ${recordId}`);
+                if (!results || results.length === 0) continue;
 
-            const totalChange = (stock[0]?.change || 0) + change;
-            const changePercent = (totalChange / (newPrice - totalChange)) * 100;
+                const currentPrice = results[0].price;
+                const lastChange = results[0].change || 0;
 
-            await db.query(`
-                UPDATE ${id} SET 
-                    price = $price,
-                    change = $change,
-                    change_percent = $change_percent,
-                    last_updated = time::now()
-            `, {
-                price: newPrice,
-                change: totalChange,
-                change_percent: changePercent
-            });
+                // Micro-fluctuation
+                const noise = (Math.random() - 0.5) * (currentPrice * 0.0005);
+                const newPrice = currentPrice + noise;
+                const newTotalChange = lastChange + noise;
+                const changePercent = (newTotalChange / (newPrice - newTotalChange)) * 100;
+
+                await db.query(`
+                    UPDATE ${recordId} SET 
+                        price = $price,
+                        change = $change,
+                        change_percent = $change_percent,
+                        last_updated = time::now()
+                `, {
+                    price: newPrice,
+                    change: newTotalChange,
+                    change_percent: changePercent
+                });
+            } catch (e) {
+                // Ignore conflict errors during simulation, it'll try again next tick
+            }
         }
     }
 

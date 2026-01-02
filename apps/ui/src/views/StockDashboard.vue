@@ -177,11 +177,15 @@
                   v-for="stock in stocks" 
                   :key="stock.symbol"
                   @click="selectStock(stock)"
-                  class="p-3 bg-card border border-border rounded-xl hover:border-primary/50 transition-all cursor-pointer group active:scale-95"
+                  class="p-3 bg-card border border-border rounded-xl hover:border-primary/50 transition-all cursor-pointer group active:scale-95 relative overflow-hidden"
                   :class="{'border-primary bg-primary/5 shadow-sm': selectedStock?.symbol === stock.symbol}"
                 >
                   <div class="flex justify-between items-start mb-1">
-                    <span class="text-xs font-bold">{{ stock.symbol }}</span>
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold">{{ stock.symbol }}</span>
+                        <span v-if="stock.is_real_data" class="text-[8px] text-emerald-500 font-bold uppercase tracking-tighter">Real Time</span>
+                        <span v-else class="text-[8px] text-orange-500 font-bold uppercase tracking-tighter">Initial</span>
+                    </div>
                     <span :class="['text-[10px] font-mono', (stock.change || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500']">
                       {{ (stock.change || 0) >= 0 ? '+' : '' }}{{ (stock.change || 0).toFixed(1) }}
                     </span>
@@ -540,12 +544,16 @@ const syncRealData = async () => {
     if (isSyncing.value) return
     isSyncing.value = true
     try {
+        // Clean up duplicates first
+        await api.post('/stocks/cleanup')
+        
         const response = await api.post<any>('/stocks/refresh')
         toast.success(response.message || 'Alpha Vantage sync started.')
     } catch (e: any) {
         toast.error(e.message || 'Sync failed')
     } finally {
         isSyncing.value = false
+        fetchStocks()
     }
 }
 
@@ -614,10 +622,12 @@ onBeforeUnmount(() => {
 input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
   -webkit-appearance: none;
+  appearance: none;
   margin: 0;
 }
 input[type=number] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .appearance-none {

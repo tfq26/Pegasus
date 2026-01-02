@@ -37,6 +37,24 @@ stocks.post("/track", async (c) => {
     }
 });
 
+stocks.post("/cleanup", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        // Reset the market data completely to fix the ID corruption once and for all
+        await db.query(`
+            REMOVE TABLE stock;
+            REMOVE TABLE stock_history;
+        `);
+
+        // This will trigger the service to re-seed correctly on next internal sync or request
+        return c.json({ ok: true, message: "Market data reset. Click SYNC again to repopulate." });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
 stocks.get("/", async (c) => {
     try {
         const [results] = await db.query("SELECT * FROM stock ORDER BY symbol ASC");
@@ -174,24 +192,30 @@ stocks.get("/history/:symbol", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
-        // Find stock current price to verify existence
+        // Sanitize for query
         const safeId = symbol.replace(/\./g, '_');
-        const [results] = await db.query(`SELECT price FROM stock:${safeId}`);
-        if (!results || results.length === 0) return c.json({ error: "Stock not found" }, 404);
 
-        // Fetch real history from DB
+        // Fetch real history
         const [history] = await db.query(`
             SELECT date, price FROM stock_history 
             WHERE symbol = $symbol 
             ORDER BY date ASC
         `, { symbol });
 
-        // If no history exists, trigger a background sync for the future
+        // If no history exists, ensure we have the stock then trigger sync
         if (!history || history.length === 0) {
-            stockService.syncHistory(symbol);
+            // Check if stock exists at all
+            const [stock] = await db.query(`SELECT id FROM stock:${safeId}`);
+            if (!stock || stock.length === 0) {
+                // Not even the stock exists? Track it now.
+                await stockService.trackSymbol(symbol);
+            } else {
+                // Stock exists but no history? Trigger sync.
+                stockService.syncHistory(symbol);
+            }
         }
 
-        return c.json({ history });
+        return c.json({ history: history || [] });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
