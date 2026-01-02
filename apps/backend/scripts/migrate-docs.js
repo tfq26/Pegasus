@@ -88,14 +88,28 @@ async function createTables() {
 }
 
 async function migrateGuides() {
-    console.log('Migrating guides...')
+    console.log('Syncing guides...')
 
     try {
         const files = await fs.readdir(GUIDES_DIR)
         const mdFiles = files.filter(f => f.endsWith('.md'))
 
+        // Fetch existing guides to skip unchanged ones
+        const existingGuides = await sql`SELECT slug, updated_at FROM guides`
+        const guideMap = new Map(existingGuides.map(g => [g.slug, g.updated_at]))
+
+        let migratedCount = 0
+        let skippedCount = 0
+
         for (const file of mdFiles) {
             const slug = file.replace('.md', '')
+
+            // Skip if exists and not forced
+            if (guideMap.has(slug) && !process.argv.includes('--force')) {
+                skippedCount++
+                continue
+            }
+
             const content = await fs.readFile(path.join(GUIDES_DIR, file), 'utf-8')
 
             // Extract title from first line (if it's a heading)
@@ -115,12 +129,13 @@ async function migrateGuides() {
                     updated_at = CURRENT_TIMESTAMP
             `
 
-            console.log(`  ✓ Migrated guide: ${slug}`)
+            console.log(`  ✓ Syncing guide: ${slug}`)
+            migratedCount++
         }
 
-        console.log(`Migrated ${mdFiles.length} guides`)
+        console.log(`Summary: ${migratedCount} synced, ${skippedCount} skipped (up-to-date)`)
     } catch (error) {
-        console.error('Error migrating guides:', error)
+        console.error('Error syncing guides:', error)
     }
 }
 
@@ -131,10 +146,23 @@ async function migrateReleases() {
         const files = await fs.readdir(CHANGELOG_DIR)
         const jsonFiles = files.filter(f => f.endsWith('.json'))
 
+        // Fetch existing versions from DB to skip unchanged ones
+        const existingReleases = await sql`SELECT version, updated_at FROM releases`
+        const releaseMap = new Map(existingReleases.map(r => [r.version, r.updated_at]))
+
+        let migratedCount = 0
+        let skippedCount = 0
+
         for (const file of jsonFiles) {
             const version = file.replace('.json', '')
             const content = await fs.readFile(path.join(CHANGELOG_DIR, file), 'utf-8')
             const data = JSON.parse(content)
+
+            // Skip if exists and not forced (simple comparison or just skip)
+            if (releaseMap.has(version) && !process.argv.includes('--force')) {
+                skippedCount++
+                continue
+            }
 
             // Insert or update release
             const [release] = await sql`
@@ -196,12 +224,13 @@ async function migrateReleases() {
                 }
             }
 
-            console.log(`  ✓ Migrated release: ${version}`)
+            console.log(`  ✓ Syncing release: ${version}`)
+            migratedCount++
         }
 
-        console.log(`Migrated ${jsonFiles.length} releases`)
+        console.log(`Summary: ${migratedCount} synced, ${skippedCount} skipped (up-to-date)`)
     } catch (error) {
-        console.error('Error migrating releases:', error)
+        console.error('Error syncing releases:', error)
     }
 }
 

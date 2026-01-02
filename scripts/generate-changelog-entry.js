@@ -46,33 +46,40 @@ try {
 
 // Categorize commits
 const categories = {
-    Features: [],
-    'Bug Fixes': [],
-    Improvements: [],
-    Other: []
+    'New Features': [],
+    'Improvements': [],
+    'Bug Fixes': []
 }
 
 commits.forEach(msg => {
-    // Simple heuristics
-    if (msg.match(/^feat(\(.*\))?:/i) || msg.match(/^feature/i)) {
-        categories.Features.push(msg)
-    } else if (msg.match(/^fix(\(.*\))?:/i) || msg.match(/^bug/i)) {
-        categories['Bug Fixes'].push(msg)
-    } else if (msg.match(/^refactor/i) || msg.match(/^perf/i) || msg.match(/^style/i) || msg.match(/^chore/i) || msg.match(/^improvement/i)) {
-        categories.Improvements.push(msg)
-    } else {
-        categories.Other.push(msg)
+    // Filter out internal/junk commits
+    if (msg.match(/^(chore|ci|debug|refactor|test|WIP|docs|style|debug):/i)) return
+    if (msg.toLowerCase().includes('checkpoint')) return
+    if (msg.toLowerCase().includes('release v')) return
+    if (msg.toLowerCase().includes('fix to deployments')) return
+
+    // Heuristics for categories
+    const cleanMsg = msg.replace(/^(feat|fix|perf|improvement)(\(.*\))?:\s*/i, '').trim()
+    const capitalizedMsg = cleanMsg.charAt(0).toUpperCase() + cleanMsg.slice(1)
+
+    if (msg.match(/^feat(\(.*\))?:/i)) {
+        categories['New Features'].push(capitalizedMsg)
+    } else if (msg.match(/^fix(\(.*\))?:/i)) {
+        categories['Bug Fixes'].push(capitalizedMsg)
+    } else if (msg.match(/^(perf|improvement)(\(.*\))?:\s*/i)) {
+        categories['Improvements'].push(capitalizedMsg)
     }
+    // "Other" is ignored by design for customer-facing docs
 })
 
 // Build JSON structure
 const jsonOutput = {
     version,
     releaseDate: date,
-    date, // Keep for compatibility
+    date,
     title,
-    description: `Release v${version}`,
-    highlights: commits.slice(0, 3), // Top 3 commits as highlights
+    description: `Detailed changes and improvements for version ${version}.`,
+    highlights: [],
     sections: []
 }
 
@@ -83,7 +90,7 @@ for (const [name, msgs] of Object.entries(categories)) {
             items: msgs.map(msg => ({
                 title: msg,
                 description: msg,
-                details: [msg]
+                details: [] // Details usually require manual curation
             }))
         })
     }

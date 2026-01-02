@@ -1,23 +1,44 @@
 {
     "version": "0.8.1",
-    "releaseDate": "2026-01-02",
+    "releaseDate": "January 2, 2026",
     "date": "2026-01-02",
-    "title": "v0.8.1 Pre-release",
-    "description": "Release v0.8.1",
+    "title": "Connection-Scoped Tabs & Responsive UI",
+    "description": "Release v0.8.1 - Improved tab management with connection isolation, refactored API services, and enhanced responsive design for split-screen usage.",
     "highlights": [
-        "v0.8.1 fix: Fixed actions workslow to be automatic on push",
-        "v0.8.1 fix: Fix to docs upload and retrieval",
-        "v0.8.1 Fix: Fix to docs refresh to serve proper page"
+        "Connection-scoped tabs - each database connection now has its own isolated workspace",
+        "RAG Pipeline - AI-powered semantic search across your database tables",
+        "Responsive toolbar labels collapse to icons on medium screens (< 768px)",
+        "Generic APIService class for reusable API data synchronization",
+        "Automated release and documentation sync workflow"
     ],
     "sections": [
         {
-            "category": "Features",
+            "category": "New Features",
             "items": [
                 {
-                    "title": "feat: Add desktop device authentication flow, including a new OTP input component and dependency updates.",
-                    "description": "feat: Add desktop device authentication flow, including a new OTP input component and dependency updates.",
+                    "title": "Connection-Scoped Tabs",
+                    "description": "Each database connection now maintains its own isolated set of tabs. Switching between connections no longer prompts to discard or migrate tabs.",
                     "details": [
-                        "feat: Add desktop device authentication flow, including a new OTP input component and dependency updates."
+                        "Refactored workspace store to use `workspacesByConnection` map",
+                        "Added `switchConnection` action for seamless connection switching",
+                        "Removed the 'Unsaved Tabs' dialog - no longer needed"
+                    ]
+                },
+                {
+                    "title": "Tab Dirty State Indicator",
+                    "description": "Tabs now show a minimal amber dot indicator when they have unsaved changes.",
+                    "details": [
+                        "Added `isDirty` flag to Tab interface",
+                        "Engine changes automatically update tab dirty state"
+                    ]
+                },
+                {
+                    "title": "RAG Pipeline for Database Knowledge",
+                    "description": "Implemented a Retrieval-Augmented Generation (RAG) system that indexes database tables for AI-powered semantic search.",
+                    "details": [
+                        "RAGService with markdown and table data chunking",
+                        "Vector embeddings stored in SurrealDB `knowledge_chunk` table",
+                        "Hybrid search combining vector similarity and keyword matching"
                     ]
                 }
             ]
@@ -26,43 +47,55 @@
             "category": "Improvements",
             "items": [
                 {
-                    "title": "style: full light mode support for download page",
-                    "description": "style: full light mode support for download page",
+                    "title": "Responsive UI for Split-Screen",
+                    "description": "The interface now adapts beautifully to split-screen and medium-sized windows.",
                     "details": [
-                        "style: full light mode support for download page"
+                        "Toolbar labels collapse to icons on screens narrower than 768px",
+                        "Sidebar minimum width reduced to 180px with intelligent capping",
+                        "Tooltips preserved for discoverability in icon-only mode"
+                    ]
+                },
+                {
+                    "title": "Generic APIService for Data Sync",
+                    "description": "Created a reusable architecture for fetching and syncing external API data to SurrealDB.",
+                    "details": [
+                        "StockService refactored for better reliability",
+                        "Added WeatherService demonstration using Open-Meteo"
                     ]
                 }
             ]
         },
         {
-            "category": "Other",
+            "category": "Bug Fixes",
             "items": [
                 {
-                    "title": "v0.8.1 fix: Fixed actions workslow to be automatic on push",
-                    "description": "v0.8.1 fix: Fixed actions workslow to be automatic on push",
+                    "title": "Documentation & CI Fixes",
+                    "description": "Resolved critical issues with documentation rendering and release automation.",
                     "details": [
-                        "v0.8.1 fix: Fixed actions workslow to be automatic on push"
+                        "Fixed docs refresh issue (renamed /docs to /_docs)",
+                        "Automated release workflow to trigger on push to changelogs",
+                        "Resolved NoActiveSocket errors during service startup"
                     ]
                 },
                 {
-                    "title": "v0.8.1 fix: Fix to docs upload and retrieval",
-                    "description": "v0.8.1 fix: Fix to docs upload and retrieval",
+                    "title": "Data Handling Fixes",
+                    "description": "Improved handling for specific data types and symbols.",
                     "details": [
-                        "v0.8.1 fix: Fix to docs upload and retrieval"
+                        "Fixed stock symbols with dots (e.g., BRK.B) in SurrealDB IDs",
+                        "Improved polling stability for live data updates"
                     ]
-                },
+                }
+            ]
+        },
+        {
+            "category": "Technical",
+            "items": [
                 {
-                    "title": "v0.8.1 Fix: Fix to docs refresh to serve proper page",
-                    "description": "v0.8.1 Fix: Fix to docs refresh to serve proper page",
+                    "title": "Known Issues",
+                    "description": "Points to be addressed in upcoming patches.",
                     "details": [
-                        "v0.8.1 Fix: Fix to docs refresh to serve proper page"
-                    ]
-                },
-                {
-                    "title": "v0.8.1 Pre-release",
-                    "description": "v0.8.1 Pre-release",
-                    "details": [
-                        "v0.8.1 Pre-release"
+                        "RAG indexing scaling for very large tables",
+                        "Workspace backend persistence for the new connection model"
                     ]
                 }
             ]
