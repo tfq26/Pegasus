@@ -3,7 +3,7 @@ import type { ConnectionEntry, Provider } from './db-connections'
 import { api, QUERY_API_URL, getAuthHeaders } from './apiClient'
 
 // Re-export for backwards compatibility
-export { QUERY_API_URL, getAuthHeaders }
+export { api, QUERY_API_URL, getAuthHeaders }
 
 export type TableQueryOptions = {
   entry: ConnectionEntry
