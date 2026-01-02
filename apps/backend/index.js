@@ -119,6 +119,17 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder"
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
 
+const getAuthToken = (c) => {
+  let token = getCookie(c, "session")
+  if (!token) {
+    const authHeader = c.req.header("Authorization")
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7)
+    }
+  }
+  return token
+}
+
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
   try {
@@ -200,7 +211,7 @@ app.route('/auth', authRoutes)
 
 app.post("/upload", async (c) => {
   try {
-    const token = getCookie(c, "session")
+    const token = getAuthToken(c)
     let userId = null
     if (token) {
       try {
@@ -373,17 +384,6 @@ app.post("/upload", async (c) => {
 
 // Stripe Endpoints
 // Helper to get token from cookie or Authorization header
-const getAuthToken = (c) => {
-  let token = getCookie(c, "session")
-  if (!token) {
-    const authHeader = c.req.header("Authorization")
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.substring(7)
-    }
-  }
-  return token
-}
-
 app.post("/create-checkout-session", async (c) => {
   const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -561,7 +561,7 @@ app.post("/sync-subscription", async (c) => {
 
 // User Search for Sharing
 app.get("/api/users/search", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
   try {
     const payload = await verify(token, jwtSecret)
@@ -730,7 +730,7 @@ const isAdminUser = (payload) => {
 
 // Admin: Check if current user is admin
 app.get("/api/admin/check", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ isAdmin: false }, 200)
 
   try {
@@ -743,7 +743,7 @@ app.get("/api/admin/check", async (c) => {
 
 // Admin: List pending experimental access requests
 app.get("/api/admin/experimental/requests", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -776,7 +776,7 @@ app.get("/api/admin/experimental/requests", async (c) => {
 
 // Admin: Grant experimental access to a user
 app.post("/api/admin/experimental/grant", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -802,7 +802,7 @@ app.post("/api/admin/experimental/grant", async (c) => {
 
 // Admin: Reject experimental access request
 app.post("/api/admin/experimental/reject", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -965,7 +965,7 @@ app.get("/fix-user", async (c) => {
 // Settings Routes
 // Settings Routes
 app.get("/settings", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -991,7 +991,7 @@ app.get("/settings", async (c) => {
 })
 
 app.post("/settings", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -1026,7 +1026,7 @@ app.post("/query", async (c) => {
   console.log(`[Backend] Received query request for provider: ${provider}`)
 
   // Try to get user session for history
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   let userId = null
   let userPayload = null
   if (token) {
@@ -1115,7 +1115,7 @@ app.post("/api/query-by-id", async (c) => {
   }
 
   // Get auth token
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
@@ -1308,7 +1308,7 @@ app.post("/schema", async (c) => {
 // Queries Routes
 // Queries Routes
 app.get("/queries", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -1347,7 +1347,7 @@ app.get("/queries", async (c) => {
 })
 
 app.post("/queries", async (c) => {
-  const token = getCookie(c, "session")
+  const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
 
   try {
@@ -1463,8 +1463,16 @@ app.get("/usage", async (c) => {
           try {
             // Check if file is in our uploads directory to avoid reading system files
             if (filePath.includes('/uploads/')) {
-              const file = Bun.file(filePath)
-              totalStorage += await file.size()
+              try {
+                const stats = await fs.stat(filePath)
+                totalStorage += stats.size
+              } catch (e) {
+                // If fs.stat fails (maybe it's a Bun file path), try Bun.file as fallback if available
+                if (typeof Bun !== 'undefined') {
+                  const file = Bun.file(filePath)
+                  totalStorage += await file.size()
+                }
+              }
             }
           } catch (e) {
             // Ignore missing files
