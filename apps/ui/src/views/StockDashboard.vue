@@ -16,6 +16,38 @@
       </div>
 
       <div class="flex items-center gap-4">
+        <!-- Search Bar -->
+        <div class="relative hidden lg:block w-64 group">
+          <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <input 
+            v-model="searchQuery"
+            @input="handleSearch"
+            placeholder="Search symbols (e.g. BTC)..."
+            class="w-full h-9 bg-muted/50 border border-border rounded-lg pl-9 pr-3 text-xs focus:border-primary focus:bg-background outline-none transition-all"
+          />
+          
+          <!-- Search Results Dropdown -->
+          <div v-if="searchResults.length > 0" class="absolute top-full mt-2 left-0 right-0 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+            <div class="max-h-64 overflow-y-auto p-1 custom-scrollbar">
+              <button 
+                v-for="res in searchResults" 
+                :key="res.symbol"
+                @click="trackAndSelect(res)"
+                class="w-full text-left px-3 py-2 hover:bg-muted rounded-lg flex justify-between items-center transition-colors group"
+              >
+                <div>
+                  <div class="text-xs font-bold">{{ res.symbol }}</div>
+                  <div class="text-[9px] text-muted-foreground truncate max-w-[120px]">{{ res.name }}</div>
+                </div>
+                <PlusCircle class="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </button>
+            </div>
+            <div class="p-2 bg-muted/30 border-t border-border text-[9px] text-muted-foreground text-center italic">
+              Results via Alpha Vantage Search API
+            </div>
+          </div>
+        </div>
+
         <button 
           @click="syncRealData"
           class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-all text-xs font-bold uppercase tracking-wider"
@@ -118,6 +150,27 @@
               <div class="flex items-center gap-2 mb-4">
                 <h2 class="text-sm font-bold uppercase tracking-widest text-muted-foreground">Markets</h2>
                 <div class="h-px flex-1 bg-border/50"></div>
+                <div class="lg:hidden w-full max-w-[200px] relative">
+                  <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input 
+                    v-model="searchQuery"
+                    @input="handleSearch"
+                    placeholder="Search..."
+                    class="w-full h-8 bg-muted/50 border border-border rounded-lg pl-8 pr-3 text-[10px] outline-none"
+                  />
+                  <!-- Mobile Search Results -->
+                  <div v-if="searchResults.length > 0" class="absolute top-full mt-1 left-0 right-0 bg-card border border-border rounded-lg shadow-xl z-50 overflow-hidden">
+                    <button 
+                      v-for="res in searchResults" 
+                      :key="res.symbol"
+                      @click="trackAndSelect(res)"
+                      class="w-full text-left px-3 py-1.5 hover:bg-muted text-[10px] flex justify-between items-center"
+                    >
+                      <span class="font-bold">{{ res.symbol }}</span>
+                      <PlusCircle class="w-3 h-3 text-primary" />
+                    </button>
+                  </div>
+                </div>
               </div>
               <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div 
@@ -129,8 +182,8 @@
                 >
                   <div class="flex justify-between items-start mb-1">
                     <span class="text-xs font-bold">{{ stock.symbol }}</span>
-                    <span :class="['text-[10px] font-mono', stock.change >= 0 ? 'text-emerald-500' : 'text-rose-500']">
-                      {{ stock.change >= 0 ? '+' : '' }}{{ stock.change.toFixed(1) }}
+                    <span :class="['text-[10px] font-mono', (stock.change || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500']">
+                      {{ (stock.change || 0) >= 0 ? '+' : '' }}{{ (stock.change || 0).toFixed(1) }}
                     </span>
                   </div>
                   <div class="text-sm font-mono font-bold">{{ formatCurrency(stock.price) }}</div>
@@ -148,7 +201,7 @@
               <div v-if="portfolio.length === 0" class="p-8 bg-muted/30 rounded-2xl border border-dashed border-border flex flex-col items-center justify-center text-center">
                 <History class="w-12 h-12 text-muted-foreground/30 mb-4" />
                 <h3 class="font-bold text-muted-foreground">No Holdings</h3>
-                <p class="text-[10px] text-muted-foreground mt-1 max-w-[200px]">Log your first transaction to start tracking performance.</p>
+                <p class="text-[10px] text-muted-foreground mt-1 max-w-[200px]">Log your first transaction or search for a stock to start tracking performance.</p>
               </div>
 
               <div v-else class="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
@@ -249,7 +302,7 @@
                   <input 
                     v-model="txDate" 
                     type="date"
-                    class="w-full h-9 bg-background border border-border rounded-lg px-3 text-xs font-mono focus:border-primary outline-none"
+                    class="w-full h-9 bg-background border border-border rounded-lg px-3 text-xs font-mono focus:border-primary outline-none appearance-none"
                   />
                 </div>
 
@@ -268,7 +321,7 @@
 
               <div v-else class="py-12 flex flex-col items-center justify-center text-center opacity-30">
                 <MousePointer2 class="w-10 h-10 mb-2" />
-                <p class="text-[10px] font-medium max-w-[120px]">Select a symbol from the market to log a trade</p>
+                <p class="text-[10px] font-medium max-w-[120px]">Select a symbol or search from the header to log a trade</p>
               </div>
             </section>
           </div>
@@ -279,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { api } from '@/lib/apiClient'
 import { 
   TrendingUp, 
@@ -289,13 +342,13 @@ import {
   BarChart3,
   MousePointer2,
   Zap,
-  Cpu,
   Loader2,
   DollarSign,
   Trophy,
   History,
   PlusCircle,
-  Save
+  Save,
+  Search
 } from 'lucide-vue-next'
 import { toast } from '@/composables/useNotifications'
 import {
@@ -307,9 +360,11 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  type TooltipModel
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
+import { useDebounceFn } from '@vueuse/core'
 
 ChartJS.register(
   CategoryScale,
@@ -332,13 +387,17 @@ const isRefreshing = ref(false)
 const isLogging = ref(false)
 const isSyncing = ref(false)
 
+// Search state
+const searchQuery = ref('')
+const searchResults = ref<any[]>([])
+
 // Transaction form state
 const txType = ref('BUY')
 const txAmount = ref(1)
 const txPrice = ref(0)
 const txDate = ref(new Date().toISOString().split('T')[0])
 
-const chartOptions = {
+const chartOptions: any = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -439,6 +498,44 @@ const fetchHistory = async (symbol: string) => {
     }
 }
 
+const handleSearch = useDebounceFn(async () => {
+  if (searchQuery.value.length < 2) {
+    searchResults.value = []
+    return
+  }
+  
+  try {
+    const data = await api.get<any>(`/stocks/search?q=${searchQuery.value}`)
+    searchResults.value = data.results || []
+  } catch (e) {
+    console.error('Search failed', e)
+  }
+}, 300)
+
+const trackAndSelect = async (result: any) => {
+    try {
+        // Track symbol in backend (seeds price if new)
+        await api.post('/stocks/track', { symbol: result.symbol })
+        
+        // Clear search
+        searchQuery.value = ''
+        searchResults.value = []
+        
+        // Refresh local stocks list to get the new one
+        await fetchStocks()
+        
+        // Find and select it
+        const stock = stocks.value.find(s => s.symbol === result.symbol)
+        if (stock) selectStock(stock)
+        
+        toast.info(`Tracking ${result.symbol}`, {
+            description: 'Market data is being fetched from Alpha Vantage.'
+        })
+    } catch (e: any) {
+        toast.error('Failed to track symbol')
+    }
+}
+
 const syncRealData = async () => {
     if (isSyncing.value) return
     isSyncing.value = true
@@ -455,7 +552,7 @@ const syncRealData = async () => {
 const selectStock = (stock: any) => {
   selectedStock.value = stock
   txAmount.value = 1
-  txPrice.value = parseFloat(stock.price.toFixed(2))
+  txPrice.value = stock.price ? parseFloat(stock.price.toFixed(2)) : 0
   fetchHistory(stock.symbol)
 }
 
@@ -521,5 +618,11 @@ input::-webkit-inner-spin-button {
 }
 input[type=number] {
   -moz-appearance: textfield;
+}
+
+.appearance-none {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
 }
 </style>

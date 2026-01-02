@@ -11,6 +11,32 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 let lastManualRefresh = 0;
 const MANUAL_REFRESH_COOLDOWN = 10 * 60 * 1000; // 10 minutes
 
+stocks.get("/search", async (c) => {
+    const keywords = c.req.query("q");
+    if (!keywords) return c.json({ results: [] });
+    try {
+        const results = await stockService.searchStocks(keywords);
+        return c.json({ results });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
+stocks.post("/track", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const { symbol } = await c.req.json();
+        if (!symbol) return c.json({ error: "Symbol required" }, 400);
+
+        await stockService.trackSymbol(symbol);
+        return c.json({ ok: true });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
 stocks.get("/", async (c) => {
     try {
         const [results] = await db.query("SELECT * FROM stock ORDER BY symbol ASC");
@@ -148,25 +174,21 @@ stocks.get("/history/:symbol", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
-        // Find stock current price
+        // Find stock current price to verify existence
         const safeId = symbol.replace(/\./g, '_');
         const [results] = await db.query(`SELECT price FROM stock:${safeId}`);
         if (!results || results.length === 0) return c.json({ error: "Stock not found" }, 404);
 
-        const currentPrice = results[0].price;
-        const history = [];
-        const now = new Date();
+        // Fetch real history from DB
+        const [history] = await db.query(`
+            SELECT date, price FROM stock_history 
+            WHERE symbol = $symbol 
+            ORDER BY date ASC
+        `, { symbol });
 
-        // Generate simulated 30-day history based on current price
-        for (let i = 30; i >= 0; i--) {
-            const date = new Date(now);
-            date.setDate(now.getDate() - i);
-            // Random walk back from current price
-            const noise = (Math.random() - 0.5) * (currentPrice * 0.05);
-            history.push({
-                date: date.toISOString().split('T')[0],
-                price: currentPrice - (noise * (30 - i) / 30)
-            });
+        // If no history exists, trigger a background sync for the future
+        if (!history || history.length === 0) {
+            stockService.syncHistory(symbol);
         }
 
         return c.json({ history });
