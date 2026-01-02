@@ -42,7 +42,18 @@ onMounted(async () => {
     const response = await fetch('/api/docs')
     const data = await response.json()
     if (data.changelogs && data.changelogs.length > 0) {
-      version.value = data.changelogs[0]
+      // Sort changelogs by version (valid semver comparison)
+      const sorted = data.changelogs.sort((a: string, b: string) => {
+        const partsA = a.replace('v', '').split('.').map(Number)
+        const partsB = b.replace('v', '').split('.').map(Number)
+        for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+          const valA = partsA[i] || 0
+          const valB = partsB[i] || 0
+          if (valA !== valB) return valB - valA
+        }
+        return 0
+      })
+      version.value = sorted[0]
     }
   } catch (error) {
     console.error('Failed to fetch version:', error)

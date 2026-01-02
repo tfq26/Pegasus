@@ -169,6 +169,11 @@ async function migrateReleases() {
                 continue
             }
 
+            // If this is the latest release, unmark others first
+            if (data.isLatest) {
+                await sql`UPDATE releases SET is_latest = false`
+            }
+
             // Insert or update release
             const [release] = await sql`
                 INSERT INTO releases (version, title, description, date, is_latest, published)

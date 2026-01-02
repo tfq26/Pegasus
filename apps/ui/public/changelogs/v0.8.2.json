@@ -4,6 +4,7 @@
     "date": "2026-01-02",
     "title": "Query History & AI Model Updates",
     "description": "Release v0.8.2 - Enhanced query history management, updated AI model support (Gemini 2.5/3.0, OpenAI o1/4.5), and improved usage tracking accuracy.",
+    "isLatest": true,
     "highlights": [
         "Query History: Delete, Copy, Share, and 'Clear All' actions",
         "Updated AI Models: Support for Gemini 2.5/3.0 & OpenAI o1/4.5",

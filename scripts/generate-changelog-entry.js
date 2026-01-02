@@ -12,6 +12,7 @@ const __dirname = dirname(__filename)
 const args = process.argv.slice(2)
 const versionArg = args.find(a => a.startsWith('--version='))?.split('=')[1]
 const titleArg = args.find(a => a.startsWith('--title='))?.split('=')[1]
+const isLatest = args.includes('--latest')
 
 if (!versionArg) {
     console.error('Missing --version argument')
@@ -79,6 +80,7 @@ const jsonOutput = {
     date,
     title,
     description: `Detailed changes and improvements for version ${version}.`,
+    isLatest,
     highlights: [],
     sections: []
 }
