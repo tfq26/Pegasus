@@ -431,6 +431,7 @@
     <AddElementDialog
       v-model:open="showAddElementDialog"
       @select="handleAddElementSelect"
+      @select-widget="handleAddWidget"
     />
 
     <!-- Add Text Dialog -->
@@ -914,6 +915,29 @@ const handleAddElementSelect = (type: 'visualization' | 'table' | 'text' | 'file
     showTextDialog.value = true
   } else if (type === 'file') {
     showFileDialog.value = true
+  }
+}
+
+const handleAddWidget = async (widgetType: string, config: any) => {
+  if (!currentDashboard.value) return
+  
+  try {
+    console.log(`[Dashboard] Adding widget: ${widgetType}`, config)
+    
+    const response = await api.post(`/dashboards/${currentDashboard.value.id}/elements/widget`, {
+      widgetType,
+      config
+    })
+    
+    console.log('[Dashboard] Widget created:', response)
+    
+    // Reload dashboard to show new widget
+    await store.selectDashboard(currentDashboard.value.id)
+    
+    toast.success('Widget added successfully')
+  } catch (e: any) {
+    console.error('[Dashboard] Widget creation failed:', e)
+    toast.error(e.message || 'Failed to add widget')
   }
 }
 

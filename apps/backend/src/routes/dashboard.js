@@ -300,6 +300,111 @@ dashboard.post("/dashboards", async (c) => {
     }
 })
 
+// Widget Element Creation Endpoint
+// Creates dashboard elements with auto-generated queries for API widgets
+dashboard.post("/dashboards/:id/elements/widget", async (c) => {
+    const token = getToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let dashboardId = c.req.param("id")
+        if (!dashboardId.includes(':')) dashboardId = `dashboard:${dashboardId}`
+
+        const { widgetType, config } = await c.req.json()
+
+        // Import widget template service
+        const { widgetTemplateService } = await import("../services/WidgetTemplateService.js")
+
+        // Validate config
+        widgetTemplateService.validateConfig(widgetType, config)
+
+        // Get widget metadata
+        const metadata = widgetTemplateService.getWidgetMetadata(widgetType)
+        if (!metadata) {
+            return c.json({ error: `Unknown widget type: ${widgetType}` }, 400)
+        }
+
+        // Generate query based on widget type
+        let query = ''
+        switch (widgetType) {
+            case 'stock_portfolio':
+                query = widgetTemplateService.getStockPortfolioQuery(userId)
+                break
+            case 'market_ticker':
+                query = widgetTemplateService.getMarketTickerQuery(config.symbols)
+                break
+            case 'weather':
+                query = widgetTemplateService.getWeatherQuery(config.location)
+                // Trigger initial sync
+                if (config.location) {
+                    fetch(`${c.req.url.split('/dashboards')[0]}/weather/sync/${encodeURIComponent(config.location)}`, {
+                        method: 'POST',
+                        headers: { 'Authorization': c.req.header('Authorization') || '' }
+                    }).catch(err => console.warn('[Widget] Failed to trigger weather sync:', err))
+                }
+                break
+            default:
+                return c.json({ error: `Unsupported widget type: ${widgetType}` }, 400)
+        }
+
+        // Create element ID
+        const elementId = crypto.randomUUID()
+
+        // Merge user config with defaults
+        const finalConfig = {
+            ...metadata.defaultConfig,
+            ...config,
+            widgetType // Store widget type in config for frontend
+        }
+
+        // Create the element in the dashboard's data
+        const [dashboard] = await db.query(`SELECT data FROM ${dashboardId}`)
+        if (!dashboard || !dashboard[0]) {
+            return c.json({ error: "Dashboard not found" }, 404)
+        }
+
+        const data = dashboard[0].data || { layout: [], elements: [] }
+
+        // Add new element
+        const newElement = {
+            id: elementId,
+            type: metadata.visualizationType,
+            title: config.title || metadata.title,
+            query,
+            config: finalConfig,
+            created_by: `user:${userId}`,
+            widgetType // Also store at top level for easy access
+        }
+
+        data.elements = data.elements || []
+        data.elements.push(newElement)
+
+        // Add to layout (bottom of dashboard)
+        const maxY = data.layout.reduce((max, item) => Math.max(max, item.y + item.h), 0)
+        data.layout.push({
+            i: elementId,
+            x: 0,
+            y: maxY,
+            w: 6,
+            h: 4
+        })
+
+        // Update dashboard
+        await db.query(`
+            UPDATE ${dashboardId} SET data = $data, updated_at = time::now()
+            WHERE owner = type::thing('user', $userId)
+        `, { data, userId })
+
+        console.log(`[Dashboard] Created widget element: ${widgetType} (${elementId})`)
+        return c.json({ id: elementId, element: newElement })
+    } catch (e) {
+        console.error('[Dashboard] Widget creation error:', e)
+        return c.json({ error: e.message || "Failed to create widget" }, 500)
+    }
+})
+
 dashboard.get("/dashboards/shared", async (c) => {
     const token = getToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
