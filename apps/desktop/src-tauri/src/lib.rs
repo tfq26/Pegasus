@@ -227,6 +227,9 @@ fn get_platform_info() -> serde_json::Value {
     })
 }
 
+mod ai;
+mod fs_watcher;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -236,13 +239,21 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .manage(fs_watcher::WatcherState {
+            watchers: std::sync::Mutex::new(Vec::new()),
+        })
         .invoke_handler(tauri::generate_handler![
             get_platform_info,
             create_local_account,
             local_login,
             get_local_user,
             local_logout,
-            link_to_cloud
+            link_to_cloud,
+            ai::check_ollama_status,
+            ai::start_ollama_sidecar,
+            fs_watcher::watch_folder,
+            fs_watcher::stop_watch_folder,
+            fs_watcher::stop_all_watchers
         ])
         .setup(|app| {
             // Handle deep links

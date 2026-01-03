@@ -291,7 +291,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { useMobileDetection } from '@/composables/useMobileDetection'
+import { usePlatform, isTauri as isTauriRef, isOnline as isOnlineRef } from '@/composables/usePlatform'
 import { useColorMode } from '@vueuse/core'
 import { getSubscriptionStatus } from '@/lib/api'
 import NotificationCenter from './NotificationCenter.vue'
@@ -320,7 +320,7 @@ import {
 defineOptions({ name: 'AppNavbar' })
 
 const route = useRoute()
-const { isPhone } = useMobileDetection()
+const { isPhone } = usePlatform()
 const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
 const { user, isLoading, fetchUser, logout } = useAuth()
 
@@ -336,22 +336,15 @@ const links: NavLink[] = [
   { to: '/query', label: 'Query', icon: MessageSquare, webOnly: false },
 ]
 
-// Check if running in Tauri desktop
-const isTauri = () => '__TAURI_INTERNALS__' in window
-const isDesktop = computed(() => isTauri())
-const isOnline = ref(navigator.onLine)
-
-// Watch online status
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { isOnline.value = true })
-  window.addEventListener('offline', () => { isOnline.value = false })
-}
+// Use centralized platform detection
+const isDesktop = isTauriRef
+const isOnline = isOnlineRef
 
 const filteredLinks = computed(() => {
   let result = links
 
   // Desktop: hide web-only pages (Home, About)
-  if (isTauri()) {
+  if (isTauriRef.value) {
     result = result.filter((link) => !link.webOnly)
   }
 

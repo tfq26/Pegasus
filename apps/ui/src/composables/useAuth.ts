@@ -1,4 +1,4 @@
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useFeatureFlags } from './useFeatureFlags'
 
 interface User {
@@ -45,10 +45,9 @@ const checkUrlToken = () => {
     return localStorage.getItem('auth_token')
 }
 
-// Initialize token check on module load
-onMounted(() => {
-    checkUrlToken()
-})
+// Initialize token check on module load (runs immediately when module is imported)
+// Note: This is intentionally NOT wrapped in onMounted because this is module-level code
+checkUrlToken()
 
 export function useAuth() {
     const { setUser } = useFeatureFlags()

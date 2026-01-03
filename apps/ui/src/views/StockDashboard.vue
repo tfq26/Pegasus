@@ -333,7 +333,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { api } from '@/lib/apiClient'
 import { 
   TrendingUp, 
@@ -595,16 +595,36 @@ const handleTransaction = async () => {
     }
 }
 
-let interval: any = null
+// Visibility-aware polling: pause when tab is hidden to save resources
+import { useIntervalFn, useDocumentVisibility } from '@vueuse/core'
+
+const visibility = useDocumentVisibility()
+
+const { pause, resume } = useIntervalFn(() => {
+  // Only fetch when tab is visible
+  if (visibility.value === 'visible') {
+    fetchStocks()
+  }
+}, 10000) // Poll every 10 seconds
+
+// Watch visibility to resume/pause polling
+watch(visibility, (newState) => {
+  if (newState === 'visible') {
+    // Resume polling and immediately refresh when tab becomes visible
+    resume()
+    fetchStocks()
+  } else {
+    pause()
+  }
+})
 
 onMounted(() => {
   fetchStocks()
   fetchPortfolio()
-  interval = setInterval(fetchStocks, 10000)
 })
 
 onBeforeUnmount(() => {
-  if (interval) clearInterval(interval)
+  pause()
 })
 </script>
 

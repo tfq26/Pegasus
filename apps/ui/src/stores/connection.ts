@@ -22,6 +22,7 @@ export const useConnectionStore = defineStore('connection', () => {
     const isInitialized = ref(false)
     const lastFetchTime = ref<number>(0)
     const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes cache
+    const STORAGE_KEY = 'pegasus-selected-connection'
 
     // Actions
     async function loadConnections(forceRefresh = false) {
@@ -49,6 +50,14 @@ export const useConnectionStore = defineStore('connection', () => {
             isInitialized.value = true
             lastFetchTime.value = now
             console.log('[ConnectionStore] Loaded connections:', connections.value.length)
+
+            // Restore selection
+            const savedId = localStorage.getItem(STORAGE_KEY)
+            if (savedId && connections.value.some(c => c.id === savedId)) {
+                selectedConnectionId.value = savedId
+            } else if (connections.value.length > 0 && !selectedConnectionId.value) {
+                selectedConnectionId.value = connections.value[0]!.id
+            }
         } catch (e) {
             console.error('[ConnectionStore] Failed to load connections:', e)
             connections.value = []
@@ -108,6 +117,11 @@ export const useConnectionStore = defineStore('connection', () => {
 
     function selectConnection(connectionId: string) {
         selectedConnectionId.value = connectionId
+        if (connectionId) {
+            localStorage.setItem(STORAGE_KEY, connectionId)
+        } else {
+            localStorage.removeItem(STORAGE_KEY)
+        }
         console.log('[ConnectionStore] Selected connection:', connectionId)
     }
 

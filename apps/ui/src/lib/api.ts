@@ -25,23 +25,10 @@ export type ConnectionSchema = {
 
 export async function fetchConnectionSchema(entry: ConnectionEntry) {
   const connection = buildConnectionPayload(entry)
-  const response = await fetch(`${QUERY_API_URL}/schema`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      provider: entry.provider,
-      connection,
-    }),
+  const body = await api.post<any>('/schema', {
+    provider: entry.provider,
+    connection,
   })
-
-  const body = await response.json()
-
-  if (!response.ok || body.error) {
-    const err = new Error(body.error ?? 'Unable to load schema')
-      // Attach the backend error code (if present) for richer UI messages
-      ; (err as any).code = body.code ?? body.code === 0 ? body.code : undefined
-    throw err
-  }
 
   return {
     tables: (body.tables ?? []) as string[],
@@ -88,21 +75,11 @@ export async function fetchTableEntries({
     queryPayload = `${sanitizedTable} | take ${limit}`
   }
 
-  const response = await fetch(`${QUERY_API_URL}/query`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      provider,
-      connection,
-      query: queryPayload,
-    }),
+  const body = await api.post<any>('/query', {
+    provider,
+    connection,
+    query: queryPayload,
   })
-
-  const body = await response.json()
-
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'Unable to fetch table entries')
-  }
 
   const rows = Array.isArray(body.result) ? body.result : []
   return {
@@ -142,20 +119,11 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
     queryPayload = `${sanitizedTable} | count`
   }
 
-  const response = await fetch(`${QUERY_API_URL}/query`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      provider,
-      connection,
-      query: queryPayload,
-    }),
+  const body = await api.post<any>('/query', {
+    provider,
+    connection,
+    query: queryPayload,
   })
-
-  const body = await response.json()
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'Unable to fetch count')
-  }
 
   // Parse result based on provider
   const result = body.result
@@ -180,18 +148,7 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
     requestBody.activeTable = activeTable;
   }
 
-  const response = await fetch(`${QUERY_API_URL}/ai/generate`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(requestBody),
-  })
-
-  const body = await response.json()
-
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'AI generation failed')
-  }
+  const body = await api.post<any>('/ai/generate', requestBody)
 
   // Check if this is a multi-step response
   if (body.multi_step && Array.isArray(body.steps)) {
@@ -218,26 +175,7 @@ export async function explainQuery(query: string, connectionId: string) {
 
 
 export async function sanitizeTable(table: string) {
-  const response = await fetch(`${QUERY_API_URL}/api/table/${table}/sanitize`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Sanitization failed')
-  }
-
-  // Read response as text first so we can log it if parsing fails
-  const text = await response.text()
-
-  try {
-    return JSON.parse(text)
-  } catch (e: any) {
-    console.error('Failed to parse sanitize response:', text.substring(0, 500))
-    throw new Error(`Invalid JSON response from server: ${e.message}`)
-  }
+  return api.post<any>(`/api/table/${table}/sanitize`)
 }
 
 
@@ -262,77 +200,29 @@ export async function executeQuery({ connectionId, query, source = 'user' }: { c
 }
 
 export async function analyzeResults(question: string, results: any[], query: string) {
-  const response = await fetch(`${QUERY_API_URL}/ai/analyze`, {
-    method: 'POST',
-    headers: {
-      ...getAuthHeaders() as Record<string, string>,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({
-      question,
-      results,
-      query
-    }),
+  const body = await api.post<any>('/ai/analyze', {
+    question,
+    results,
+    query
   })
-
-  const body = await response.json()
-
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'AI analysis failed')
-  }
 
   return body.analysis
 }
 
 export async function searchData(term: string, connectionId: string) {
-  const response = await fetch(`${QUERY_API_URL}/ai/search`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({
-      term,
-      connectionId
-    }),
+  return api.post<any>('/ai/search', {
+    term,
+    connectionId
   })
-
-  const body = await response.json()
-
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'Search failed')
-  }
-
-  return body
 }
 
 export async function getAIModels() {
-  const response = await fetch(`${QUERY_API_URL}/ai/models`, {
-    method: 'GET',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-
-  const body = await response.json()
-
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'Failed to list models')
-  }
-
+  const body = await api.get<{ models: any[] }>('/ai/models')
   return body.models || []
 }
 
 export async function fetchSettings() {
-  const response = await fetch(`${QUERY_API_URL}/settings`, {
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-
-  const body = await response.json()
-
-  if (!response.ok) {
-    throw new Error('Failed to load settings')
-  }
-
+  const body = await api.get<{ settings: any }>('/settings')
   return body.settings || {}
 }
 
@@ -364,258 +254,110 @@ export async function clearAllChats() {
 
 // Dashboard API
 export async function fetchDashboardElements() {
-  const response = await fetch(`${QUERY_API_URL}/dashboard`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch dashboard')
-  const body = await response.json()
+  const body = await api.get<{ elements: any[] }>('/dashboard')
   return body.elements || []
 }
 
 export async function createDashboardElement(element: any) {
-  const response = await fetch(`${QUERY_API_URL}/dashboard/elements`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(element)
-  })
-  if (!response.ok) throw new Error('Failed to create dashboard element')
-  return await response.json()
+  return api.post('/dashboard/elements', element)
 }
 
 export async function deleteDashboardElement(id: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboard/elements/${id}`, {
-    method: 'DELETE',
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to delete dashboard element')
-  return true
+  return api.delete(`/dashboard/elements/${id}`)
 }
 
 export async function updateDashboardElement(id: string, updates: any) {
-  const response = await fetch(`${QUERY_API_URL}/dashboard/elements/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(updates)
-  })
-  if (!response.ok) throw new Error('Failed to update dashboard element')
-  return await response.json()
+  return api.put(`/dashboard/elements/${id}`, updates)
 }
 
 export async function fetchDashboardLayout() {
-  const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch dashboard layout')
-  const body = await response.json()
+  const body = await api.get<{ layout: any }>('/dashboard/layout')
   return body.layout
 }
 
 export async function saveDashboardLayout(layout: any[]) {
-  const response = await fetch(`${QUERY_API_URL}/dashboard/layout`, {
-    method: 'POST',
-    headers: {
-      ...getAuthHeaders() as Record<string, string>,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify({ layout })
-  })
-  if (!response.ok) throw new Error('Failed to save dashboard layout')
-  return await response.json()
+  return api.post('/dashboard/layout', { layout })
 }
 // AI
 export async function recommendVisualization(query: string, results: any[], previousConfig: any = null, suggestedChartType: string | null = null) {
-  const response = await fetch(`${QUERY_API_URL}/ai/recommend-visualization`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ query, results, previousConfig, suggestedChartType }),
-  })
-  if (!response.ok) throw new Error('Failed to get recommendation')
-  return response.json()
+  return api.post('/ai/recommend-visualization', { query, results, previousConfig, suggestedChartType })
 }
 
 // Queries
 export async function fetchQueries() {
-  const response = await fetch(`${QUERY_API_URL}/queries`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch queries')
-  return response.json()
+  return api.get('/queries')
 }
 
 export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string) {
-  const response = await fetch(`${QUERY_API_URL}/queries`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ query, source, status, connection_id: connectionId }),
-  })
-  if (!response.ok) throw new Error('Failed to save query')
-  return response.json()
+  return api.post('/queries', { query, source, status, connection_id: connectionId })
 }
 
 export async function deleteQuery(queryId: string) {
-  const response = await fetch(`${QUERY_API_URL}/queries/${queryId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to delete query')
-  return response.json()
+  return api.delete(`/queries/${queryId}`)
 }
 
 export async function clearAllQueries() {
-  const response = await fetch(`${QUERY_API_URL}/queries`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to clear queries')
-  return response.json()
+  return api.delete('/queries')
 }
 
 // Dashboard V2 API (Multi-dashboard)
 export async function fetchDashboards() {
-  const response = await fetch(`${QUERY_API_URL}/dashboards`, {
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    cache: 'no-store'
-  })
-  if (!response.ok) throw new Error('Failed to fetch dashboards')
-  const body = await response.json()
+  const body = await api.get<{ dashboards: any[] }>('/dashboards')
   return body.dashboards || []
 }
 
 export async function fetchSharedDashboards() {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/shared`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch shared dashboards')
-  const body = await response.json()
+  const body = await api.get<{ dashboards: any[] }>('/dashboards/shared')
   return body.dashboards || []
 }
 
 export async function createDashboard(title: string, data: any) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ title, data })
-  })
-  if (!response.ok) throw new Error('Failed to create dashboard')
-  return await response.json()
+  return api.post('/dashboards', { title, data })
 }
 
 export async function fetchDashboard(id: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    cache: 'no-store'
-  })
-  if (!response.ok) throw new Error('Failed to fetch dashboard')
-  const body = await response.json()
+  const body = await api.get<{ dashboard: any }>(`/dashboards/${id}`)
   return body.dashboard
 }
 
 export async function updateDashboard(id: string, updates: { title?: string, data?: any }) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(updates)
-  })
-  if (!response.ok) throw new Error('Failed to update dashboard')
-  return await response.json()
+  return api.put(`/dashboards/${id}`, updates)
 }
 
 export async function updateDashboardPrivacy(id: string, isPublic: boolean) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}/privacy`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ is_public: isPublic })
-  })
-  if (!response.ok) throw new Error('Failed to update privacy settings')
-  return await response.json()
+  return api.put(`/dashboards/${id}/privacy`, { is_public: isPublic })
 }
 
 export async function deleteDashboard(id: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to delete dashboard')
-  return true
+  return api.delete(`/dashboards/${id}`)
 }
 
 export async function shareDashboard(id: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${id}/share`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to share dashboard')
-  const body = await response.json()
+  const body = await api.post<{ token: string }>(`/dashboards/${id}/share`)
   return body.token
 }
 
 export async function fetchSharedDashboard(token: string) {
-  const response = await fetch(`${QUERY_API_URL}/shared/dashboard/${token}`)
-  if (!response.ok) throw new Error('Failed to fetch shared dashboard')
-  const body = await response.json()
+  const body = await api.get<{ dashboard: any }>(`/shared/dashboard/${token}`)
   return body.dashboard
 }
 
 export async function searchUsers(query: string) {
-  const response = await fetch(`${QUERY_API_URL}/api/users/search?q=${encodeURIComponent(query)}`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to search users')
-  const body = await response.json()
+  const body = await api.get<{ users: any[] }>(`/api/users/search?q=${encodeURIComponent(query)}`)
   return body.users || []
 }
 
 export async function inviteUserToDashboard(dashboardId: string, email: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/share/invite`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ email })
-  })
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || 'Failed to invite user')
-  }
-  return await response.json()
+  return api.post(`/dashboards/${dashboardId}/share/invite`, { email })
 }
 
 export async function fetchDashboardPermissions(dashboardId: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/permissions`, {
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to fetch permissions')
-  const body = await response.json()
+  const body = await api.get<{ permissions: any[] }>(`/dashboards/${dashboardId}/permissions`)
   return body.permissions || []
 }
 
 export async function removeDashboardPermission(dashboardId: string, email: string) {
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/permissions/${email}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-  if (!response.ok) throw new Error('Failed to remove user')
-  return true
+  return api.delete(`/dashboards/${dashboardId}/permissions/${email}`)
 }
 
 export interface FeedbackData {
@@ -629,60 +371,21 @@ export interface FeedbackData {
 }
 
 export async function submitFeedback(feedback: FeedbackData) {
-  const response = await fetch(`${QUERY_API_URL}/feedback`, {
-    method: 'POST',
-    headers: {
-      ...getAuthHeaders() as Record<string, string>,
-      'Content-Type': 'application/json'
-    },
-    credentials: 'include',
-    body: JSON.stringify(feedback)
-  })
-
-  if (!response.ok) {
-    throw new Error('Failed to submit feedback')
-  }
-
-  return await response.json()
+  return api.post('/feedback', feedback)
 }
 
 export async function uploadFile(file: File) {
   const formData = new FormData()
   formData.append('file', file)
-
-  const headers = getAuthHeaders()
-  // @ts-ignore
-  delete headers['Content-Type'] // Let fetch set boundary for FormData
-
-  const response = await fetch(`${QUERY_API_URL}/upload`, {
-    method: 'POST',
-    headers,
-    credentials: 'include',
-    body: formData
-  })
-
-  return await response.json()
+  return api.upload<any>('/upload', formData)
 }
 
 export async function createCheckoutSession(priceId: string) {
-  const response = await fetch(`${QUERY_API_URL}/create-checkout-session`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify({ priceId })
-  })
-
-  return await response.json()
+  return api.post('/create-checkout-session', { priceId })
 }
 
 export async function createPortalSession() {
-  const response = await fetch(`${QUERY_API_URL}/create-portal-session`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include'
-  })
-
-  return await response.json()
+  return api.post('/create-portal-session')
 }
 export async function saveConnection(connection: any) {
   // Convert 'file' provider to 'sqlite' for backend compatibility
@@ -718,30 +421,13 @@ export async function getUsageStats() {
 }
 
 export async function syncSubscription() {
-  const response = await fetch(`${QUERY_API_URL}/sync-subscription`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-  return await response.json()
+  return api.post('/sync-subscription')
 }
 
 export async function uploadDashboardFile(dashboardId: string, file: File) {
   const formData = new FormData()
   formData.append('file', file)
-
-  const headers = getAuthHeaders()
-  // @ts-ignore
-  delete headers['Content-Type']
-
-  const response = await fetch(`${QUERY_API_URL}/dashboards/${dashboardId}/files`, {
-    method: 'POST',
-    headers,
-    credentials: 'include',
-    body: formData
-  })
-  if (!response.ok) throw new Error('Failed to upload file')
-  return await response.json()
+  return api.upload<any>(`/dashboards/${dashboardId}/files`, formData)
 }
 
 export function getFileDownloadUrl(fileId: string) {
@@ -749,74 +435,50 @@ export function getFileDownloadUrl(fileId: string) {
 }
 
 export async function logOperationToBackend(data: any) {
-  const response = await fetch(`${QUERY_API_URL}/operations`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    credentials: 'include',
-    body: JSON.stringify(data),
-  })
-  if (!response.ok) throw new Error('Failed to log operation')
-  return response.json()
+  return api.post('/operations', data)
 }
 
 export async function fetchOperationHistory(limit = 50) {
-  const response = await fetch(`${QUERY_API_URL}/operations/history?limit=${limit}`, {
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error('Failed to fetch operation history')
-  return response.json()
+  return api.get(`/operations/history?limit=${limit}`)
 }
 
 export async function fetchOperationAnalytics(range = 'day') {
-  const response = await fetch(`${QUERY_API_URL}/operations/analytics?range=${range}`, {
-    headers: getAuthHeaders(),
-    credentials: 'include',
-  })
-  if (!response.ok) throw new Error('Failed to fetch operation analytics')
-  return response.json()
+  return api.get(`/operations/analytics?range=${range}`)
 }
 
 export async function renameTable(connection: ConnectionEntry, table: string, newName: string) {
   const payload = buildConnectionPayload(connection)
-  return api.post('/query/rename-table', {
+  return api.post('/api/rename-table', {
     connection: payload,
-    table,
-    newName
+    oldTableName: table,
+    newTableName: newName,
+    provider: connection.provider
   })
 }
 
 export async function deleteTable(connection: ConnectionEntry, table: string) {
   const payload = buildConnectionPayload(connection)
-  return api.post('/query/delete-table', {
+  return api.post('/api/delete-table', {
     connection: payload,
-    table
+    tableName: table,
+    provider: connection.provider
   })
 }
 
 export async function fetchDatabaseTables(connection: ConnectionEntry, dbName: string) {
-  const payload = buildConnectionPayload(connection)
-  return api.post('/query/database-tables', {
+  const payload = buildConnectionPayload(connection, { database: dbName })
+  const schema = await api.post<any>('/schema', {
+    provider: connection.provider,
     connection: payload,
-    database: dbName
   })
+  return (schema.tables || []) as string[]
 }
 
 export async function runQuery(connection: ConnectionEntry, query: string) {
   const payload = buildConnectionPayload(connection)
-  const response = await fetch(`${QUERY_API_URL}/query`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      provider: connection.provider,
-      connection: payload,
-      query,
-    }),
+  return api.post<any>('/query', {
+    provider: connection.provider,
+    connection: payload,
+    query,
   })
-
-  const body = await response.json()
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? 'Query failed')
-  }
-  return body
 }

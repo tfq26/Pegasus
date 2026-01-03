@@ -126,13 +126,13 @@ import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { fetchConnectionSchema, QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
-import { useMobileDetection } from '@/composables/useMobileDetection'
+import { usePlatform } from '@/composables/usePlatform'
 import { useRouter } from 'vue-router'
 
 defineOptions({ name: 'SettingsPage' })
 
 const router = useRouter()
-const { isPhone } = useMobileDetection()
+const { isPhone } = usePlatform()
 
 const tabs = [
   { id: 'general', label: 'General' },

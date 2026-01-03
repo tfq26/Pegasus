@@ -3,8 +3,16 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { adapters } from "./adapters/index.js"
 import { serve } from '@hono/node-server'
+import { compress } from 'hono/compress'
+import { etag } from 'hono/etag'
 
 const app = new Hono()
+
+// Global Performance Middleware
+if (typeof CompressionStream !== 'undefined') {
+  app.use('*', compress())
+}
+app.use('*', etag())
 
 // CORS configuration - supports both development and production
 // CORS configuration - supports both development and production
@@ -1197,13 +1205,15 @@ app.post("/schema", async (c) => {
           const uuidMatch = tableName.match(/^data_([a-f0-9]{32})_/i)
           if (uuidMatch) {
             const uuid = uuidMatch[1]
-            // Convert to hyphenated format
-            const hyphenatedUuid = uuid.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, '$1-$2-$3-$4-$5')
-            const uploadId = `uploads:${hyphenatedUuid}`
+            // Note: SurrealDB uploads are stored without hyphens
+            const uploadId = `uploads:${uuid}`
 
             try {
-              const [upload] = await db.query(`SELECT display_name FROM ${uploadId}`)
+              console.log(`[Rename] Fetching display name for upload ID: ${uploadId}`)
+              const query = `SELECT display_name FROM \`${uploadId}\``
+              const [upload] = await db.query(query)
               if (upload[0]?.display_name) {
+                console.log(`[/schema] Found display name for ${tableName}: ${upload[0].display_name}`)
                 tableDisplayNames[tableName] = upload[0].display_name
               }
             } catch (e) {

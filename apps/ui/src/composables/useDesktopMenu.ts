@@ -4,15 +4,14 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
-// Check if running in Tauri
-const isTauri = () => '__TAURI_INTERNALS__' in window
+import { isTauri } from '@/composables/usePlatform'
 
 export function useDesktopMenu() {
     const router = useRouter()
     let unlisten: (() => void) | null = null
 
     const setupMenuListeners = async () => {
-        if (!isTauri()) return
+        if (!isTauri.value) return
 
         try {
             const { listen } = await import('@tauri-apps/api/event')

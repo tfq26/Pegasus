@@ -5,6 +5,7 @@ import { fetchConnectionSchema, fetchDatabaseTables } from '@/lib/api'
 export interface ConnectionSchemaState {
     status: 'loading' | 'success' | 'error' | 'idle'
     tables: string[]
+    tableMetadata?: Record<string, { displayName: string; actualName: string }>
     error?: string
 }
 
@@ -14,37 +15,42 @@ const dbTablesCache = ref<Record<string, Record<string, string[]>>>({})
 export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
     const schemaFor = (id: string) => connectionSchemas.value[id] || { status: 'idle', tables: [] }
 
-    const refreshSchemas = async () => {
+    const refreshConnectionSchema = async (connection: ConnectionEntry) => {
+        if (!connectionSchemas.value[connection.id]) {
+            connectionSchemas.value[connection.id] = { status: 'idle', tables: [] }
+        }
+
+        const entry = connectionSchemas.value[connection.id]
+        if (entry) entry.status = 'loading'
+
+        try {
+            const schema = await fetchConnectionSchema(connection)
+            connectionSchemas.value[connection.id] = {
+                status: 'success',
+                tables: (schema as any).tables || [],
+                tableMetadata: (schema as any).tableMetadata || {}
+            }
+        } catch (err: any) {
+            console.error(`[ExplorerSchema] Failed for ${connection.id}:`, err)
+            connectionSchemas.value[connection.id] = {
+                status: 'error',
+                tables: [],
+                error: err instanceof Error ? err.message : String(err)
+            }
+        }
+    }
+
+    const refreshSchemas = async (force = false) => {
         if (!connections.value || connections.value.length === 0) return
 
         for (const conn of connections.value) {
-            // Already have it? Skip unless it's error or idle
+            // Already have it? Skip unless it's error or idle, OR we're forcing
             const current = connectionSchemas.value[conn.id]
-            if (current && (current.status === 'success' || current.status === 'loading')) {
+            if (!force && current && (current.status === 'success' || current.status === 'loading')) {
                 continue
             }
 
-            if (!connectionSchemas.value[conn.id]) {
-                connectionSchemas.value[conn.id] = { status: 'idle', tables: [] }
-            }
-
-            const entry = connectionSchemas.value[conn.id]
-            if (entry) entry.status = 'loading'
-
-            try {
-                const schema = await fetchConnectionSchema(conn)
-                connectionSchemas.value[conn.id] = {
-                    status: 'success',
-                    tables: (schema as any).tables || []
-                }
-            } catch (err: any) {
-                console.error(`[ExplorerSchema] Failed for ${conn.id}:`, err)
-                connectionSchemas.value[conn.id] = {
-                    status: 'error',
-                    tables: [],
-                    error: err instanceof Error ? err.message : String(err)
-                }
-            }
+            await refreshConnectionSchema(conn)
         }
     }
 
@@ -72,13 +78,14 @@ export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
         }
     }
 
-    watch(() => connections.value, refreshSchemas, { deep: true, immediate: true })
+    watch(() => connections.value, () => refreshSchemas(false), { deep: true, immediate: true })
 
     return {
         connectionSchemas,
         dbTablesCache,
         schemaFor,
         refreshSchemas,
+        refreshConnectionSchema,
         getTablesForDb
     }
 }

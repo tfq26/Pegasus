@@ -91,7 +91,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 
 const router = useRouter()
 

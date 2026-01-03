@@ -1,0 +1,52 @@
+{
+    "title": "v0.8.3 - The Desktop Awakening",
+    "date": "2026-01-02",
+    "version": "0.8.3",
+    "description": "This release brings the power of Local AI and Native Desktop integrations to Pegasus, marking a major evolution in privacy and performance.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Local AI Inference Engine",
+                    "description": "Run advanced AI models like Llama 3 entirely offline on your device.",
+                    "details": [
+                        "Added bundled Ollama sidecar integration for zero-setup local AI.",
+                        "New 'Pegasus AI' settings tab to manage local models and engine status.",
+                        "Serverless privacy: Your data never leaves your machine when using local models."
+                    ]
+                },
+                {
+                    "title": "Native File Integration",
+                    "description": "Seamlessly interact with your local filesystem.",
+                    "details": [
+                        "Introduced 'Watch Folders': Automatically ingest CSV/Excel files dropped into specific directories.",
+                        "Filesystem events are now bridged securely to the frontend."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Desktop Architecture",
+                    "description": "Optimized Rust backend for high-performance local tasks.",
+                    "details": [
+                        "Integrated `reqwest` for robust internal API communication.",
+                        "Enhanced security with local sidecar process management."
+                    ]
+                },
+                {
+                    "title": "Documentation",
+                    "description": "Refined documentation user interface.",
+                    "details": [
+                        "Improved table styling in documentation for better readability.",
+                        "Added Markdown table support to both Application and Marketing sites."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

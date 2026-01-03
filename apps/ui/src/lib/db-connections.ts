@@ -96,33 +96,39 @@ export const defaultConnections: ConnectionEntry[] = [
 
 export type ConnectionOverrides = {
   collection?: string
+  database?: string
 }
 
 export const buildConnectionPayload = (
   entry: ConnectionEntry,
   overrides: ConnectionOverrides = {},
 ) => {
+  let basePayload: any = {}
   switch (entry.provider) {
     case 'mysql':
-      return { provider: 'mysql', ...entry.mysql }
+      basePayload = { provider: 'mysql', ...entry.mysql }
+      break
     case 'postgres':
-      return { provider: 'postgres', ...entry.postgres }
+      basePayload = { provider: 'postgres', ...entry.postgres }
+      break
     case 'mongodb':
-      // Only include database/collection if explicitly set by user
-      const payload: any = { provider: 'mongodb', url: entry.mongodb?.url }
-      if (entry.mongodb?.database?.trim()) payload.database = entry.mongodb.database
-      if (entry.mongodb?.collection?.trim()) payload.collection = entry.mongodb.collection
-      Object.assign(payload, overrides)
-      return payload
+      basePayload = { provider: 'mongodb', url: entry.mongodb?.url }
+      if (entry.mongodb?.database?.trim()) basePayload.database = entry.mongodb.database
+      if (entry.mongodb?.collection?.trim()) basePayload.collection = entry.mongodb.collection
+      break
     case 'kusto':
-      return { provider: 'kusto', ...entry.kusto }
+      basePayload = { provider: 'kusto', ...entry.kusto }
+      break
     case 'sqlite':
-      return { provider: 'sqlite', ...entry.sqlite }
+      basePayload = { provider: 'sqlite', ...entry.sqlite }
+      break
     case 'surrealdb':
-      return { provider: 'surrealdb', ...entry.surrealdb }
+      basePayload = { provider: 'surrealdb', ...entry.surrealdb }
+      break
     default:
-      return { provider: entry.provider }
+      basePayload = { provider: entry.provider }
   }
+  return { ...basePayload, ...overrides }
 }
 
 const getMongoDatabaseFromUrl = (uri?: string | undefined): string | undefined => {

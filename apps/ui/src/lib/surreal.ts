@@ -35,7 +35,12 @@ export const connectToSurreal = async () => {
         if (e.message && e.message.includes('already connected')) {
             return true;
         }
-        console.error('[Surreal] Connection failed:', e);
+        // Silence connection refused errors to avoid cluttering console for users without local SurrealDB
+        if (e.message && (e.message.includes('fetch') || e.message.includes('VersionRetrievalFailure'))) {
+            console.warn('[Surreal] Realtime sync unavailable (SurrealDB not reachable)');
+        } else {
+            console.error('[Surreal] Connection failed:', e);
+        }
         return false;
     }
 };

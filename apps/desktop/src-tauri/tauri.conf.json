@@ -39,7 +39,10 @@
     "category": "DeveloperTool",
     "shortDescription": "AI-Powered Database Management",
     "longDescription": "Pegasus is an intelligent database management tool that lets you query, visualize, and analyze your data using natural language.",
-    "copyright": "© 2025 Pegasus"
+    "copyright": "© 2025 Pegasus",
+    "externalBin": [
+      "binaries/ollama"
+    ]
   },
   "plugins": {
     "deep-link": {

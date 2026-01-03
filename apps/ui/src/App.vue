@@ -6,13 +6,13 @@ import DesktopNavbar from './components/DesktopNavbar.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { useAuth } from '@/composables/useAuth'
 import { usePrefetch } from '@/composables/usePrefetch'
-import { useConnections } from '@/composables/useConnections'
+import { useConnectionStore } from '@/stores/connection'
 import { useDesktopMenu } from '@/composables/useDesktopMenu'
+import { usePlatform } from '@/composables/usePlatform'
 import ErrorPage from '@/views/ErrorPage.vue'
 import 'vue-sonner/style.css'
 
-// Check if running in Tauri
-const isTauri = () => '__TAURI_INTERNALS__' in window
+const { isTauri } = usePlatform()
 const isDesktop = ref(false)
 const route = useRoute()
 
@@ -69,7 +69,7 @@ usePrefetch()
 useDesktopMenu()
 
 const { fetchUser } = useAuth()
-const { loadConnections } = useConnections()
+const connectionStore = useConnectionStore()
 
 // Fetch user on app mount - skip for Tauri when offline
 onMounted(async () => {
@@ -78,12 +78,12 @@ onMounted(async () => {
   window.addEventListener('error', handleWindowError)
 
   // Detect if running in Tauri
-  isDesktop.value = isTauri()
+  isDesktop.value = isTauri.value
 
   // Initialize connections globally
-  loadConnections()
+  connectionStore.loadConnections()
 
-  if (isTauri() && !navigator.onLine) {
+  if (isTauri.value && !navigator.onLine) {
     // Tauri offline: use local auth (handled by router guard)
     console.log('[App] Running in Tauri offline - using local auth')
   } else {

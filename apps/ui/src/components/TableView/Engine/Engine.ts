@@ -910,13 +910,23 @@ export class Engine {
         this.notifyChange();
     }
 
-    public clear() {
-        this.cells.clear();
-        // Also clear localStorage to prevent data from reappearing
-        try {
-            localStorage.removeItem(this.storageKey);
-        } catch (e) {
-            console.error('Failed to clear localStorage:', e);
+    public clear(options: { keepStyles?: boolean } = {}) {
+        if (options.keepStyles) {
+            // Only clear values/rawInput, keep style objects
+            for (const [key, cell] of this.cells.entries()) {
+                cell.rawInput = '';
+                cell.value = '';
+                // type remains or changes to TEXT
+                cell.type = CellType.TEXT;
+            }
+        } else {
+            this.cells.clear();
+            // Also clear localStorage to prevent data from reappearing
+            try {
+                localStorage.removeItem(this.storageKey);
+            } catch (e) {
+                console.error('Failed to clear localStorage:', e);
+            }
         }
         this.notifyChange();
     }

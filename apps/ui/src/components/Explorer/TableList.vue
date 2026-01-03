@@ -13,6 +13,7 @@ import type { ConnectionEntry } from '@/lib/db-connections'
 const props = defineProps<{
   connection: ConnectionEntry
   tables: string[]
+  tableMetadata?: Record<string, { displayName: string; actualName: string }>
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +44,11 @@ const hasMore = computed(() => {
 
 function formatTableName(tableName: string): string {
   if (!tableName) return ''
+
+  // Use metadata if available (renamed tables)
+  if (props.tableMetadata?.[tableName]?.displayName) {
+    return props.tableMetadata[tableName].displayName
+  }
   
   // Pattern 1: data_UUID_actualName (no dashes in hex)
   const pattern1 = /^data_[a-f0-9]{32}_(.+)$/

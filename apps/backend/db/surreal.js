@@ -58,6 +58,8 @@ const initSchema = async () => {
             DEFINE FIELD cover_image ON TABLE dashboard TYPE string;
             DEFINE FIELD created_at ON TABLE dashboard TYPE datetime DEFAULT time::now();
             DEFINE FIELD updated_at ON TABLE dashboard TYPE datetime DEFAULT time::now();
+            
+            DEFINE INDEX idx_owner ON TABLE dashboard COLUMNS owner;
         `);
 
         // Dashboard Elements (Granular)
@@ -66,6 +68,8 @@ const initSchema = async () => {
             DEFINE FIELD dashboard ON TABLE dashboard_element TYPE record<dashboard>;
             DEFINE FIELD type ON TABLE dashboard_element TYPE string;
             DEFINE FIELD created_by ON TABLE dashboard_element TYPE record<user>;
+            
+            DEFINE INDEX idx_dashboard ON TABLE dashboard_element COLUMNS dashboard;
             
             -- Permissions:
             -- Select: Public OR Owner OR Viewer/Editor

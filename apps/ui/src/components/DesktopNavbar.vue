@@ -121,7 +121,8 @@ import {
   LogOut,
   LogIn,
   ChevronDown,
-  BookOpen
+  BookOpen,
+  Wand2
 } from 'lucide-vue-next'
 
 defineOptions({ name: 'DesktopNavbar' })
@@ -135,10 +136,20 @@ const showDropdown = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 
 // Navigation links for desktop
-const links = [
-  { to: '/query', label: 'Query', icon: MessageSquare },
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-]
+const links = computed(() => {
+  const baseAuth = [
+    { to: '/query', label: 'Query', icon: MessageSquare },
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  ]
+  
+  // Only show Wrangler (Local AI) if running in Tauri
+  const isTauri = '__TAURI_INTERNALS__' in window
+  if (isTauri) {
+    baseAuth.push({ to: '/wrangler', label: 'Wrangler', icon: Wand2 })
+  }
+  
+  return baseAuth
+})
 
 const dropdownItems = [
   { to: '/profile', label: 'Profile', icon: User },

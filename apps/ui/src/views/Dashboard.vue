@@ -535,9 +535,9 @@ const isLoading = computed(() => store.isLoading)
 
 import Navbar from '@/components/Navbar.vue'
 import { useMediaQuery, useThrottleFn } from '@vueuse/core'
-import { useMobileDetection } from '@/composables/useMobileDetection'
+import { usePlatform } from '@/composables/usePlatform'
 
-const { isPhone, isTablet } = useMobileDetection()
+const { isPhone, isTablet } = usePlatform()
 const isDesktop = useMediaQuery('(min-width: 640px)')
 
 const { 

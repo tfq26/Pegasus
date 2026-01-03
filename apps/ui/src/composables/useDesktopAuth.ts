@@ -1,5 +1,5 @@
-// Desktop Auth Composable - Handles local offline auth for Tauri
 import { ref, computed } from 'vue'
+import { isTauri, isOnline } from '@/composables/usePlatform'
 
 // Types
 interface LocalUser {
@@ -19,16 +19,6 @@ interface AuthResponse {
 const localUser = ref<LocalUser | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
-const isOnline = ref(navigator.onLine)
-
-// Check if running in Tauri
-const isTauriEnv = () => '__TAURI_INTERNALS__' in window
-
-// Watch online status
-if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => { isOnline.value = true })
-    window.addEventListener('offline', () => { isOnline.value = false })
-}
 
 export function useDesktopAuth() {
     const isAuthenticated = computed(() => localUser.value !== null)
@@ -36,7 +26,7 @@ export function useDesktopAuth() {
 
     // Check for existing session on load
     const checkSession = async () => {
-        if (!isTauriEnv()) return null
+        if (!isTauri.value) return null
 
         isLoading.value = true
         error.value = null
@@ -57,7 +47,7 @@ export function useDesktopAuth() {
 
     // Create new local account
     const createAccount = async (username: string, password: string, email?: string) => {
-        if (!isTauriEnv()) {
+        if (!isTauri.value) {
             throw new Error('Desktop auth only available in Tauri')
         }
 
@@ -90,7 +80,7 @@ export function useDesktopAuth() {
 
     // Login with local account
     const login = async (username: string, password: string) => {
-        if (!isTauriEnv()) {
+        if (!isTauri.value) {
             throw new Error('Desktop auth only available in Tauri')
         }
 
@@ -122,7 +112,7 @@ export function useDesktopAuth() {
 
     // Logout
     const logout = async () => {
-        if (!isTauriEnv()) return
+        if (!isTauri.value) return
 
         try {
             const { invoke } = await import('@tauri-apps/api/core')
@@ -135,7 +125,7 @@ export function useDesktopAuth() {
 
     // Link to cloud (WorkOS)
     const linkToCloud = async (cloudUserId: string, cloudEmail: string) => {
-        if (!isTauriEnv()) {
+        if (!isTauri.value) {
             throw new Error('Desktop auth only available in Tauri')
         }
 
@@ -167,7 +157,7 @@ export function useDesktopAuth() {
 
     // Login with cloud using Device Authorization Flow
     const loginWithCloud = async () => {
-        if (!isTauriEnv()) {
+        if (!isTauri.value) {
             throw new Error('Desktop auth only available in Tauri')
         }
 
@@ -249,10 +239,9 @@ export function useDesktopAuth() {
         error,
         isOnline,
 
-        // Computed
         isAuthenticated,
         needsCloudLink,
-        isTauri: isTauriEnv,
+        isTauri: computed(() => isTauri.value),
 
         // Actions
         checkSession,

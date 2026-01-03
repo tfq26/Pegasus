@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp, Lock } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import type { ConnectionSchemaState } from '@/composables/useExplorerSchema'
 import TableList from './TableList.vue'
 import TabList from './TabList.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { storeToRefs } from 'pinia'
 
 const workspaceStore = useWorkspaceStore()
-const { tabs, activeTabId } = storeToRefs(workspaceStore)
+const tabs = computed(() => [...(workspaceStore.tabs as any)])
+const activeTabId = computed(() => workspaceStore.activeTabId as any)
 const viewMode = ref<'tables' | 'tabs'>('tables')
 
 const props = defineProps<{
@@ -133,6 +133,7 @@ function statusLabel(state?: ConnectionSchemaState) {
         v-if="selected && viewMode === 'tables'" 
         :connection="connection" 
         :tables="schema.tables"
+        :table-metadata="schema.tableMetadata"
         @table-click="(c, t) => emit('table-click', c, t)"
         @preview="(c, t) => emit('preview-table', c, t)"
         @edit="(c, t) => emit('edit-table', c, t)"

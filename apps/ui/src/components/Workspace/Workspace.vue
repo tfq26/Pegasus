@@ -108,7 +108,8 @@ const refreshTableData = async (engine: Engine) => {
     const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider);
     
     // Clear existing data first to prevent duplication
-    engine.clear(); // This also clears localStorage
+    // Clear values but keep styles during a data-only refresh
+    engine.clear({ keepStyles: true }); 
     
     // Reload into Engine with silent mode to prevent modification tracking
     engine.beginBatch();
@@ -235,7 +236,8 @@ const getEngineForTab = (tabId: string) => {
                      console.log(`[Workspace] Reloaded ${rows.length} rows`);
                      
                      engine.beginBatch();
-                     engine.clear(); // Ensure clean state
+                     // Preserving styles during background reload of existing tab
+                     engine.clear({ keepStyles: true });
                      
                      const headers = tab?.data?.headers || [];
                      let dataStartsAtRow = 1;
@@ -444,6 +446,18 @@ const loadTableData = (tableName: string, data: any[], connection: any = null, p
     
     engine.setSource(tableName, connection, headers, provider);
     engine.setOriginalData(data);
+
+    // Sync metadata back to tab to ensure persistence on refresh
+    if (tab) {
+        tab.data = {
+            ...tab.data,
+            tableName,
+            connection,
+            provider,
+            headers
+        };
+        workspaceStore.saveWorkspace();
+    }
   }
   
   emit('update:mode', 'spreadsheet');
@@ -566,7 +580,9 @@ const openTable = async (tableName: string, connection: any, provider: string) =
             data: rows, 
             label: sheetLabel,
             connection,
-            provider
+            provider,
+            headers,
+            schemaMode
         });
         
         const newId = createdTab.id;

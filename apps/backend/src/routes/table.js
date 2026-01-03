@@ -134,21 +134,13 @@ table.post("/rename-table", async (c) => {
             const uuidMatch = oldTableName.match(/^data_([a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/i);
             if (uuidMatch) {
                 let uploadUuid = uuidMatch[1];
-
-                // Convert UUID to hyphenated format for SurrealDB lookup
-                // 9649f81e5bf6413aa6e80799cb867c9c -> 9649f81e-5bf6-413a-a6e0-799cb867c9c
-                if (uploadUuid.length === 32) {
-                    uploadUuid = uploadUuid.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, '$1-$2-$3-$4-$5');
-                } else {
-                    // Already has underscores, convert to hyphens
-                    uploadUuid = uploadUuid.replace(/_/g, '-');
-                }
-
+                // Note: SurrealDB uploads are stored without hyphens (see /upload route)
                 const uploadId = `uploads:${uploadUuid}`;
 
                 // Verify ownership in internal DB
                 try {
-                    const [upload] = await db.query(`SELECT user_id FROM ${uploadId}`);
+                    console.log(`[Rename] Verifying ownership for ${uploadId}...`)
+                    const [upload] = await db.query(`SELECT user_id FROM \`${uploadId}\``);
                     const ownerId = upload[0]?.user_id;
 
                     if (!ownerId || ownerId !== `user:${userId}`) {
@@ -190,17 +182,16 @@ table.post("/rename-table", async (c) => {
                 const displayName = displayNameMatch ? displayNameMatch[1] : newTableName
 
                 if (extractedUploadId) {
-                    // Convert UUID back to hyphenated format for SurrealDB
+                    // Note: SurrealDB uploads are stored without hyphens
                     let uploadUuid = extractedUploadId
-                    if (uploadUuid.length === 32) {
-                        uploadUuid = uploadUuid.replace(/^([a-f0-9]{8})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{4})([a-f0-9]{12})$/i, '$1-$2-$3-$4-$5')
-                    }
 
                     const uploadId = `uploads:${uploadUuid}`
 
                     // Update the display_name in the uploads record
                     try {
-                        await db.query(`UPDATE ${uploadId} SET display_name = "${displayName}"`)
+                        const query = `UPDATE \`${uploadId}\` SET display_name = $displayName`
+                        console.log(`[Rename] Executing SurrealDB update:`, query)
+                        await db.query(query, { displayName })
                         console.log(`[Rename] Updated display_name to "${displayName}" for ${uploadId}`)
                     } catch (e) {
                         console.error('[Rename] Failed to update display_name:', e.message)

@@ -275,4 +275,9 @@ watch(() => route.query, (query: any) => {
 .markdown-body strong { font-weight: 700; color: var(--foreground); }
 .markdown-body blockquote { border-left: 4px solid rgba(139, 92, 246, 0.5); padding-left: 1.5rem; font-style: italic; margin: 2.5rem 0; color: var(--muted-foreground); background: rgba(139, 92, 246, 0.05); padding-top: 1.5rem; padding-bottom: 1.5rem; border-top-right-radius: 1rem; border-bottom-right-radius: 1rem; }
 .markdown-body hr { margin: 3rem 0; border: 0; border-top: 1px solid rgba(var(--border), 0.5); }
+.markdown-body table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 2rem 0; border-radius: 0.5rem; overflow: hidden; border: 1px solid rgba(var(--border), 0.5); }
+.markdown-body th { background: rgba(139, 92, 246, 0.1); color: var(--foreground); font-weight: 700; text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid rgba(var(--border), 0.5); font-size: 0.875rem; }
+.markdown-body td { padding: 0.75rem 1rem; border-bottom: 1px solid rgba(var(--border), 0.1); color: var(--muted-foreground); font-size: 0.875rem; }
+.markdown-body tr:last-child td { border-bottom: none; }
+.markdown-body tr:hover td { background: rgba(var(--muted), 0.3); }
 </style>

@@ -2,8 +2,13 @@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
 import { computed, ref, onMounted } from 'vue'
+
+// Check if running in Tauri desktop environment
+const isTauri = computed(() => '__TAURI_INTERNALS__' in window)
 import type { SettingsModel } from './types'
 import { getAIModels } from '@/lib/api'
+import { localAI, type OllamaStatus } from '@/services/LocalAIService'
+import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
   settings: SettingsModel
@@ -13,6 +18,68 @@ const models = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
 const searchQuery = ref('')
+const localStatus = ref<OllamaStatus>({ is_running: false, version: null, models: [] })
+const isStartingLocal = ref(false)
+const pullProgress = ref<any>(null)
+
+const checkLocalStatus = async () => {
+  localStatus.value = await localAI.getStatus()
+}
+
+const startLocalEngine = async () => {
+  isStartingLocal.value = true
+  try {
+    const success = await localAI.startSidecar()
+    if (success) {
+      // Poll for status
+      let retries = 0
+      const interval = setInterval(async () => {
+        await checkLocalStatus()
+        if (localStatus.value.is_running || retries > 10) {
+          clearInterval(interval)
+          isStartingLocal.value = false
+        }
+        retries++
+      }, 1000)
+    } else {
+      isStartingLocal.value = false
+    }
+  } catch (e) {
+    isStartingLocal.value = false
+  }
+}
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    const [cloudModels, _] = await Promise.all([
+      getAIModels(),
+      checkLocalStatus()
+    ])
+    models.value = cloudModels
+    
+    // Merge local models into the list if available
+    if (localStatus.value.is_running) {
+       const localModels = localStatus.value.models.map(m => ({
+         id: `local:${m}`,
+         name: m,
+         provider: 'local',
+         description: 'Run locally via Ollama',
+         contextWindow: 4096 // Default assumption
+       }))
+       models.value = [...localModels, ...models.value]
+    }
+
+    // Only initialize enabledModels if it doesn't exist yet (undefined)
+    if (props.settings.enabledModels === undefined) {
+      props.settings.enabledModels = []
+    }
+  } catch (e) {
+    error.value = 'Failed to load models'
+  } finally {
+    loading.value = false
+  }
+})
 
 const isModelEnabled = (id: string) => {
   if (props.settings.enabledModels === undefined) return true
@@ -47,22 +114,6 @@ const selectModel = (id: string) => {
   }
 }
 
-onMounted(async () => {
-  loading.value = true
-  try {
-    models.value = await getAIModels()
-    // Only initialize enabledModels if it doesn't exist yet (undefined)
-    // Start with empty array - user must explicitly enable models
-    if (props.settings.enabledModels === undefined) {
-      props.settings.enabledModels = []
-    }
-  } catch (e) {
-    error.value = 'Failed to load models'
-  } finally {
-    loading.value = false
-  }
-})
-
 const filteredModels = computed(() => {
   if (!searchQuery.value) return models.value
   const query = searchQuery.value.toLowerCase()
@@ -95,6 +146,58 @@ const temperatureValue = computed({
 <template>
   <div class="space-y-6 max-w-3xl">
     <h2 class="text-2xl font-semibold text-primary mb-6">Pegasus AI</h2>
+    
+    <!-- Local AI Status (Desktop Only) -->
+    <div v-if="isTauri" class="p-4 rounded-xl border border-border bg-card/50 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <Server class="w-5 h-5 text-amber-500" />
+          </div>
+          <div>
+            <h3 class="font-medium text-foreground">Local Inference Engine (Ollama)</h3>
+            <p class="text-xs text-muted-foreground">Run models offline on your device</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+           <span v-if="localStatus.is_running" class="flex items-center gap-1.5 text-xs font-medium text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
+             <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+             Running
+           </span>
+           <span v-else class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full border border-border">
+             <div class="w-1.5 h-1.5 rounded-full bg-muted-foreground"></div>
+             Stopped
+           </span>
+        </div>
+      </div>
+
+      <div v-if="!localStatus.is_running" class="flex items-center justify-between bg-background border border-border rounded-lg p-3">
+         <div class="text-sm text-muted-foreground flex items-center gap-2">
+            <AlertCircle class="w-4 h-4" />
+            Local engine is not active.
+         </div>
+         <button 
+           @click="startLocalEngine" 
+           :disabled="isStartingLocal"
+           class="flex items-center gap-2 px-3 py-1.5 bg-foreground text-background rounded-md text-xs font-bold hover:opacity-90 disabled:opacity-50 transition-all"
+         >
+           <Loader2 v-if="isStartingLocal" class="w-3.5 h-3.5 animate-spin" />
+           <Power v-else class="w-3.5 h-3.5" />
+           {{ isStartingLocal ? 'Starting...' : 'Start Engine' }}
+         </button>
+      </div>
+
+      <div v-if="localStatus.is_running && localStatus.models.length === 0" class="mt-4">
+         <div class="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg flex items-start gap-2">
+            <Download class="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p class="font-bold">No models found</p>
+              <p class="opacity-80 mt-1">You need to pull a model to use local AI. Open your terminal and run <code>ollama pull llama3</code> or download one from the library.</p>
+            </div>
+         </div>
+      </div>
+    </div>
+
     <div>
       <h3 class="text-foreground font-medium mb-1">Response Detail</h3>
       <Slider v-model="sliderValue" :min="0" :max="2" class="w-full" />

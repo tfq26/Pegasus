@@ -1,8 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 
-// Check if running in Tauri
-const isTauri = () => '__TAURI_INTERNALS__' in window
+import { isTauri } from '@/composables/usePlatform'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -50,11 +49,11 @@ const router = createRouter({
     { path: '/signin', component: () => import('../views/SignIn.vue') }, // Desktop device auth flow
     { path: '/local-auth', component: () => import('../views/LocalAuth.vue') },
     { path: '/auth/device', component: () => import('../views/DeviceAuth.vue') },
-    { path: '/workspace-test', component: () => import('../views/WorkspaceTest.vue') },
     { path: '/admin', component: () => import('../views/Admin.vue') },
     // { path: '/stocks', component: () => import('../views/StockDashboard.vue') },
     { path: '/stocks', redirect: '/dashboard' },
     { path: '/error', component: () => import('../views/ErrorPage.vue') },
+    { path: '/wrangler', component: () => import('../views/WranglerView.vue') },
   ],
 })
 
@@ -68,7 +67,7 @@ router.beforeEach(async (to, from) => {
   const isProtectedPath = protectedPaths.some(path => to.path.startsWith(path))
 
   // For Tauri desktop + offline, check local auth instead
-  if (isTauri() && !navigator.onLine && isProtectedPath) {
+  if (isTauri.value && !navigator.onLine && isProtectedPath) {
     try {
       const { useDesktopAuth } = await import('@/composables/useDesktopAuth')
       const { checkSession } = useDesktopAuth()
@@ -84,7 +83,7 @@ router.beforeEach(async (to, from) => {
   }
 
   // Web: Redirect to login if user is not authenticated and trying to access a protected path
-  if (!isTauri() && isProtectedPath && !token) {
+  if (!isTauri.value && isProtectedPath && !token) {
     console.log('[Router] Unauthenticated access to protected path, redirecting to login:', to.path)
     return { path: '/login', query: { redirect: to.fullPath } }
   }

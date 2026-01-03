@@ -177,6 +177,7 @@ import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref } 
 import { useRoute } from 'vue-router'
 import { toast } from '@/composables/useNotifications'
 import { storeToRefs } from 'pinia'
+import { toRef } from 'vue'
 import ChatSidebar from '@/components/Chat/ChatSidebar.vue'
 import ChatToolbar from '@/components/Chat/ChatToolbar.vue'
 import Workspace from '@/components/Workspace/Workspace.vue'
@@ -192,7 +193,6 @@ import UnsavedTabsDialog from '@/components/Workspace/UnsavedTabsDialog.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
 import { useConnectionStore } from '@/stores/connection'
-import { useConnections } from '@/composables/useConnections'
 import { useChatDialogs } from '@/composables/useChatDialogs'
 import { useChat } from '@/composables/useChat'
 import { useChatExecution } from '@/composables/useChatExecution'
@@ -211,16 +211,18 @@ import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
 const workspaceStore = useWorkspaceStore()
 const { tabs: workspaceTabs } = storeToRefs(workspaceStore)
 const chatStore = useChatStore()
+// Connection state from store (synced manually to avoid type issues with template)
 const connectionStore = useConnectionStore()
+const connections = ref<ConnectionEntry[]>([])
+const selectedConnection = ref<ConnectionEntry | null>(null)
+const selectedConnectionId = ref<string>('')
 
-// Composables
-const {
-  connections,
-  selectedConnection,
-  selectedConnectionId,
-  selectConnection: _selectConnection,
-  loadConnections
-} = useConnections()
+watch(() => connectionStore.connections, (val) => { connections.value = val }, { immediate: true })
+watch(() => connectionStore.selectedConnection, (val) => { selectedConnection.value = val }, { immediate: true })
+watch(() => connectionStore.selectedConnectionId, (val) => { selectedConnectionId.value = val }, { immediate: true })
+
+const loadConnections = () => connectionStore.loadConnections()
+const _selectConnection = (id: string) => connectionStore.selectConnection(id)
 
 // Wrapper to handle workspace persistence
 const unsavedDialogVisible = ref(false)
@@ -655,7 +657,7 @@ watch([queryResult, queryError], () => {
 })
 
 onMounted(async () => {
-    setTimeout(async () => { await loadConnections() }, 0)
+    setTimeout(async () => { await connectionStore.loadConnections() }, 0)
     window.addEventListener('pegasus:connections-updated', loadConnections)
     await loadChats()
     await loadQueries()

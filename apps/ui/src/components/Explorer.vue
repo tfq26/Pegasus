@@ -88,16 +88,20 @@ const addConnectionModalOpen = ref(false)
 const renamingTable = ref<{ conn: ConnectionEntry; oldName: string; newName: string } | null>(null)
 
 const startRenameTable = (conn: ConnectionEntry, table: string) => {
-  renamingTable.value = { conn, oldName: table, newName: table }
+  const schema = connectionSchemas.value[conn.id]
+  const displayName = schema?.tableMetadata?.[table]?.displayName || table
+  renamingTable.value = { conn, oldName: table, newName: displayName }
 }
 
 const confirmRename = async (newName: string) => {
   if (!renamingTable.value) return
+  const affectedConn = renamingTable.value.conn
   try {
-    await apiRenameTable(renamingTable.value.conn, renamingTable.value.oldName, newName)
+    await apiRenameTable(affectedConn, renamingTable.value.oldName, newName)
     toast.success('Table renamed successfully')
     renamingTable.value = null
-    refreshSchemas()
+    // Specifically refresh this connection to reflect changes instantly
+    refreshSchemas(true) 
   } catch (err: any) {
     toast.error('Failed to rename table', { description: err.message })
   }
@@ -118,7 +122,7 @@ const confirmDeleteTable = async () => {
     await apiDeleteTable(tableToDelete.value.conn, tableToDelete.value.table)
     toast.success('Table deleted')
     deleteDialogOpen.value = false
-    refreshSchemas()
+    refreshSchemas(true)
   } catch (err: any) {
     toast.error('Failed to delete table', { description: err.message })
   }
