@@ -207,7 +207,7 @@ export class SurrealAdapter extends DatabaseAdapter {
             // Let's try INFO first.
 
             for (const table of tables) {
-                const infoRes = await this.db.query(`INFO FOR TABLE ${table}`);
+                const infoRes = await this.db.query(`INFO FOR TABLE \`${table}\``);
                 const info = infoRes[0]; // Direct access, not .result
 
                 const fields = info.fields || {};
