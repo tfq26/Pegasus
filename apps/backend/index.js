@@ -3,6 +3,7 @@ import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { adapters } from "./adapters/index.js"
 import { serve } from '@hono/node-server'
+import { handle } from '@hono/node-server/vercel'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
 import { initSocketServer } from "./src/socket.js"
@@ -1637,5 +1638,6 @@ async function createTableAndInsertData(tableName, rows) {
   }
 }
 
-// Export app for Vercel (named export to avoid Bun conflicts)
+// Export app for Vercel
+export default isVercel ? handle(app) : app;
 export { app };

@@ -10,7 +10,7 @@ const dbName = process.env.SURREAL_DB || 'test';
 
 export let isConnected = false;
 
-export const connectDB = async (retries = 5, delay = 2000) => {
+export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, delay = process.env.VERCEL === '1' ? 500 : 2000) => {
     if (isConnected) return db;
 
     for (let i = 0; i < retries; i++) {
