@@ -212,6 +212,12 @@ const getEngineForTab = (tabId: string) => {
     
     // Restore metadata from tab if available
     const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
+
+    // NEW SYNC LOGIC: If we have persisted engine state in Pinia, load it!
+    if (tab?.data?.engineState) {
+        console.log('[Workspace] Restoring engine state from Pinia store (Cross-device sync enabled)');
+        engine.loadState(tab.data.engineState);
+    }
     if (tab?.data?.tableName) {
         console.log('[Workspace] Restoring engine metadata from tab:', tab.data);
         engine.setSource(
@@ -293,6 +299,9 @@ const getEngineForTab = (tabId: string) => {
         
         // Update dirty state in workspace store
         workspaceStore.setTabDirty(tabId, engine.hasPendingModifications());
+
+        // CRITICAL SYNC: Update engineState in Pinia store for cross-device sync
+        workspaceStore.updateTabData(tabId, { engineState: engine.getState() });
         
         // Calculate time since last save
         const now = Date.now();

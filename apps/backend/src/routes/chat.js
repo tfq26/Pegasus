@@ -136,65 +136,7 @@ const colIndexToLabel = (index) => {
     return label;
 };
 
-// Helper to build formula generation prompt
-const buildFormulaPrompt = (request, spreadsheetData, autoExecute) => {
-    const { headers, sampleData } = spreadsheetData;
-    const headerStr = headers.map((h, i) => `${colIndexToLabel(i)}: ${h}`).join(', ');
-    const dataStr = sampleData.map((row, i) =>
-        `Row ${i + 2}: ${row.join(' | ')}`
-    ).join('\n');
 
-    return `
-You are an expert Excel/Spreadsheet formula generator.
-User Request: "${request}"
-
-Spreadsheet Context:
-Headers: ${headerStr}
-Sample Data:
-${dataStr}
-
-Task: Generate a valid Excel formula to fulfill the request.
-Return a JSON object.
-
-Format:
-{
-  "ambiguous": false,
-  "formula": "=AVERAGEIF($A:$A, A2, $B:$B)",
-  "targetColumn": 3,
-  "columnHeader": "Average Price",
-  "reasoning": "Explanation...",
-  "exampleResult": "45.67",
-  "isOverwrite": false
-}
-
-If ambiguous, return:
-{
-  "ambiguous": true,
-  "clarificationNeeded": "Question...",
-  "options": ["Option 1", "Option 2"]
-}
-
-Rules:
-1. Use standard Excel functions.
-2. Use absolute references ($A$1) where appropriate.
-3. targetColumn is 0-based index.
-4. columnHeader should be concise.
-5. Provide formula for Row 2.
-6. Calculate exampleResult for Row 2.
-7. Set isOverwrite=true if targetColumn has data.
-`;
-};
-
-// Helper to check if operation will modify existing data
-function checkIfModifiesData(targetColumn, spreadsheetData, isOverwrite) {
-    if (!spreadsheetData.sampleData) return false;
-    for (const row of spreadsheetData.sampleData) {
-        if (row[targetColumn] !== undefined && row[targetColumn] !== '' && row[targetColumn] !== null) {
-            return true;
-        }
-    }
-    return isOverwrite === true;
-}
 
 // Helper to log AI usage
 const logAiUsage = async (userId, tokens, model, type, content, connectionId) => {
@@ -426,8 +368,9 @@ chat.delete("/chats", async (c) => {
     }
 })
 
+
 // AI Routes
-chat.post("/ai/generate-formula", async (c) => {
+chat.post("/ai/spreadsheet-action", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -438,57 +381,113 @@ chat.post("/ai/generate-formula", async (c) => {
             return c.json(quota, 403);
         }
 
-        const { request, spreadsheetData, model, autoExecute } = await c.req.json()
-        const prompt = buildFormulaPrompt(request, spreadsheetData, autoExecute)
+        const { request, spreadsheetData, model } = await c.req.json()
+
+        // Import the spreadsheet tool service
+        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+
+        // Get spreadsheet-specific tools
+        const tools = spreadsheetToolService.getSpreadsheetTools()
+
+        // Build context for AI
+        const { headers, sampleData, rowCount, colCount } = spreadsheetData
+        const headerStr = headers.map((h, i) => `${colIndexToLabel(i)}: ${h}`).join(', ')
+        const dataStr = sampleData.slice(0, 5).map((row, i) =>
+            `Row ${i + 2}: ${row.join(' | ')}`
+        ).join('\n')
+
+        const systemPrompt = `You are an AI assistant for a spreadsheet editor. The user has a spreadsheet with the following data:
+
+Headers: ${headerStr}
+Sample Data (first 5 rows):
+${dataStr}
+
+Total Rows: ${rowCount}, Total Columns: ${colCount}
+
+You have access to tools to perform various spreadsheet operations. Analyze the user's request and call the appropriate tool(s).
+
+IMPORTANT: 
+- For data analysis questions (e.g., "which fund has the highest value?"), use the analyze_data tool
+- For calculations, use calculate_column and show the mathematical reasoning
+- For formatting, use apply_conditional_formatting
+- You can chain multiple tools if needed`
 
         const response = await aiClient.generateContent([
-            { role: 'user', content: prompt }
-        ], { json: true, model })
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: request }
+        ], { tools, model })
 
         const usage = response.usage
-        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'ai_formula', request)
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'ai_spreadsheet', request)
 
-        let result
-        try {
-            result = JSON.parse(response.text || response)
-        } catch (parseError) {
-            console.error('Failed to parse AI response:', response)
-            return c.json({
-                error: 'AI returned invalid response format',
-                details: (response.text || response)?.substring(0, 200)
-            }, 500)
-        }
+        // Handle tool calls
+        if (response.toolCalls && response.toolCalls.length > 0) {
+            const toolResults = []
 
-        if (result.ambiguous) {
+            for (const toolCall of response.toolCalls) {
+                const toolName = toolCall.function.name
+                const toolArgs = JSON.parse(toolCall.function.arguments)
+
+                console.log(`[AI] Calling tool: ${toolName}`, toolArgs)
+
+                const result = await spreadsheetToolService.callTool(toolName, toolArgs, {
+                    spreadsheetData,
+                    userId: payload.sub
+                })
+
+                toolResults.push({
+                    toolName,
+                    result
+                })
+            }
+
+            // For analyze_data tool, do a second AI call to get the actual answer
+            const hasAnalyzeData = toolResults.some(r => r.toolName === 'analyze_data')
+
+            if (hasAnalyzeData) {
+                // Build a follow-up prompt with the data
+                const analyzeResult = toolResults.find(r => r.toolName === 'analyze_data')
+                const question = analyzeResult.result.answer.replace('Analysis of: ', '')
+
+                const followUpPrompt = `Based on this spreadsheet data, answer the question: "${question}"
+
+Data:
+Headers: ${headers.join(', ')}
+Rows:
+${sampleData.map((row, i) => `${i + 1}. ${row.join(' | ')}`).join('\n')}
+
+Provide a clear, concise answer with specific values from the data.`
+
+                const analysisResponse = await aiClient.generateContent([
+                    { role: 'user', content: followUpPrompt }
+                ], { model })
+
+                // Update the tool result with the actual answer
+                analyzeResult.result.answer = analysisResponse.text
+
+                // Add usage from second call
+                const secondUsage = analysisResponse.usage
+                await logAiUsage(payload.sub, secondUsage?.totalTokens || secondUsage?.total_tokens, model, 'ai_analysis', question)
+            }
+
             return c.json({
-                ambiguous: true,
-                clarificationNeeded: result.clarificationNeeded,
-                options: result.options
+                toolCalls: toolResults,
+                usage
             })
         }
 
-        const willModifyExistingData = checkIfModifiesData(
-            result.targetColumn,
-            spreadsheetData,
-            result.isOverwrite
-        )
-
+        // If no tool calls, return the text response
         return c.json({
-            formula: result.formula,
-            targetColumn: result.targetColumn,
-            columnHeader: result.columnHeader || 'New Column',
-            reasoning: result.reasoning,
-            exampleResult: result.exampleResult,
-            willModifyExistingData,
-            affectedCells: willModifyExistingData ?
-                `Column ${colIndexToLabel(result.targetColumn)}` :
-                null
+            text: response.text,
+            usage
         })
+
     } catch (e) {
-        console.error("AI Generation Error:", e)
+        console.error("AI Spreadsheet Action Error:", e)
         return c.json({ error: e.message }, 500)
     }
 })
+
 
 chat.post("/ai/analyze-formula-error", async (c) => {
     const token = getAuthToken(c)

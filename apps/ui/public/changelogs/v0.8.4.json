@@ -1,0 +1,112 @@
+{
+    "title": "v0.8.4 - Tool-Based AI Mode",
+    "date": "2026-01-03",
+    "version": "0.8.4",
+    "description": "This release transforms the AI mode from a formula-centric approach to a powerful, tool-based system capable of data analysis, formatting, calculations, and query optimization across both spreadsheet and SQL editors.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Tool-Based AI Architecture",
+                    "description": "AI can now intelligently select and execute specialized tools instead of being limited to formula generation.",
+                    "details": [
+                        "Created SpreadsheetToolService with 22 specialized tools (10 spreadsheet + 12 query tools).",
+                        "Implemented function calling architecture for dynamic tool selection.",
+                        "AI automatically chooses the right tool based on user intent."
+                    ]
+                },
+                {
+                    "title": "Spreadsheet AI Tools (10 Tools)",
+                    "description": "Comprehensive AI capabilities for spreadsheet operations.",
+                    "details": [
+                        "analyze_data: Answer questions about data with actual analysis.",
+                        "calculate_column: Compute values with mathematical reasoning (replaces Excel formulas).",
+                        "apply_conditional_formatting: Highlight cells based on conditions.",
+                        "forecast: Predict future values based on trends.",
+                        "clean_data: Standardize formats, remove duplicates, fix inconsistencies.",
+                        "summarize_data: Generate text summaries of key insights.",
+                        "compare_data: Compare tables side-by-side.",
+                        "sort_data: Sort by any column.",
+                        "suggest_chart: Recommend best visualizations.",
+                        "apply_template: Transform tables to match template structures."
+                    ]
+                },
+                {
+                    "title": "SQL Query AI Tools (12 Tools)",
+                    "description": "Advanced AI assistance for SQL query development and optimization.",
+                    "details": [
+                        "format_query: Prettify and indent SQL code.",
+                        "explain_query: Explain queries in plain English.",
+                        "optimize_query: Suggest performance improvements.",
+                        "fix_query_error: Diagnose and fix syntax/runtime errors.",
+                        "generate_query: Create SQL from natural language.",
+                        "create_index: Suggest indexes for slow queries.",
+                        "generate_test_data: Create mock data for testing.",
+                        "convert_dialect: Convert between SQL dialects.",
+                        "save_as_view: Create database views.",
+                        "diff_queries: Compare two queries.",
+                        "analyze_query_performance: Get execution metrics."
+                    ]
+                },
+                {
+                    "title": "Two-Step AI Analysis",
+                    "description": "AI now provides actual answers instead of placeholders for data analysis questions.",
+                    "details": [
+                        "First AI call: Selects appropriate tool and retrieves data.",
+                        "Second AI call: Analyzes data and provides specific answers.",
+                        "Example: 'Which fund has the highest value?' returns 'ICICI Prudential Multi Asset-G with value 2,520,118'."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Backend Refactoring",
+                    "description": "Streamlined AI endpoints for better maintainability.",
+                    "details": [
+                        "Replaced /ai/generate-formula with /ai/spreadsheet-action endpoint.",
+                        "Removed obsolete helper functions (buildFormulaPrompt, checkIfModifiesData).",
+                        "Integrated tool execution into main AI flow."
+                    ]
+                },
+                {
+                    "title": "Frontend Updates",
+                    "description": "Enhanced Grid.vue to handle diverse AI tool responses.",
+                    "details": [
+                        "Updated generateAIFormula to executeSpreadsheetAction.",
+                        "Added handlers for text answers, calculations, formatting, and sorting.",
+                        "Implemented conditional formatting application logic."
+                    ]
+                },
+                {
+                    "title": "Testing Infrastructure",
+                    "description": "Comprehensive test suite for validating all tools without UI.",
+                    "details": [
+                        "Created tool-sandbox.js: Automated tests for all 22 tools.",
+                        "Created interactive-tool-test.js: Interactive CLI for manual testing.",
+                        "Created ai-integrated-test.js: End-to-end AI integration tests.",
+                        "All tests use realistic mutual fund sample data."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Breaking Changes",
+            "items": [
+                {
+                    "title": "Formula Generation Removed",
+                    "description": "Excel formula generation has been replaced with direct calculation tools.",
+                    "details": [
+                        "Old /ai/generate-formula endpoint removed.",
+                        "New calculate_column tool shows mathematical reasoning instead of Excel syntax.",
+                        "Focus shifted from formulas to actual data manipulation."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

@@ -139,6 +139,58 @@ export class Engine {
     }
 
     /**
+     * Get the serializable state of the engine
+     */
+    public getState() {
+        return {
+            version: 2,
+            cells: Array.from(this.cells.entries()),
+            rowCount: this.config.rowCount,
+            colCount: this.config.colCount,
+            source: {
+                table: this.sourceTable,
+                connection: this.sourceConnection,
+                provider: this.sourceProvider,
+                columns: this.columnNames,
+                schemaMode: this.schemaMode
+            },
+            notes: Array.from(this.notes.entries())
+        };
+    }
+
+    /**
+     * Load state into the engine
+     */
+    public loadState(state: any) {
+        if (!state) return;
+
+        if (Array.isArray(state)) {
+            // V1 format: just cells
+            this.cells = new Map(state as [string, CellData][]);
+        } else if (state.version === 2) {
+            // V2 format: cells + source metadata
+            this.cells = new Map(state.cells);
+            if (state.rowCount) this.config.rowCount = state.rowCount;
+            if (state.colCount) this.config.colCount = state.colCount;
+            if (state.source) {
+                this.sourceTable = state.source.table;
+                this.sourceConnection = state.source.connection;
+                this.sourceProvider = state.source.provider;
+                this.columnNames = state.source.columns || [];
+                if (state.source.schemaMode) this.schemaMode = state.source.schemaMode;
+            }
+            if (state.notes) {
+                this.notes = new Map(state.notes);
+            }
+        }
+
+        // Take snapshot of loaded data as "original"
+        this.originalData = new Map(this.cells);
+        this.changeTracker.clear();
+        this.notifyChange();
+    }
+
+    /**
      * Legacy method for getting modified rows (deprecated)
      */
     public getModifiedRows(): Map<number, { data: Record<string, any>, original: Record<string, any> | null }> {
@@ -690,36 +742,18 @@ export class Engine {
             }
 
             // For large datasets without database backing, skip localStorage persistence
-            // This prevents quota issues and improves performance
             if (data.length > 5000 && !this.sourceTable) {
-                console.warn('[Storage] Skipping localStorage for large non-database sheet (performance optimization)');
-                // If we skip persistence, but there are notes, we should still save notes if cells are empty.
-                // However, the current logic implies skipping everything if cells are large.
-                // For now, we'll stick to the original intent of skipping if cells are large.
+                console.warn('[Storage] Skipping localStorage for large non-database sheet');
                 return;
             }
 
-            const state = {
-                version: 2, // Keep versioning for future compatibility
-                cells: data,
-                rowCount: this.config.rowCount,
-                colCount: this.config.colCount,
-                source: { // Nested source object for consistency with V2
-                    table: this.sourceTable,
-                    connection: this.sourceConnection,
-                    provider: this.sourceProvider,
-                    columns: this.columnNames
-                },
-                notes: Array.from(this.notes.entries())
-            };
-
+            const state = this.getState();
             localStorage.setItem(this.storageKey, JSON.stringify(state));
         } catch (e: any) {
             // Handle quota exceeded error
             if (e.name === 'QuotaExceededError' || e.code === 22) {
                 console.warn('[Storage] localStorage quota exceeded, clearing old spreadsheet data');
 
-                // Clear old spreadsheet tab data to free up space
                 const keysToRemove: string[] = [];
                 for (let i = 0; i < localStorage.length; i++) {
                     const key = localStorage.key(i);
@@ -729,25 +763,12 @@ export class Engine {
                 }
 
                 keysToRemove.forEach(key => localStorage.removeItem(key));
-                console.log(`[Storage] Cleared ${keysToRemove.length} old spreadsheet entries`);
 
-                // Try saving again after cleanup
                 try {
-                    const data = Array.from(this.cells.entries());
-                    const storageData = {
-                        version: 2,
-                        cells: data,
-                        source: {
-                            table: this.sourceTable,
-                            connection: this.sourceConnection,
-                            provider: this.sourceProvider,
-                            columns: this.columnNames
-                        }
-                    };
-                    localStorage.setItem(this.storageKey, JSON.stringify(storageData));
-                    console.log('[Storage] Successfully saved after cleanup');
+                    const state = this.getState();
+                    localStorage.setItem(this.storageKey, JSON.stringify(state));
                 } catch (e2) {
-                    console.error('[Storage] Still failed after cleanup, skipping persistence:', e2);
+                    console.error('[Storage] Still failed after cleanup:', e2);
                 }
             } else {
                 console.error('[Storage] Failed to save to localStorage:', e);
@@ -760,26 +781,7 @@ export class Engine {
             const stored = localStorage.getItem(this.storageKey);
             if (stored) {
                 const parsed = JSON.parse(stored);
-
-                // Check if it's the old format (array) or new format (object)
-                if (Array.isArray(parsed)) {
-                    // V1 format: just cells
-                    this.cells = new Map(parsed as [string, CellData][]);
-                } else if (parsed.version === 2) {
-                    // V2 format: cells + source metadata
-                    this.cells = new Map(parsed.cells);
-                    if (parsed.source) {
-                        this.sourceTable = parsed.source.table;
-                        this.sourceConnection = parsed.source.connection;
-                        this.sourceProvider = parsed.source.provider;
-                        this.columnNames = parsed.source.columns || [];
-                    }
-                }
-
-                // Restore notes
-                if (parsed.notes) {
-                    this.notes = new Map(parsed.notes);
-                }
+                this.loadState(parsed);
             }
         } catch (e) {
             console.error('Failed to load from localStorage:', e);

@@ -19,6 +19,7 @@ export interface Tab {
         versions?: Array<{ version: number; table: string; created_at: string; reason?: string }>
         currentVersion?: number
         originalTable?: string
+        engineState?: any
         [key: string]: any
     }
 }

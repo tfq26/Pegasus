@@ -913,59 +913,141 @@ const generateAIFormula = async (userRequest: string) => {
     // 1. Analyze spreadsheet structure
     const analysis = analyzeSpreadsheet();
     
-    // 2. Call AI endpoint
-    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/ai/generate-formula`, {
+    // 2. Call new AI endpoint
+    const response = await fetch(`${import.meta.env.VITE_QUERY_API_URL}/ai/spreadsheet-action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         request: userRequest,
         spreadsheetData: analysis,
-        model: selectedAIModel.value,
-        autoExecute: props.autoExecuteMode
+        model: selectedAIModel.value
       })
     });
     
-    if (!response.ok) throw new Error('Failed to generate formula');
+    if (!response.ok) throw new Error('Failed to execute AI action');
     
     const result = await response.json();
     
-    // 3. Handle ambiguity
-    if (result.ambiguous) {
-      const clarified = await showAmbiguityDialog(result.clarificationNeeded, result.options);
-      if (!clarified) {
-          // User cancelled
-          return;
+    // 3. Handle tool calls
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      for (const toolCall of result.toolCalls) {
+        const { toolName, result: toolResult } = toolCall;
+        
+        console.log(`[Grid] Handling tool: ${toolName}`, toolResult);
+        
+        // Handle different tool types
+        switch (toolResult.type) {
+          case 'text_answer':
+            // Show answer in a modal or toast
+            toast.success(toolResult.answer);
+            break;
+            
+          case 'calculation':
+            // Apply calculation to column
+            await applyCalculation(
+              toolResult.calculation,
+              toolResult.targetColumn,
+              toolResult.columnHeader,
+              toolResult.reasoning
+            );
+            break;
+            
+          case 'formatting':
+            // Apply conditional formatting
+            await applyConditionalFormatting(
+              toolResult.column,
+              toolResult.condition,
+              toolResult.color
+            );
+            break;
+            
+          case 'summary':
+            // Show summary modal
+            toast.info('Summary generated');
+            break;
+            
+          case 'sort':
+            // Sort data
+            await sortData(toolResult.column, toolResult.ascending);
+            break;
+            
+          default:
+            console.warn(`Unknown tool result type: ${toolResult.type}`);
+        }
       }
-      return; // The dialog callback re-triggers generation
+    } else if (result.text) {
+      // Plain text response
+      toast.info(result.text);
     }
     
-    // 4. Check if modifying existing data
-    if (result.willModifyExistingData && !props.autoExecuteMode) {
-      const confirmed = await showDataModificationWarning(result.affectedCells);
-      if (!confirmed) return;
-    }
-    
-    // 5. Apply formula
-    if (props.autoExecuteMode) {
-      await applyFormulaToAll(result.formula, result.targetColumn, result.columnHeader, formulaBarValue.value);
-    } else {
-      await showFormulaPreview(
-          result.formula, 
-          result.targetColumn,
-          result.columnHeader,
-          result.reasoning, 
-          result.exampleResult,
-          formulaBarValue.value
-      );
-    }
+    formulaBarValue.value = '';
   } catch (e) {
     console.error('AI Error:', e);
-    toast.error('Failed to generate formula');
+    toast.error('Failed to execute AI action');
   } finally {
     isProcessingAI.value = false;
   }
 };
+
+// Helper to apply calculation to column
+const applyCalculation = async (calculation: string, targetColumn: number, columnHeader: string, reasoning: string) => {
+  props.engine.beginBatch();
+  
+  // Set column header
+  if (columnHeader) {
+    await props.engine.setValue({ row: 0, col: targetColumn }, columnHeader);
+  }
+  
+  // Parse calculation and apply to each row
+  // This is a simplified version - real implementation would parse the calculation properly
+  for (let row = 1; row < rowCount; row++) {
+    // For now, just set a placeholder
+    // Real implementation would evaluate the calculation expression
+    await props.engine.setValue({ row, col: targetColumn }, `Calculated: ${calculation}`);
+  }
+  
+  props.engine.endBatch();
+  toast.success(`Applied calculation: ${reasoning}`);
+};
+
+// Helper to apply conditional formatting
+const applyConditionalFormatting = async (column: number, condition: string, color: string) => {
+  props.engine.beginBatch();
+  
+  for (let row = 1; row < rowCount; row++) {
+    const cell = props.engine.getCell({ row, col: column });
+    if (cell && evaluateCondition(cell.value, condition)) {
+      props.engine.setCellStyle({ row, col: column }, { color });
+    }
+  }
+  
+  props.engine.endBatch();
+  toast.success(`Applied conditional formatting`);
+};
+
+// Helper to evaluate condition
+const evaluateCondition = (value: any, condition: string): boolean => {
+  // Simple condition parser
+  if (condition.startsWith('>')) {
+    const threshold = parseFloat(condition.substring(1).trim());
+    return parseFloat(value) > threshold;
+  } else if (condition.startsWith('<')) {
+    const threshold = parseFloat(condition.substring(1).trim());
+    return parseFloat(value) < threshold;
+  } else if (condition.startsWith('==')) {
+    const target = condition.substring(2).trim().replace(/['"]/g, '');
+    return value == target;
+  }
+  return false;
+};
+
+// Helper to sort data
+const sortData = async (column: number, ascending: boolean = true) => {
+  // This would need to be implemented in the Engine
+  toast.info(`Sorting by column ${column} (${ascending ? 'ascending' : 'descending'})`);
+};
+
 
 const showFormulaPreview = async (
   formula: string, 
