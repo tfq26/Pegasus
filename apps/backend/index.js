@@ -1610,3 +1610,6 @@ async function createTableAndInsertData(tableName, rows) {
     await db.insert(tableName, safeChunk);
   }
 }
+
+// Export for Vercel
+export default app;
