@@ -391,15 +391,24 @@ const handleVisualize = async () => {
                         const val = r[valueColumn]
                         return typeof val === 'number' ? val : parseFloat(val) || 0
                     }),
-                    backgroundColor: 'hsl(220, 70%, 50%)',
-                    borderWidth: 1
+                    backgroundColor: [
+                        'hsl(258, 45%, 65%)',
+                        'hsl(195, 40%, 60%)',
+                        'hsl(155, 30%, 55%)',
+                        'hsl(30, 30%, 60%)',
+                        'hsl(350, 30%, 65%)',
+                        'hsl(180, 25%, 50%)',
+                        'hsl(280, 25%, 60%)',
+                        'hsl(215, 15%, 50%)'
+                    ],
+                    borderWidth: 0
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: true }
+                    legend: { display: true, position: 'bottom' }
                 }
             }
         }

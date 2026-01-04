@@ -27,16 +27,16 @@ interface ChartConfig {
     }
 }
 
-// Color palette for charts
+// Color palette for charts (Muted slate-like palette)
 const CHART_COLORS = [
-    'hsl(258, 90%, 66%)',  // Violet
-    'hsl(200, 90%, 60%)',  // Blue
-    'hsl(150, 80%, 50%)',  // Green
-    'hsl(40, 95%, 55%)',   // Yellow/Orange
-    'hsl(350, 85%, 60%)',  // Red/Pink
-    'hsl(180, 70%, 50%)',  // Teal
-    'hsl(280, 70%, 60%)',  // Purple
-    'hsl(30, 90%, 55%)',   // Orange
+    '#9e829c', // User Muted Purple
+    '#3a3e3b', // User Slate Gray
+    '#291528', // User Deep Purple
+    'hsl(258, 45%, 65%)',  // Pegasus Purple (Muted)
+    'hsl(195, 40%, 60%)',  // Slate Blue
+    'hsl(180, 25%, 50%)',  // Slate Teal
+    'hsl(280, 25%, 60%)',  // Muted Lavender
+    'hsl(215, 15%, 50%)',  // Deep Slate
 ]
 
 /**
@@ -137,14 +137,14 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
                     datasets: [{
                         label: 'Value',
                         data: values,
-                        backgroundColor: CHART_COLORS[0],
+                        backgroundColor: CHART_COLORS, // Use full palette for multi-color bar
                         borderWidth: 0
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    plugins: { legend: { display: false } }
+                    plugins: { legend: { display: false, position: 'bottom' } }
                 }
             }
         }
@@ -186,14 +186,14 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
                         datasets: [{
                             label: 'Count',
                             data: values,
-                            backgroundColor: labels.length <= 8 ? CHART_COLORS.slice(0, labels.length) : CHART_COLORS[0],
+                            backgroundColor: labels.length <= CHART_COLORS.length ? CHART_COLORS.slice(0, labels.length) : CHART_COLORS,
                             borderWidth: 0
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: true,
-                        plugins: { legend: { display: labels.length <= 8 } }
+                        plugins: { legend: { display: labels.length <= CHART_COLORS.length, position: 'bottom' } }
                     }
                 }
             }
@@ -226,10 +226,10 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
             const val = row[col]
             return typeof val === 'number' ? val : parseFloat(val) || 0
         }),
-        backgroundColor: chartType === 'pie' || chartType === 'bar'
-            ? (chartType === 'pie' ? CHART_COLORS.slice(0, data.length) : CHART_COLORS[idx])
-            : undefined,
-        borderColor: chartType === 'line' ? CHART_COLORS[idx] : undefined,
+        backgroundColor: chartType === 'pie' || (chartType === 'bar' && numericColumns.length === 1)
+            ? CHART_COLORS.slice(0, Math.min(data.length, CHART_COLORS.length))
+            : CHART_COLORS[idx % CHART_COLORS.length],
+        borderColor: chartType === 'line' ? CHART_COLORS[idx % CHART_COLORS.length] : undefined,
         borderWidth: chartType === 'bar' ? 0 : (chartType === 'line' ? 2 : undefined),
         tension: chartType === 'line' ? 0.4 : undefined,
         fill: chartType === 'line' ? false : undefined
@@ -267,7 +267,10 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
                 responsive: true,
                 maintainAspectRatio: true,
                 plugins: {
-                    legend: { display: numericColumns.length > 1 || chartType === 'pie' }
+                    legend: {
+                        display: numericColumns.length > 1 || chartType === 'pie',
+                        position: 'bottom'
+                    }
                 }
             }
         }

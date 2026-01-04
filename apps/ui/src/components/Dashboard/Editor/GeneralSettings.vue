@@ -11,8 +11,8 @@
       />
     </div>
 
-    <!-- Description (Stats only) -->
-    <div v-if="localConfig.type === 'stat'" class="space-y-2">
+    <!-- Description -->
+    <div class="space-y-2">
       <label class="text-sm font-medium">Description</label>
       <textarea 
         v-model="description"
@@ -22,7 +22,7 @@
         class="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       />
       <p class="text-xs text-muted-foreground">
-        This description will appear below the statistic value
+        This description will appear below the title on the dashboard card
       </p>
     </div>
 
@@ -35,6 +35,7 @@
         class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
         <option value="bar">Bar Chart</option>
+        <option value="horizontalBar">Horizontal Bar</option>
         <option value="line">Line Chart</option>
         <option value="pie">Pie Chart</option>
         <option value="doughnut">Doughnut Chart</option>

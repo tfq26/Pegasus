@@ -312,7 +312,7 @@ export async function fetchSharedDashboards() {
 }
 
 export async function createDashboard(title: string, data: any) {
-  return api.post('/dashboards', { title, data })
+  return api.post<{ id: string }>('/dashboards', { title, data })
 }
 
 export async function fetchDashboard(id: string) {

@@ -30,6 +30,7 @@
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="bar">Bar Chart</SelectItem>
+              <SelectItem value="horizontalBar">Horizontal Bar</SelectItem>
               <SelectItem value="line">Line Chart</SelectItem>
               <SelectItem value="area">Area Chart</SelectItem>
               <SelectItem value="pie">Pie Chart</SelectItem>
@@ -133,6 +134,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import ChartRenderer from './ChartRenderer.vue'
 import { recommendVisualization } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
+
+const MUTED_COLORS = [
+    '#9e829c',
+    '#3a3e3b',
+    '#291528',
+    'hsl(258, 45%, 65%)',
+    'hsl(195, 40%, 60%)',
+    'hsl(155, 30%, 55%)',
+    'hsl(30, 30%, 60%)',
+    'hsl(350, 30%, 65%)',
+    'hsl(180, 25%, 50%)',
+    'hsl(280, 25%, 60%)',
+    'hsl(215, 15%, 50%)',
+]
 
 const props = defineProps<{
   open: boolean
@@ -351,15 +366,15 @@ const applyChartType = (newType: string) => {
                   datasets: [{
                       label: statLabel,
                       data: [statValue],
-                      backgroundColor: 'hsl(220, 70%, 50%)',
-                      borderColor: 'hsl(220, 70%, 50%)',
+                      backgroundColor: MUTED_COLORS[0],
+                      borderColor: MUTED_COLORS[0],
                       borderWidth: 1
                   }]
               },
               options: {
                   responsive: true,
                   plugins: {
-                      legend: { display: false }
+                      legend: { display: false, position: 'bottom' }
                   }
               }
           }
@@ -407,31 +422,41 @@ const convertToChartType = (newType: string) => {
       // Generate colors for each segment (label)
       const labelsCount = newConfig.config.data.labels?.length || 0
       dataset.backgroundColor = Array.from({ length: labelsCount }).map((_, i) => 
-        `hsl(${i * (360 / labelsCount)}, 70%, 50%)`
+        MUTED_COLORS[i % MUTED_COLORS.length]
       )
+
+      if (!newConfig.config.options.plugins) newConfig.config.options.plugins = {}
+      newConfig.config.options.plugins.legend = { display: true, position: 'bottom' }
       
       // Pie charts shouldn't have border color matching line charts usually
       delete dataset.borderColor
       delete dataset.tension
       delete dataset.fill
     }
-  } else if (newType === 'bar') {
+  } else if (newType === 'bar' || newType === 'horizontalBar') {
+      newConfig.type = 'bar'
       if (newConfig.config.data?.datasets) {
           newConfig.config.data.datasets.forEach((ds: any, i: number) => {
-              ds.backgroundColor = `hsl(${i * 60}, 70%, 50%)`
+              ds.backgroundColor = MUTED_COLORS[i % MUTED_COLORS.length]
               delete ds.fill
               delete ds.tension
           })
       }
+      if (!newConfig.config.options) newConfig.config.options = {}
+      newConfig.config.options.indexAxis = newType === 'horizontalBar' ? 'y' : 'x'
+      if (!newConfig.config.options.plugins) newConfig.config.options.plugins = {}
+      newConfig.config.options.plugins.legend = { display: true, position: 'bottom' }
   } else if (newType === 'line') {
        if (newConfig.config.data?.datasets) {
           newConfig.config.data.datasets.forEach((ds: any, i: number) => {
-              ds.borderColor = `hsl(${i * 60}, 70%, 50%)`
-              ds.backgroundColor = `hsl(${i * 60}, 70%, 50%, 0.1)` // Transparent fill
+              ds.borderColor = MUTED_COLORS[i % MUTED_COLORS.length]
+              ds.backgroundColor = MUTED_COLORS[i % MUTED_COLORS.length].replace('%)', '%, 0.1)') // Transparent fill
               ds.tension = 0.4
               delete ds.fill
           })
       }
+      if (!newConfig.config.options.plugins) newConfig.config.options.plugins = {}
+      newConfig.config.options.plugins.legend = { display: true, position: 'bottom' }
   }
   
   return newConfig
@@ -445,14 +470,16 @@ const updateChartColumns = (columns: string[]) => {
   
   // Get the first non-numeric column as labels (category)
   const firstRow = props.results[0]
+  if (!firstRow) return null
   const allColumns = Object.keys(firstRow)
-  const categoryColumn = allColumns.find(col => 
-    typeof firstRow[col] === 'string' && !columns.includes(col)
-  ) || allColumns[0]
+  const categoryColumn = allColumns.find(col => {
+    const val = firstRow ? firstRow[col] : undefined
+    return typeof val === 'string' && !columns.includes(col)
+  }) || allColumns[0]
   
   // Filter to only numeric columns from the requested columns
   const numericColumns = columns.filter(col => {
-    const val = firstRow[col]
+    const val = firstRow ? firstRow[col] : undefined
     return typeof val === 'number' || (typeof val === 'string' && !isNaN(parseFloat(val)))
   })
   
@@ -465,11 +492,15 @@ const updateChartColumns = (columns: string[]) => {
   newConfig.config.datasets = numericColumns.map((col, idx) => ({
     label: col,
     data: props.results.map(r => typeof r[col] === 'number' ? r[col] : parseFloat(r[col])),
-    backgroundColor: newConfig.type === 'bar' ? `hsl(${idx * 60}, 70%, 50%)` : undefined,
-    borderColor: newConfig.type === 'line' ? `hsl(${idx * 60}, 70%, 50%)` : undefined,
+    backgroundColor: newConfig.type === 'bar' ? MUTED_COLORS[idx % MUTED_COLORS.length] : undefined,
+    borderColor: newConfig.type === 'line' ? MUTED_COLORS[idx % MUTED_COLORS.length] : undefined,
     borderWidth: newConfig.type === 'bar' ? 1 : undefined,
     tension: newConfig.type === 'line' ? 0.4 : undefined
   }))
+  
+  if (!newConfig.config.options) newConfig.config.options = {}
+  if (!newConfig.config.options.plugins) newConfig.config.options.plugins = {}
+  newConfig.config.options.plugins.legend = { display: true, position: 'bottom' }
   
   newConfig.title = `${numericColumns.join(' vs ')} by ${categoryColumn}`
   

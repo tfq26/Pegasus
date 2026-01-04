@@ -7,7 +7,8 @@ import {
     updateDashboard,
     deleteDashboard,
     shareDashboard,
-    QUERY_API_URL
+    QUERY_API_URL,
+    api
 } from '@/lib/api'
 
 export interface DashboardElement {
@@ -284,18 +285,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
         })
 
         try {
-            const response = await fetch(`${QUERY_API_URL}/api/query-by-id`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    connectionId: element.connectionId,
-                    query: query
-                })
+            const body = await api.post<any>('/api/query-by-id', {
+                connectionId: element.connectionId,
+                query: query
             })
-
-            if (!response.ok) throw new Error('Query failed')
-            const body = await response.json()
 
             // Update element data in current dashboard
             const elementIndex = currentDashboard.value.data.elements.findIndex(el => el.id === elementId)

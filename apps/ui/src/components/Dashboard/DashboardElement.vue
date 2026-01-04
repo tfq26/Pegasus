@@ -15,7 +15,7 @@
                     <TooltipTrigger as-child>
                       <div class="flex-1 min-w-0">
                         <h3 class="card-title text-foreground font-semibold text-sm truncate">{{ element?.title || 'Untitled' }}</h3>
-                        <p class="card-subtitle text-xs text-muted-foreground truncate">{{ element?.query }}</p>
+                        <p class="card-subtitle text-xs text-muted-foreground truncate">{{ element?.customization?.description || element?.query }}</p>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>

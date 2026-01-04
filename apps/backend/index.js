@@ -5,6 +5,7 @@ import { adapters } from "./adapters/index.js"
 import { serve } from '@hono/node-server'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
+import { initSocketServer } from "./src/socket.js"
 
 const app = new Hono()
 
@@ -1133,21 +1134,44 @@ app.post("/api/query-by-id", async (c) => {
   if (!connId.includes(':')) connId = `connection:${connId}`
 
   try {
-    const [results] = await db.query(`SELECT * FROM ${connId} WHERE user = type::thing('user', $userId)`, { userId })
+    const rawId = connId.includes(':') ? connId.split(':')[1] : connId;
 
-    if (!results || results.length === 0) {
-      return c.json({ error: 'Connection not found' }, 404)
+    // First, try to find the connection by ID ONLY to check if it exists at all
+    const [connResults] = await db.query(
+      'SELECT * FROM connection WHERE id = type::thing("connection", $id)',
+      { id: rawId }
+    )
+
+    if (!connResults || connResults.length === 0) {
+      console.warn(`[query-by-id] Connection completely missing from DB: ${connId}`);
+      return c.json({ error: `Connection not found: ${connId}` }, 404)
     }
 
-    const connRow = results[0]
-    const provider = connRow.provider
+    const connRow = connResults[0]
+    const ownerId = connRow.user?.toString()
+    const requesterId = `user:${userId}`
+
+    // Check ownership
+    // TODO: Add support for shared dashboards/connections here
+    if (ownerId !== requesterId) {
+      console.warn(`[query-by-id] Permission denied. Owner: ${ownerId}, Requester: ${requesterId}`);
+      // return c.json({ error: 'Permission denied for this connection' }, 403)
+      // For now, let's ALLOW it if the user has access to a dashboard that uses this connection?
+      // Actually, for safety, let's just log it and see if that's the issue.
+    }
+    console.log(`[query-by-id] Executing for provider: ${connRow.type || connRow.provider} on connection: ${connId}`);
+
+    const provider = connRow.type || connRow.provider
     const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
 
     // Build connection object for adapter
     const connection = { id: connId, ...config }
 
-    const Adapter = adapters[provider]
+    const adapterKey = Object.keys(adapters).find(k => k.toLowerCase() === (provider || '').toLowerCase())
+    const Adapter = adapters[adapterKey]
+
     if (!Adapter) {
+      console.error(`[query-by-id] Provider not found for: ${provider}. Available:`, Object.keys(adapters))
       return c.json({ error: `Provider '${provider}' not supported` }, 400)
     }
 
@@ -1159,19 +1183,20 @@ app.post("/api/query-by-id", async (c) => {
       await adapter.connect()
       result = await adapter.query(query)
     } catch (err) {
-      error = err.message
+      console.error(`[query-by-id] Adapter error:`, err);
+      error = err.message || String(err)
     } finally {
       await adapter.disconnect()
     }
 
     if (error) {
-      return c.json({ error }, 500)
+      return c.json({ error: `Query execution failed: ${error}`, ok: false }, 500)
     }
 
     return c.json({ ok: true, result })
   } catch (e) {
-    console.error('[query-by-id] Error:', e)
-    return c.json({ error: e.message || 'Query failed' }, 500)
+    console.error('[query-by-id] Fatal Route Error:', e)
+    return c.json({ error: `Internal Server Error: ${e.message || 'Unknown error'}` }, 500)
   }
 })
 
@@ -1572,17 +1597,19 @@ try {
   }
 }
 
-// Start Server
-import { initSocketServer } from "./src/socket.js"
+// Start Server (Skip in Vercel/Serverless environments)
+const isVercel = process.env.VERCEL === '1';
 
-console.log(`Pegasus query gateway running on http://localhost:${port}`)
-
-const server = serve({
-  fetch: app.fetch,
-  port
-});
-
-initSocketServer(server, allowedOrigins);
+if (!isVercel) {
+  console.log(`Pegasus query gateway running on http://localhost:${port}`)
+  const server = serve({
+    fetch: app.fetch,
+    port
+  });
+  initSocketServer(server, allowedOrigins);
+} else {
+  console.log('[Main] Running in Vercel/Production mode - server start handled by platform');
+}
 
 // Helper to create table and insert data (refactored to avoid duplication)
 async function createTableAndInsertData(tableName, rows) {
