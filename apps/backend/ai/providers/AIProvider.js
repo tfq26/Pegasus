@@ -38,6 +38,7 @@ export class AIProvider {
 
         const history = (context.previousContext || [])
             .filter(msg => msg.content)
+            .slice(-10) // LAZY HISTORY: Only keep last 10 messages (approx 5 turns)
             .map(msg => ({
                 role: msg.role === 'user' ? 'user' : 'assistant',
                 content: msg.content

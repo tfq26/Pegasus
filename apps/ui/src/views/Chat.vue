@@ -43,6 +43,8 @@
           :ai-mode="aiMode"
           :auto-execute="autoExecute"
           :private-mode="privateMode"
+          :live-mode="liveMode"
+          :collaborator-count="collaboratorCount"
           :can-undo="canUndo"
           :can-redo="canRedo"
           :query-history="queryHistory"
@@ -62,6 +64,8 @@
           @load-table-to-sheet="() => handleLoadTableToSheet(Array.isArray(queryResult) ? queryResult : [])"
           @export="handleExport"
           @update:private-mode="privateMode = $event"
+          @update:live-mode="handleUpdateLiveMode"
+          @share="shareDialogOpen = true"
           @merge="handleMergeRequest"
           @refresh-table="handleRefreshTable"
           @undo="handleUndo"
@@ -96,9 +100,9 @@
 
       <!-- Results Panel -->
       <ResultsPanel
-        v-if="mode !== 'spreadsheet'"
         :visible="resultsPanelVisible"
         :position="resultsPanelPosition"
+        :locked-position="mode === 'spreadsheet'"
         :result="queryResult"
         :error="queryError"
         :last-query="lastQuery"
@@ -168,6 +172,13 @@
         @move="handleMigrate"
         @discard="handleDiscard"
       />
+
+      <!-- Share Dialog -->
+      <ShareDialog
+        v-model:open="shareDialogOpen"
+        :spreadsheet-id="activeTableName"
+        resource-type="spreadsheet"
+      />
     </div>
   </div>
 </template>
@@ -206,6 +217,8 @@ import { QUERY_API_URL, fetchQueries, fetchSettings, getAIModels, analyzeResults
 import { generateKey, decryptData } from '@/lib/crypto'
 import { db } from '@/lib/local-db'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
+import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration'
+import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
 
 // Stores
 const workspaceStore = useWorkspaceStore()
@@ -217,9 +230,9 @@ const connections = ref<ConnectionEntry[]>([])
 const selectedConnection = ref<ConnectionEntry | null>(null)
 const selectedConnectionId = ref<string>('')
 
-watch(() => connectionStore.connections, (val) => { connections.value = val }, { immediate: true })
-watch(() => connectionStore.selectedConnection, (val) => { selectedConnection.value = val }, { immediate: true })
-watch(() => connectionStore.selectedConnectionId, (val) => { selectedConnectionId.value = val }, { immediate: true })
+watch(() => connectionStore.connections, (val) => { connections.value = val as any }, { immediate: true })
+watch(() => connectionStore.selectedConnection, (val) => { selectedConnection.value = val as any }, { immediate: true })
+watch(() => connectionStore.selectedConnectionId, (val) => { selectedConnectionId.value = val as any }, { immediate: true })
 
 const loadConnections = () => connectionStore.loadConnections()
 const _selectConnection = (id: string) => connectionStore.selectConnection(id)
@@ -277,6 +290,7 @@ const {
   dashboardPreviewConfig,
   sanitizeDialogVisible,
   sanitizeTable,
+  openDashboardPreview,
 } = useChatDialogs()
 
 // Local State
@@ -297,6 +311,31 @@ const queryOptions = ref({ limit: 1000, timeout: 30000, autoCommit: true })
 const encryptionKey = ref<any>('') 
 const availableModels = ref<any[]>([])
 const settings = ref<any>(null)
+
+// Collaboration state
+const liveMode = ref(false)
+const shareDialogOpen = ref(false)
+const activeTableName = computed(() => {
+    const tab = (workspaceStore.activeTab as any)?.value ?? workspaceStore.activeTab
+    return tab?.type === 'table' ? tab.tableName : null
+})
+
+const {
+    collaborators,
+    collaboratorCount,
+    broadcastCellFocus,
+    broadcastCellEdit,
+    incomingCellEdit
+} = useSpreadsheetCollaboration(activeTableName, liveMode)
+
+const handleUpdateLiveMode = (val: boolean) => {
+    liveMode.value = val
+    if (val) {
+        toast.info('Live mode enabled. Other collaborators can now join.')
+    } else {
+        toast.info('Live mode disabled.')
+    }
+}
 const queryHistory = ref<any[]>([])
 
 // --- Composable Logic Integration ---
@@ -305,7 +344,6 @@ const queryHistory = ref<any[]>([])
 // Toolbar
 const {
     handleExport,
-    handleVisualize,
     handleFormat,
     handleUndo,
     handleRedo,
@@ -313,6 +351,62 @@ const {
     handleTranslate: translateAction,
     handleExplain: explainAction
 } = useChatToolbar(workspaceRef, selectedConnection)
+
+// Override handleVisualize to properly open the visualization dialog
+const handleVisualize = async () => {
+    // Get data from the current spreadsheet
+    const engine = workspaceRef.value?.getEngineForTab?.(workspaceRef.value?.activeTabId)
+    if (!engine) {
+        toast.error('No spreadsheet data available', { description: 'Open a spreadsheet tab first' })
+        return
+    }
+    
+    const data = engine.getDataAsObjects?.() as Record<string, any>[] | undefined
+    if (!data || data.length === 0) {
+        toast.error('Spreadsheet is empty', { description: 'Add some data first' })
+        return
+    }
+    
+    // Generate a simple default visualization config
+    const firstRow = data[0]!
+    const columns = Object.keys(firstRow)
+    const numericColumns = columns.filter((col: string) => 
+        data.some((row: Record<string, any>) => typeof row[col] === 'number' || !isNaN(parseFloat(row[col])))
+    )
+    const categoryColumn = columns.find((col: string) => 
+        data.some((row: Record<string, any>) => typeof row[col] === 'string' && isNaN(parseFloat(row[col])))
+    ) || columns[0] || 'Category'
+    
+    const valueColumn = numericColumns[0] || columns[1] || columns[0] || 'Value'
+    
+    const config = {
+        type: 'bar',
+        title: `${valueColumn} by ${categoryColumn}`,
+        config: {
+            data: {
+                labels: data.slice(0, 50).map((r: Record<string, any>) => String(r[categoryColumn] || '')),
+                datasets: [{
+                    label: valueColumn,
+                    data: data.slice(0, 50).map((r: Record<string, any>) => {
+                        const val = r[valueColumn]
+                        return typeof val === 'number' ? val : parseFloat(val) || 0
+                    }),
+                    backgroundColor: 'hsl(220, 70%, 50%)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true }
+                }
+            }
+        }
+    }
+    
+    openDashboardPreview(config)
+}
 
 const canUndo = computed(() => workspaceRef.value?.canUndo ?? false)
 const canRedo = computed(() => workspaceRef.value?.canRedo ?? false)
@@ -493,7 +587,7 @@ const handleUpdateInput = (val: string) => {
 
 const loadQueries = async () => {
     try {
-        queryHistory.value = await fetchQueries()
+        queryHistory.value = await fetchQueries() as any[]
     } catch (e) {
         console.error('Failed to load queries', e)
     }
@@ -655,6 +749,41 @@ const handleResolveAmbiguity = (choice: string) => {
 watch([queryResult, queryError], () => {
     if (queryResult.value || queryError.value) resultsPanelVisible.value = true
 })
+
+// Force results panel to the right when in spreadsheet mode
+watch(mode, (newMode) => {
+    if (newMode === 'spreadsheet') {
+        resultsPanelPosition.value = 'right'
+    }
+}, { immediate: true })
+
+// Sync mode with active tab type for reactive toolbar updates
+watch(
+    () => {
+        // Access the underlying value from the computed ref
+        const tab = (workspaceStore.activeTab as any)?.value ?? workspaceStore.activeTab
+        return tab ? { type: tab.type, id: tab.id } : null
+    },
+    (activeTabInfo) => {
+        if (!activeTabInfo) return
+        
+        // Map tab type to mode
+        if (activeTabInfo.type === 'table' || activeTabInfo.type === 'spreadsheet') {
+            if (mode.value !== 'spreadsheet') {
+                mode.value = 'spreadsheet'
+            }
+        } else if (activeTabInfo.type === 'query') {
+            if (mode.value !== 'write') {
+                mode.value = 'write'
+            }
+        } else if (activeTabInfo.type === 'chat') {
+            if (mode.value !== 'chat') {
+                mode.value = 'chat'
+            }
+        }
+    },
+    { immediate: true }
+)
 
 onMounted(async () => {
     setTimeout(async () => { await connectionStore.loadConnections() }, 0)

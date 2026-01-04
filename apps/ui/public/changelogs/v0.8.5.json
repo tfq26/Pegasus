@@ -1,0 +1,69 @@
+{
+    "title": "v0.8.5 - Spreadsheet Collaboration",
+    "date": "2026-01-04",
+    "version": "0.8.5",
+    "description": "This release introduces full real-time collaboration for spreadsheets, complete with presence indicators, edit synchronization, and an enhanced sharing system for teams.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Real-time Collaboration",
+                    "description": "Socket-based collaboration system allowing multiple users to work on the same spreadsheet simultaneously.",
+                    "details": [
+                        "Presence Tracking: Colored cursors and name tags show exactly where other collaborators are working.",
+                        "Live Edit Sync: Edits are instantly broadcasted to all collaborators as they happen.",
+                        "Room Management: Automatic joining and leaving of spreadsheet 'rooms' based on tab activity.",
+                        "Live Mode Toggle: Opt-in for real-time collaboration with a single click in the toolbar."
+                    ]
+                },
+                {
+                    "title": "Unified Sharing System",
+                    "description": "A completely refactored sharing system that works consistently across dashboards and spreadsheets.",
+                    "details": [
+                        "Context-Sensitive Access: Define 'Collaboration' or 'View Only' levels for spreadsheet invites.",
+                        "Public Sharing: Dashboards retain the ability to generate public view links.",
+                        "Centralized Management: Revoke access or update permissions from a single generic Share Dialog."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Engine & Eventing Overhaul",
+                    "description": "Upgraded the spreadsheet engine to support robust real-time synchronization.",
+                    "details": [
+                        "Source Tracking: Distinguishes between local and remote edits to prevent synchronization loops.",
+                        "Unified Broadcasting: All local changes (paste, delete, AI tools) are now correctly broadcasted.",
+                        "Optimized Presence Render: Presence indicators are now more reactive and sync directly with the engine's internal state map."
+                    ]
+                },
+                {
+                    "title": "In-Depth Analysis UI",
+                    "description": "Polished the analysis visualization experience.",
+                    "details": [
+                        "Markdown Rendering: Analysis reports now use rich formatting, including bold text, bullet points, and headers.",
+                        "Improved Spacing: Better vertical rhythm and padding for longer reports.",
+                        "Action Bar Refined: Reorganized buttons in the report footer for faster navigation."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "Database Provider Resolution",
+                    "description": "Resolved a critical issue where certain database providers were not correctly identified in chat sessions.",
+                    "details": [
+                        "Implemented case-insensitive provider lookup.",
+                        "Added fallback logic to derive providers from connection configuration keys."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

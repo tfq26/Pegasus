@@ -158,6 +158,78 @@ export function initSocketServer(server, allowedOrigins) {
         socket.on("disconnect", () => {
             console.log(`[Socket.io] User disconnected: ${socket.user.email}`);
         });
+
+        // ========================================
+        // SPREADSHEET COLLABORATION EVENTS
+        // ========================================
+
+        socket.on("join_spreadsheet", async (spreadsheetId) => {
+            const room = `spreadsheet:${spreadsheetId}`;
+            socket.join(room);
+            console.log(`[Socket.io] User ${socket.user.email} joined ${room}`);
+
+            // Broadcast presence to others in the room
+            socket.to(room).emit("spreadsheet_user_joined", {
+                user: socket.user,
+                socketId: socket.id
+            });
+
+            // Send list of current users in room to the new user
+            const sockets = await io.in(room).fetchSockets();
+            const users = sockets.map(s => ({
+                user: s.user,
+                socketId: s.id,
+                activeCell: s.activeCell || null
+            }));
+            socket.emit("spreadsheet_current_users", users);
+        });
+
+        socket.on("leave_spreadsheet", (spreadsheetId) => {
+            const room = `spreadsheet:${spreadsheetId}`;
+            socket.leave(room);
+            console.log(`[Socket.io] User ${socket.user.email} left ${room}`);
+            socket.to(room).emit("spreadsheet_user_left", { socketId: socket.id });
+        });
+
+        socket.on("cell_focus", (data) => {
+            // data: { spreadsheetId, row, col }
+            const room = `spreadsheet:${data.spreadsheetId}`;
+            socket.activeCell = { row: data.row, col: data.col };
+
+            socket.to(room).emit("cell_focus_update", {
+                socketId: socket.id,
+                user: socket.user,
+                row: data.row,
+                col: data.col
+            });
+        });
+
+        socket.on("cell_edit", (data) => {
+            // data: { spreadsheetId, row, col, value }
+            const room = `spreadsheet:${data.spreadsheetId}`;
+
+            socket.to(room).emit("cell_edit_update", {
+                socketId: socket.id,
+                user: socket.user,
+                row: data.row,
+                col: data.col,
+                value: data.value
+            });
+        });
+
+        socket.on("kick_all_collaborators", (spreadsheetId) => {
+            const room = `spreadsheet:${spreadsheetId}`;
+            console.log(`[Socket.io] Kicking all collaborators from ${room} (Private Mode)`);
+
+            // Emit kick event to all in room except sender
+            socket.to(room).emit("spreadsheet_kicked", {
+                reason: "Owner switched to Private Mode",
+                by: socket.user
+            });
+
+            // Force all sockets in room to leave
+            io.in(room).socketsLeave(room);
+        });
     });
 
     return io;

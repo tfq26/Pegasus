@@ -16,7 +16,8 @@ import {
   Undo2,
   Redo2,
   Search,
-  RefreshCw
+  RefreshCw,
+  Share2
 } from 'lucide-vue-next'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -29,6 +30,8 @@ import {
 const props = defineProps<{
   aiMode: boolean
   privateMode: boolean
+  liveMode: boolean  // NEW: Collaboration enabled
+  collaboratorCount?: number  // NEW: Number of active collaborators
   saveStatus?: 'saved' | 'saving' | 'error'
   canUndo?: boolean
   canRedo?: boolean
@@ -40,6 +43,8 @@ const emit = defineEmits<{
   'visualize': []
   'sanitize': []
   'update:private-mode': [value: boolean]
+  'update:live-mode': [value: boolean]  // NEW
+  'share': []  // NEW
   'merge': []
   'export': [format: 'csv' | 'xlsx']
   'refresh-table': []
@@ -169,6 +174,7 @@ const emit = defineEmits<{
 
     <!-- Data Actions -->
     <div class="flex items-center gap-2">
+        <!-- Visualize Button - Hidden pending design review
         <button
             @click="emit('visualize')"
             class="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
@@ -177,6 +183,7 @@ const emit = defineEmits<{
             <BarChart class="w-3.5 h-3.5" />
             <span class="hidden md:inline">Visualize</span>
         </button>
+        -->
 
         <button
             @click="emit('sanitize')"
@@ -190,30 +197,49 @@ const emit = defineEmits<{
 
     <div class="flex-1"></div>
 
-    <!-- Right Side Controls -->
-    
-    <!-- Private Mode Toggle -->
+    <!-- Live/Private Mode Toggle -->
     <div class="flex items-center gap-1 border-r border-border pr-3 mr-2">
         <div class="flex items-center gap-2">
             <Switch
-                :checked="privateMode"
-                @update:checked="emit('update:private-mode', $event)"
-                id="private-mode-toggle"
-                class="data-[state=checked]:bg-amber-500"
+                :checked="liveMode"
+                @update:checked="emit('update:live-mode', $event)"
+                id="live-mode-toggle"
+                class="data-[state=checked]:bg-green-500"
             />
             <label 
-                for="private-mode-toggle" 
+                for="live-mode-toggle" 
                 class="flex items-center gap-1.5 text-xs font-medium cursor-pointer select-none"
-                    :class="privateMode ? 'text-amber-600' : 'text-muted-foreground'"
+                :class="liveMode ? 'text-green-600' : 'text-muted-foreground'"
             >
-                <Lock v-if="privateMode" class="w-3.5 h-3.5" />
-                <Users v-else class="w-3.5 h-3.5" />
-                <span class="hidden md:inline">{{ privateMode ? 'Private' : 'Live' }}</span>
+                <Users v-if="liveMode" class="w-3.5 h-3.5" />
+                <Lock v-else class="w-3.5 h-3.5" />
+                <span class="hidden md:inline">{{ liveMode ? 'Live' : 'Private' }}</span>
+                <span v-if="liveMode && collaboratorCount" class="px-1.5 py-0.5 bg-green-500/20 text-green-600 rounded-full text-[10px] font-bold">
+                  {{ collaboratorCount }}
+                </span>
             </label>
         </div>
     </div>
 
-    <!-- Merge Button (Private Mode Only) -->
+    <!-- Share Button -->
+    <div class="flex items-center gap-1 border-r border-border pr-3 mr-2">
+        <TooltipProvider>
+            <Tooltip>
+                <TooltipTrigger as-child>
+                    <button 
+                        class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
+                        @click="emit('share')"
+                    >
+                        <Share2 class="w-3.5 h-3.5" />
+                        <span class="hidden md:inline text-xs">Share</span>
+                    </button>
+                </TooltipTrigger>
+                <TooltipContent>Share Spreadsheet</TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
+    </div>
+
+    <!-- Merge Button (Private Mode Only) - For version control, currently disabled
         <div v-if="privateMode" class="flex items-center gap-1 border-r border-border pr-3 mr-2">
             <button
             class="h-7 px-3 rounded flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors text-xs font-semibold"
@@ -224,6 +250,7 @@ const emit = defineEmits<{
             <span class="hidden md:inline">Merge</span>
             </button>
     </div>
+    -->
 
     <!-- Export Buttons -->
     <div class="flex items-center gap-1 border-r border-border pr-3 mr-2">

@@ -10,32 +10,190 @@ export class SpreadsheetToolService {
 
     initializeTools() {
         // ============================================
+        // DATABASE TOOLS (Query Mode)
+        // ============================================
+
+        this.registerTool({
+            name: "get_table_schema",
+            description: "Fetch the detailed schema (columns and types) for a specific table when needed for JOINs or context",
+            category: "database",
+            parameters: {
+                type: "object",
+                properties: {
+                    tableName: {
+                        type: "string",
+                        description: "Name of the table to fetch schema for"
+                    }
+                },
+                required: ["tableName"]
+            },
+            handler: async ({ tableName }, context) => {
+                let columns = context?.schemaInfo?.detailedSchema?.[tableName];
+
+                // Lazy fetch if not in initial context
+                if (!columns && context?.adapter) {
+                    console.log(`[SpreadsheetToolService] Lazy fetching schema for ${tableName}`);
+                    if (typeof context.adapter.getOneTableSchema === 'function') {
+                        columns = await context.adapter.getOneTableSchema(tableName);
+                    }
+                }
+
+                return {
+                    type: "schema_result",
+                    tableName,
+                    columns: columns || [],
+                    note: "Table structure fetched successfully"
+                };
+            }
+        });
+
+        // ============================================
         // SPREADSHEET TOOLS (Grid.vue / Editor)
         // ============================================
 
         this.registerTool({
             name: "analyze_data",
-            description: "Answer a question about the spreadsheet data (e.g., 'which fund has the highest value?')",
+            description: "Answer a question about the spreadsheet data by specifying what calculation to perform",
+            category: "spreadsheet",
             parameters: {
                 type: "object",
                 properties: {
                     question: {
                         type: "string",
-                        description: "The question to answer about the data"
+                        description: "The original question being asked"
+                    },
+                    operation: {
+                        type: "string",
+                        enum: ["max", "min", "sum", "average", "count", "find", "filter", "group_by"],
+                        description: "The mathematical/analytical operation to perform"
+                    },
+                    column: {
+                        type: "number",
+                        description: "The column index to analyze (0-based)"
+                    },
+                    condition: {
+                        type: "object",
+                        description: "Optional filter condition",
+                        properties: {
+                            column: { type: "number" },
+                            operator: { type: "string", enum: ["=", ">", "<", ">=", "<=", "!=", "contains"] },
+                            value: { type: "string" }
+                        }
+                    },
+                    groupByColumn: {
+                        type: "number",
+                        description: "Column to group by (for group_by operation)"
                     }
                 },
-                required: ["question"]
+                required: ["question", "operation", "column"]
             },
-            handler: async ({ question }, context) => {
-                // Analyze the spreadsheet data and return an answer
-                const { headers, sampleData } = context.spreadsheetData;
+            handler: async (args, context) => {
+                const { question, operation, column, condition, groupByColumn } = args;
+                const { spreadsheetData } = context;
 
-                // The AI will analyze the data and provide an answer
-                // This is a placeholder - actual implementation will use AI
+                console.log(`[analyze_data] Executing ${operation} on column ${column}`);
+
+                // Execute the calculation on the FULL dataset provided in context
+                let result;
+                let data = spreadsheetData.sampleData; // This contains the rows sent from frontend
+
+                // Apply filter if condition exists
+                if (condition) {
+                    data = data.filter(row => {
+                        const cellValue = row[condition.column];
+                        const compareValue = condition.value;
+
+                        switch (condition.operator) {
+                            case "=": return cellValue == compareValue;
+                            case ">": return Number(cellValue) > Number(compareValue);
+                            case "<": return Number(cellValue) < Number(compareValue);
+                            case ">=": return Number(cellValue) >= Number(compareValue);
+                            case "<=": return Number(cellValue) <= Number(compareValue);
+                            case "!=": return cellValue != compareValue;
+                            case "contains": return String(cellValue).includes(compareValue);
+                            default: return true;
+                        }
+                    });
+                }
+
+                // Perform the operation
+                switch (operation) {
+                    case "max": {
+                        let maxValue = -Infinity;
+                        let maxRow = null;
+                        data.forEach(row => {
+                            const val = Number(String(row[column]).replace(/[^0-9.-]+/g, ""));
+                            if (!isNaN(val) && val > maxValue) {
+                                maxValue = val;
+                                maxRow = row;
+                            }
+                        });
+                        result = { value: maxValue, row: maxRow, operation: "maximum" };
+                        break;
+                    }
+                    case "min": {
+                        let minValue = Infinity;
+                        let minRow = null;
+                        data.forEach(row => {
+                            const val = Number(String(row[column]).replace(/[^0-9.-]+/g, ""));
+                            if (!isNaN(val) && val < minValue) {
+                                minValue = val;
+                                minRow = row;
+                            }
+                        });
+                        result = { value: minValue, row: minRow, operation: "minimum" };
+                        break;
+                    }
+                    case "sum": {
+                        const sum = data.reduce((acc, row) => {
+                            const val = Number(String(row[column]).replace(/[^0-9.-]+/g, ""));
+                            return acc + (isNaN(val) ? 0 : val);
+                        }, 0);
+                        result = { value: sum, operation: "sum" };
+                        break;
+                    }
+                    case "average": {
+                        const values = data.map(row => Number(String(row[column]).replace(/[^0-9.-]+/g, ""))).filter(v => !isNaN(v));
+                        const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+                        result = { value: avg, count: values.length, operation: "average" };
+                        break;
+                    }
+                    case "count": {
+                        result = { value: data.length, operation: "count" };
+                        break;
+                    }
+                    case "group_by": {
+                        const groups = {};
+                        data.forEach(row => {
+                            const groupKey = row[groupByColumn];
+                            if (!groups[groupKey]) groups[groupKey] = [];
+                            groups[groupKey].push(row[column]);
+                        });
+
+                        const summary = Object.entries(groups).map(([key, values]) => {
+                            const numValues = values.map(v => Number(String(v).replace(/[^0-9.-]+/g, ""))).filter(v => !isNaN(v));
+                            return {
+                                group: key,
+                                count: values.length,
+                                sum: numValues.reduce((a, b) => a + b, 0),
+                                avg: numValues.length > 0 ? numValues.reduce((a, b) => a + b, 0) / numValues.length : 0
+                            };
+                        });
+
+                        result = { groups: summary, operation: "group_by" };
+                        break;
+                    }
+                    default:
+                        result = { error: "Unknown operation" };
+                }
+
                 return {
-                    type: "text_answer",
-                    answer: `Analysis of: ${question}`,
-                    data: { headers, sampleData }
+                    type: "analysis_result",
+                    question,
+                    operation,
+                    result,
+                    headers: spreadsheetData.headers,
+                    totalRows: data.length
                 };
             }
         });
@@ -117,17 +275,23 @@ export class SpreadsheetToolService {
                         type: "number",
                         description: "Column index containing the data to forecast"
                     },
+                    algorithm: {
+                        type: "string",
+                        enum: ["linear", "sma", "ema"],
+                        description: "Forecasting algorithm to use"
+                    },
                     periods: {
                         type: "number",
                         description: "Number of future periods to predict"
                     }
                 },
-                required: ["column", "periods"]
+                required: ["column", "algorithm", "periods"]
             },
-            handler: async ({ column, periods }, context) => {
+            handler: async ({ column, algorithm, periods }, context) => {
                 return {
-                    type: "forecast",
+                    type: "forecast_request",
                     column,
+                    algorithm,
                     periods
                 };
             }
@@ -141,7 +305,8 @@ export class SpreadsheetToolService {
                 properties: {
                     operation: {
                         type: "string",
-                        description: "Type of cleaning: 'remove_duplicates', 'standardize_dates', 'trim_whitespace', 'fix_case'"
+                        enum: ["remove_duplicates", "standardize_dates", "trim_whitespace", "fix_case"],
+                        description: "Type of cleaning to perform"
                     },
                     column: {
                         type: "number",
@@ -152,7 +317,7 @@ export class SpreadsheetToolService {
             },
             handler: async ({ operation, column }, context) => {
                 return {
-                    type: "data_cleaning",
+                    type: "cleaning_request",
                     operation,
                     column
                 };
@@ -161,37 +326,60 @@ export class SpreadsheetToolService {
 
         this.registerTool({
             name: "summarize_data",
-            description: "Generate a text summary of key insights from the data",
+            description: "Generate a summary of key insights by specifying columns and metrics to calculate",
             parameters: {
                 type: "object",
-                properties: {}
+                properties: {
+                    columns: {
+                        type: "array",
+                        items: { type: "number" },
+                        description: "List of column indices to include in the summary"
+                    },
+                    metrics: {
+                        type: "array",
+                        items: { type: "string", enum: ["mean", "median", "mode", "std_dev", "count_distinct", "min", "max"] },
+                        description: "Statistical metrics to calculate locally"
+                    }
+                },
+                required: ["columns", "metrics"]
             },
-            handler: async (params, context) => {
-                const { headers, sampleData } = context.spreadsheetData;
+            handler: async ({ columns, metrics }, context) => {
                 return {
-                    type: "summary",
-                    data: { headers, sampleData }
+                    type: "summary_request",
+                    columns,
+                    metrics
                 };
             }
         });
 
         this.registerTool({
             name: "compare_data",
-            description: "Compare this table to another table",
+            description: "Compare this table to another table by specifying a join key and columns to diff",
             parameters: {
                 type: "object",
                 properties: {
                     targetTable: {
                         type: "string",
                         description: "Name of the table to compare against"
+                    },
+                    primaryKey: {
+                        type: "string",
+                        description: "The column name to use as a primary key for joining"
+                    },
+                    diffColumns: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Specific columns to check for differences"
                     }
                 },
-                required: ["targetTable"]
+                required: ["targetTable", "primaryKey"]
             },
-            handler: async ({ targetTable }, context) => {
+            handler: async ({ targetTable, primaryKey, diffColumns }, context) => {
                 return {
-                    type: "comparison",
-                    targetTable
+                    type: "comparison_request",
+                    targetTable,
+                    primaryKey,
+                    diffColumns
                 };
             }
         });
@@ -224,16 +412,22 @@ export class SpreadsheetToolService {
 
         this.registerTool({
             name: "suggest_chart",
-            description: "Recommend the best visualization for this data",
+            description: "Recommend the best visualization by specifying columns to analyze for statistics",
             parameters: {
                 type: "object",
-                properties: {}
+                properties: {
+                    columns: {
+                        type: "array",
+                        items: { type: "number" },
+                        description: "Column indices to analyze for chart suitability"
+                    }
+                },
+                required: ["columns"]
             },
-            handler: async (params, context) => {
-                const { headers, sampleData } = context.spreadsheetData;
+            handler: async ({ columns }, context) => {
                 return {
-                    type: "chart_suggestion",
-                    data: { headers, sampleData }
+                    type: "chart_suggestion_request",
+                    columns
                 };
             }
         });
@@ -543,7 +737,7 @@ export class SpreadsheetToolService {
 
     getQueryTools() {
         const queryToolNames = [
-            'format_query', 'explain_query', 'optimize_query', 'fix_query_error',
+            'get_table_schema', 'format_query', 'explain_query', 'optimize_query', 'fix_query_error',
             'generate_query', 'create_index', 'generate_test_data',
             'convert_dialect', 'save_as_view', 'diff_queries', 'analyze_query_performance'
         ];

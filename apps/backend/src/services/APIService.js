@@ -59,7 +59,7 @@ export class APIService {
 
             const data = await response.json();
             const mappedData = await this.mapper(data);
-            console.log(`[${this.name}] Successfully fetched and mapped data.`);
+            // console.log(`[${this.name}] Successfully fetched and mapped data.`);
 
             if (Array.isArray(mappedData)) {
                 for (const item of mappedData) {

@@ -663,10 +663,14 @@ table.post("/table/:tableName/schema", async (c) => {
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) {
+            console.error(`[Schema] Provider not supported: "${provider}". Available:`, Object.keys(adapters))
+            return c.json({ error: `Provider not supported: ${provider}` }, 400)
+        }
 
         const adapter = new Adapter(connection)
+
         try {
             await adapter.connect()
             const fullSchema = await adapter.getSchema()
@@ -688,23 +692,24 @@ table.post("/table/:tableName/query", async (c) => {
         const tableName = c.req.param("tableName")
         const { connection, provider, limit = 100, offset = 0 } = await c.req.json()
 
-        console.log(`[Query] Table: ${tableName}, Provider: ${provider}, Limit: ${limit}`);
+        // console.log(`[Query] Table: ${tableName}, Provider: ${provider}, Limit: ${limit}`);
 
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
-        const Adapter = adapters[provider]
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
         if (!Adapter) {
-            console.log(`[Query] Provider ${provider} not supported`);
-            return c.json({ error: "Provider not supported" }, 400)
+            console.log(`[Query] Provider ${provider} not supported. Available:`, Object.keys(adapters));
+            return c.json({ error: `Provider not supported: ${provider}` }, 400)
         }
 
         const adapter = new Adapter(connection)
+
         try {
-            console.log(`[Query] Connecting to ${provider}...`);
+            // console.log(`[Query] Connecting to ${provider}...`);
             await adapter.connect()
-            console.log(`[Query] Connected successfully`);
+            // console.log(`[Query] Connected successfully`);
 
             // Generate provider-specific SQL
             let sql
@@ -721,9 +726,9 @@ table.post("/table/:tableName/query", async (c) => {
                 sql = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             }
 
-            console.log(`[Query] Executing: ${sql}`);
+            // console.log(`[Query] Executing: ${sql}`);
             const rows = await adapter.query(sql)
-            console.log(`[Query] Returned ${rows?.length || 0} rows`);
+            // console.log(`[Query] Returned ${rows?.length || 0} rows`);
             await adapter.disconnect()
 
             return c.json({ rows: Array.isArray(rows) ? rows : [] })
@@ -800,10 +805,14 @@ table.post("/table/:tableName/operations", async (c) => {
             }
         }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) {
+            console.error(`[Save] Provider not supported: "${provider}". Available:`, Object.keys(adapters))
+            return c.json({ error: `Provider not supported: ${provider}` }, 400)
+        }
 
         const adapter = new Adapter(connection)
+
         try {
             await adapter.connect()
             const queries = []
@@ -1217,6 +1226,141 @@ table.get('/:tableName/interpret', async (c) => {
     } catch (e) {
         console.error('[Interpret] Error:', e);
         return c.json({ error: e.message }, 500);
+    }
+})
+
+// ========================================
+// SPREADSHEET SHARING & PERMISSIONS
+// ========================================
+
+// Share spreadsheet with a user
+table.post("/:tableName/share", async (c) => {
+    try {
+        const { tableName } = c.req.param()
+        const token = getAuthToken(c)
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+        const payload = await verify(token, jwtSecret)
+        const user = await upsertUser(payload)
+
+        const { email, accessLevel = 'view' } = await c.req.json()
+        if (!email) return c.json({ error: "Email is required" }, 400)
+        if (!['view', 'edit'].includes(accessLevel)) {
+            return c.json({ error: "accessLevel must be 'view' or 'edit'" }, 400)
+        }
+
+        // TODO: Verify user owns or has share permission on this spreadsheet
+        // For now, allow any authenticated user to share their data tables
+
+        // Check if user exists in system
+        const [existingUsers] = await db.query(
+            `SELECT * FROM user WHERE email = $email`,
+            { email }
+        )
+        if (!existingUsers || existingUsers.length === 0) {
+            return c.json({ error: "User not found. They must sign up first." }, 404)
+        }
+
+        // Create or update permission
+        await db.query(`
+            INSERT INTO spreadsheet_permission {
+                spreadsheet: $spreadsheet,
+                user_email: $email,
+                access_level: $accessLevel,
+                granted_by: $grantedBy,
+                granted_at: time::now()
+            }
+            ON DUPLICATE KEY UPDATE 
+                access_level = $accessLevel,
+                granted_at = time::now()
+        `, {
+            spreadsheet: tableName,
+            email,
+            accessLevel,
+            grantedBy: user.id
+        })
+
+        console.log(`[Share] ${user.email} shared ${tableName} with ${email} (${accessLevel})`)
+        return c.json({ success: true, email, accessLevel })
+
+    } catch (e) {
+        console.error('[Share] Error:', e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+// Get spreadsheet permissions
+table.get("/:tableName/permissions", async (c) => {
+    try {
+        const { tableName } = c.req.param()
+        const token = getAuthToken(c)
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+        const [permissions] = await db.query(
+            `SELECT * FROM spreadsheet_permission WHERE spreadsheet = $tableName`,
+            { tableName }
+        )
+
+        return c.json({ permissions: permissions || [] })
+
+    } catch (e) {
+        console.error('[Permissions] Error:', e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+// Revoke spreadsheet access
+table.delete("/:tableName/share/:email", async (c) => {
+    try {
+        const { tableName, email } = c.req.param()
+        const token = getAuthToken(c)
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+        const payload = await verify(token, jwtSecret)
+        const user = await upsertUser(payload)
+
+        // Delete permission
+        await db.query(
+            `DELETE FROM spreadsheet_permission WHERE spreadsheet = $tableName AND user_email = $email`,
+            { tableName, email }
+        )
+
+        console.log(`[Share] ${user.email} revoked ${email}'s access to ${tableName}`)
+        return c.json({ success: true })
+
+    } catch (e) {
+        console.error('[Revoke] Error:', e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+// Check if current user has access to a spreadsheet
+table.get("/:tableName/access", async (c) => {
+    try {
+        const { tableName } = c.req.param()
+        const token = getAuthToken(c)
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+        const payload = await verify(token, jwtSecret)
+
+        const [permissions] = await db.query(
+            `SELECT * FROM spreadsheet_permission WHERE spreadsheet = $tableName AND user_email = $email`,
+            { tableName, email: payload.email }
+        )
+
+        if (permissions && permissions.length > 0) {
+            return c.json({
+                hasAccess: true,
+                accessLevel: permissions[0].access_level
+            })
+        }
+
+        // TODO: Check if user is owner of the spreadsheet
+        return c.json({ hasAccess: false, accessLevel: null })
+
+    } catch (e) {
+        console.error('[Access] Error:', e)
+        return c.json({ error: e.message }, 500)
     }
 })
 

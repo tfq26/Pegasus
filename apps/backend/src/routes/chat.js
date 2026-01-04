@@ -99,6 +99,7 @@ const checkAiQuota = async (userId) => {
         const [usageResult] = await db.query(`
             SELECT math::sum(tokens_used) as total FROM query_history 
             WHERE user = $user AND created_at >= $start
+            GROUP ALL
         `, {
             user: `user:${userId}`,
             start: startOfMonth
@@ -381,7 +382,54 @@ chat.post("/ai/spreadsheet-action", async (c) => {
             return c.json(quota, 403);
         }
 
-        const { request, spreadsheetData, model } = await c.req.json()
+        const body = await c.req.json()
+        const { request, spreadsheetData, model, isFollowUp, analysisResult } = body
+
+        // Handle follow-up calculation requests from frontend
+        if (isFollowUp && analysisResult) {
+            console.log('Processing follow-up result...')
+
+            let resultContext = ''
+            const { type } = analysisResult
+
+            if (type === 'analysis_result') {
+                const { operation, result, headers } = analysisResult
+                if (result.operation === 'maximum' || result.operation === 'minimum') {
+                    resultContext = `The ${result.operation} value found is ${result.value}. 
+The corresponding row data is: ${result.row.map((val, i) => `${headers[i]}: ${val}`).join(', ')}.`
+                } else if (result.operation === 'average' || result.operation === 'sum' || result.operation === 'count') {
+                    resultContext = `The calculated ${result.operation} is ${result.value}${result.count ? ` (based on ${result.count} values)` : ''}.`
+                } else if (result.operation === 'group_by') {
+                    resultContext = `Grouped analysis results:
+${result.groups.map(g => `- ${g.group}: Count=${g.count}, Sum=${g.sum.toFixed(2)}, Average=${g.avg.toFixed(2)}`).join('\n')}`
+                }
+            } else if (type === 'summary_result') {
+                const { summary, totalRows } = analysisResult
+                resultContext = `Data summary for ${totalRows} rows:
+${Object.entries(summary.metrics).map(([col, metrics]) => {
+                    const colName = summary.ColumnHeaders[col]
+                    return `Column ${colName}: ${Object.entries(metrics).map(([m, v]) => `${m}=${Number(v).toFixed(2)}`).join(', ')}`
+                }).join('\n')}`
+            } else if (type === 'chart_suggestion_result') {
+                const { stats } = analysisResult
+                resultContext = `Chart suitability analysis:
+${stats.columns.map(c => `- ${c.header}: isNumeric=${c.isNumeric}, uniqueValues=${c.uniqueCount}`).join('\n')}`
+            }
+
+            const followUpPrompt = `You are a spreadsheet assistant. Based on the following calculation result from the spreadsheet, provide a clear, helpful response.
+            
+Calculation/Analysis Results:
+${resultContext}
+
+Note: The user might have asked for a summary, a specific calculation, or a chart suggestion. Provide the most helpful natural language response based on these actual statistics.`
+
+            const response = await aiClient.generateContent([
+                { role: 'user', content: followUpPrompt }
+            ], { model })
+
+            await logAiUsage(payload.sub, response.usage?.totalTokens || response.usage?.total_tokens, model, 'ai_analysis', 'distributed_follow_up')
+            return c.json({ text: response.text })
+        }
 
         // Import the spreadsheet tool service
         const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
@@ -390,11 +438,17 @@ chat.post("/ai/spreadsheet-action", async (c) => {
         const tools = spreadsheetToolService.getSpreadsheetTools()
 
         // Build context for AI
-        const { headers, sampleData, rowCount, colCount } = spreadsheetData
+        const { headers, sampleData, rowCount, colCount, isLargeDataset } = spreadsheetData
         const headerStr = headers.map((h, i) => `${colIndexToLabel(i)}: ${h}`).join(', ')
         const dataStr = sampleData.slice(0, 5).map((row, i) =>
             `Row ${i + 2}: ${row.join(' | ')}`
         ).join('\n')
+
+        const samplingNote = isLargeDataset
+            ? `\n\nNOTE: This dataset is large (${rowCount} rows). You are only seeing a sample of the first 100 rows to understand the structure. 
+IMPORTANT: For any data analysis questions (like "highest value", "average", "count", etc.), use the 'analyze_data' tool. 
+The system will automatically execute your specified calculation LOCALLY on all ${rowCount} rows to ensure 100% accurate results, even if you can't see all rows here.`
+            : '';
 
         const systemPrompt = `You are an AI assistant for a spreadsheet editor. The user has a spreadsheet with the following data:
 
@@ -402,15 +456,16 @@ Headers: ${headerStr}
 Sample Data (first 5 rows):
 ${dataStr}
 
-Total Rows: ${rowCount}, Total Columns: ${colCount}
+Total Rows: ${rowCount}, Total Columns: ${colCount}${samplingNote}
 
 You have access to tools to perform various spreadsheet operations. Analyze the user's request and call the appropriate tool(s).
 
 IMPORTANT: 
-- For data analysis questions (e.g., "which fund has the highest value?"), use the analyze_data tool
-- For calculations, use calculate_column and show the mathematical reasoning
-- For formatting, use apply_conditional_formatting
-- You can chain multiple tools if needed`
+- For data analysis questions (e.g., "which fund has the highest value?"), use the analyze_data tool. 
+- You MUST specify the 'operation' (max, min, sum, average, count, etc.) and the 'column' index (0-based) for analysis.
+- If a question involves a filter (e.g., "average return for Large Cap funds"), use the 'condition' parameter.
+- For calculations that create a new column, use calculate_column.
+- For formatting, use apply_conditional_formatting.`
 
         const response = await aiClient.generateContent([
             { role: 'system', content: systemPrompt },
@@ -441,34 +496,6 @@ IMPORTANT:
                 })
             }
 
-            // For analyze_data tool, do a second AI call to get the actual answer
-            const hasAnalyzeData = toolResults.some(r => r.toolName === 'analyze_data')
-
-            if (hasAnalyzeData) {
-                // Build a follow-up prompt with the data
-                const analyzeResult = toolResults.find(r => r.toolName === 'analyze_data')
-                const question = analyzeResult.result.answer.replace('Analysis of: ', '')
-
-                const followUpPrompt = `Based on this spreadsheet data, answer the question: "${question}"
-
-Data:
-Headers: ${headers.join(', ')}
-Rows:
-${sampleData.map((row, i) => `${i + 1}. ${row.join(' | ')}`).join('\n')}
-
-Provide a clear, concise answer with specific values from the data.`
-
-                const analysisResponse = await aiClient.generateContent([
-                    { role: 'user', content: followUpPrompt }
-                ], { model })
-
-                // Update the tool result with the actual answer
-                analyzeResult.result.answer = analysisResponse.text
-
-                // Add usage from second call
-                const secondUsage = analysisResponse.usage
-                await logAiUsage(payload.sub, secondUsage?.totalTokens || secondUsage?.total_tokens, model, 'ai_analysis', question)
-            }
 
             return c.json({
                 toolCalls: toolResults,
@@ -580,12 +607,33 @@ chat.post("/ai/generate", async (c) => {
         }
 
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
-        const provider = connRow.provider
-        const adapterConfig = config[provider]
+
+        // Debug: Show connection structure
+        console.log('[Chat] Connection type:', connRow.type, '| provider:', connRow.provider)
+
+        // Get provider from connection.type (primary) OR connection.provider, or derive from config keys
+        let provider = connRow.type || connRow.provider
+        if (!provider && config) {
+            // Derive provider from config keys (e.g., { mysql: {...} } -> 'mysql')
+            const configKeys = Object.keys(config).filter(k =>
+                ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'surrealdb'].includes(k.toLowerCase())
+            )
+            if (configKeys.length > 0) {
+                provider = configKeys[0]
+                console.log(`[Chat] Derived provider from config: ${provider}`)
+            }
+        }
+
+        const adapterConfig = config[provider] || config[provider?.toLowerCase()]
 
         // 2. Fetch Schema
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+        // Case-insensitive adapter lookup for robustness
+        const providerLower = provider?.toLowerCase()
+        const Adapter = adapters[provider] || adapters[providerLower]
+        if (!Adapter) {
+            console.error(`[Chat] Provider not supported: "${provider}" (lowercase: "${providerLower}"). Available adapters:`, Object.keys(adapters))
+            return c.json({ error: `Provider not supported: ${provider}` }, 400)
+        }
 
         const adapter = new Adapter(adapterConfig)
         let schemaInfo = {}
@@ -601,9 +649,14 @@ chat.post("/ai/generate", async (c) => {
             const allTables = await adapter.listCollections()
             // ... (Schema filtering logic would go here)
             // For now, take top 50
-            schemaInfo = { tables: allTables.slice(0, 50) }
-            if (typeof adapter.getSchema === 'function') {
-                schemaInfo.detailedSchema = await adapter.getSchema() // simple approach
+            schemaInfo = { tables: allTables.slice(0, 50), detailedSchema: {} }
+
+            // LAZY LOADING: Only fetch schema for the active table immediately
+            if (activeTable && typeof adapter.getOneTableSchema === 'function') {
+                schemaInfo.detailedSchema[activeTable] = await adapter.getOneTableSchema(activeTable)
+            } else if (allTables.length <= 3 && typeof adapter.getSchema === 'function') {
+                // If there are very few tables, just fetch them all
+                schemaInfo.detailedSchema = await adapter.getSchema()
             }
 
             // Fetch sample values for the active table (CRITICAL for accurate queries)
@@ -771,7 +824,8 @@ chat.post("/ai/generate", async (c) => {
             dialect: provider,
             schema: schemaInfo,
             previousContext: context,
-            semanticContext
+            semanticContext,
+            adapter
         }
 
         // Fetch user settings
@@ -787,6 +841,9 @@ chat.post("/ai/generate", async (c) => {
                 aiSettings.temperature = s.temperature
             }
         } catch (e) { }
+
+        // Inject activeTable into settings for PromptBuilder
+        aiSettings.activeTable = activeTable;
 
         const result = await aiClient.generateQuery(prompt, aiContext, aiSettings)
         let generatedQuery = typeof result === 'string' ? result : result.text

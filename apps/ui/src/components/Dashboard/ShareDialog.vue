@@ -2,9 +2,9 @@
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
     <DialogContent class="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Share Dashboard</DialogTitle>
+        <DialogTitle>Share {{ resourceType === 'spreadsheet' ? 'Spreadsheet' : 'Dashboard' }}</DialogTitle>
         <DialogDescription>
-          Invite authorized users or share a public link.
+          Invite authorized users{{ resourceType === 'spreadsheet' ? '' : ' or share a public link' }}.
         </DialogDescription>
       </DialogHeader>
 
@@ -39,6 +39,16 @@
                </div>
             </div>
 
+            <!-- Access Level Selector (Spreadsheet only) -->
+            <select
+              v-if="resourceType === 'spreadsheet'"
+              v-model="accessLevel"
+              class="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="view">View</option>
+              <option value="edit">Edit</option>
+            </select>
+
             <button
               @click="handleInvite"
               :disabled="!isValidEmail || isInviting"
@@ -67,45 +77,49 @@
                 No invited users yet.
              </div>
 
-             <div v-for="perm in permissions" :key="perm.email" class="flex items-center justify-between text-sm p-2 rounded-md hover:bg-muted/50 transition-colors">
+             <div v-for="perm in permissions" :key="perm.email || perm.user_email" class="flex items-center justify-between text-sm p-2 rounded-md hover:bg-muted/50 transition-colors">
                 <div class="flex items-center gap-2 overflow-hidden">
                    <div class="w-6 h-6 min-w-[1.5rem] rounded-lg bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-500">
-                     {{ perm.email[0].toUpperCase() }}
+                     {{ (perm.email || perm.user_email)[0].toUpperCase() }}
                    </div>
-                   <span class="truncate" :title="perm.email">{{ perm.email }}</span>
+                   <span class="truncate" :title="perm.email || perm.user_email">{{ perm.email || perm.user_email }}</span>
+                   <span v-if="perm.access_level" class="text-xs text-muted-foreground px-1 py-0.5 bg-muted rounded">
+                     {{ perm.access_level }}
+                   </span>
                 </div>
-                <button @click="handleRemove(perm.email)" class="text-xs text-destructive hover:bg-destructive/10 px-2 py-1 rounded transition">
+                <button @click="handleRemove(perm.email || perm.user_email)" class="text-xs text-destructive hover:bg-destructive/10 px-2 py-1 rounded transition">
                    Remove
                 </button>
              </div>
           </div>
         </div>
 
-        <div class="h-px bg-border my-1"></div>
-
-        <!-- Public Link Section -->
-        <div class="space-y-4">
-          <h4 class="text-sm font-medium">Public Link</h4>
-          <div class="flex items-center space-x-2">
-            <div class="grid flex-1 gap-2">
-              <label for="link" class="sr-only">Link</label>
-              <input
-                id="link"
-                :value="publicLink"
-                readonly
-                class="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm shadow-sm text-muted-foreground cursor-pointer"
+        <!-- Public Link Section (Dashboard only) -->
+        <template v-if="resourceType === 'dashboard' && publicLink">
+          <div class="h-px bg-border my-1"></div>
+          <div class="space-y-4">
+            <h4 class="text-sm font-medium">Public Link</h4>
+            <div class="flex items-center space-x-2">
+              <div class="grid flex-1 gap-2">
+                <label for="link" class="sr-only">Link</label>
+                <input
+                  id="link"
+                  :value="publicLink"
+                  readonly
+                  class="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm shadow-sm text-muted-foreground cursor-pointer"
+                  @click="copyLink"
+                />
+              </div>
+              <button 
                 @click="copyLink"
-              />
+                class="px-3 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md transition"
+              >
+                <span v-if="copied" class="text-green-500 text-sm font-bold">Copied!</span>
+                <span v-else>Copy</span>
+              </button>
             </div>
-            <button 
-              @click="copyLink"
-              class="px-3 py-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-md transition"
-            >
-              <span v-if="copied" class="text-green-500 text-sm font-bold">Copied!</span>
-              <span v-else>Copy</span>
-            </button>
           </div>
-        </div>
+        </template>
       </div>
     </DialogContent>
   </Dialog>
@@ -125,18 +139,23 @@ import {
   inviteUserToDashboard, 
   fetchDashboardPermissions, 
   removeDashboardPermission,
-  searchUsers 
+  searchUsers,
+  QUERY_API_URL,
+  getAuthHeaders
 } from '@/lib/api'
 
 const props = defineProps<{
   open: boolean
-  dashboardId: string | null
-  publicLink: string
+  dashboardId?: string | null
+  spreadsheetId?: string | null  // Table name for spreadsheets
+  publicLink?: string
+  resourceType?: 'dashboard' | 'spreadsheet'
 }>()
 
 const emit = defineEmits(['update:open'])
 
 const inviteEmail = ref('')
+const accessLevel = ref<'view' | 'edit'>('view')
 const isInviting = ref(false)
 const isLoading = ref(false)
 const permissions = ref<any[]>([])
@@ -147,12 +166,16 @@ const searchResults = ref<any[]>([])
 const isSearching = ref(false)
 let searchTimeout: any = null
 
+// Computed resource ID (dashboard or spreadsheet)
+const resourceId = computed(() => props.dashboardId || props.spreadsheetId)
+const resourceTypeValue = computed(() => props.resourceType || (props.spreadsheetId ? 'spreadsheet' : 'dashboard'))
+
 const isValidEmail = computed(() => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.value)
 })
 
 watch(() => props.open, async (isOpen) => {
-  if (isOpen && props.dashboardId) {
+  if (isOpen && resourceId.value) {
     loadPermissions()
   }
 })
@@ -184,10 +207,19 @@ const selectUser = (user: any) => {
 }
 
 const loadPermissions = async () => {
-  if (!props.dashboardId) return
+  if (!resourceId.value) return
   isLoading.value = true
   try {
-    permissions.value = await fetchDashboardPermissions(props.dashboardId)
+    if (resourceTypeValue.value === 'spreadsheet') {
+      // Fetch spreadsheet permissions
+      const res = await fetch(`${QUERY_API_URL}/table/${resourceId.value}/permissions`, {
+        headers: getAuthHeaders()
+      })
+      const data = await res.json()
+      permissions.value = data.permissions || []
+    } else {
+      permissions.value = await fetchDashboardPermissions(resourceId.value)
+    }
   } catch (e) {
     console.error(e)
   } finally {
@@ -196,11 +228,24 @@ const loadPermissions = async () => {
 }
 
 const handleInvite = async () => {
-  if (!props.dashboardId || !isValidEmail.value) return
+  if (!resourceId.value || !isValidEmail.value) return
   
   isInviting.value = true
   try {
-    await inviteUserToDashboard(props.dashboardId, inviteEmail.value)
+    if (resourceTypeValue.value === 'spreadsheet') {
+      // Share spreadsheet
+      const res = await fetch(`${QUERY_API_URL}/table/${resourceId.value}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ email: inviteEmail.value, accessLevel: accessLevel.value })
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to share')
+      }
+    } else {
+      await inviteUserToDashboard(resourceId.value, inviteEmail.value)
+    }
     toast.success(`Access granted to ${inviteEmail.value}`)
     inviteEmail.value = ''
     searchResults.value = []
@@ -213,11 +258,18 @@ const handleInvite = async () => {
 }
 
 const handleRemove = async (email: string) => {
-  if (!props.dashboardId) return
+  if (!resourceId.value) return
   if (!confirm(`Revoke access for ${email}?`)) return
   
   try {
-    await removeDashboardPermission(props.dashboardId, email)
+    if (resourceTypeValue.value === 'spreadsheet') {
+      await fetch(`${QUERY_API_URL}/table/${resourceId.value}/share/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      })
+    } else {
+      await removeDashboardPermission(resourceId.value, email)
+    }
     toast.success('Access revoked')
     await loadPermissions()
   } catch (e: any) {
@@ -226,8 +278,10 @@ const handleRemove = async (email: string) => {
 }
 
 const copyLink = () => {
-  navigator.clipboard.writeText(props.publicLink)
-  copied.value = true
-  setTimeout(() => copied.value = false, 2000)
+  if (props.publicLink) {
+    navigator.clipboard.writeText(props.publicLink)
+    copied.value = true
+    setTimeout(() => copied.value = false, 2000)
+  }
 }
 </script>

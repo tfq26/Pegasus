@@ -29,7 +29,6 @@ app.use("*", cors({
       return allowedOrigins[0]
     }
     if (allowedOrigins.includes(origin)) {
-      console.log('[CORS] Origin in allowlist:', origin)
       return origin
     }
 
@@ -1611,5 +1610,5 @@ async function createTableAndInsertData(tableName, rows) {
   }
 }
 
-// Export for Vercel
-export default app;
+// Export app for Vercel (named export to avoid Bun conflicts)
+export { app };

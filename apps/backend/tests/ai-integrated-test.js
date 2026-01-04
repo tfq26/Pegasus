@@ -126,22 +126,31 @@ IMPORTANT:
             }
 
             // For analyze_data tool, do a second AI call to get the actual answer
-            const hasAnalyzeData = toolResults.some(r => r.toolName === 'analyze_data');
+            const analyzeResult = toolResults.find(r => r.toolName === 'analyze_data');
 
-            if (hasAnalyzeData) {
-                log('\n🔄 Running analysis on data...', 'yellow');
+            if (analyzeResult && analyzeResult.result.type === 'analysis_result') {
+                log('\n🔄 Running natural language analysis on calculation result...', 'yellow');
 
-                const analyzeResult = toolResults.find(r => r.toolName === 'analyze_data');
-                const question = analyzeResult.result.answer.replace('Analysis of: ', '');
+                const { question, operation, result, headers } = analyzeResult.result;
+                let resultContext = '';
 
-                const followUpPrompt = `Based on this spreadsheet data, answer the question: "${question}"
+                if (result.operation === 'maximum' || result.operation === 'minimum') {
+                    resultContext = `The ${result.operation} value found is ${result.value}. 
+The corresponding row data is: ${result.row.map((val, i) => `${headers[i]}: ${val}`).join(', ')}.`;
+                } else if (result.operation === 'average' || result.operation === 'sum' || result.operation === 'count') {
+                    resultContext = `The calculated ${result.operation} is ${result.value}${result.count ? ` (based on ${result.count} values)` : ''}.`;
+                } else if (result.operation === 'group_by') {
+                    resultContext = `Grouped analysis results:
+${result.groups.map(g => `- ${g.group}: Count=${g.count}, Sum=${g.sum.toFixed(2)}, Average=${g.avg.toFixed(2)}`).join('\n')}`;
+                }
 
-Data:
-Headers: ${sampleData.headers.join(', ')}
-Rows:
-${sampleData.sampleData.map((row, i) => `${i + 1}. ${row.join(' | ')}`).join('\n')}
+                const followUpPrompt = `Based on the following calculation result from the spreadsheet, answer the user's question: "${question}"
 
-Provide a clear, concise answer with specific values from the data.`;
+Calculation Details:
+- Operation: ${operation}
+- Result: ${resultContext}
+
+Provide a clear, helpful, and concise response to the user.`;
 
                 const analysisResponse = await aiClient.generateContent([
                     { role: 'user', content: followUpPrompt }
@@ -177,7 +186,8 @@ async function runTests() {
         "Highlight all funds with returns above 30% in green",
         "Calculate the profit margin for each fund",
         "Sort the funds by value from highest to lowest",
-        "What's the average return across all funds?"
+        "What's the average return across all funds?",
+        "What is the average return for Mid Cap funds?"
     ];
 
     for (const prompt of testPrompts) {

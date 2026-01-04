@@ -50,21 +50,20 @@ export class SurrealAdapter extends DatabaseAdapter {
     }
 
     async query(query) {
-        // console.log(`[SurrealDB] Executing query: ${query}`);
         try {
-            console.log(`[SurrealDB] Executing query: ${query}`);
+            // console.log(`[SurrealDB] Executing query: ${query}`);
             const result = await this.db.query(query);
-            console.log(`[SurrealDB] Raw result type: ${typeof result}`);
-            console.log(`[SurrealDB] Raw result stringified:`, JSON.stringify(result, null, 2));
+            // console.log(`[SurrealDB] Raw result type: ${typeof result}`);
+            // console.log(`[SurrealDB] Raw result stringified:`, JSON.stringify(result, null, 2));
 
             if (!Array.isArray(result)) {
-                console.log('[SurrealDB] Result is not an array');
+                // console.log('[SurrealDB] Result is not an array');
                 return result;
             }
 
             const firstRes = result[0];
-            console.log(`[SurrealDB] First response item type: ${typeof firstRes}`);
-            console.log(`[SurrealDB] First response item:`, JSON.stringify(firstRes, null, 2));
+            // console.log(`[SurrealDB] First response item type: ${typeof firstRes}`);
+            // console.log(`[SurrealDB] First response item:`, JSON.stringify(firstRes, null, 2));
 
             // Check for error
             if (firstRes && firstRes.status === 'ERR') {
@@ -92,13 +91,13 @@ export class SurrealAdapter extends DatabaseAdapter {
             // Not result[0].result
             // If firstRes is an array, it's the data
             if (Array.isArray(firstRes)) {
-                console.log(`[SurrealDB] Returning ${firstRes.length} rows (direct array)`);
+                // console.log(`[SurrealDB] Returning ${firstRes.length} rows (direct array)`);
                 return cleanResults(firstRes);
             }
 
             // If firstRes has a result property that's an array
             if (firstRes && firstRes.result && Array.isArray(firstRes.result)) {
-                console.log(`[SurrealDB] Returning ${firstRes.result.length} rows from result property`);
+                // console.log(`[SurrealDB] Returning ${firstRes.result.length} rows from result property`);
                 return cleanResults(firstRes.result);
             }
 
@@ -120,29 +119,32 @@ export class SurrealAdapter extends DatabaseAdapter {
 
     async listCollections() {
         try {
-            console.log('[SurrealDB] Listing collections, uploadId:', this.connection.uploadId);
+            // console.log('[SurrealDB] Listing collections, uploadId:', this.connection.uploadId);
 
             // INFO FOR DB
             const result = await this.db.query('INFO FOR DB');
-            console.log('[SurrealDB] INFO FOR DB raw result length:', result?.length);
+            // console.log('[SurrealDB] INFO FOR DB raw result length:', result?.length);
 
             if (!result || !result[0]) {
-                console.warn('[SurrealDB] INFO FOR DB returned empty result');
+                // console.warn('[SurrealDB] INFO FOR DB returned empty result');
                 return [];
             }
 
             // The structure is: result[0] contains { tables: {...}, ... } directly
             // NOT result[0].result
             const info = result[0];
-            console.log('[SurrealDB] Info has tables:', !!info.tables);
+            // console.log('[SurrealDB] Info has tables:', !!info.tables);
 
             if (!info || !info.tables) {
-                console.warn('[SurrealDB] No tables info in result');
+                // console.warn('[SurrealDB] No tables info in result');
                 return [];
             }
 
             let tables = Object.keys(info.tables || {});
-            console.log('[SurrealDB] Found tables:', tables.length, 'tables');
+
+            // Filter out 'uploads:' records (these are metadata, not data tables)
+            tables = tables.filter(t => !t.startsWith('uploads:'));
+            // console.log('[SurrealDB] Found tables:', tables.length, 'tables');
 
             // Filter logic similar to SQLite/Uploads
             if (this.connection.uploadId) {
@@ -156,10 +158,8 @@ export class SurrealAdapter extends DatabaseAdapter {
                 console.log('[SurrealDB] Processed uploadId:', uid);
 
                 // Filter for tables matching pattern: data_{uuid}_{tablename}
-                const beforeFilter = tables.length;
                 tables = tables.filter(t => t.startsWith(`data_${uid}_`));
-                console.log(`[SurrealDB] Filtered from ${beforeFilter} to ${tables.length} tables for upload`);
-                console.log('[SurrealDB] Filtered tables:', tables);
+                // console.log(`[SurrealDB] Filtered to ${tables.length} tables for upload`);
             }
 
             return tables;
@@ -195,10 +195,56 @@ export class SurrealAdapter extends DatabaseAdapter {
         }
     }
 
+    async getOneTableSchema(table) {
+        try {
+            const infoRes = await this.db.query(`INFO FOR TABLE \`${table}\``);
+            const info = infoRes[0];
+
+            const fields = info.fields || {};
+            let columns = Object.entries(fields)
+                .filter(([fname]) => fname !== '_row_order')
+                .map(([fname, fdef]) => ({
+                    name: fname.replace(/`/g, ''),
+                    type: fdef,
+                    nullable: true,
+                    pk: false
+                }));
+
+            if (columns.length === 0) {
+                // Infer from sample
+                const sample = await this.sampleCollection(table, 10); // Small sample for speed
+                if (sample.length > 0) {
+                    const allColumns = new Set();
+                    const columnTypes = {};
+
+                    for (const row of sample) {
+                        for (const key of Object.keys(row)) {
+                            if (key !== 'id' && key !== '__id' && key !== '_row_order') {
+                                allColumns.add(key);
+                                if (!columnTypes[key]) {
+                                    columnTypes[key] = typeof row[key];
+                                }
+                            }
+                        }
+                    }
+
+                    columns = Array.from(allColumns).map(k => ({
+                        name: k,
+                        type: columnTypes[k],
+                        nullable: true
+                    }));
+                }
+            }
+            return columns;
+        } catch (e) {
+            console.error(`[SurrealDB] Error fetching schema for ${table}:`, e);
+            return [];
+        }
+    }
+
     async getSchema() {
         try {
             const tables = await this.listCollections();
-            console.log('[SurrealDB] getSchema for tables:', tables);
             const schema = {};
 
             // SurrealDB is schemaless by default but we can infer or `INFO FOR TABLE`
@@ -222,11 +268,11 @@ export class SurrealAdapter extends DatabaseAdapter {
 
                 // If no fields defined (dynamic), infer from sample rows
                 if (schema[table].length === 0) {
-                    console.log(`[SurrealDB] No defined fields for ${table}, inferring from sample`);
+                    // console.log(`[SurrealDB] No defined fields for ${table}, inferring from sample`);
                     // Sample a reasonable number of rows to capture most columns
                     // 500 rows balances completeness with performance for large tables
                     const sample = await this.sampleCollection(table, 500);
-                    console.log(`[SurrealDB] Sampled ${sample.length} rows for ${table}`);
+                    // console.log(`[SurrealDB] Sampled ${sample.length} rows for ${table}`);
 
                     if (sample.length > 0) {
                         // Merge all unique column names from sampled rows
@@ -250,11 +296,11 @@ export class SurrealAdapter extends DatabaseAdapter {
                             type: columnTypes[k],
                             nullable: true
                         }));
-                        console.log(`[SurrealDB] Inferred schema for ${table}:`, schema[table]);
+                        // console.log(`[SurrealDB] Inferred schema for ${table}:`, schema[table]);
                     }
                 }
             }
-            console.log('[SurrealDB] Final schema:', schema);
+            // console.log('[SurrealDB] Final schema:', schema);
             return schema;
         } catch (e) {
             console.error('[SurrealDB] Error fetching schema:', e);

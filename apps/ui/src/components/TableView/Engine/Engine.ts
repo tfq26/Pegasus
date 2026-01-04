@@ -13,6 +13,7 @@ export class Engine {
     public parser: FormulaParser;
     public config: EngineConfig;
     private changeCallbacks: Set<() => void> = new Set();
+    private valueChangeCallbacks: Set<(pos: CellPosition, value: string, source: 'local' | 'remote') => void> = new Set();
     private storageKey: string;
     public sourceTable: string | null = null;
     public sourceConnection: any | null = null; // Full connection config
@@ -723,6 +724,14 @@ export class Engine {
     }
 
     /**
+     * Register a callback to be called when a specific cell value changes
+     */
+    public onValueChange(callback: (pos: CellPosition, value: string, source: 'local' | 'remote') => void) {
+        this.valueChangeCallbacks.add(callback);
+        return () => this.valueChangeCallbacks.delete(callback);
+    }
+
+    /**
      * Manually trigger change notification (useful after silent edits)
      */
     public notifyChange() {
@@ -791,8 +800,9 @@ export class Engine {
     /**
      * Sets a value in the grid and triggers recalculation.
      * @param silent - If true, don't trigger onChange callbacks (useful during editing)
+     * @param source - Source of the edit ('local' or 'remote')
      */
-    public async setValue(pos: CellPosition, input: string, silent: boolean = false) {
+    public async setValue(pos: CellPosition, input: string, silent: boolean = false, source: 'local' | 'remote' = 'local') {
         const key = posToKey(pos);
 
         // Record undo command (unless this is an undo/redo operation itself)
@@ -846,6 +856,9 @@ export class Engine {
             this.changeTracker.markCellModified(pos);
             this.notifyChange();
         }
+
+        // 6. Notify value change listeners
+        this.valueChangeCallbacks.forEach(cb => cb(pos, input, source));
     }
 
     public getCell(pos: CellPosition): CellData | null {

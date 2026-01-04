@@ -109,32 +109,39 @@ EXAMPLES:
       // SQL Dialects
       const tables = schema.tables || []
       const sampleValues = schema.sampleValues || {}
+      const activeTable = settings.activeTable || schema.activeTable
 
+      schemaPresentation = `\nDatabase Schema:\n`
       if (schema.detailedSchema) {
-        schemaPresentation = `\nDatabase Schema:\n`
         Object.entries(schema.detailedSchema).forEach(([table, columns]) => {
-          schemaPresentation += `Table: ${table}\n`
-          schemaPresentation += `Columns:\n`
-          columns.forEach(col => {
-            schemaPresentation += `  - ${col.name} (${col.type})${col.pk ? ' [PK]' : ''}\n`
-          })
+          // LAZY LOADING: Only show full details for the active table or if explicitly requested via tool
+          if (table === activeTable || tables.length <= 3) {
+            schemaPresentation += `Table: ${table}\nColumns:\n`
+            columns.forEach(col => {
+              schemaPresentation += `  - ${col.name} (${col.type})${col.pk ? ' [PK]' : ''}\n`
+            })
+          } else {
+            schemaPresentation += `Table: ${table} (Details available via get_table_schema tool)\n`
+          }
           schemaPresentation += '\n'
         })
       } else {
-        schemaPresentation = `\nAvailable Tables:\n${tables.map(t => `- ${t}`).join('\n')}`
+        schemaPresentation += `Available Tables:\n${tables.map(t => `- ${t}`).join('\n')}`
       }
 
-      // Add sample values if available
+      // Add sample values if available (Smarter, filtered list)
       if (Object.keys(sampleValues).length > 0) {
-        schemaPresentation += '\n\nSample Values:\n'
+        schemaPresentation += '\n\nSample Values (categorical):\n'
         Object.entries(sampleValues).forEach(([table, fields]) => {
-          schemaPresentation += `  ${table}:\n`
-          Object.entries(fields).forEach(([field, values]) => {
-            schemaPresentation += `    - ${field}: [${values.join(', ')}]\n`
-          })
+          if (table === activeTable || tables.length <= 3) {
+            schemaPresentation += `  ${table}:\n`
+            // Only show values for columns that are likely to be categorical/identifiable
+            Object.entries(fields).slice(0, 5).forEach(([field, values]) => {
+              schemaPresentation += `    - ${field}: [${values.join(', ')}]\n`
+            })
+          }
         })
       }
-
 
       // Add Semantic Context if available
       if (context.semanticContext) {
@@ -439,61 +446,21 @@ EXAMPLES:
     const languageInstruction = settings.language ? `Respond in ${settings.language}.` : ''
 
     return `
-You are an expert database engineer specializing in ${dialect} databases.
-Your task is to convert the user's natural language request into a valid ${dialect} query.
+You are an expert ${dialect} database engineer. Return only the query/JSON without explanation.
 
 ${formatInstructions}
 ${schemaPresentation}
 
-WORLD KNOWLEDGE & COMMON SENSE:
-You have access to world knowledge and should use it to interpret queries intelligently:
-- **Geography**: You know which cities are on the West Coast (Los Angeles, San Francisco, Seattle, Portland, San Diego, etc.), East Coast (New York, Boston, Miami, etc.), or in specific regions
-- **Time & Dates**: You understand relative dates (last month, this year, Q1, etc.)
-- **Common Categories**: You can infer categories (e.g., "tech companies" might include companies with names like "Google", "Microsoft", "Apple")
-- **Industry Standards**: You understand common business terms, job titles, departments, etc.
-- **Company/Supplier Names**: When users mention a company, supplier, vendor, or manufacturer name:
-  - Look for fields like: supplier, company, vendor, manufacturer, organization, brand, provider
-  - Use partial matching (LIKE '%name%' or $regex) to find the company name in the data
-  - Check sample values to see which field contains company names
-  - Be flexible with capitalization (TechCorp, techcorp, TECHCORP should all match)
+RULES:
+- Handle relative dates (last month, Q1, etc.)
+- For company names, ALWAYS use LIKE '%name%' (case-insensitive)
+- For geographic regions (West Coast, etc.), infer cities/states from common sense
+- Only ask for clarification if candidate fields are truly ambiguous
+- Use appropriate quoting for special characters
+- DEFAULT LIMIT: 100
 
-WHEN TO USE WORLD KNOWLEDGE:
-✅ DO use world knowledge when:
-- User asks about geographic regions (West Coast, East Coast, Midwest, etc.)
-- User asks about time periods (last quarter, this year, etc.)
-- User asks about common categories that can be inferred from data
-- User asks about specific companies, suppliers, or organizations by name
-- The question requires general knowledge that's not database-specific
-
-❌ DO NOT ask for clarification when:
-- You can use world knowledge to resolve the query
-- The intent is clear even if the exact field name isn't mentioned
-- There's a reasonable interpretation based on common sense
-- You can find the company/supplier name in sample values
-
-Rules:
-1. **Use World Knowledge First**: Before asking for clarification, check if you can use world knowledge to resolve the query
-2. **Smart Field Matching**: If the user mentions a concept (like "West Coast cities" or "TechCorp"), look at sample values to find matching data
-3. **Company Name Matching**: For company/supplier queries, check sample values in fields like 'supplier', 'company', 'vendor', 'manufacturer' and use partial matching
-4. **Only Ask for Clarification When Truly Ambiguous**: Only return an "ambiguous" response when there are multiple valid interpretations that CANNOT be resolved with world knowledge
-5. If the term appears in the sample values of MULTIPLE fields AND you cannot determine which field is intended, you MUST return an "ambiguous" response with specific choices
-6. Use partial matching (LIKE, $regex) for proper nouns or names unless the user asks for an exact match
-
-AMBIGUOUS RESPONSE FORMAT:
-When you truly need clarification, provide SPECIFIC, ACTIONABLE choices:
-{
-  "ambiguous": true,
-  "message": "Clear explanation of why clarification is needed",
-  "choices": [
-    "Option 1: Specific interpretation (e.g., 'Search by city field')",
-    "Option 2: Alternative interpretation (e.g., 'Search by state field')"
-  ]
-}
-
-${detailInstruction}
-
-${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
-`
+${customInstructions ? `USER INSTRUCTIONS: ${customInstructions}` : ''}
+    `;
   }
 
   static buildAnalysisPrompt(question, results, query) {
@@ -502,56 +469,57 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
       Analyze the following database results to answer the user's question with deep insights.
       
       Query Executed: ${query}
-      
-      Results:
-      Results:
+
+    Results:
+    Results:
       ${Array.isArray(results) ? JSON.stringify(results.slice(0, 50), null, 2) : JSON.stringify(results, null, 2)} 
       ${Array.isArray(results) && results.length > 50 ? '(Note: Only the first 50 rows are shown)' : ''}
 
       User Question: ${question}
 
       Provide a natural language summary that directly answers the user's question.
-      
-      CRITICAL: You MUST return a valid JSON object.
+
+    CRITICAL: You MUST return a valid JSON object.
       
       Response Format:
-      {
-        "answer": "Your detailed response here...",
+    {
+      "answer": "Your detailed response here...",
         "prediction": {
-          "value": "The predicted value (if applicable)",
+        "value": "The predicted value (if applicable)",
           "confidence": 0.85, // 0.0 to 1.0
-          "reasoning": "Step-by-step logic for this prediction"
-        }
+            "reasoning": "Step-by-step logic for this prediction"
       }
+    }
       
       Rules for "answer":
       1. Length: At least 1 paragraph, maximum 5 paragraphs.
-      2. If results are numerical, include statistical context (averages, totals, min/max).
-      3. Identify patterns, trends, or notable outliers.
-      4. Use bullet points or numbered lists when presenting multiple items (use \\n for newlines).
-      5. Format numbers with appropriate units (e.g., $120,000, 5 employees).
-      6. Highlight key insights.
+      2. **FORMATTING**: Use Markdown extensively. Use \`**bold**\` for key names or values.
+      3. **SPACING**: Use double newlines (\`\\n\\n\`) between paragraphs or sections to ensure it's not cramped.
+      4. **SCANNABILITY**: Use bullet points (\`* \` or \`- \`) or numbered lists for lists of items.
+      5. **DATA**: If results are numerical, include statistical context (averages, totals, min/max).
+      6. **INSIGHTS**: Identify patterns, trends, or notable outliers and highlight them.
+      7. Format numbers with appropriate units (e.g., $120,000, 5 employees).
       
-      Rules for "prediction" (Only include if user asks to predict/forecast):
-      1. Use current data points to extrapolate.
+      Rules for "prediction"(Only include if user asks to predict / forecast):
+    1. Use current data points to extrapolate.
       2. Provide a confidence score from 0.0 to 1.0.
       3. Explain the reasoning clearly.
       
       Example response:
-      {
-        "answer": "Based on the sales data, there is a strong upward trend in Q3. Total revenue reached $450k, a 15% increase from Q2. Most of this growth comes from the 'Electronics' category which accounted for 60% of sales.\\n\\nNotable patterns:\\n• Sales peak on weekends\\n• Customer retention is at 82%\\n• Average order value grew by $12."
-      }
+    {
+      "answer": "Based on the sales data, there is a strong upward trend in Q3. Total revenue reached $450k, a 15% increase from Q2. Most of this growth comes from the 'Electronics' category which accounted for 60% of sales.\\n\\nNotable patterns:\\n• Sales peak on weekends\\n• Customer retention is at 82%\\n• Average order value grew by $12."
+    }
     `
   }
 
   static buildDisambiguationPrompt(term, candidates) {
     return `
       The user is searching for "${term}" in a database.
-      Here are the candidate tables/columns found:
+      Here are the candidate tables / columns found:
       ${JSON.stringify(candidates, null, 2)}
 
-      Which of these are the most relevant?
-      Return a JSON array of the top matches (max 8).
+      Which of these are the most relevant ?
+      Return a JSON array of the top matches(max 8).
       If none are relevant, return an empty array.
       
       Output format: ["match1", "match2"]
@@ -560,7 +528,7 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
 
   static buildTitlePrompt(messages) {
     const recentMessages = messages.slice(-4);
-    const conversationText = recentMessages.map(m => `${m.role}: ${m.content}`).join('\n');
+    const conversationText = recentMessages.map(m => `${m.role}: ${m.content} `).join('\n');
 
     // Check if this looks like a query conversation
     const hasQueryKeywords = conversationText.toLowerCase().match(/select|from|where|sum|count|average|group by|join|table|database|query/);
@@ -570,13 +538,13 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
       : '';
 
     return `
-        Generate a short, concise title (3-6 words) for this chat session based on the conversation below.
+        Generate a short, concise title(3 - 6 words) for this chat session based on the conversation below.
         The title should reflect the user's intent or the topic being discussed.
-        Do not use quotes. Do not use "Title:". Just return the text.${additionalGuidance}
-        
-        Conversation:
+        Do not use quotes.Do not use "Title:".Just return the text.${additionalGuidance}
+
+    Conversation:
         ${conversationText}
-        `
+    `
   }
 
 
@@ -586,7 +554,7 @@ ${customInstructions ? `CUSTOM USER INSTRUCTIONS:\n${customInstructions}` : ''}
       if (!response || typeof response !== 'string') return '';
 
       // 1. Remove markdown code blocks
-      let clean = response.replace(/```(sql|surrealql|kusto|mongo|json)?/g, '').replace(/```/g, '').trim()
+      let clean = response.replace(/```(sql | surrealql | kusto | mongo | json) ? /g, '').replace(/```/g, '').trim()
 
       // 2. If dialect is mongodb, try to extract just the JSON object
       if (dialect === 'mongodb') {

@@ -91,6 +91,19 @@ const initSchema = async () => {
             DEFINE INDEX unique_access ON TABLE dashboard_permission COLUMNS user, dashboard UNIQUE;
         `);
 
+        // Spreadsheet Permissions (Sharing)
+        // Allows sharing uploaded spreadsheets with View/Edit access
+        await db.query(`
+            DEFINE TABLE spreadsheet_permission SCHEMAFULL;
+            DEFINE FIELD spreadsheet ON TABLE spreadsheet_permission TYPE string; -- table name (data_uuid_name)
+            DEFINE FIELD user_email ON TABLE spreadsheet_permission TYPE string;
+            DEFINE FIELD access_level ON TABLE spreadsheet_permission TYPE string; -- 'view' | 'edit'
+            DEFINE FIELD granted_by ON TABLE spreadsheet_permission TYPE record<user>;
+            DEFINE FIELD granted_at ON TABLE spreadsheet_permission TYPE datetime DEFAULT time::now();
+            
+            DEFINE INDEX unique_ss_access ON TABLE spreadsheet_permission COLUMNS spreadsheet, user_email UNIQUE;
+        `);
+
         // Sanitization Metadata Table (Versioning)
         await db.query(`
             DEFINE TABLE sanitization_metadata SCHEMAFULL;

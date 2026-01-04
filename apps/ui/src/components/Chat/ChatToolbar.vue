@@ -20,6 +20,8 @@ const props = defineProps<{
   aiMode?: boolean
   autoExecute?: boolean
   privateMode?: boolean
+  liveMode?: boolean  // NEW: Collaboration mode
+  collaboratorCount?: number  // NEW
   canUndo?: boolean
   canRedo?: boolean
   queryHistory?: any[]
@@ -32,6 +34,8 @@ const emit = defineEmits<{
   'update:queryOptions': [value: { timeout: number; limit: number; autoCommit: boolean }]
   'update:auto-execute': [value: boolean]
   'update:private-mode': [value: boolean]
+  'update:live-mode': [value: boolean]  // NEW
+  'share': []  // NEW
   'merge': []
   'run': []
   'stop': []
@@ -110,6 +114,8 @@ const models = computed(() => {
           v-if="mode === 'spreadsheet'"
           :ai-mode="aiMode || false"
           :private-mode="privateMode || false"
+          :live-mode="liveMode || false"
+          :collaborator-count="collaboratorCount"
           :save-status="saveStatus"
           :can-undo="canUndo"
           :can-redo="canRedo"
@@ -118,6 +124,8 @@ const models = computed(() => {
           @visualize="emit('visualize')"
           @sanitize="emit('sanitize')"
           @update:private-mode="emit('update:private-mode', $event)"
+          @update:live-mode="emit('update:live-mode', $event)"
+          @share="emit('share')"
           @merge="emit('merge')"
           @export="(f) => emit('export', f)"
           @refresh-table="emit('refresh-table')"

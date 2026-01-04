@@ -33,6 +33,7 @@ const props = defineProps<{
   hasRecommendation?: boolean
   settings?: SettingsModel
   initialViewMode?: 'table' | 'json' | 'excel'
+  lockedPosition?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -278,6 +279,7 @@ const copyToClipboard = async (text: string) => {
         <!-- Utility Group -->
         <div class="flex items-center gap-1">
           <button
+            v-if="!lockedPosition"
             @click="togglePosition"
             class="p-1.5 rounded-lg text-stone-500 hover:text-violet-400 hover:bg-stone-800/50 transition-all"
             :title="`Dock to ${position === 'bottom' ? 'right' : 'bottom'}`"
