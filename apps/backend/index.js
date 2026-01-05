@@ -80,6 +80,20 @@ if (typeof CompressionStream !== 'undefined') {
 }
 app.use('*', etag())
 
+// Ensure database connection on Vercel (serverless environment)
+// On Vercel, startServer() is NOT called, so we need to connect on first request
+const isVercel = process.env.VERCEL === '1';
+if (isVercel) {
+  app.use('*', async (c, next) => {
+    try {
+      await connectDB();
+    } catch (e) {
+      console.error('[Vercel] Database connection failed:', e.message);
+    }
+    return next();
+  });
+}
+
 // Global Error Handlers
 app.notFound((c) => {
   return c.text('404 Not Found', 404)
@@ -1541,7 +1555,6 @@ app.get("/usage", async (c) => {
 // Consolidated route mounting handled above
 
 // initialization block
-const isVercel = process.env.VERCEL === '1';
 const isBun = typeof Bun !== 'undefined';
 const startServer = async () => {
   try {
