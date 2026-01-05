@@ -113,6 +113,13 @@
                <div v-html="renderMarkdown(element.config.content)"></div>
             </div>
 
+            <!-- Table Element -->
+            <TableElement
+              v-else-if="element?.type === 'table' && element.config"
+              :config="element.config"
+              class="h-full"
+            />
+
             <!-- File Element -->
             <div 
               v-else-if="element?.type === 'file'" 
@@ -169,6 +176,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
+import TableElement from '@/components/Dashboard/Elements/TableElement.vue'
 import {
   ContextMenu,
   ContextMenuContent,

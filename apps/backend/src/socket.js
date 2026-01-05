@@ -101,7 +101,7 @@ export function initSocketServer(server, allowedOrigins) {
         });
 
         socket.on("chat_message", async (data) => {
-            // data: { dashboardId, content, parentId? (for threads) }
+            // data: { dashboardId, content, mentions?, images?, parentId? }
             const room = `dashboard:${data.dashboardId}`;
 
             // Create message object with all user data embedded
@@ -115,34 +115,134 @@ export function initSocketServer(server, allowedOrigins) {
                     profilePictureUrl: socket.user.profilePictureUrl
                 },
                 content: data.content,
+                mentions: data.mentions || [],
+                images: data.images || [],
                 timestamp: new Date().toISOString(),
-                parentId: data.parentId || null, // For threaded messages
-                replies: [] // Will hold reply IDs for thread organization
+                parentId: data.parentId || null,
             };
 
             // Save to dashboard.messages array
             try {
-                // Normalize dashboard ID
                 const dashId = data.dashboardId.includes(':')
                     ? data.dashboardId
                     : `dashboard:${data.dashboardId}`;
 
                 console.log('[Socket.io] Saving message to dashboard:', dashId);
 
-                // Use array_append to add to messages array (create if doesn't exist)
                 await db.query(`
                     UPDATE ${dashId} SET 
                         messages = array::append(messages ?? [], $message),
                         updated_at = time::now();
                 `, { message });
 
-                console.log('[Socket.io] Message saved successfully to dashboard');
+                console.log('[Socket.io] Message saved successfully');
             } catch (e) {
                 console.error("[Socket.io] Failed to save message:", e);
             }
 
+            // Handle @user mentions - notify mentioned users
+            if (data.mentions?.length) {
+                for (const mention of data.mentions) {
+                    if (mention.type === 'user' && mention.id) {
+                        // Find the mentioned user's socket
+                        const allSockets = await io.fetchSockets();
+                        const targetSocket = allSockets.find(s =>
+                            s.user?.id === mention.id || s.user?.email === mention.email
+                        );
+
+                        if (targetSocket) {
+                            targetSocket.emit("user_mentioned", {
+                                dashboardId: data.dashboardId,
+                                senderName: socket.user.firstName || socket.user.email?.split('@')[0],
+                                preview: data.content.substring(0, 100),
+                                timestamp: message.timestamp
+                            });
+                        }
+                    }
+                }
+            }
+
             // Broadcast to room
             io.to(room).emit("new_message", message);
+        });
+
+        // @Pegasus AI Query
+        socket.on("pegasus_query", async (data) => {
+            // data: { dashboardId, query, context? }
+            const room = `dashboard:${data.dashboardId}`;
+
+            console.log('[Socket.io] Pegasus query:', data.query);
+
+            try {
+                // Notify room that AI is thinking
+                io.to(room).emit("pegasus_thinking", { thinking: true });
+
+                // Get dashboard context (elements, tables)
+                const dashId = data.dashboardId.includes(':')
+                    ? data.dashboardId
+                    : `dashboard:${data.dashboardId}`;
+
+                const [dashboards] = await db.query(`SELECT elements, title FROM ${dashId}`);
+                const dashboard = dashboards?.[0];
+
+                // Build context string from dashboard elements
+                let contextStr = "";
+                if (dashboard?.elements?.length) {
+                    const tables = dashboard.elements.filter(e => e.type === 'table');
+                    if (tables.length) {
+                        contextStr = `Dashboard contains tables: ${tables.map(t => t.config?.tableName || 'Unknown').join(', ')}. `;
+                    }
+                }
+
+                // Call AI (use existing chat service or similar)
+                const response = await fetch(`http://localhost:${process.env.PORT || 3001}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': socket.handshake.auth.token ? `Bearer ${socket.handshake.auth.token}` : ''
+                    },
+                    body: JSON.stringify({
+                        message: `${contextStr}User asks: ${data.query}`,
+                        context: { dashboard: dashboard?.title }
+                    })
+                });
+
+                let aiResponseText = "I couldn't process that request. Please try again.";
+                if (response.ok) {
+                    const result = await response.json();
+                    aiResponseText = result.response || result.message || aiResponseText;
+                }
+
+                // Create AI response message
+                const aiMessage = {
+                    id: crypto.randomUUID(),
+                    user: {
+                        id: 'pegasus',
+                        email: 'pegasus@ai',
+                        firstName: 'Pegasus',
+                        lastName: 'AI'
+                    },
+                    content: aiResponseText,
+                    isAIResponse: true,
+                    timestamp: new Date().toISOString(),
+                };
+
+                // Save AI response to dashboard
+                await db.query(`
+                    UPDATE ${dashId} SET 
+                        messages = array::append(messages ?? [], $message),
+                        updated_at = time::now();
+                `, { message: aiMessage });
+
+                // Broadcast AI response
+                io.to(room).emit("pegasus_thinking", { thinking: false });
+                io.to(room).emit("new_message", aiMessage);
+
+            } catch (e) {
+                console.error("[Socket.io] Pegasus query failed:", e);
+                io.to(room).emit("pegasus_thinking", { thinking: false });
+                io.to(room).emit("pegasus_error", { error: "Failed to process AI query" });
+            }
         });
 
         // Handle disconnect

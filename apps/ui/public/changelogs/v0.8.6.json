@@ -1,0 +1,82 @@
+{
+    "title": "v0.8.6 - Dashboard Collaborative Chat",
+    "date": "2026-01-05",
+    "version": "0.8.6",
+    "description": "This release enhances dashboard collaboration with @mentions, AI-powered queries, in-app notifications, table elements, image sharing, and smart caching.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "@Mention System",
+                    "description": "Mention users and Pegasus AI directly in dashboard chat with an intuitive autocomplete popup.",
+                    "details": [
+                        "Inline Popup: Type '@' to trigger suggestions for Pegasus AI and dashboard collaborators.",
+                        "Keyboard Navigation: Use arrow keys to navigate and Enter to select mentions.",
+                        "Highlighted Mentions: @mentions are styled distinctly in chat messages."
+                    ]
+                },
+                {
+                    "title": "@Pegasus AI Queries",
+                    "description": "Ask Pegasus questions about your dashboard data directly from the chat.",
+                    "details": [
+                        "Context-Aware: AI queries automatically include dashboard context like table elements.",
+                        "Real-time Responses: See 'Pegasus is thinking...' indicator while AI processes.",
+                        "AI Message Styling: Responses display with a distinct gradient avatar and styling."
+                    ]
+                },
+                {
+                    "title": "Notification Bell",
+                    "description": "Stay informed when you're mentioned in dashboard chats.",
+                    "details": [
+                        "Unread Badge: Shows count of unread notifications.",
+                        "Quick Navigation: Click a notification to jump directly to the dashboard.",
+                        "Notification Management: Mark as read or clear all notifications."
+                    ]
+                },
+                {
+                    "title": "Table Dashboard Element",
+                    "description": "Display live database tables directly in your dashboard.",
+                    "details": [
+                        "Inline Data View: Reuses DataViewerModal patterns without the modal wrapper.",
+                        "Search & Sort: Filter and sort columns directly in the element.",
+                        "Pagination: Navigate large datasets with built-in pagination."
+                    ]
+                },
+                {
+                    "title": "Image Uploads in Chat",
+                    "description": "Share images directly in dashboard chat conversations.",
+                    "details": [
+                        "Drag & Drop or Click: Upload images via the paperclip button.",
+                        "Preview Before Send: See thumbnails of pending images before sending.",
+                        "Base64 Storage: Images stored directly in messages for simplicity."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Dashboard Caching (SWR)",
+                    "description": "Implemented stale-while-revalidate caching for faster dashboard loading.",
+                    "details": [
+                        "Instant Load: Cached dashboards display immediately while fresh data loads.",
+                        "Background Refresh: Revalidation happens automatically in the background.",
+                        "15-min TTL: Default cache expiration with localStorage persistence."
+                    ]
+                },
+                {
+                    "title": "Enhanced Socket Events",
+                    "description": "New socket events power the real-time collaborative features.",
+                    "details": [
+                        "pegasus_query: Handles AI queries with dashboard context.",
+                        "user_mentioned: Notifies users when they're @mentioned.",
+                        "pegasus_thinking: Broadcasts AI processing state to room."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}
