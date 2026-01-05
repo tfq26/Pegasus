@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { getCookie } from "hono/cookie"
+import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { provisioningService } from "../services/ProvisioningService.js"
 import { azureProvisioner } from "../services/AzureProvisioner.js"
@@ -8,16 +9,6 @@ import { awsProvisioner } from "../services/AWSProvisioner.js"
 const provision = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
 
-const getAuthToken = (c) => {
-    let token = getCookie(c, "session")
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
-    }
-    return token
-}
 
 provision.post("/managed", async (c) => {
     const token = getAuthToken(c)

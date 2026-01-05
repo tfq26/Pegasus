@@ -55,8 +55,6 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
   : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:1420", "http://127.0.0.1:1420"];
 
-export { getAuthToken }
-
 const app = new Hono()
 
 // Global Middleware (Applied to ALL routes)
@@ -95,8 +93,6 @@ app.onError((err, c) => {
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   }, 500)
 })
-
-export { getAuthToken }
 
 // Mount all routes
 app.route('/auth', authRoutes)

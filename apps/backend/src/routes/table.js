@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { getCookie } from "hono/cookie"
+import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { uploadsDb } from "../../db/uploads.js"
@@ -54,19 +55,6 @@ const upsertUser = async (payload) => {
     }
 }
 
-// Helper to get token from cookie or header
-const getAuthToken = (c) => {
-    // Try cookie first
-    let token = getCookie(c, "session")
-    // Fallback to Authorization header
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
-    }
-    return token
-}
 
 table.post("/rename-table", async (c) => {
     try {
