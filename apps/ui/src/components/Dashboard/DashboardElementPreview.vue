@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-[800px] bg-background border-border text-foreground" @pointerDownOutside.prevent @interactOutside.prevent>
+    <DialogContent size="xl" class="bg-background border-border text-foreground" @pointerDownOutside.prevent @interactOutside.prevent>
       <DialogHeader>
         <DialogTitle>Create Dashboard Element</DialogTitle>
         <DialogDescription class="text-muted-foreground">

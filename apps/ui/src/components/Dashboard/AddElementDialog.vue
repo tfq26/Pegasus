@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-[600px]">
+    <DialogContent size="lg">
       <DialogHeader>
         <DialogTitle>Add Dashboard Element</DialogTitle>
         <DialogDescription>

@@ -1599,16 +1599,13 @@ const startServer = async () => {
     } else if (isBun) {
       console.log(`[Main] Bun server on port ${port}`);
 
-      // Initialize Socket.io instance for Bun
-      const io = initSocketServer(null, allowedOrigins);
+      // Note: Socket.io doesn't natively support Bun's WebSocket API
+      // For now, we run without real-time features on Bun
+      // TODO: Add proper Bun WebSocket support or use a Bun-native solution
+      console.log('[Main] Socket.io is not available in Bun mode');
 
       const server = Bun.serve({
         fetch: async (req, server) => {
-          // Handle Socket.io upgrade
-          if (io.handleUpgrade(req, server)) {
-            return;
-          }
-
           try {
             const url = new URL(req.url);
             console.log(`[Request] ${req.method} ${url.pathname}${url.search}`);
@@ -1626,7 +1623,6 @@ const startServer = async () => {
             return new Response(`Server error: ${e.message}`, { status: 500 });
           }
         },
-        websocket: io.websocket,
         port: Number(port)
       });
     } else {

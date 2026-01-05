@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-[700px] max-h-[90vh] flex flex-col">
+    <DialogContent size="lg" class="max-h-[90vh] flex flex-col">
       <DialogHeader>
         <DialogTitle>Add Text Block</DialogTitle>
         <DialogDescription>Add rich text content to your dashboard using markdown.</DialogDescription>

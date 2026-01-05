@@ -60,7 +60,7 @@ watch(() => props.slug, () => {
 
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-3xl bg-card/95 backdrop-blur-xl border-border shadow-2xl overflow-y-auto max-h-[85vh]">
+    <DialogContent size="lg" class="bg-card/95 backdrop-blur-xl border-border shadow-2xl overflow-y-auto max-h-[85vh]">
       <DialogHeader>
         <DialogTitle class="flex items-center gap-2 text-xl font-bold">
           <FileText class="w-5 h-5 text-violet-500" />

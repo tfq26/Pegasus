@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-xl bg-card border-border shadow-2xl overflow-y-auto max-h-[90vh]">
+    <DialogContent size="lg" class="bg-card border-border shadow-2xl overflow-y-auto max-h-[90vh]">
       <DialogHeader>
         <DialogTitle class="text-xl font-bold flex items-center gap-2">
           <Zap class="w-5 h-5 text-amber-500" />

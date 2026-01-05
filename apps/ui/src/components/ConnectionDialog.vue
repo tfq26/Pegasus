@@ -69,7 +69,7 @@ const closeModal = () => {
 
 <template>
   <Dialog v-model:open="isOpen">
-    <DialogContent class="max-w-2xl bg-background border border-border text-foreground sm:rounded-xl shadow-2xl">
+    <DialogContent size="lg" class="bg-background border border-border text-foreground sm:rounded-xl shadow-2xl">
       <DialogHeader>
         <DialogTitle class="text-xl font-semibold text-primary flex items-center gap-2">
           <Database class="w-5 h-5" />

@@ -157,7 +157,7 @@
           <textarea
             v-model="localInput"
             rows="1"
-            placeholder="Query your database..."
+            placeholder="Type a message..."
             class="w-full min-h-[44px] max-h-[300px] bg-transparent text-stone-200 p-3 pr-[140px] resize-none focus:outline-none font-sans text-[14px] placeholder:text-stone-600 leading-normal scrollbar-none transition-all duration-300"
             @focus="isInputFocused = true"
             @blur="isInputFocused = false"
