@@ -6,7 +6,7 @@ import { db } from "../db/surreal.js";
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
 
 export function initSocketServer(server, allowedOrigins) {
-    const io = new Server(server, {
+    const io = new Server(server || undefined, {
         cors: {
             origin: allowedOrigins,
             methods: ["GET", "POST"],

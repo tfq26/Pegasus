@@ -57,6 +57,7 @@ const emit = defineEmits<{
   'explain-query': []
   'load-query': [query: string]
   'export-chat': []
+  'save': []
 }>()
 
 const expanded = ref(false)
@@ -107,6 +108,7 @@ const models = computed(() => {
           @translate="emit('translate')"
           @explain-query="emit('explain-query')"
           @load-query="emit('load-query', $event)"
+          @save="emit('save')"
         />
 
         <!-- Spreadsheet Mode -->

@@ -6,7 +6,8 @@ import {
   AlignLeft,
   Languages, 
   History,
-  Info
+  Info,
+  Save
 } from 'lucide-vue-next'
 import {
   Tooltip,
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   'translate': []
   'explain-query': []
   'load-query': [query: string]
+  'save': []
 }>()
 
 const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
@@ -56,6 +58,15 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
         <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
         <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
         <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
+      </button>
+
+      <button
+        @click="emit('save')"
+        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+        title="Save query (Ctrl+S)"
+      >
+        <Save class="w-3.5 h-3.5" />
+        <span class="hidden md:inline">Save</span>
       </button>
 
       <button

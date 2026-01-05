@@ -51,8 +51,11 @@ export class SurrealAdapter extends DatabaseAdapter {
 
     async query(query) {
         try {
-            // console.log(`[SurrealDB] Executing query: ${query}`);
-            const result = await this.db.query(query);
+            // Resolve table names (handle friendly display names -> internal data_uuid_name)
+            const resolvedQuery = await this.resolveTableNames(query);
+
+            // console.log(`[SurrealDB] Executing query: ${resolvedQuery}`);
+            const result = await this.db.query(resolvedQuery);
             // console.log(`[SurrealDB] Raw result type: ${typeof result}`);
             // console.log(`[SurrealDB] Raw result stringified:`, JSON.stringify(result, null, 2));
 
@@ -114,6 +117,96 @@ export class SurrealAdapter extends DatabaseAdapter {
                 console.error(`[SurrealDB] Query failed: ${query}`, error);
             }
             throw new Error(`SurrealDB query error: ${error.message}`);
+        }
+    }
+
+    /**
+     * Resolve table aliases in query (friendly names -> internal names)
+     */
+    async resolveTableNames(query) {
+        if (!this.isInternal) return query;
+
+        // Try to find the upload ID from connection
+        let uid = this.connection.uploadId;
+        if (!uid) {
+            // If uploadId is missing, check if we can infer it from the connection info
+            // (Sometimes it's passed via connection object rather than being explicitly set)
+            return query;
+        }
+
+        // Process uid (remove hyphens, handle uploads: prefix)
+        if (uid.includes(':')) uid = uid.split(':')[1];
+        uid = uid.replace(/-/g, '');
+
+        try {
+            // 1. Get all tables belonging to this upload context
+            const allTables = await this.listCollections();
+            if (!allTables || allTables.length === 0) return query;
+
+            const mapping = {};
+
+            // 2. Map internal names to friendly names (data_<uuid>_<name> -> <name>)
+            for (const realTable of allTables) {
+                const prefix = `data_${uid}_`;
+                if (realTable.startsWith(prefix)) {
+                    const shortName = realTable.substring(prefix.length);
+                    if (shortName) mapping[shortName] = realTable;
+                }
+            }
+
+            // 3. Map user-defined display name from upload metadata
+            const uploadRecordId = `uploads:${uid}`;
+            const [upload] = await this.db.query(`SELECT display_name FROM \`${uploadRecordId}\``);
+            if (upload && upload[0] && upload[0].display_name) {
+                const displayName = upload[0].display_name;
+                // If there's only one table, or a clear match
+                if (allTables.length === 1) {
+                    mapping[displayName] = allTables[0];
+                } else {
+                    // Try to match display name to one of the tables if possible
+                    // Or if display_name matches a shortName already, it's already covered
+                }
+            }
+
+            // 4. Perform replacements
+            let resolvedQuery = query;
+            let replacementsMade = false;
+
+            // Sort keys by length descending to avoid partial matches (e.g., 'Portfolio' before 'Portfolio_1')
+            const sortedShortNames = Object.keys(mapping).sort((a, b) => b.length - a.length);
+
+            for (const shortName of sortedShortNames) {
+                const realName = mapping[shortName];
+
+                // Heuristic: only replace if it looks like a table name usage
+                // (Preceded by FROM, JOIN, UPDATE, etc. or quoted)
+                // We use a regex that looks for the name as a standalone word or quoted
+                // Use a negative lookbehind to ensure we don't double-prefix
+                // Note: JS support for negative lookbehind varies, using a safer word boundary approach
+                const escapedShortName = shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(\\b|['"\`])${escapedShortName}(\\b|['"\`])`, 'g');
+
+                resolvedQuery = resolvedQuery.replace(regex, (match, prefix, suffix) => {
+                    // Check if it's already prefixed (i.e., preceded by data_<uuid>_)
+                    // Since we already matched the word, we can check the context if we had it
+                    // Simple check: if the match is already the real name, don't change it
+                    if (match === realName || match === `\`${realName}\`` || match === `"${realName}"`) {
+                        return match;
+                    }
+
+                    replacementsMade = true;
+                    return `${prefix}${realName}${suffix}`;
+                });
+            }
+
+            if (replacementsMade) {
+                console.log(`[SurrealDB] Translated Query: "${query}" -> "${resolvedQuery}"`);
+            }
+
+            return resolvedQuery;
+        } catch (e) {
+            console.error('[SurrealDB] Error resolving table names:', e.message);
+            return query;
         }
     }
 

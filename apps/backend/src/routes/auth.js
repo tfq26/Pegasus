@@ -12,7 +12,7 @@ const auth = new Hono()
 const workos = new WorkOS(process.env.WORKOS_API_KEY || "sk_test_placeholder")
 const clientId = process.env.WORKOS_CLIENT_ID
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:5173/auth/callback"
+const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')

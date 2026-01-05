@@ -1,4 +1,6 @@
 import { spreadsheetToolService } from '../src/services/SpreadsheetToolService.js';
+import { SurrealAdapter } from '../adapters/surrealAdapter.js';
+import { connectDB } from '../db/surreal.js';
 import readline from 'readline';
 
 /**
@@ -32,8 +34,12 @@ const sampleData = {
 
 const testContext = {
     spreadsheetData: sampleData,
-    userId: 'test-user'
+    userId: 'user_01K8FGQG2NSJZJ7K38QFBS8CJD', // Default test user
+    adapter: new SurrealAdapter({ uploadId: '3db3e20cdc444176ae32c85e80753f1a' }) // Default test upload
 };
+
+await connectDB();
+await testContext.adapter.connect();
 
 // Get all tool definitions
 const allTools = spreadsheetToolService.getToolDefinitions();
@@ -148,6 +154,8 @@ function getExampleParams(toolName) {
         'apply_template': { templateName: 'standard_portfolio' },
 
         // Query tools
+        'execute_query': { query: 'SELECT * FROM Portfolio_1 LIMIT 3' },
+        'get_table_schema': { tableName: 'Portfolio_1' },
         'format_query': { query: 'select * from users where status=active' },
         'explain_query': { query: 'SELECT u.name, COUNT(o.id) FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.name' },
         'optimize_query': { query: 'SELECT * FROM orders WHERE YEAR(created_at) = 2024' },

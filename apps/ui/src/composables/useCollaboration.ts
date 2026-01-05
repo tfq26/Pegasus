@@ -28,7 +28,10 @@ export function useCollaboration() {
 
         socket.value = io(SERVER_URL, {
             auth: { token },
-            transports: ['websocket', 'polling']
+            transports: ['polling', 'websocket'], // Try polling first for better compatibility
+            reconnectionAttempts: 5,
+            reconnectionDelay: 5000,
+            timeout: 10000
         });
 
         socket.value.on('connect', () => {
@@ -44,7 +47,10 @@ export function useCollaboration() {
         });
 
         socket.value.on('connect_error', (err) => {
-            console.error('[Collaboration] Connection error:', err.message);
+            if (isConnected.value) {
+                console.warn('[Collaboration] Socket connection lost:', err.message);
+            }
+            isConnected.value = false;
         });
 
         // Event Listeners

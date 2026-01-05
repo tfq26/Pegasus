@@ -41,6 +41,8 @@ export function useChatExecution(
     const lastQuery = ref('')
     const abortController = ref<AbortController | null>(null)
     const currentOpId = ref('')
+    const visualizableResult = ref<any>(null)
+    const suggestedChartType = ref<string | null>(null)
 
     // --- Helpers ---
     const normalizeQuery = (query: string, provider: string) => {
@@ -93,10 +95,10 @@ export function useChatExecution(
             const { generateChartConfig } = await import('@/lib/chartGenerator')
 
             let dataForVisualization = queryResult.value
-            if ((window as any).__visualizableResult) {
-                dataForVisualization = (window as any).__visualizableResult
-                delete (window as any).__visualizableResult
-                delete (window as any).__suggestedChartType
+            if (visualizableResult.value) {
+                dataForVisualization = visualizableResult.value
+                visualizableResult.value = null
+                suggestedChartType.value = null
             }
 
             const dataArray = Array.isArray(dataForVisualization) ? dataForVisualization : [dataForVisualization]
@@ -123,12 +125,11 @@ export function useChatExecution(
         if (mode.value === 'chat') {
             activeInput = chatInput.value
         } else if (mode.value === 'write') {
-            // Get content from active query tab via workspace store directly? 
-            // Chat.vue used workspaceRef which is UI specific.
-            // We can check workspaceStore.activeTab.
-            const activeTab = (workspaceStore as any).activeTab
-            if (activeTab?.type === 'query') {
-                activeInput = activeTab.data?.content || writeInput.value
+            // Get content from active query tab via workspace store directly
+            const activeTab = workspaceStore.activeTab as any
+            const tabValue = activeTab && (activeTab.value || activeTab)
+            if (tabValue?.type === 'query') {
+                activeInput = tabValue.data?.content || writeInput.value
             } else {
                 activeInput = writeInput.value
             }
@@ -167,28 +168,18 @@ export function useChatExecution(
         startOperation(opId, `Executing Query`, { cancellable: true, onCancel: handleCancelQuery })
 
         try {
-            // Note: access api url via import.meta.env or config
-            // Ideally pass api client or config. 
-            // Assuming direct fetch for now matching Chat.vue
-            // We need QUERY_API_URL.
-            const queryApiUrl = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
-
-            const response = await fetch(`${queryApiUrl}/query`, {
-                signal: abortController.value.signal,
-                method: 'POST',
-                headers: getAuthHeaders(),
-                credentials: 'include',
-                body: JSON.stringify({
-                    provider: selectedConnection.value.provider,
-                    connection: buildConnectionPayload(selectedConnection.value),
-                    query: normalizeQuery(payload, selectedConnection.value.provider),
-                    source: 'user',
-                    model: null
-                })
+            const response = await api.post<any>('/query', {
+                provider: selectedConnection.value.provider,
+                connection: buildConnectionPayload(selectedConnection.value),
+                query: normalizeQuery(payload, selectedConnection.value.provider),
+                source: 'user',
+                model: null
+            }, {
+                signal: abortController.value.signal
             })
 
-            const body = await response.json()
-            if (!response.ok || body.error) throw new Error(body.error ?? 'Execution failed')
+            const body = response
+            if (body.error) throw new Error(body.error ?? 'Execution failed')
 
             queryResult.value = body.result ?? null
             finishOperation(opId)
@@ -328,9 +319,10 @@ export function useChatExecution(
 
             const history = chatHistory.value || []
             let activeTable = undefined
-            // Need active table from workspace... 
-            const activeTab = (workspaceStore as any).activeTab
-            if (activeTab?.type === 'table') activeTable = activeTab.data?.tableName
+            const activeTab = workspaceStore.activeTab as any
+            const tabValue = activeTab && (activeTab.value || activeTab)
+            if (tabValue?.type === 'table') activeTable = tabValue.data?.tableName
+            else if (tabValue?.type === 'spreadsheet') activeTable = tabValue.data?.tableName
 
             const aiResponse = await generateAIQuery(userPrompt, selectedConnection.value.id, history, activeTable)
             update(40, 'Executing...')
@@ -342,7 +334,7 @@ export function useChatExecution(
                 const combinedResults: any[] = []
                 let combinedQuery = ''
                 let visualizableResults: any[] = []
-                let suggestedChartType: string | null = null
+                let localSuggestedChartType: string | null = null
 
                 for (const step of aiResponse.steps) {
                     const normalizedStepQuery = normalizeQuery(step.query, selectedConnection.value.provider)
@@ -352,7 +344,7 @@ export function useChatExecution(
                         if (step.visualizable) {
                             if (Array.isArray(step.result)) visualizableResults.push(...step.result)
                             else visualizableResults.push(step.result)
-                            if (step.chart_type) suggestedChartType = step.chart_type
+                            if (step.chart_type) localSuggestedChartType = step.chart_type
                         }
                     } else if (step.error) {
                         combinedResults.push({ explanation: step.explanation, error: step.error })
@@ -363,8 +355,8 @@ export function useChatExecution(
                 lastQuery.value = combinedQuery
 
                 if (visualizableResults.length > 0) {
-                    (window as any).__visualizableResult = visualizableResults;
-                    (window as any).__suggestedChartType = suggestedChartType;
+                    visualizableResult.value = visualizableResults
+                    suggestedChartType.value = localSuggestedChartType
                 }
 
                 // Summary
@@ -410,20 +402,13 @@ export function useChatExecution(
                 }
 
                 // Executing the query in aiResponse
-                const payload = buildConnectionPayload(selectedConnection.value)
-                const res = await fetch(`${import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'}/query`, {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({
-                        provider: selectedConnection.value.provider,
-                        connection: payload,
-                        query: normalizeQuery(singleAIResponse.query, selectedConnection.value.provider),
-                        source: 'ai',
-                        model: singleAIResponse.model
-                    })
+                const body = await api.post<any>('/query', {
+                    provider: selectedConnection.value.provider,
+                    connection: buildConnectionPayload(selectedConnection.value),
+                    query: normalizeQuery(singleAIResponse.query, selectedConnection.value.provider),
+                    source: 'ai',
+                    model: singleAIResponse.model
                 })
-                const body = await res.json()
-                if (!res.ok) throw new Error(body.error)
 
                 queryResult.value = body.result
                 lastQuery.value = singleAIResponse.query

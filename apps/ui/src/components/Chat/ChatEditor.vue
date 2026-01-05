@@ -137,8 +137,6 @@
       </div>
     </div>
 
-    <!-- Mode Transition Background (Write Mode) -->
-    <div v-if="props.mode === 'write'" class="flex-1 bg-stone-950/80 backdrop-blur-md z-0"></div>
 
     <!-- Input Laboratory Container -->
     <div 
@@ -155,16 +153,7 @@
            <div class="h-full bg-violet-500 animate-[progress_1.5s_infinite_linear] shadow-[0_0_8px_theme(colors.violet.500)]" style="width: 30%"></div>
         </div>
 
-        <div v-if="props.mode === 'write'" class="h-[320px]">
-          <CodeEditor
-            v-if="props.mode === 'write'"
-            :key="'write-mode'"
-            v-model="localInput"
-            language="sql"
-            class="w-full h-full bg-transparent text-foreground resize-none focus:outline-none font-mono text-sm placeholder:text-stone-600"
-          />
-        </div>
-        <div v-else class="relative">
+        <div class="relative">
           <textarea
             v-model="localInput"
             rows="1"
@@ -255,7 +244,7 @@ const getUserLabel = () => {
 const CodeEditor = defineAsyncComponent(() => import('./CodeEditor.vue'))
 
 const props = defineProps<{ 
-  mode: 'chat' | 'write'
+  mode: 'chat'
   input: string
   history?: Array<{ role: string; content: string; timestamp: number }>
   isThinking?: boolean

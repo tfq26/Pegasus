@@ -25,6 +25,7 @@ interface RequestOptions {
     body?: unknown
     credentials?: RequestCredentials
     skipAuthRedirect?: boolean
+    signal?: AbortSignal
 }
 
 class ApiClient {
@@ -68,6 +69,7 @@ class ApiClient {
             method,
             headers,
             credentials: options?.credentials || 'include',
+            signal: options?.signal
         }
 
         if (options?.body) {

@@ -50,7 +50,10 @@ export function useSpreadsheetCollaboration(
 
         socket.value = io(SERVER_URL, {
             auth: { token },
-            transports: ['websocket', 'polling']
+            transports: ['polling', 'websocket'],
+            reconnectionAttempts: 5,
+            reconnectionDelay: 5000,
+            timeout: 10000
         });
 
         socket.value.on('connect', () => {
@@ -71,7 +74,10 @@ export function useSpreadsheetCollaboration(
         });
 
         socket.value.on('connect_error', (err) => {
-            console.error('[SpreadsheetCollab] Connection error:', err.message);
+            if (isConnected.value) {
+                console.warn('[SpreadsheetCollab] Socket connection lost:', err.message);
+            }
+            isConnected.value = false;
         });
 
         // Spreadsheet-specific event listeners

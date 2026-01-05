@@ -75,6 +75,7 @@
           @explain-query="handleExplainQuery"
           @load-query="handleLoadQuery"
           @export-chat="handleExportChat"
+          @save="handleSaveCurrentQuery"
         />
 
         <!-- Editor -->
@@ -210,7 +211,7 @@ import { useChatExecution } from '@/composables/useChatExecution'
 import { useChatToolbar } from '@/composables/useChatToolbar'
 import { useTableActions } from '@/composables/useTableActions'
 import { useProgress } from '@/lib/progress'
-import { getAuthHeaders } from '@/lib/apiClient'
+import { getAuthHeaders, api } from '@/lib/apiClient'
 import { buildConnectionPayload } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { QUERY_API_URL, fetchQueries, fetchSettings, getAIModels, analyzeResults, saveQuery, saveMessage } from '@/lib/api'
@@ -559,18 +560,12 @@ const handleApplyMutation = async (mutation: any) => {
     const timestamp = Date.now()
     try {
         const payload = buildConnectionPayload(selectedConnection.value as ConnectionEntry)
-        const res = await fetch(`${import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'}/query`, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify({
-                provider: selectedConnection.value.provider,
-                connection: payload,
-                query: mutation.query,
-                source: 'ai_mutation'
-            })
+        const body = await api.post<any>('/query', {
+            provider: selectedConnection.value.provider,
+            connection: payload,
+            query: mutation.query,
+            source: 'ai_mutation'
         })
-        const body = await res.json()
-        if (!res.ok) throw new Error(body.error)
 
         queryResult.value = body.result
         lastQuery.value = typeof mutation.query === 'string' ? mutation.query : JSON.stringify(mutation.query)
@@ -681,6 +676,15 @@ const handleSaveFormulaQuery = async (query: string) => {
         await saveQuery(query, 'user', 'success', selectedConnection.value.id)
         toast.success('Query saved')
     } catch (e) { console.error(e) }
+}
+
+const handleSaveCurrentQuery = async () => {
+    const query = mode.value === 'write' ? writeInput.value : chatInput.value
+    if (!query || !query.trim()) {
+        toast.error('No query to save')
+        return
+    }
+    await handleSaveFormulaQuery(query)
 }
 
 const handleSaveExcel = async (data: any[]) => {

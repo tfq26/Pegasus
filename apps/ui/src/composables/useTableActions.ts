@@ -118,12 +118,8 @@ export function useTableActions(
         let successCount = 0
         let errors = 0
 
-        // Note: Direct fetch usage as we need to support non-standard query source 'sanitize_fix'
-        // We need QUERY_API_URL.
-        // We can import it.
-        const queryApiUrl = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
-        const { getAuthHeaders } = await import('@/lib/apiClient')
         const { buildConnectionPayload } = await import('@/lib/db-connections')
+        const { api } = await import('@/lib/apiClient')
 
         for (let i = 0; i < sqls.length; i++) {
             const query = sqls[i]
@@ -131,19 +127,13 @@ export function useTableActions(
             updateOperation(opId, percent, `Running fix ${i + 1}/${sqls.length}`)
 
             try {
-                const response = await fetch(`${queryApiUrl}/query`, {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        provider: selectedConnection.value.provider,
-                        connection: buildConnectionPayload(selectedConnection.value),
-                        query: query,
-                        source: 'sanitize_fix',
-                        model: aiModel,
-                    }),
+                await api.post<any>('/query', {
+                    provider: selectedConnection.value.provider,
+                    connection: buildConnectionPayload(selectedConnection.value),
+                    query: query,
+                    source: 'sanitize_fix',
+                    model: aiModel,
                 })
-                if (!response.ok) throw new Error('Failed')
                 successCount++
             } catch (e) {
                 errors++

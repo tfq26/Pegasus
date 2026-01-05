@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { X, Maximize2, Minimize2, PanelBottom, PanelRight, LayoutDashboard, Table } from 'lucide-vue-next'
+import { X, Maximize2, Minimize2, PanelBottom, PanelRight, LayoutDashboard, Table, Loader2 } from 'lucide-vue-next'
 import JsonViewer from '@/components/JsonViewer.vue'
 import ResultsTable from './ResultsTable.vue'
 import { toast } from '@/composables/useNotifications'
@@ -558,4 +558,3 @@ const copyToClipboard = async (text: string) => {
   margin-bottom: 0.125rem;
 }
 </style>
-```

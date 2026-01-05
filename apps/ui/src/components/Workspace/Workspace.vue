@@ -7,6 +7,7 @@ import type { Tab } from '@/stores/workspace';
 import { Engine } from '../TableView/Engine/Engine';
 import Grid from '../TableView/Grid/Grid.vue'; 
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
+import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
 
@@ -946,16 +947,27 @@ defineExpose({
             @version-change="(v) => handleVersionChange(tab.id, v)"
           />
           
-          <!-- Chat/Query Editor -->
+          <!-- Chat Interface -->
           <ChatEditor 
-            v-else
-            :mode="tab.type === 'query' ? 'write' : 'chat'"
-            :input="tab.type === 'query' ? (tab.data?.content || '') : props.input"
-            :history="tab.type === 'chat' ? (tab.data?.chatHistory || []) : undefined"
+            v-else-if="tab.type === 'chat'"
+            mode="chat"
+            :input="props.input"
+            :history="tab.data?.chatHistory || []"
             :is-thinking="props.isThinking"
             @update:input="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
             @submit="emit('submit')"
             @add-to-dashboard="(config) => emit('add-to-dashboard', config)"
+          />
+
+          <!-- Dedicated Query Console -->
+          <QueryEditorView
+            v-else-if="tab.type === 'query'"
+            :model-value="tab.data?.content || ''"
+            :is-thinking="props.isThinking"
+            :label="tab.label"
+            @update:model-value="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
+            @submit="emit('submit')"
+            @save="() => { /* handled by auto-save */ }"
           />
         </div>
       </template>

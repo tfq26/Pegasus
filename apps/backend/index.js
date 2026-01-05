@@ -1,5 +1,4 @@
 import { Hono } from "hono"
-// Force reload timestamp: 1735851000
 import { cors } from "hono/cors"
 import { adapters } from "./adapters/index.js"
 import { serve } from '@hono/node-server'
@@ -7,90 +6,11 @@ import { handle } from '@hono/node-server/vercel'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
 import { initSocketServer } from "./src/socket.js"
-
-const app = new Hono()
-
-// Global Performance Middleware
-if (typeof CompressionStream !== 'undefined') {
-  app.use('*', compress())
-}
-app.use('*', etag())
-
-// CORS configuration - supports both development and production
-// CORS configuration - supports both development and production
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:1420", "http://127.0.0.1:1420"]
-
-// CORS Configuration MUST be before routes
-app.use("*", cors({
-  origin: (origin) => {
-    // Allow localhost/127.0.0.1
-    if (!origin) {
-      console.log('[CORS] No origin, allowing:', allowedOrigins[0])
-      return allowedOrigins[0]
-    }
-    if (allowedOrigins.includes(origin)) {
-      return origin
-    }
-
-    // In development (no strict check), allow local network IPs/hostnames on port 5173
-    // Allow any http://...:5173 origin in dev
-    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-
-    if (!isProd) {
-      // Match http://anything:5173
-      if (/^http:\/\/.+:5173$/.test(origin)) {
-        console.log('[CORS] Dev origin allowed:', origin)
-        return origin;
-      }
-    }
-    console.log('[CORS] Origin not allowed, fallback to:', allowedOrigins[0], 'requested:', origin)
-    return allowedOrigins[0];
-  },
-  methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
-  credentials: true,
-  allowHeaders: ["Content-Type", "Authorization"],
-  exposeHeaders: ["Content-Type", "Authorization"],
-  maxAge: 86400 // Cache preflight for 24 hours
-}))
-
-
-// Mount Routes
-// dashboardRoutes defines paths like /dashboard and /dashboards internally.
-// So we mount it at the root '/'.
-app.route('/', dashboardRoutes)
-app.route('/connections', connectionRoutes)
-app.route('/api', tableRoutes)
-// Mount Chat/AI Routes
-app.route('/', chatRoutes)
-app.route('/operations', operationRoutes)
-app.route('/workspace', workspaceRoutes)
-app.route('/stocks', stockRoutes)
-app.route('/provision', provisionRoutes)
-app.route('/api/docs', docsRoutes)
-app.route('/rag', ragRoutes)
-app.route('/agent', agentRoutes)
-app.route('/weather', weatherRoutes)
-
-
-
-import { authRoutes } from "./src/routes/auth.js"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
-
-
 import { db, connectDB } from "./db/surreal.js"
-// Initialize DB Connection
-const port = process.env.PORT || 3000;
 import { stockService } from "./src/services/StockService.js"
 import { weatherService } from "./src/routes/weather.js"
-await connectDB();
-console.log('[Main] Database connected. Starting background services...');
-
-// Start background services after DB is ready
-// stockService.start();
-weatherService.start();
 import { dashboardRoutes } from "./src/routes/dashboard.js"
 import { connectionRoutes } from "./src/routes/connection.js"
 import { tableRoutes } from "./src/routes/table.js"
@@ -107,10 +27,8 @@ import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"
 import { parseXML, flattenXML } from "./lib/xmlParser.js"
-import Stripe from "stripe"
-import fs from "node:fs/promises"
-import path from "node:path"
-import os from "node:os"
+import { authRoutes } from "./src/routes/auth.js"
+import { getAuthToken } from "./lib/auth.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import {
   EXPERIMENTAL_FEATURES,
@@ -123,14 +41,77 @@ import {
 } from "./experimental-features.js"
 import { notifyExperimentalRequest } from "./src/services/emailService.js"
 import { RAGService } from "./src/services/ragService.js"
+import Stripe from "stripe"
+import fs from "node:fs/promises"
+import path from "node:path"
+import os from "node:os"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder")
+console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
+const port = process.env.PORT || 3000;
+const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:1420", "http://127.0.0.1:1420"];
 
-import { getAuthToken } from "./lib/auth.js"
 export { getAuthToken }
+
+const app = new Hono()
+
+// Global Middleware (Applied to ALL routes)
+// MUST be before routes to handle preflight and headers correctly
+app.use("*", cors({
+  origin: (origin) => {
+    if (!origin) return allowedOrigins[0]
+    if (allowedOrigins.includes(origin)) return origin
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+    if (!isProd && /^http:\/\/.+:5173$/.test(origin)) return origin;
+    if (!isProd && /^http:\/\/localhost:1420$/.test(origin)) return origin;
+    return allowedOrigins[0];
+  },
+  methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
+  credentials: true,
+  allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+  exposeHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
+  maxAge: 86400
+}))
+
+if (typeof CompressionStream !== 'undefined') {
+  app.use('*', compress())
+}
+app.use('*', etag())
+
+// Global Error Handlers
+app.notFound((c) => {
+  return c.text('404 Not Found', 404)
+})
+
+app.onError((err, c) => {
+  console.error('[Global Error]', err)
+  return c.json({
+    error: 'Internal Server Error',
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  }, 500)
+})
+
+export { getAuthToken }
+
+// Mount all routes
+app.route('/auth', authRoutes)
+app.route('/', dashboardRoutes)
+app.route('/connections', connectionRoutes)
+app.route('/api', tableRoutes)
+app.route('/', chatRoutes)
+app.route('/operations', operationRoutes)
+app.route('/workspace', workspaceRoutes)
+app.route('/stocks', stockRoutes)
+app.route('/provision', provisionRoutes)
+app.route('/api/docs', docsRoutes)
+app.route('/rag', ragRoutes)
+app.route('/agent', agentRoutes)
+app.route('/weather', weatherRoutes)
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
@@ -202,8 +183,7 @@ const upsertUser = async (payload) => {
   }
 }
 
-// Mount Auth Routes
-app.route('/auth', authRoutes)
+// Auth Routes moved to consolidated mount section above
 
 
 // File Upload Endpoint
@@ -1055,7 +1035,7 @@ app.post("/query", async (c) => {
     return c.json({ error: `Provider '${provider}' not supported` }, 400)
   }
 
-  const adapter = new Adapter(connection)
+  const adapter = new Adapter({ ...connection, userId })
   let result = null
   let error = null
   let status = 'success'
@@ -1562,55 +1542,97 @@ app.get("/usage", async (c) => {
   }
 })
 
-// Table Routes moved to src/routes/table.js
+// Consolidated route mounting handled above
 
-// Moved logic to end
-
-
-// Initialize experimental features tables
-try {
-  await initExperimentalTables(db)
-} catch (error) {
-  console.error('Failed to initialize experimental tables:', error)
-}
-
-// Initialize weekly digest cron job only if Neon is configured
-if (process.env.NEON_DATABASE_URL) {
-  initializeWeeklyDigest()
-} else {
-  console.log('Skipping weekly digest cron job - NEON_DATABASE_URL not configured')
-}
-
-// Initialize Dashboard Chat Schema
-try {
-  await db.query(`
-    DEFINE TABLE dashboard_message SCHEMAFULL;
-    DEFINE FIELD dashboard ON TABLE dashboard_message TYPE record<dashboard>;
-    DEFINE FIELD user ON TABLE dashboard_message TYPE record<user>;
-    DEFINE FIELD content ON TABLE dashboard_message TYPE string;
-    DEFINE FIELD created_at ON TABLE dashboard_message TYPE datetime DEFAULT time::now();
-  `);
-  console.log('[Schema] dashboard_message table defined');
-} catch (e) {
-  // Ignore specific error if table already exists, otherwise log
-  if (!e.message.includes('already exists')) {
-    console.error('[Schema] Failed to define dashboard_message:', e.message);
-  }
-}
-
-// Start Server (Skip in Vercel/Serverless environments)
+// initialization block
 const isVercel = process.env.VERCEL === '1';
+const isBun = typeof Bun !== 'undefined';
+const startServer = async () => {
+  try {
+    // 1. Database
+    await connectDB();
+    console.log('[Main] Database connected');
 
-if (!isVercel) {
-  console.log(`Pegasus query gateway running on http://localhost:${port}`)
-  const server = serve({
-    fetch: app.fetch,
-    port
-  });
-  initSocketServer(server, allowedOrigins);
-} else {
-  console.log('[Main] Running in Vercel/Production mode - server start handled by platform');
-}
+    // 2. Schema initialization
+    try {
+      await initExperimentalTables(db)
+      console.log('✅ Experimental features tables initialized')
+    } catch (e) {
+      console.warn('[Schema] Exp tables warning:', e.message)
+    }
+
+    try {
+      await db.query(`
+        DEFINE TABLE dashboard_message SCHEMAFULL;
+        DEFINE FIELD dashboard ON TABLE dashboard_message TYPE record<dashboard>;
+        DEFINE FIELD user ON TABLE dashboard_message TYPE record<user>;
+        DEFINE FIELD content ON TABLE dashboard_message TYPE string;
+        DEFINE FIELD created_at ON TABLE dashboard_message TYPE datetime DEFAULT time::now();
+      `);
+      console.log('[Schema] dashboard_message table defined');
+    } catch (e) {
+      if (!e.message.includes('already exists')) {
+        console.error('[Schema] Failed to define dashboard_message:', e.message);
+      }
+    }
+
+    // 3. Background services
+    weatherService.start();
+
+    if (process.env.NEON_DATABASE_URL) {
+      initializeWeeklyDigest()
+      console.log('[Main] Weekly digest cron initialized');
+    }
+
+    // 4. Start Server
+    if (isVercel) {
+      console.log('[Main] Vercel mode');
+    } else if (isBun) {
+      console.log(`[Main] Bun server on port ${port}`);
+
+      // Initialize Socket.io instance for Bun
+      const io = initSocketServer(null, allowedOrigins);
+
+      const server = Bun.serve({
+        fetch: async (req, server) => {
+          // Handle Socket.io upgrade
+          if (io.handleUpgrade(req, server)) {
+            return;
+          }
+
+          try {
+            const url = new URL(req.url);
+            console.log(`[Request] ${req.method} ${url.pathname}${url.search}`);
+
+            const res = await app.fetch(req);
+
+            if (!res) {
+              console.error(`[Bun] Error: Hono returned no response for ${url.pathname}`);
+              return new Response("Not Found (Hono null)", { status: 404 });
+            }
+
+            return res;
+          } catch (e) {
+            console.error(`[Bun] Fatal fetch error:`, e);
+            return new Response(`Server error: ${e.message}`, { status: 500 });
+          }
+        },
+        websocket: io.websocket,
+        port: Number(port)
+      });
+    } else {
+      console.log(`[Main] Node server on port ${port}`);
+      const server = serve({
+        fetch: app.fetch,
+        port: Number(port)
+      });
+      initSocketServer(server, allowedOrigins);
+    }
+  } catch (err) {
+    console.error('[Fatal Startup Error]', err);
+    process.exit(1);
+  }
+};
 
 // Helper to create table and insert data (refactored to avoid duplication)
 async function createTableAndInsertData(tableName, rows) {
@@ -1638,6 +1660,14 @@ async function createTableAndInsertData(tableName, rows) {
   }
 }
 
-// Export app for Vercel
-export default isVercel ? handle(app) : app;
+// Start the app
+if (!isVercel) {
+  startServer();
+}
+
+// Export for platforms
+// On Vercel, we need the handler as default export
+// On Bun, we export a dummy object to prevent Bun from auto-starting its own server
+const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
+export default defaultExport;
 export { app };

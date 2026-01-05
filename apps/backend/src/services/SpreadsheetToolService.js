@@ -14,6 +14,36 @@ export class SpreadsheetToolService {
         // ============================================
 
         this.registerTool({
+            name: "execute_query",
+            description: "Execute a SQL query against the database and return the results",
+            category: "database",
+            parameters: {
+                type: "object",
+                properties: {
+                    query: {
+                        type: "string",
+                        description: "The SQL query to execute"
+                    }
+                },
+                required: ["query"]
+            },
+            handler: async ({ query }, context) => {
+                if (!context?.adapter) {
+                    throw new Error("No database adapter available in context");
+                }
+
+                console.log(`[SpreadsheetToolService] Executing query tool: ${query}`);
+                const result = await context.adapter.query(query);
+
+                return {
+                    type: "query_result",
+                    rows: Array.isArray(result) ? result : [result],
+                    count: Array.isArray(result) ? result.length : 1
+                };
+            }
+        });
+
+        this.registerTool({
             name: "get_table_schema",
             description: "Fetch the detailed schema (columns and types) for a specific table when needed for JOINs or context",
             category: "database",
