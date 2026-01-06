@@ -79,7 +79,8 @@ app.use("*", cors({
     if (!isProd && /^http:\/\/.+:5173$/.test(origin)) return origin;
     if (!isProd && /^http:\/\/localhost:1420$/.test(origin)) return origin;
 
-    return allowedOrigins[0];
+    // Fallback to null (safe rejection)
+    return null;
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
@@ -114,6 +115,14 @@ app.notFound((c) => {
 
 app.onError((err, c) => {
   console.error('[Global Error]', err)
+
+  // Ensure CORS headers are present even on errors
+  const origin = c.req.header('origin')
+  if (origin && (allowedOrigins.includes(origin) || (origin.endsWith('.vercel.app') && origin.includes('pegasus')))) {
+    c.header('Access-Control-Allow-Origin', origin)
+    c.header('Access-Control-Allow-Credentials', 'true')
+  }
+
   return c.json({
     error: 'Internal Server Error',
     message: err.message,

@@ -11,7 +11,16 @@ const dbName = process.env.SURREAL_DB || 'test';
 export let isConnected = false;
 
 export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, delay = process.env.VERCEL === '1' ? 500 : 2000) => {
-    if (isConnected) return db;
+    // If we think we are connected, verify it with a ping
+    if (isConnected) {
+        try {
+            await db.query('INFO FOR DB');
+            return db;
+        } catch (e) {
+            console.warn('[SurrealDB] Connection was lost, reconnecting...');
+            isConnected = false;
+        }
+    }
 
     for (let i = 0; i < retries; i++) {
         try {
