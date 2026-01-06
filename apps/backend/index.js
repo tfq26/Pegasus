@@ -53,7 +53,13 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
-  : ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:1420", "http://127.0.0.1:1420"];
+  : [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "https://pegasus-ui-chi.vercel.app"
+  ];
 
 const app = new Hono()
 
@@ -62,15 +68,22 @@ const app = new Hono()
 app.use("*", cors({
   origin: (origin) => {
     if (!origin) return allowedOrigins[0]
+
+    // Explicit match
     if (allowedOrigins.includes(origin)) return origin
+
+    // General match for Pegasus Vercel deployments
+    if (origin.endsWith('.vercel.app') && origin.includes('pegasus')) return origin;
+
     const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
     if (!isProd && /^http:\/\/.+:5173$/.test(origin)) return origin;
     if (!isProd && /^http:\/\/localhost:1420$/.test(origin)) return origin;
+
     return allowedOrigins[0];
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
-  allowHeaders: ["Content-Type", "Authorization", "Cookie"],
+  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
   exposeHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
   maxAge: 86400
 }))
