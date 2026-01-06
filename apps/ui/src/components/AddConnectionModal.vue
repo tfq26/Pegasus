@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import ConnectionDialog from '@/components/ConnectionDialog.vue'
+import UpgradeModal from '@/components/UpgradeModal.vue'
 import { defaultConnectionForm } from '@/views/settings/types'
 import type { ConnectionFormState } from '@/views/settings/types'
 import { useConnectionStore } from '@/stores/connection'
+import { useTierLimits } from '@/composables/useTierLimits'
 import { toast } from '@/composables/useNotifications'
 
 const connectionStore = useConnectionStore()
+const { canCreateConnection: tierAllowsConnection, connectionUsage, handleLimitError, fetchTierUsage } = useTierLimits()
 
 const props = defineProps<{
   open: boolean
@@ -17,16 +20,21 @@ const emit = defineEmits<{
   'connection-added': []
 }>()
 
+const showUpgradeModal = ref(false)
+const upgradeTier = ref<'free' | 'pro' | 'pro_plus'>('free')
+
 // Deep copy to avoid shared state
 const getFreshForm = (): ConnectionFormState => JSON.parse(JSON.stringify(defaultConnectionForm))
 
 const form = ref<ConnectionFormState>(getFreshForm())
 const isSaving = ref(false)
 
-// Reset form when dialog opens
-watch(() => props.open, (isOpen) => {
+// Reset form when dialog opens and check tier limits
+watch(() => props.open, async (isOpen) => {
   if (isOpen) {
     form.value = getFreshForm()
+    // Fetch latest tier usage
+    await fetchTierUsage()
   }
 })
 
@@ -54,9 +62,19 @@ const handleSave = async () => {
     emit('connection-added')
     // Dispatch event for backwards compatibility
     window.dispatchEvent(new CustomEvent('pegasus:connections-updated'))
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
-    toast.error('Failed to add connection')
+    
+    // Check if this is a tier limit error
+    const limitError = handleLimitError(e)
+    if (limitError) {
+      // Show upgrade modal instead of error toast
+      upgradeTier.value = limitError.tier as any || 'free'
+      showUpgradeModal.value = true
+      emit('update:open', false) // Close connection dialog
+    } else {
+      toast.error('Failed to add connection')
+    }
   } finally {
     isSaving.value = false
   }
@@ -72,5 +90,13 @@ const handleSave = async () => {
     :can-add-connection="canAddConnection"
     @save="handleSave"
     @upload-success="handleSave"
+  />
+  
+  <UpgradeModal
+    v-model:open="showUpgradeModal"
+    limit-type="connections"
+    :current-tier="upgradeTier"
+    :current-usage="connectionUsage?.current"
+    :limit="connectionUsage?.limit"
   />
 </template>

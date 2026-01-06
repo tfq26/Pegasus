@@ -1,10 +1,12 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-stone-950 text-stone-100">
-    <div class="bg-stone-900 p-8 rounded-lg shadow-lg w-full max-w-md space-y-6">
+  <div class="min-h-screen flex items-center justify-center bg-background text-foreground transition-colors duration-300">
+    <div class="bg-card border border-border p-8 rounded-2xl shadow-xl w-full max-w-md space-y-8">
       <div class="text-center">
-        <img src="/pegasus.svg" alt="Pegasus" class="w-16 h-16 mx-auto mb-4" />
-        <h2 class="text-2xl font-bold text-violet-400">Sign In</h2>
-        <p class="text-stone-400 text-sm mt-2">Sign in to sync your data across devices</p>
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/5 mb-4 shadow-sm border border-primary/10 overflow-hidden">
+           <img src="/pegasus-purple.svg" alt="Pegasus Logo" class="w-12 h-12 object-contain" />
+        </div>
+        <h2 class="text-2xl font-bold tracking-tight text-primary">Device Sign In</h2>
+        <p class="text-muted-foreground text-sm mt-2 font-medium">Link your desktop app with your cloud account</p>
       </div>
 
       <!-- Success State -->
@@ -15,28 +17,28 @@
           </svg>
         </div>
         <div>
-          <h3 class="text-xl font-semibold text-stone-100">Signed in successfully!</h3>
-          <p class="text-stone-400 mt-2">Welcome, {{ authorizedUser?.email }}</p>
+          <h3 class="text-xl font-semibold">Signed in successfully!</h3>
+          <p class="text-muted-foreground mt-2 font-medium">Welcome, {{ authorizedUser?.email }}</p>
         </div>
         <button
           @click="goToDashboard"
-          class="w-full py-3 px-4 rounded-md bg-violet-600 hover:bg-violet-500 text-white font-semibold text-lg transition"
+          class="w-full py-4 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold transition-all hover:scale-[1.02] shadow-lg shadow-primary/25"
         >
           Continue to Dashboard
         </button>
       </div>
       
       <!-- Status Message with Code -->
-      <div v-else-if="status" class="p-4 rounded-lg text-center" :class="statusClass">
-        <p class="text-sm font-medium">{{ status }}</p>
-        <div v-if="userCode" class="mt-3 flex items-center justify-center gap-2">
-          <p class="text-2xl font-mono font-bold tracking-widest">{{ formattedCode }}</p>
+      <div v-else-if="status" class="p-6 rounded-2xl text-center" :class="statusClass">
+        <p class="text-sm font-semibold opacity-80 mb-4">{{ status }}</p>
+        <div v-if="userCode" class="flex items-center justify-center gap-3">
+          <p class="text-3xl font-mono font-black tracking-[0.2em] text-primary">{{ formattedCode }}</p>
           <button
             @click="copyCode"
-            class="p-2 rounded-lg bg-stone-700 hover:bg-stone-600 transition-colors group"
+            class="p-2.5 rounded-xl bg-background/50 border border-border/50 hover:bg-background transition-all group shadow-sm"
             :title="copied ? 'Copied!' : 'Copy code'"
           >
-            <svg v-if="!copied" class="w-5 h-5 text-stone-400 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg v-if="!copied" class="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
             <svg v-else class="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -44,7 +46,7 @@
             </svg>
           </button>
         </div>
-        <p v-if="copied" class="text-xs text-green-400 mt-2">Copied to clipboard!</p>
+        <p v-if="copied" class="text-xs text-green-500 font-bold mt-3 animate-bounce">Copied to clipboard!</p>
       </div>
 
       <!-- Error Message -->
@@ -55,7 +57,7 @@
       <!-- Sign In Button -->
       <button
         v-if="!isPending && !isSuccess"
-        class="w-full py-3 px-4 rounded-md bg-violet-600 hover:bg-violet-500 text-white font-semibold text-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        class="w-full py-4 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold transition-all hover:scale-[1.02] shadow-lg shadow-primary/25 disabled:opacity-50 flex items-center justify-center gap-3"
         :disabled="isLoading"
         @click="signInWithWorkOS"
       >
@@ -69,7 +71,7 @@
       <!-- Cancel Button when polling -->
       <button
         v-if="isPending && !isSuccess"
-        class="w-full py-3 px-4 rounded-md bg-stone-700 hover:bg-stone-600 text-white font-semibold transition"
+        class="w-full py-4 px-4 rounded-xl bg-secondary hover:bg-secondary/80 text-secondary-foreground font-bold transition-all shadow-sm"
         @click="cancelAuth"
       >
         Cancel
@@ -78,7 +80,7 @@
       <!-- Skip for now (offline mode) -->
       <div v-if="!isPending && !isSuccess" class="text-center">
         <button
-          class="text-stone-500 hover:text-stone-300 text-sm underline transition"
+          class="text-muted-foreground hover:text-primary text-xs font-medium underline transition-colors"
           @click="$router.push('/local-auth')"
         >
           Continue offline with local account
@@ -111,8 +113,8 @@ const formattedCode = computed(() => {
 })
 
 const statusClass = computed(() => {
-  if (isPending.value) return 'bg-violet-500/10 border border-violet-500/20'
-  return 'bg-stone-800'
+  if (isPending.value) return 'bg-primary/5 border border-primary/20'
+  return 'bg-secondary/30'
 })
 
 const goToDashboard = () => {

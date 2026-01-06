@@ -1,6 +1,19 @@
 <template>
   <div class="w-full h-full flex flex-col bg-background text-foreground overflow-hidden">
-    <!-- Top Bar -->
+    <!-- Loading State -->
+    <div v-if="isInitializing" class="flex flex-col items-center justify-center h-full w-full">
+      <div class="relative">
+        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
+        </div>
+      </div>
+      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Synchronizing Dashboards...</p>
+      <p class="text-muted-foreground text-sm mt-2">Connecting to your secure visualization node</p>
+    </div>
+
+    <template v-else>
+      <!-- Top Bar -->
     <header class="flex items-center justify-between px-6 py-3 border-b border-border bg-background z-10">
       <div class="flex items-center gap-4">
         <div class="p-2 bg-primary/10 rounded-lg">
@@ -478,6 +491,15 @@
         </div>
       </DialogContent>
     </Dialog>
+    
+    <!-- Upgrade Modal -->
+    <UpgradeModal
+      v-model:open="showUpgradeModal"
+      limit-type="dashboards"
+      :current-usage="dashboardUsage?.current"
+      :limit="dashboardUsage?.limit"
+    />
+    </template>
   </div>
 </template>
 
@@ -520,18 +542,22 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
+import UpgradeModal from '@/components/UpgradeModal.vue'
 import { toast } from '@/composables/useNotifications'
+import { useTierLimits } from '@/composables/useTierLimits'
 import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 
 const router = useRouter()
 const store = useDashboardStore()
 const { dashboards, isLoading } = storeToRefs(store)
+const { dashboardUsage, handleLimitError } = useTierLimits()
 
 const searchQuery = ref('')
 const sortBy = ref('updated')
 const activeTab = ref('my') // 'my' | 'shared'
 const sharedDashboards = ref<any[]>([])
 const isLoadingShared = ref(false)
+const isInitializing = ref(true)
 
 // Fetch shared dashboards when tab changes
 watch(activeTab, async (val) => {
@@ -551,12 +577,12 @@ watch(activeTab, async (val) => {
 
 const filteredDashboards = computed(() => {
   // Select source based on active tab
-  let source = activeTab.value === 'my' ? dashboards.value : sharedDashboards.value
+  let source = activeTab.value === 'my' ? (dashboards.value as any) : sharedDashboards.value
   
   // Filter by search
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
-    source = source.filter(d => d.title?.toLowerCase().includes(q))
+    source = source.filter((d: any) => d.title?.toLowerCase().includes(q))
   }
   
   // Sort
@@ -567,7 +593,7 @@ const filteredDashboards = computed(() => {
       // Sort by updated_at or shared_at depending on tab
       const dateA = activeTab.value === 'shared' ? (a.shared_at || a.updated_at) : a.updated_at
       const dateB = activeTab.value === 'shared' ? (b.shared_at || b.updated_at) : b.updated_at
-      return new Date(dateB).getTime() - new Date(dateA).getTime()
+      return new Date(dateB as any).getTime() - new Date(dateA as any).getTime()
     }
   })
 })
@@ -664,6 +690,7 @@ const newDashboardIsPublic = ref(false)
 const inviteEmail = ref('')
 const invitedUsers = ref<string[]>([])
 const isCreating = ref(false)
+const showUpgradeModal = ref(false)
 
 const handleCreateDashboard = () => {
   // Open the create modal instead of directly creating
@@ -697,7 +724,7 @@ const confirmCreateDashboard = async () => {
     if (newDashboardIsPublic.value) {
       await store.selectDashboard(id)
       if (store.currentDashboard) {
-        store.currentDashboard.is_public = true
+        (store.currentDashboard as any).is_public = true
         await store.saveCurrentDashboard()
       }
     }
@@ -711,8 +738,16 @@ const confirmCreateDashboard = async () => {
     toast.success('Dashboard created successfully')
     showCreateModal.value = false
     router.push(`/dashboard/${id}`)
-  } catch (e) {
-    toast.error('Failed to create dashboard')
+  } catch (e: any) {
+    // Check if this is a tier limit error
+    const limitError = handleLimitError(e)
+    if (limitError) {
+      // Show upgrade modal instead of error toast
+      showUpgradeModal.value = true
+      showCreateModal.value = false
+    } else {
+      toast.error('Failed to create dashboard')
+    }
   } finally {
     isCreating.value = false
   }
@@ -730,27 +765,29 @@ const handleRename = (dashboard: any) => {
 }
 
 const confirmRename = async () => {
-  if (!renameTitle.value.trim() || !dashboardToRename.value) return
-  
-  try {
-    await store.selectDashboard(dashboardToRename.value.id)
+    if (!renameTitle.value.trim() || !dashboardToRename.value) return
     
-    store.currentDashboard!.title = renameTitle.value.trim()
-    
-    // Update cover image if changed
-    if (renameCoverImage.value !== dashboardToRename.value.cover_image) {
-      ;(store.currentDashboard as any).cover_image = renameCoverImage.value
+    try {
+        await store.selectDashboard(dashboardToRename.value.id)
+        
+        if (store.currentDashboard) {
+            (store.currentDashboard as any).title = renameTitle.value.trim()
+            
+            // Update cover image if changed
+            if (renameCoverImage.value !== (dashboardToRename.value as any).cover_image) {
+                (store.currentDashboard as any).cover_image = renameCoverImage.value
+            }
+            
+            await store.saveCurrentDashboard()
+            
+            toast.success('Dashboard updated successfully')
+            showRenameModal.value = false
+            renameCoverImage.value = ''
+        }
+    } catch (e) {
+        console.error('[DashboardHome] Failed to update dashboard:', e)
+        toast.error('Failed to update dashboard')
     }
-    
-    await store.saveCurrentDashboard()
-    
-    toast.success('Dashboard updated successfully')
-    showRenameModal.value = false
-    renameCoverImage.value = ''
-  } catch (e) {
-    console.error('[DashboardHome] Failed to update dashboard:', e)
-    toast.error('Failed to update dashboard')
-  }
 }
 
 const handleDelete = (dashboard: any) => {
@@ -823,6 +860,25 @@ const handleLinkImport = async () => {
 }
 
 onMounted(async () => {
-  await store.loadDashboards()
+    isInitializing.value = true
+    try {
+        await store.loadDashboards()
+        // Pre-load shared dashboards silently if needed, or wait for tab change
+    } catch (e) {
+        console.error('Failed to load dashboards:', e)
+    } finally {
+        isInitializing.value = false
+    }
 })
+
 </script>
+
+<style scoped>
+@keyframes spin-slow {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+</style>

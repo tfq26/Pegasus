@@ -8,6 +8,7 @@ import { adapters } from "../../adapters/index.js"
 import { analyzeForSanitization } from "../../ai/sanitizer.js"
 import { RAGService } from "../services/ragService.js"
 import { getUserFeatureFlags } from "../../experimental-features.js"
+import { filterModelsByTier } from "../../lib/tierLimits.js"
 
 const chat = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
@@ -86,11 +87,13 @@ const upsertUser = async (payload) => {
 // Helper to check AI quota
 const checkAiQuota = async (userId) => {
     try {
-        const [userRecord] = await db.query(`SELECT subscription_tier FROM user:${userId}`);
+        const [userRecord] = await db.query(`SELECT subscription_tier, purchased_tokens FROM user:${userId}`);
         const tier = userRecord[0]?.subscription_tier || 'free';
+        const purchasedTokens = Number(userRecord[0]?.purchased_tokens || 0);
 
-        // Set limits: 900k for Pro, 100k for Free
-        const limit = tier === 'pro' ? 900000 : 100000;
+        // Limits: 60k (Free), 200k (Pro) + Purchased
+        const baseLimit = tier === 'pro' ? 200000 : 60000;
+        const limit = baseLimit + purchasedTokens;
 
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
@@ -485,10 +488,110 @@ IMPORTANT:
 
                 console.log(`[AI] Calling tool: ${toolName}`, toolArgs)
 
-                const result = await spreadsheetToolService.callTool(toolName, toolArgs, {
+                let result = await spreadsheetToolService.callTool(toolName, toolArgs, {
                     spreadsheetData,
                     userId: payload.sub
                 })
+
+                // Special handling for process_with_ai - make a follow-up AI call
+                if (result.type === 'ai_process_request') {
+                    console.log(`[AI] Processing flexible AI request: ${result.task}`)
+
+                    const processPrompt = `You are a data processing assistant. You have the following spreadsheet data:
+
+Headers: ${result.headers.join(', ')}
+
+Data (${result.rowCount} rows):
+${result.data.map((row, i) => `${i + 1}. ${row.join(' | ')}`).join('\n')}
+
+TASK: ${result.task}
+
+${result.options && Object.keys(result.options).length > 0 ? `Options: ${JSON.stringify(result.options)}` : ''}
+
+Please process the data according to the task. Return your response in ${result.outputFormat} format.
+${result.outputFormat === 'table' ? 'Format tables as markdown with | separators.' : ''}
+${result.outputFormat === 'json' ? 'Return valid JSON only.' : ''}
+
+Be thorough and complete the task exactly as requested.`
+
+                    const processResponse = await aiClient.generateContent([
+                        { role: 'user', content: processPrompt }
+                    ], { model })
+
+                    // Log usage for this follow-up call
+                    const processUsage = processResponse.usage
+                    await logAiUsage(payload.sub, processUsage?.totalTokens || processUsage?.total_tokens, model, 'ai_process', result.task)
+
+                    // Replace the result with the AI-processed output
+                    result = {
+                        type: 'ai_processed_result',
+                        task: result.task,
+                        outputFormat: result.outputFormat,
+                        output: processResponse.text,
+                        originalRowCount: result.rowCount
+                    }
+                }
+
+                // Special handling for generate_table - AI generates new table data
+                if (result.type === 'generate_table_request') {
+                    console.log(`[AI] Generating new table: ${result.tableName} - ${result.description}`)
+
+                    const generatePrompt = `You are a data generation assistant. Create a table of data based on the following request:
+
+TABLE NAME: ${result.tableName}
+DESCRIPTION: ${result.description}
+NUMBER OF ROWS: ${result.rowCount || 10}
+${result.columns ? `COLUMNS TO INCLUDE: ${result.columns.join(', ')}` : ''}
+
+Generate realistic, diverse data. Return ONLY valid JSON in this exact format:
+{
+  "headers": ["Column1", "Column2", ...],
+  "rows": [
+    ["value1", "value2", ...],
+    ["value1", "value2", ...],
+    ...
+  ]
+}
+
+Make the data realistic and varied. For names use diverse names. For numbers use realistic ranges. Be creative but realistic.`
+
+                    const generateResponse = await aiClient.generateContent([
+                        { role: 'user', content: generatePrompt }
+                    ], { model, json: true })
+
+                    // Log usage
+                    const genUsage = generateResponse.usage
+                    await logAiUsage(payload.sub, genUsage?.totalTokens || genUsage?.total_tokens, model, 'generate_table', result.description)
+
+                    // Parse the generated data
+                    let generatedData = null
+                    try {
+                        // Extract JSON from response (handle markdown code blocks)
+                        let jsonStr = generateResponse.text
+                        const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+                        if (jsonMatch) {
+                            jsonStr = jsonMatch[1].trim()
+                        }
+                        generatedData = JSON.parse(jsonStr)
+                    } catch (e) {
+                        console.error('[AI] Failed to parse generated table JSON:', e)
+                        result = {
+                            type: 'error',
+                            message: 'Failed to generate table data. Please try again.'
+                        }
+                    }
+
+                    if (generatedData) {
+                        result = {
+                            type: 'generated_table',
+                            tableName: result.tableName,
+                            headers: generatedData.headers || [],
+                            rows: generatedData.rows || [],
+                            openInNewTab: result.openInNewTab,
+                            description: result.description
+                        }
+                    }
+                }
 
                 toolResults.push({
                     toolName,
@@ -578,7 +681,7 @@ chat.post("/ai/generate", async (c) => {
             return c.json(quota, 403);
         }
 
-        const { prompt, connectionId: rawConnId, context, activeTable } = await c.req.json()
+        const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens } = await c.req.json()
         let connectionId = rawConnId;
         if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
 
@@ -586,6 +689,8 @@ chat.post("/ai/generate", async (c) => {
         console.log(`[Chat] JWT User ID: ${payload.sub}`)
         console.log(`[Chat] Resolved User ID: ${userId}`)
         console.log(`[Chat] Fetching connection: ${connectionId}`)
+        if (temperature) console.log(`[Chat] Using temperature: ${temperature}`)
+        if (maxTokens) console.log(`[Chat] Using maxTokens: ${maxTokens}`)
 
         // 1. Fetch connection details
         const [rs] = await db.query(
@@ -795,7 +900,8 @@ chat.post("/ai/generate", async (c) => {
                 const ragEnabled = userFlags.includes('rag-pipeline');
 
                 if (ragEnabled) {
-                    const ragResults = await RAGService.hybridSearch(prompt, userId, 5, aiSettings.modelId || 'openai');
+                    // Note: aiSettings not yet available here, use latest model for RAG
+                    const ragResults = await RAGService.hybridSearch(prompt, userId, 5, 'gemini-3-flash-preview');
                     if (ragResults && ragResults.length > 0) {
                         semanticContext = semanticContext || {};
                         semanticContext.knowledgeBase = ragResults.map(r => ({
@@ -831,30 +937,120 @@ chat.post("/ai/generate", async (c) => {
         // Fetch user settings
         let aiSettings = { modelId: null, temperature: 0.7 }
         try {
-            const [settingsRes] = await db.query(
-                "SELECT settings FROM user_settings WHERE user_id = $userId",
-                { userId }
-            )
-            if (settingsRes && settingsRes.length > 0 && settingsRes[0].settings) {
-                const s = JSON.parse(settingsRes[0].settings)
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                const s = user[0].settings;
                 aiSettings.modelId = s.activeModel
                 aiSettings.temperature = s.temperature
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error('[Chat] Failed to fetch user settings:', e);
+        }
 
         // Inject activeTable into settings for PromptBuilder
         aiSettings.activeTable = activeTable;
 
+        // Override with request-specific settings if provided (takes precedence over DB/default)
+        if (temperature !== undefined && temperature !== null) aiSettings.temperature = Number(temperature);
+        if (maxTokens !== undefined && maxTokens !== null) aiSettings.maxTokens = Number(maxTokens);
+
+        // ENABLE TOOLS (Lazy Load)
+        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+        aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
+
         const result = await aiClient.generateQuery(prompt, aiContext, aiSettings)
+
         let generatedQuery = typeof result === 'string' ? result : result.text
         const usage = typeof result === 'string' ? null : result.usage
+        const toolCalls = typeof result === 'string' ? null : result.toolCalls
+
+        // Handle Tool Calls (e.g. generate_table)
+        if (toolCalls && toolCalls.length > 0) {
+            const tableCall = toolCalls.find(tc => tc.function.name === 'generate_table')
+            if (tableCall) {
+                console.log('[Chat] Detected generate_table tool usage');
+                try {
+                    const args = typeof tableCall.function.arguments === 'string' ? JSON.parse(tableCall.function.arguments) : tableCall.function.arguments;
+
+                    // Generate actual data using AI
+                    const generatePrompt = `You are a data generation assistant. Create a table of data based on the following request:
+
+TABLE NAME: ${args.tableName}
+DESCRIPTION: ${args.description}
+NUMBER OF ROWS: ${args.rowCount || 10}
+${args.columns ? `COLUMNS: ${args.columns.join(', ')}` : ''}
+
+Output the data as a JSON object with this exact structure:
+{
+  "tableName": "${args.tableName}",
+  "headers": ["Col1", "Col2", ...],
+  "rows": [
+    ["Val1", "Val2", ...],
+    ...
+  ],
+  "description": "Brief summary of what was generated"
+}
+
+IMPORTANT:
+- Generate realistic, diverse data
+- Ensure 'rows' is an array of arrays, matching the 'headers' order
+- Return VALID JSON only. Do not wrap in markdown code blocks.
+`;
+
+                    console.log('[Chat] Generating table data...');
+                    const dataResponse = await aiClient.generateContent([
+                        { role: 'user', content: generatePrompt }
+                    ], {
+                        model: aiSettings.modelId,
+                        json: true
+                    });
+
+                    let finalData;
+                    try {
+                        const cleaned = typeof dataResponse === 'string' ? dataResponse : (dataResponse.text || JSON.stringify(dataResponse));
+                        finalData = JSON.parse(cleaned.replace(/```json|```/g, '').trim());
+                    } catch (e) {
+                        console.warn('[Chat] Failed to parse generated table data, attempting to use raw text if JSON-like', e);
+                        // Try regex extraction if JSON parse failed
+                        const jsonMatch = (typeof dataResponse === 'string' ? dataResponse : dataResponse.text).match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            finalData = JSON.parse(jsonMatch[0]);
+                        } else {
+                            throw e;
+                        }
+                    }
+
+                    // Return immediately as a generated table response
+                    return c.json({
+                        type: 'generated_table',
+                        tableName: finalData.tableName || args.tableName,
+                        headers: finalData.headers,
+                        rows: finalData.rows,
+                        description: finalData.description,
+                        openInNewTab: args.openInNewTab !== false,
+                        usage: dataResponse.usage || usage
+                    })
+
+                } catch (e) {
+                    console.error('[Chat] Failed to execute generate_table tool:', e);
+                    // Fallback to text if tool fails
+                }
+            }
+        }
 
         if (usage) {
             await logAiUsage(userId, usage.totalTokens || usage.total_tokens, aiSettings.modelId, 'ai_generation', prompt, connectionId)
         }
 
         // Clean markdown code blocks
-        generatedQuery = generatedQuery.replace(/^```(?:surrealql|sql)?\s*([\s\S]*?)\s*```$/i, '$1').trim()
+        // Clean markdown code blocks - Robust extraction (even with surrounding text)
+        const codeBlockMatch = generatedQuery.match(/```(?:surrealql|sql|json|javascript)?\s*([\s\S]*?)\s*```/i);
+        if (codeBlockMatch) {
+            generatedQuery = codeBlockMatch[1].trim();
+        } else {
+            generatedQuery = generatedQuery.trim();
+        }
+
         // Clean leading label if present (e.g. "surrealql\nSELECT...")
         if (generatedQuery.toLowerCase().startsWith('surrealql')) {
             generatedQuery = generatedQuery.substring(9).trim()
@@ -1006,7 +1202,8 @@ chat.post("/ai/generate", async (c) => {
         // Extract only the SQL statement if AI added explanatory text
         // Look for SELECT, INSERT, UPDATE, DELETE, CREATE statements
         // Improvement: Stop at the first "Results:", "Explanation:" or similar headers if they appear at start of a line
-        const sqlStartMatch = generatedQuery.match(/(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH|RETURN)\s+/i)
+        // FIX: strict CTE check for 'WITH' to avoid matching English sentences starting with 'With'
+        const sqlStartMatch = generatedQuery.match(/(?:^|\n)\s*(?:(SELECT|INSERT|UPDATE|DELETE|CREATE|RELATE|RETURN)|(WITH\s+[a-zA-Z0-9_]+\s+AS))\s+/i)
 
 
         if (sqlStartMatch) {
@@ -1020,6 +1217,25 @@ chat.post("/ai/generate", async (c) => {
             }
 
             generatedQuery = possibleQuery.trim()
+        } else if (provider && ['surrealdb', 'mysql', 'postgres', 'sqlite'].includes(provider.toLowerCase())) {
+            const trimmed = generatedQuery.trim();
+            let isSafe = false;
+
+            if (trimmed.startsWith('{')) {
+                // Check if it's valid JSON (SurrealDB accepts objects)
+                try {
+                    JSON.parse(trimmed);
+                    isSafe = true;
+                } catch (e) {
+                    console.warn('[Chat] Malformed JSON detected, commenting out.');
+                }
+            }
+
+            if (!isSafe) {
+                // Safety: If no SQL start detected and not valid JSON, it's likely text or malformed.
+                console.warn('[Chat] No executable SQL/JSON detected in response, commenting out to prevent crash.');
+                generatedQuery = "/* AI Response (Not executable): " + generatedQuery.replace(/\*\//g, '* /') + " */";
+            }
         }
 
 
@@ -1044,12 +1260,9 @@ chat.post("/ai/recommend-visualization", async (c) => {
         // Get Model
         let activeModel = null
         try {
-            const [settingsRes] = await db.query(
-                "SELECT settings FROM user_settings WHERE user_id = $userId",
-                { userId }
-            )
-            if (settingsRes && settingsRes.length > 0 && settingsRes[0].settings) {
-                activeModel = JSON.parse(settingsRes[0].settings).activeModel
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                activeModel = user[0].settings.activeModel;
             }
         } catch (e) { }
 
@@ -1076,12 +1289,9 @@ chat.post("/ai/analyze", async (c) => {
 
         let activeModel = null
         try {
-            const [settingsRes] = await db.query(
-                "SELECT settings FROM user_settings WHERE user_id = $userId",
-                { userId }
-            )
-            if (settingsRes && settingsRes.length > 0 && settingsRes[0].settings) {
-                activeModel = JSON.parse(settingsRes[0].settings).activeModel
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                activeModel = user[0].settings.activeModel;
             }
         } catch (e) { }
 
@@ -1150,10 +1360,9 @@ chat.post("/ai/spreadsheet-command", async (c) => {
 
         let activeModel = null
         try {
-            const result = await db.query(`SELECT settings FROM user_settings WHERE user_id = $userId`, { userId });
-            if (result[0] && result[0].settings) {
-                const settings = JSON.parse(result[0].settings);
-                activeModel = settings.activeModel;
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                activeModel = user[0].settings.activeModel;
             }
         } catch (e) { }
 
@@ -1206,8 +1415,17 @@ chat.get("/ai/models", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
-        const models = await aiClient.listModels()
-        return c.json({ models })
+        const payload = await verify(token, jwtSecret)
+
+        // Get user's subscription tier
+        const [userData] = await db.query(`SELECT subscription_tier FROM type::thing('user', $userId)`, { userId: payload.sub })
+        const tier = userData?.[0]?.subscription_tier || 'free'
+
+        // Get all models and filter by tier
+        const allModels = await aiClient.listModels()
+        const filteredModels = filterModelsByTier(allModels, tier)
+
+        return c.json({ models: filteredModels, tier })
     } catch (e) {
         return c.json({ error: "Failed to list models" }, 500)
     }
@@ -1218,7 +1436,17 @@ chat.post("/ai/analyze-dashboard", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
         const { dashboardTitle, elements } = await c.req.json()
+
+        let activeModel = null
+        try {
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                activeModel = user[0].settings.activeModel;
+            }
+        } catch (e) { }
 
         // Construct a summary of the data
         const dataSummary = elements.map(el => {
@@ -1239,15 +1467,13 @@ Focus on crossing references between different elements if applicable.
 Keep the tone professional and helpful.
 `;
 
-        const response = await aiClient.generateText(prompt, null)
+        const response = await aiClient.generateText(prompt, activeModel)
         // With AIClient update, response is now { text, usage }
         const analysisText = response.text || response
         const usage = response.usage
 
-        // Log usage (using payload.sub as we don't have resolved userId here easily but we did verify token)
-        const payload = await verify(token, jwtSecret)
         if (usage) {
-            await logAiUsage(payload.sub, usage.totalTokens || usage.total_tokens, 'openai', 'ai_dashboard_summary', dashboardTitle)
+            await logAiUsage(payload.sub, usage.totalTokens || usage.total_tokens, activeModel || 'openai', 'ai_dashboard_summary', dashboardTitle)
         }
 
         return c.json({ analysis: analysisText })
@@ -1262,8 +1488,18 @@ chat.post("/ai/search", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const { query } = await c.req.json()
-        await verify(token, jwtSecret)
-        const response = await aiClient.generateText(query, null)
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+
+        let activeModel = null
+        try {
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                activeModel = user[0].settings.activeModel;
+            }
+        } catch (e) { }
+
+        const response = await aiClient.generateText(query, activeModel)
         return c.json({ result: response })
     } catch (e) {
         return c.json({ error: e.message }, 500)

@@ -26,7 +26,8 @@ export function useChatExecution(
     options: {
         aiOptions: Ref<any>,
         encryptionKey: Ref<any>,
-        createChat: (title?: string) => Promise<any> // Callback to avoid circular dependency
+        createChat: (title?: string) => Promise<any>, // Callback to avoid circular dependency
+        onAIResponse?: (response: any) => void
     }
 ) {
     const workspaceStore = useWorkspaceStore()
@@ -325,6 +326,13 @@ export function useChatExecution(
             else if (tabValue?.type === 'spreadsheet') activeTable = tabValue.data?.tableName
 
             const aiResponse = await generateAIQuery(userPrompt, selectedConnection.value.id, history, activeTable)
+
+            // Handle generated table tool response
+            if ((aiResponse as any).type === 'generated_table' && options.onAIResponse) {
+                options.onAIResponse(aiResponse)
+                isExecuting.value = false
+                return
+            }
             update(40, 'Executing...')
 
             // Multi-step logic from Chat.vue

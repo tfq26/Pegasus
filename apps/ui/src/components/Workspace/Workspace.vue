@@ -9,7 +9,7 @@ import Grid from '../TableView/Grid/Grid.vue';
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
-import { CSVExporter, ExcelExporter } from '../TableView/Engine/Exporters';
+import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
 
 // Interface for version history
 interface TableVersion {
@@ -61,33 +61,31 @@ watch(() => props.chatHistory, (newHistory) => {
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
 const privateEngines = new Map<string, Engine>(); // Cache for private branches
+const loadingTabIds = ref(new Set<string>(
+    (tabs.value as unknown as Tab[])
+        .filter(t => t.type === 'table' || t.type === 'spreadsheet')
+        .map(t => t.id)
+));
+const isDataLoading = computed(() => loadingTabIds.value.size > 0);
 
 // Helper to fetch schema + data
 const fetchTableData = async (tableName: string, connection: any, provider: string) => {
     const baseUrl = import.meta.env.VITE_QUERY_API_URL;
-    // 1. Schema
-    const schemaRes = await fetch(`${baseUrl}/api/table/${tableName}/schema`, { 
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         credentials: 'include',
-         body: JSON.stringify({ connection, provider })
-    });
-    const schemaBody = await schemaRes.json();
-    if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
     
-    // 2. Data
-    const queryRes = await fetch(`${baseUrl}/api/table/${tableName}/query`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         credentials: 'include',
-         body: JSON.stringify({ connection, provider, limit: 2000 })
+    // NEW: Use combined load endpoint for 2x speedup
+    const res = await fetch(`${baseUrl}/api/table/${tableName}/load`, { 
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             credentials: 'include',
+             body: JSON.stringify({ connection, provider, limit: 2000 })
     });
-    const queryBody = await queryRes.json();
-    if (!queryRes.ok) throw new Error(queryBody.error || 'Failed to load data');
+
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || 'Failed to load table');
     
-    const rows = queryBody.rows || [];
+    const rows = body.rows || [];
     // Filter out internal columns
-    const headers = (schemaBody.columns || [])
+    const headers = (body.columns || [])
        .map((c: any) => c.name)
        .filter((n: string) => n !== '__id' && n !== '_rowid_');
        
@@ -228,22 +226,20 @@ const getEngineForTab = (tabId: string) => {
             tab.data.provider
         );
         
-        // CRITICAL: Only reload data if engine is truly empty (not during initial openTable load)
-        // Check if engine has any data - if not, we're likely in the middle of openTable
-        const hasExistingData = engine.getCell({ row: 0, col: 0 }) !== null;
-        
-        if (!hasExistingData) {
-            console.log('[Workspace] Engine is empty, skipping background reload (likely during initial load)');
+        // Ensure we only have one active load per tab ID at a time, 
+        // but always allow the first load if the engine was just created
+        const needsInitialLoad = !engineCache.has(tabId);
+        if (loadingTabIds.value.has(tabId) && !needsInitialLoad) {
+            console.log('[Workspace] Already loading data for tab:', tabId);
         } else {
-            // Reload data in background for existing tabs
-            console.log('[Workspace] Background reloading data for restored tab');
+            loadingTabIds.value.add(tabId);
             fetchTableData(tab.data.tableName as string, tab.data.connection, tab.data.provider as string)
                 .then(({ rows }) => {
-                     if (!rows || rows.length === 0) return;
-                     console.log(`[Workspace] Reloaded ${rows.length} rows`);
+                     if (!rows) return;
+                     console.log(`[Workspace] Loaded ${rows.length} rows for tab ${tabId}`);
                      
                      engine.beginBatch();
-                     // Preserving styles during background reload of existing tab
+                     // Preserving styles during reload
                      engine.clear({ keepStyles: true });
                      
                      const headers = tab?.data?.headers || [];
@@ -279,7 +275,10 @@ const getEngineForTab = (tabId: string) => {
                      engine.endBatch();
                      engine.setOriginalData(rows);
                 })
-                .catch(e => console.error('[Workspace] Failed to reload restored data:', e));
+                .catch(e => console.error('[Workspace] Failed to load data:', e))
+                .finally(() => {
+                    loadingTabIds.value.delete(tabId);
+                });
         }
     }
     
@@ -655,6 +654,82 @@ const openTable = async (tableName: string, connection: any, provider: string) =
     }
 };
 
+const handleAIResponse = (response: any) => {
+    // Handle AI responses from Grid component
+    if (response.type === 'generated_table' && response.openInNewTab) {
+        console.log('[Workspace] Handling generated table:', response);
+        
+        // Create a new tab with the generated data
+        const tableName = response.tableName || `Generated Table ${new Date().toLocaleTimeString()}`;
+        
+        // Create tab structure - pass data for potential future use but we populate engine manually below
+        const createdTab = workspaceStore.createTab('table', { 
+            tableName,
+            label: tableName,
+            // Use active connection/provider if available, or default to local
+            connection: (activeTab.value as any)?.data?.connection || { id: 'local', provider: 'local' },
+            provider: (activeTab.value as any)?.data?.provider || 'local',
+            headers: response.headers,
+            schemaMode: 'named-headers' 
+        });
+        
+        // Initialize engine for this new tab
+        const engine = getEngineForTab(createdTab.id);
+        
+        if (engine) {
+            engine.beginBatch();
+            
+            // Set Headers (Row 0)
+            if (response.headers && Array.isArray(response.headers)) {
+                response.headers.forEach((header: string, colIndex: number) => {
+                    engine.setValue({ row: 0, col: colIndex }, header, true);
+                });
+            }
+            
+            // Set Rows (Row 1+)
+            if (response.rows && Array.isArray(response.rows)) {
+                response.rows.forEach((row: any[], rowIndex: number) => {
+                    // Handle both array of arrays and array of objects
+                    if (Array.isArray(row)) {
+                         row.forEach((value: any, colIndex: number) => {
+                            engine.setValue({ row: rowIndex + 1, col: colIndex }, String(value ?? ''), true);
+                        });
+                    } else if (typeof row === 'object' && row !== null) {
+                         // Fallback if rows are objects
+                         response.headers.forEach((header: string, colIndex: number) => {
+                             engine.setValue({ row: rowIndex + 1, col: colIndex }, String(row[header] ?? ''), true);
+                         });
+                    }
+                });
+            }
+            
+            engine.endBatch();
+            
+            // Set source info for persistence
+            if ((createdTab as any).data) {
+                engine.setSource(
+                    tableName,
+                    (createdTab as any).data.connection,
+                    response.headers || [],
+                    (createdTab as any).data.provider || 'local'
+                );
+            }
+            
+            console.log(`[Workspace] Engine initialized for generated table: ${tableName}`);
+        }
+        
+        // Switch to new tab
+        workspaceStore.setActiveTab(createdTab.id);
+        toast.success(`Created new table "${tableName}"`);
+    } else if (response.type === 'processed_data') {
+        // Handle processed data (e.g. show in dialog)
+        console.log('[Workspace] Received processed data:', response);
+        if (response.content && response.content.length < 200) {
+             toast.success(response.content);
+        }
+    }
+};
+
 const handleVersionChange = async (tabId: string, version: number) => {
     const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
     if (!tab || !tab.data || !tab.data.versions) return;
@@ -853,7 +928,7 @@ const handleRedo = () => {
     }
 }
 
-const exportCurrentTable = (format: 'csv' | 'xlsx') => {
+const exportCurrentTable = async (format: 'csv' | 'xlsx' | 'pdf') => {
   const currentTabIdValue = (activeTabId.value as unknown as string);
   if (!currentTabIdValue) return;
   const activeTabObj = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === currentTabIdValue);
@@ -862,11 +937,16 @@ const exportCurrentTable = (format: 'csv' | 'xlsx') => {
     const filename = `${activeTabObj.label || 'export'}.${format}`;
     
     if (format === 'csv') {
-      CSVExporter.export(engine, filename);
-    } else {
-      ExcelExporter.export(engine, filename);
+      await CSVExporter.export(engine, filename);
+    } else if (format === 'xlsx') {
+      await ExcelExporter.export(engine, filename);
+    } else if (format === 'pdf') {
+      await PDFExporter.export(engine, filename);
     }
-    toast.success(`Exported to ${format.toUpperCase()}`);
+    
+    if (format !== 'pdf') {
+        toast.success(`Exported to ${format.toUpperCase()}`);
+    }
   } else {
       toast.error('No table active');
   }
@@ -897,8 +977,33 @@ onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval);
 });
 
+// Pre-load all spreadsheet tabs in parallel
+const preloadAllTabs = async () => {
+    const tableTabs = (tabs.value as unknown as Tab[]).filter(t => t.type === 'table' || t.type === 'spreadsheet');
+    if (tableTabs.length === 0) return;
+    
+    console.log(`[Workspace] Preloading data for ${tableTabs.length} tabs...`);
+    // getEngineForTab triggers the fetchTableData logic
+    tableTabs.forEach(tab => getEngineForTab(tab.id));
+};
+
+onMounted(() => {
+    preloadAllTabs();
+});
+
+// Watch for tabs changes to preload any new ones
+watch(() => tabs.value, (newTabs) => {
+    const tableTabs = (newTabs as unknown as Tab[]).filter(t => t.type === 'table' || t.type === 'spreadsheet');
+    tableTabs.forEach(tab => {
+        if (!engineCache.has(tab.id)) {
+            getEngineForTab(tab.id);
+        }
+    });
+}, { deep: true });
+
 // Expose methods to parent
 defineExpose({
+  isDataLoading,
   loadTableData,
   openTable,
   findOrCreateSheetTab,
@@ -908,7 +1013,8 @@ defineExpose({
   refreshCurrentTable,
   exportCurrentTable,
   getEngineForTab,
-  getActiveTable
+  getActiveTable,
+  handleAIResponse
 });
 
 
@@ -945,6 +1051,7 @@ defineExpose({
             :current-version="tab.data?.currentVersion"
             @save-query="(query, type) => emit('save-query', query, type)"
             @version-change="(v) => handleVersionChange(tab.id, v)"
+            @ai-response="handleAIResponse"
           />
           
           <!-- Chat Interface -->

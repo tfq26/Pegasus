@@ -1,7 +1,7 @@
 import { GeminiProvider } from "./providers/GeminiProvider.js"
 import { OpenAIProvider } from "./providers/OpenAIProvider.js"
 import { OllamaProvider } from "./providers/OllamaProvider.js"
-// import { AnthropicProvider } from "./providers/AnthropicProvider.js"
+import { AnthropicProvider } from "./providers/AnthropicProvider.js"
 
 export class AIClient {
     constructor() {
@@ -21,18 +21,39 @@ export class AIClient {
         this.providers.set('local', new OllamaProvider())
 
         // Initialize Anthropic
-        /*
         if (process.env.ANTHROPIC_API_KEY) {
             this.providers.set('anthropic', new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY }))
         }
-        */
     }
 
     async getProviderForModel(modelId) {
         if (!modelId) return this.getDefaultProvider()
 
-        // Check if model is OpenAI
-        if (modelId.startsWith('gpt') || modelId.startsWith('o1')) {
+        // Handle provider names (openai, gemini) as provider requests, not model names
+        if (modelId === 'openai') {
+            const provider = this.providers.get('openai')
+            if (provider) {
+                // Use latest OpenAI model (Nov 2025)
+                provider.config.model = 'gpt-5.1'
+                return provider
+            }
+            // Fallback to default provider if OpenAI not available
+            return this.getDefaultProvider()
+        }
+
+        if (modelId === 'gemini') {
+            const provider = this.providers.get('gemini')
+            if (provider) {
+                // Use latest Gemini model (Nov 2025)
+                provider.config.model = 'gemini-3-flash-preview'
+                return provider
+            }
+            // Fallback to default provider if Gemini not available
+            return this.getDefaultProvider()
+        }
+
+        // Check if model is OpenAI (gpt-*, o1*, o3*, o4*)
+        if (modelId.startsWith('gpt') || modelId.startsWith('o1') || modelId.startsWith('o3') || modelId.startsWith('o4')) {
             const provider = this.providers.get('openai')
             if (provider) {
                 provider.config.model = modelId
@@ -43,6 +64,15 @@ export class AIClient {
         // Check if model is Gemini
         if (modelId.startsWith('gemini')) {
             const provider = this.providers.get('gemini')
+            if (provider) {
+                provider.config.model = modelId
+                return provider
+            }
+        }
+
+        // Check if model is Claude (Anthropic)
+        if (modelId.startsWith('claude')) {
+            const provider = this.providers.get('anthropic')
             if (provider) {
                 provider.config.model = modelId
                 return provider
@@ -64,7 +94,8 @@ export class AIClient {
         // Default to Gemini or OpenAI if local model not found
         const provider = this.getDefaultProvider()
         if (provider) {
-            provider.config.model = modelId
+            // Don't override the model if it's not a recognized model ID
+            // Just use the provider's default model
             return provider
         }
 

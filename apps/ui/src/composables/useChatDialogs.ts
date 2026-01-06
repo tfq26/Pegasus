@@ -25,6 +25,9 @@ const summaryText = ref('')
 const mutationDialogVisible = ref(false)
 const mutationData = ref<any>(null)
 
+const exportDialogVisible = ref(false)
+const exportFormat = ref<'csv' | 'xlsx' | 'pdf'>('csv')
+
 export function useChatDialogs() {
 
     function openChatPreview(chat: any, messages: any[]) {
@@ -62,6 +65,15 @@ export function useChatDialogs() {
         mutationDialogVisible.value = true
     }
 
+    function openExportConfirmation(format: 'csv' | 'xlsx' | 'pdf') {
+        exportFormat.value = format
+        exportDialogVisible.value = true
+    }
+
+    function closeExportConfirmation() {
+        exportDialogVisible.value = false
+    }
+
     return {
         // Chat Preview
         previewVisible,
@@ -92,6 +104,12 @@ export function useChatDialogs() {
         // Mutation Review
         mutationDialogVisible,
         mutationData,
-        openMutation
+        openMutation,
+
+        // Export Confirmation
+        exportDialogVisible,
+        exportFormat,
+        openExportConfirmation,
+        closeExportConfirmation
     }
 }

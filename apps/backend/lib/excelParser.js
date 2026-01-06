@@ -180,8 +180,66 @@ export async function parseExcel(filePath) {
                     });
                     rows.push(rowData);
                 }
+            } else if (headers.length === 0) {
+                // No headers detected yet - store raw row for fallback processing
+                if (!worksheet._rawRows) worksheet._rawRows = [];
+                const hasData = rowValues.some(v => v !== '' && v !== undefined && v !== null);
+                if (hasData) {
+                    worksheet._rawRows.push({ rowNumber, values: rowValues });
+                }
             }
         });
+
+        // FALLBACK: If no headers were detected, use first row as headers or generate generic ones
+        if (headers.length === 0 && worksheet._rawRows && worksheet._rawRows.length > 0) {
+            console.log(`[ExcelParser] No keyword headers found. Falling back to first row as headers.`);
+
+            const rawRows = worksheet._rawRows;
+            const firstRow = rawRows[0].values;
+
+            // Check if first row looks like headers (all text, no numbers)
+            const allText = firstRow.every(v => v === '' || v === undefined || typeof v === 'string' || isNaN(Number(v)));
+
+            if (allText && rawRows.length > 1) {
+                // Use first row as headers
+                headers = firstRow.map((v, i) => {
+                    if (v === '' || v === undefined || v === null) {
+                        return String.fromCharCode(65 + i); // A, B, C...
+                    }
+                    return String(v).trim().replace(/[\n\r]/g, ' ').replace(/\s+/g, ' ');
+                });
+                headerRowNumber = rawRows[0].rowNumber;
+                parsingMethod = 'first-row-as-header';
+
+                // Convert remaining rows to data
+                for (let i = 1; i < rawRows.length; i++) {
+                    const rowData = {};
+                    headers.forEach((header, idx) => {
+                        rowData[header] = rawRows[i].values[idx] !== undefined ? rawRows[i].values[idx] : '';
+                    });
+                    rows.push(rowData);
+                }
+            } else {
+                // Use generic column headers (A, B, C...)
+                const maxCols = Math.max(...rawRows.map(r => r.values.length));
+                headers = Array.from({ length: maxCols }, (_, i) => String.fromCharCode(65 + (i % 26)));
+                parsingMethod = 'generic-columns';
+
+                // Convert ALL rows to data (including first row)
+                for (const rawRow of rawRows) {
+                    const rowData = {};
+                    headers.forEach((header, idx) => {
+                        rowData[header] = rawRow.values[idx] !== undefined ? rawRow.values[idx] : '';
+                    });
+                    rows.push(rowData);
+                }
+            }
+
+            confidence = 0.4; // Lower confidence for fallback
+            warnings.push('Used fallback header detection');
+            console.log(`[ExcelParser] Fallback headers:`, headers);
+            console.log(`[ExcelParser] Extracted ${rows.length} rows using fallback`);
+        }
 
         // Post-processing: Check if the first "data" row is actually the real headers
         // This happens when we have multi-level headers and detected an intermediate level

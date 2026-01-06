@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
+import { canCreateConnection } from "../../lib/tierLimits.js"
 
 const connections = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
@@ -121,6 +122,21 @@ connections.post("/", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const resolvedId = await upsertUser(payload)
+
+        // Check tier limits before creating connection
+        const [userData] = await db.query(`SELECT subscription_tier FROM type::thing('user', $userId)`, { userId: payload.sub })
+        const tier = userData?.[0]?.subscription_tier || 'free'
+
+        const limitCheck = await canCreateConnection(db, payload.sub, tier)
+        if (!limitCheck.allowed) {
+            return c.json({
+                error: limitCheck.message,
+                limit: limitCheck.limit,
+                current: limitCheck.current,
+                tier,
+                upgradeRequired: true
+            }, 403)
+        }
 
         const body = await c.req.json()
         const { type, provider, name, nickname, config, isLocked, ...rest } = body

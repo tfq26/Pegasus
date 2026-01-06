@@ -25,6 +25,7 @@ const props = defineProps<{
   canUndo?: boolean
   canRedo?: boolean
   queryHistory?: any[]
+  isSyncing?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -47,7 +48,7 @@ const emit = defineEmits<{
   'visualize': []
   'sanitize': []
   'load-table-to-sheet': []
-  'export': [format: 'csv' | 'xlsx']
+  'export': [format: 'csv' | 'xlsx' | 'pdf']
   'refresh-table': []
   'undo': []
   'redo': []
@@ -121,6 +122,7 @@ const models = computed(() => {
           :save-status="saveStatus"
           :can-undo="canUndo"
           :can-redo="canRedo"
+          :is-syncing="isSyncing"
           @toggle-ai-mode="emit('toggle-ai-mode')"
           @format="(t, v) => emit('format', t, v)"
           @visualize="emit('visualize')"

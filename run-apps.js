@@ -178,8 +178,9 @@ async function main() {
     const uiDir = join(rootDir, "apps", "ui");
     const desktopDir = join(rootDir, "apps", "desktop");
 
-    // Start backend in background with hot reload
-    runCommand("bun", ["run", "--hot", "index.js"], backendDir, "Backend")
+    // Start backend in background using Node (for Socket.io support)
+    // Note: No --hot flag for node unless we use nodemon, but for now simple node execution is safer for sockets
+    runCommand("node", ["--env-file=.env", "index.js"], backendDir, "Backend")
         .catch((err) => console.error("Backend error:", err));
 
     // Give backend a moment to connect to DB

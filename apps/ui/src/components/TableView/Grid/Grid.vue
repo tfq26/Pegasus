@@ -61,6 +61,17 @@ const props = defineProps<{
 const emit = defineEmits<{
   'save-query': [query: string, type: 'formula'];
   'version-change': [version: number];
+  'ai-response': [response: { 
+    type: string; 
+    task?: string; 
+    content?: string; 
+    format?: string;
+    tableName?: string;
+    headers?: string[];
+    rows?: any[][];
+    openInNewTab?: boolean;
+    description?: string;
+  }];
 }>();
 
 
@@ -1148,6 +1159,41 @@ const generateAIFormula = async (userRequest: string) => {
           case 'sort':
             // Sort data
             await sortData(toolResult.column, toolResult.ascending);
+            break;
+
+          case 'ai_processed_result':
+            // Display AI-processed flexible result
+            console.log('[Grid] AI processed result:', toolResult);
+            if (toolResult.output) {
+              // For longer outputs, show in a more detailed way
+              if (toolResult.output.length > 200) {
+                // Emit to parent to show in a dialog or panel
+                emit('ai-response', {
+                  type: 'processed_data',
+                  task: toolResult.task,
+                  content: toolResult.output,
+                  format: toolResult.outputFormat
+                });
+              } else {
+                toast.success(toolResult.output);
+              }
+            }
+            break;
+
+          case 'generated_table':
+            // AI generated a new table
+            console.log('[Grid] Generated table:', toolResult);
+            if (toolResult.headers && toolResult.rows) {
+              emit('ai-response', {
+                type: 'generated_table',
+                tableName: toolResult.tableName,
+                headers: toolResult.headers,
+                rows: toolResult.rows,
+                openInNewTab: toolResult.openInNewTab,
+                description: toolResult.description
+              });
+              toast.success(`Generated table "${toolResult.tableName}" with ${toolResult.rows.length} rows`);
+            }
             break;
             
           default:

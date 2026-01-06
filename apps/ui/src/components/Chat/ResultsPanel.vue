@@ -53,7 +53,24 @@ const isMaximized = ref(false)
 const activeTab = ref<'output' | 'insights' | 'problems' | 'execution' | 'versioning'>('output')
 import { defineAsyncComponent, unref } from 'vue'
 const ExcelEditor = defineAsyncComponent(() => import('@/components/Excel/ExcelEditor.vue'))
-import { AlertCircle, Activity, GitBranch, Terminal as TerminalIcon, History, Command, Info, Gauge, Brain, Sparkles } from 'lucide-vue-next'
+import { AlertCircle, Activity, GitBranch, Terminal as TerminalIcon, History, Command, Info, Gauge, Brain, Sparkles, Trash2, Eye, RotateCcw } from 'lucide-vue-next'
+import { useLocalStorage } from '@vueuse/core'
+
+const hiddenItems = useLocalStorage<string[]>('results-panel-hidden-items', [])
+
+const isHidden = (id: string) => hiddenItems.value.includes(id)
+const toggleHidden = (id: string) => {
+  if (hiddenItems.value.includes(id)) {
+    hiddenItems.value = hiddenItems.value.filter(i => i !== id)
+  } else {
+    hiddenItems.value.push(id)
+  }
+}
+
+const resetTopBar = () => {
+  hiddenItems.value = []
+  toast.info('Top bar controls reset')
+}
 
 const viewMode = ref<'table' | 'json' | 'excel'>('table')
 
@@ -168,7 +185,7 @@ const copyToClipboard = async (text: string) => {
 
 <template>
   <div
-    class="bg-[#0a0a0b] border-stone-800/50 flex flex-col relative transition-all duration-300 shrink-0"
+    class="bg-background border-border/50 flex flex-col relative transition-all duration-300 shrink-0"
     :class="{
       'border-t': position === 'bottom' && visible,
       'border-l': position === 'right' && visible,
@@ -187,12 +204,12 @@ const copyToClipboard = async (text: string) => {
     }"
   >
     <!-- Technical Grid Background -->
-    <div class="absolute inset-0 pointer-events-none z-0 opacity-[0.02]" 
-         style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 24px 24px;">
+    <div class="absolute inset-0 pointer-events-none z-0 opacity-[0.02] dark:opacity-[0.04]" 
+         style="background-image: radial-gradient(currentColor 1px, transparent 1px); background-size: 24px 24px;">
     </div>
 
     <!-- Thinking Progress Bar -->
-    <div v-if="props.loading" class="absolute top-0 left-0 right-0 h-[2px] bg-stone-900 z-[60] overflow-hidden">
+    <div v-if="props.loading" class="absolute top-0 left-0 right-0 h-[2px] bg-muted z-[60] overflow-hidden">
        <div class="h-full bg-violet-500 animate-[progress_1.5s_infinite_linear] shadow-[0_0_8px_theme(colors.violet.500)]" style="width: 30%"></div>
     </div>
 
@@ -207,115 +224,170 @@ const copyToClipboard = async (text: string) => {
     />
 
     <!-- Header / Tab Bar -->
-    <div class="flex items-center justify-between px-4 py-1.5 bg-stone-900/40 backdrop-blur-md border-b border-stone-800/50 shrink-0 z-10">
-      <div class="flex items-center gap-6">
-        <div class="flex items-center gap-1 bg-stone-950/30 p-0.5 rounded-lg border border-stone-800/30">
-          <button
-            v-for="tab in ([
-              { id: 'output', label: 'Output', icon: Table, count: ref(0) },
-              { id: 'insights', label: 'Insights', icon: Brain, count: computed(() => props.analysis?.prediction ? 1 : 0) },
-              { id: 'problems', label: 'Problems', icon: AlertCircle, count: problemsCount },
-              { id: 'execution', label: 'Execution', icon: Gauge, count: ref(0) },
-              { id: 'versioning', label: 'Versioning', icon: GitBranch, count: ref(0) }
-            ] as const)"
-            :key="tab.id"
-            @click="activeTab = tab.id"
-            class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all relative group"
-            :class="
-              activeTab === tab.id
-                ? 'bg-stone-800 text-stone-100 shadow-sm'
-                : 'text-stone-500 hover:text-stone-300'
-            "
-          >
-             <component :is="tab.icon" class="w-3 h-3" :class="activeTab === tab.id ? 'text-violet-400' : 'text-stone-600 group-hover:text-stone-400'" />
-             <span>{{ tab.label }}</span>
-             <span v-if="unref(tab.count) > 0" class="flex items-center justify-center min-w-[14px] h-[14px] px-1 bg-rose-500 text-white text-[8px] font-black rounded-full ml-1">
-               {{ unref(tab.count) }}
-             </span>
-          </button>
-        </div>
-
-        <!-- View Mode (Table/JSON) -->
-        <div v-if="activeTab === 'output' && Array.isArray(result)" class="flex items-center gap-1.5 pl-4 border-l border-stone-800/50">
-          <button
-            @click="viewMode = 'table'"
-            class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
-            :class="viewMode === 'table' ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-stone-500 hover:text-stone-300'"
-          >
-            Tabular
-          </button>
-          <button
-            @click="viewMode = 'json'"
-            class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
-            :class="viewMode === 'json' ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-stone-500 hover:text-stone-300'"
-          >
-            Object
-          </button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-3">
-        <!-- Result count badge -->
-        <div
-          v-if="activeTab === 'output' && resultCount !== null"
-          class="flex items-center gap-2 px-2 py-0.5 bg-stone-950 border border-stone-800/50 rounded-full"
+    <ContextMenu>
+      <ContextMenuTrigger as-child>
+        <div 
+          class="flex items-center justify-between px-4 py-1.5 bg-muted/20 backdrop-blur-md border-b border-border/50 shrink-0 z-10 select-none"
+          :class="{ 'flex-col items-start gap-2 py-3': position === 'right' && !isMaximized }"
         >
-          <div class="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]"></div>
-          <span class="text-[10px] font-mono text-stone-400">
-            {{ resultCount.toLocaleString() }} records
-          </span>
+          <div class="flex items-center gap-6" :class="{ 'w-full flex-col items-start gap-3': position === 'right' && !isMaximized }">
+            <div class="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/30">
+              <template v-for="tab in ([
+                { id: 'output', label: 'Output', icon: Table, count: ref(0), hideable: false },
+                { id: 'insights', label: 'Insights', icon: Brain, count: computed(() => props.analysis?.prediction ? 1 : 0), hideable: true },
+                { id: 'problems', label: 'Problems', icon: AlertCircle, count: problemsCount, hideable: true },
+                { id: 'execution', label: 'Execution', icon: Gauge, count: ref(0), hideable: true },
+                { id: 'versioning', label: 'Versioning', icon: GitBranch, count: ref(0), hideable: true }
+              ] as const)" :key="tab.id">
+                <ContextMenu v-if="!isHidden(tab.id)">
+                  <ContextMenuTrigger as-child>
+                    <button
+                      @click="activeTab = tab.id"
+                      class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all relative group"
+                      :class="
+                        activeTab === tab.id
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      "
+                    >
+                      <component :is="tab.icon" class="w-3 h-3" :class="activeTab === tab.id ? 'text-violet-500 dark:text-violet-400' : 'text-muted-foreground/60 group-hover:text-muted-foreground'" />
+                      <span v-if="position !== 'right' || activeTab === tab.id || isMaximized">{{ tab.label }}</span>
+                      <span v-if="unref(tab.count) > 0" class="flex items-center justify-center min-w-[14px] h-[14px] px-1 bg-rose-500 text-white text-[8px] font-black rounded-full ml-1">
+                        {{ unref(tab.count) }}
+                      </span>
+                    </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent v-if="tab.hideable">
+                    <ContextMenuItem @click="toggleHidden(tab.id)" class="flex items-center gap-2">
+                      <Trash2 class="w-1 h-3" />
+                      <span>Hide from Top Bar</span>
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              </template>
+            </div>
+
+            <!-- View Mode (Table/JSON) -->
+            <ContextMenu v-if="activeTab === 'output' && Array.isArray(result) && !isHidden('view-mode')">
+              <ContextMenuTrigger as-child>
+                <div class="flex items-center gap-1.5 pl-4 border-l border-border/50" :class="{ 'pl-0 border-l-0': position === 'right' && !isMaximized }">
+                  <button
+                    @click="viewMode = 'table'"
+                    class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
+                    :class="viewMode === 'table' ? 'bg-violet-500/10 text-violet-500 dark:text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-muted-foreground hover:text-foreground'"
+                  >
+                    Tabular
+                  </button>
+                  <button
+                    @click="viewMode = 'json'"
+                    class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
+                    :class="viewMode === 'json' ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-stone-500 hover:text-stone-300'"
+                  >
+                    Object
+                  </button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem @click="toggleHidden('view-mode')" class="flex items-center gap-2">
+                  <Trash2 class="w-1 h-3" />
+                  <span>Hide from Top Bar</span>
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          </div>
+
+          <div class="flex items-center gap-3" :class="{ 'w-full justify-between': position === 'right' && !isMaximized }">
+            <!-- Result count badge -->
+            <ContextMenu v-if="activeTab === 'output' && resultCount !== null && !isHidden('record-count')">
+              <ContextMenuTrigger as-child>
+                <div class="flex items-center gap-2 px-2 py-0.5 bg-muted/50 border border-border rounded-full">
+                  <div class="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]"></div>
+                  <span class="text-[10px] font-mono text-muted-foreground">
+                    {{ resultCount.toLocaleString() }} records
+                  </span>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem @click="toggleHidden('record-count')" class="flex items-center gap-2">
+                  <Trash2 class="w-1 h-3" />
+                  <span>Hide Record Count</span>
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+            
+            <!-- Status Indicator (Pulsing Dot) -->
+            <ContextMenu v-if="!isHidden('status-indicator')">
+              <ContextMenuTrigger as-child>
+                <div class="flex items-center gap-1.5 px-2 py-0.5 bg-muted/40 border border-border rounded-md">
+                   <div :class="`w-1.5 h-1.5 rounded-full ${props.error ? 'bg-rose-500 shadow-[0_0_8px_theme(colors.rose.500)]' : (props.loading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]')}`"></div>
+                   <span class="text-[9px] font-black uppercase tracking-tighter text-muted-foreground">
+                     {{ props.error ? 'Protocol Failure' : (props.loading ? 'Processing' : (position === 'right' && !isMaximized ? 'Secure' : 'System Secure')) }}
+                   </span>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem @click="toggleHidden('status-indicator')" class="flex items-center gap-2">
+                  <Trash2 class="w-1 h-3" />
+                  <span>Hide System Status</span>
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+
+            <div v-if="position !== 'right' || isMaximized" class="h-4 w-px bg-stone-800 mx-1"></div>
+
+            <!-- Utility Group -->
+            <div class="flex items-center gap-1">
+              <button
+                v-if="!lockedPosition"
+                @click="togglePosition"
+                class="p-1.5 rounded-lg text-muted-foreground hover:text-violet-500 hover:bg-muted transition-all"
+                :title="`Dock to ${position === 'bottom' ? 'right' : 'bottom'}`"
+              >
+                <PanelBottom v-if="position === 'right'" class="w-3.5 h-3.5" />
+                <PanelRight v-else class="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                @click="toggleMaximize"
+                class="p-1.5 rounded-lg text-muted-foreground hover:text-violet-500 hover:bg-muted transition-all"
+              >
+                <Minimize2 v-if="isMaximized" class="w-3.5 h-3.5" />
+                <Maximize2 v-else class="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                @click="emit('close')"
+                class="p-1.5 rounded-md hover:bg-rose-500/10 hover:text-rose-400 transition-all ml-1"
+                title="Force Close Results"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
-        
-        <!-- Status Indicator (Pulsing Dot) -->
-        <div class="flex items-center gap-1.5 px-2 py-0.5 bg-stone-900/50 border border-stone-800/50 rounded-md">
-           <div :class="`w-1.5 h-1.5 rounded-full ${props.error ? 'bg-rose-500 shadow-[0_0_8px_theme(colors.rose.500)]' : (props.loading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]')}`"></div>
-           <span class="text-[9px] font-black uppercase tracking-tighter text-stone-500">
-             {{ props.error ? 'Protocol Failure' : (props.loading ? 'Processing' : 'System Secure') }}
-           </span>
-        </div>
-
-        <div class="h-4 w-px bg-stone-800 mx-1"></div>
-
-        <!-- Utility Group -->
-        <div class="flex items-center gap-1">
-          <button
-            v-if="!lockedPosition"
-            @click="togglePosition"
-            class="p-1.5 rounded-lg text-stone-500 hover:text-violet-400 hover:bg-stone-800/50 transition-all"
-            :title="`Dock to ${position === 'bottom' ? 'right' : 'bottom'}`"
-          >
-            <PanelBottom v-if="position === 'right'" class="w-3.5 h-3.5" />
-            <PanelRight v-else class="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            @click="toggleMaximize"
-            class="p-1.5 rounded-lg text-stone-500 hover:text-violet-400 hover:bg-stone-800/50 transition-all"
-          >
-            <Minimize2 v-if="isMaximized" class="w-3.5 h-3.5" />
-            <Maximize2 v-else class="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            @click="emit('close')"
-            class="p-1.5 rounded-lg text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
-          >
-            <X class="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-    </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem @click="resetTopBar" class="flex items-center gap-2">
+          <RotateCcw class="w-3.5 h-3.5" />
+          <span>Reset Top Bar Controls</span>
+        </ContextMenuItem>
+        <ContextMenuItem v-if="hiddenItems.value.length > 0" @click="resetTopBar" class="flex items-center gap-2">
+          <Eye class="w-3.5 h-3.5" />
+          <span>Show All Hidden Items</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
 
     <!-- Panel Content -->
     <div class="flex-1 overflow-hidden relative z-10 flex flex-col">
       <!-- Loading Overlay -->
       <Transition name="fade">
-        <div v-if="loading" class="absolute inset-0 bg-[#0a0a0b]/60 backdrop-blur-[2px] z-[50] flex flex-col items-center justify-center space-y-4">
-           <div class="flex items-center gap-3 px-4 py-2 bg-stone-900 border border-stone-800 rounded-full shadow-2xl">
-              <Loader2 class="w-4 h-4 text-violet-400 animate-spin" />
-              <span class="text-[11px] font-black uppercase tracking-[0.2em] text-stone-200">Executing Data Protocol</span>
+        <div v-if="loading" class="absolute inset-0 bg-background/60 backdrop-blur-[2px] z-[50] flex flex-col items-center justify-center space-y-4">
+           <div class="flex items-center gap-3 px-4 py-2 bg-muted border border-border shadow-2xl rounded-full">
+              <Loader2 class="w-4 h-4 text-violet-500 dark:text-violet-400 animate-spin" />
+              <span class="text-[11px] font-black uppercase tracking-[0.2em] text-foreground">Executing Data Protocol</span>
            </div>
-           <button @click="emit('cancel')" class="text-[9px] font-bold uppercase tracking-widest text-stone-500 hover:text-rose-400 underline decoration-rose-400/30">
+           <button @click="emit('cancel')" class="text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:text-rose-500 underline decoration-rose-500/30">
               Abort Operation
            </button>
         </div>
@@ -332,13 +404,13 @@ const copyToClipboard = async (text: string) => {
                </div>
                <div class="flex-1 min-w-0">
                   <h4 class="text-xs font-black uppercase tracking-widest text-rose-500 mb-2">Protocol Failure</h4>
-                  <p class="text-[13px] font-mono text-stone-300 break-words leading-relaxed">{{ error }}</p>
+                  <p class="text-[13px] font-mono text-foreground/80 dark:text-stone-300 break-words leading-relaxed">{{ error }}</p>
                </div>
              </div>
              
              <button 
                 @click="copyToClipboard(error)"
-                class="absolute top-4 right-4 p-2 rounded-lg bg-stone-900 border border-stone-800 text-stone-500 hover:text-stone-100 opacity-0 group-hover:opacity-100 transition-all"
+                class="absolute top-4 right-4 p-2 rounded-lg bg-muted border border-border text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
               >
                 <component :is="copied ? Check : Copy" class="w-3.5 h-3.5" />
               </button>
@@ -347,17 +419,17 @@ const copyToClipboard = async (text: string) => {
           <div v-else-if="result" class="h-full flex flex-col p-3 space-y-3">
              <!-- Results table content remains the same ... -->
              <div v-if="Array.isArray(result) && result.length > 0" class="flex items-center gap-3">
-               <button @click="emit('create-dashboard-element')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-100 text-stone-950 hover:bg-white text-[9px] font-black uppercase tracking-widest transition-all shadow-xl shadow-stone-950/20">
+               <button @click="emit('create-dashboard-element')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-[9px] font-black uppercase tracking-widest transition-all shadow-lg">
                   <LayoutDashboard class="w-3 h-3" />
                   <span>Visualize</span>
                </button>
-               <button @click="emit('open-spreadsheet')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-800 border border-stone-700 text-stone-300 hover:text-stone-100 hover:border-stone-600 text-[9px] font-black uppercase tracking-widest transition-all">
+               <button @click="emit('open-spreadsheet')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border text-foreground hover:bg-muted/80 text-[9px] font-black uppercase tracking-widest transition-all">
                   <Table class="w-3 h-3" />
                   <span>Spreadsheet</span>
                </button>
             </div>
 
-            <div class="flex-1 min-h-0 min-w-0 rounded-xl border border-stone-800/50 bg-stone-950/30 overflow-hidden shadow-inner">
+            <div class="flex-1 min-h-0 min-w-0 rounded-xl border border-border bg-muted/20 overflow-hidden shadow-inner">
                <ResultsTable 
                   v-if="viewMode === 'table' && Array.isArray(result)" 
                   :data="result" 
@@ -402,9 +474,9 @@ const copyToClipboard = async (text: string) => {
                  <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between mb-1">
                        <span class="text-[10px] font-black uppercase tracking-widest text-rose-500">Execution Error</span>
-                       <span class="text-[9px] font-mono text-stone-600">Row 1, Col 1</span>
+                       <span class="text-[9px] font-mono text-muted-foreground/60">Row 1, Col 1</span>
                     </div>
-                    <p class="text-[11px] font-mono text-stone-300 break-words leading-relaxed">{{ error }}</p>
+                    <p class="text-[11px] font-mono text-foreground break-words leading-relaxed">{{ error }}</p>
                  </div>
               </div>
            </div>
@@ -446,9 +518,9 @@ const copyToClipboard = async (text: string) => {
 
             <!-- Reasoning -->
             <div class="space-y-3">
-              <h5 class="text-[10px] font-black uppercase tracking-widest text-stone-500">Logic & Reasoning</h5>
-              <div class="p-5 bg-stone-950 border border-stone-800 rounded-2xl border-l-4 border-l-violet-500">
-                <div class="text-[13px] text-stone-300 leading-[1.6] whitespace-pre-wrap select-text selection:bg-violet-500/30">
+              <h5 class="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Logic & Reasoning</h5>
+              <div class="p-5 bg-muted/30 border border-border rounded-2xl border-l-4 border-l-violet-500">
+                <div class="text-[13px] text-foreground/80 leading-[1.6] whitespace-pre-wrap select-text selection:bg-violet-500/30">
                   {{ props.analysis.prediction.reasoning }}
                 </div>
               </div>
@@ -484,17 +556,17 @@ const copyToClipboard = async (text: string) => {
               </div>
            </div>
            
-           <div class="flex-1 bg-stone-950 border border-stone-800/50 rounded-xl p-4 flex flex-col">
-              <div class="flex items-center justify-between mb-4 pb-4 border-b border-stone-900">
-                 <h5 class="text-[9px] font-black uppercase tracking-widest text-stone-400">Performance Timeline</h5>
+           <div class="flex-1 bg-muted/20 border border-border rounded-xl p-4 flex flex-col">
+              <div class="flex items-center justify-between mb-4 pb-4 border-b border-border/50">
+                 <h5 class="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Performance Timeline</h5>
                  <div class="flex gap-2">
                     <div class="w-2 h-2 rounded-full bg-violet-500/50"></div>
-                    <div class="w-2 h-2 rounded-full bg-stone-800"></div>
+                    <div class="w-2 h-2 rounded-full bg-border"></div>
                  </div>
               </div>
               <div class="flex-1 flex items-end gap-1.5 h-32">
                  <div v-for="i in 20" :key="i" 
-                      class="flex-1 bg-stone-900 rounded-t-sm hover:bg-violet-500/40 transition-all cursor-pointer"
+                      class="flex-1 bg-muted rounded-t-sm hover:bg-violet-500/40 transition-all cursor-pointer"
                       :style="{ height: `${Math.random() * 80 + 10}%` }">
                  </div>
               </div>

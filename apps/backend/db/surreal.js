@@ -53,14 +53,19 @@ const initSchema = async () => {
     try {
         // Users Table
         await db.query(`
-            DEFINE TABLE user SCHEMALESS;
+            DEFINE TABLE user SCHEMALESS
+                PERMISSIONS 
+                    FOR select, update WHERE id = $auth.id
+                    FOR create, delete NONE;
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
         `);
 
-
         // Dashboards Table
         await db.query(`
-            DEFINE TABLE dashboard SCHEMALESS;
+            DEFINE TABLE dashboard SCHEMALESS
+                PERMISSIONS
+                    FOR select WHERE owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.id AND user = $auth.id)
+                    FOR update, delete WHERE owner = $auth.id;
             DEFINE FIELD title ON TABLE dashboard TYPE string;
             DEFINE FIELD owner ON TABLE dashboard TYPE record<user>;
             DEFINE FIELD is_public ON TABLE dashboard TYPE bool DEFAULT false;
@@ -73,24 +78,23 @@ const initSchema = async () => {
 
         // Dashboard Elements (Granular)
         await db.query(`
-            DEFINE TABLE dashboard_element SCHEMALESS;
+            DEFINE TABLE dashboard_element SCHEMALESS
+                PERMISSIONS
+                    FOR select WHERE dashboard.owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.dashboard AND user = $auth.id)
+                    FOR update, delete WHERE dashboard.owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.dashboard AND user = $auth.id AND role = 'editor');
             DEFINE FIELD dashboard ON TABLE dashboard_element TYPE record<dashboard>;
             DEFINE FIELD type ON TABLE dashboard_element TYPE string;
             DEFINE FIELD created_by ON TABLE dashboard_element TYPE record<user>;
             
             DEFINE INDEX idx_dashboard ON TABLE dashboard_element COLUMNS dashboard;
-            
-            -- Permissions:
-            -- Select: Public OR Owner OR Viewer/Editor
-            -- Update/Delete: Owner OR (Editor AND Creator)
-            -- Note: We will implement precise permission queries in the application layer first
-            -- to ensure smooth migration, but we define the structure here.
         `);
 
         // Dashboard Permissions (Sharing)
-        // We will simple use a 'permission' table linking user -> dashboard
         await db.query(`
-            DEFINE TABLE dashboard_permission SCHEMALESS;
+            DEFINE TABLE dashboard_permission SCHEMALESS
+                PERMISSIONS
+                    FOR select WHERE user = $auth.id OR dashboard.owner = $auth.id
+                    FOR create, update, delete WHERE dashboard.owner = $auth.id;
             DEFINE FIELD user ON TABLE dashboard_permission TYPE record<user>;
             DEFINE FIELD dashboard ON TABLE dashboard_permission TYPE record<dashboard>;
             DEFINE FIELD role ON TABLE dashboard_permission TYPE string; -- 'editor', 'viewer'
@@ -100,11 +104,13 @@ const initSchema = async () => {
             DEFINE INDEX unique_access ON TABLE dashboard_permission COLUMNS user, dashboard UNIQUE;
         `);
 
-        // Spreadsheet Permissions (Sharing)
-        // Allows sharing uploaded spreadsheets with View/Edit access
+        // Spreadsheet Permissions
         await db.query(`
-            DEFINE TABLE spreadsheet_permission SCHEMAFULL;
-            DEFINE FIELD spreadsheet ON TABLE spreadsheet_permission TYPE string; -- table name (data_uuid_name)
+            DEFINE TABLE spreadsheet_permission SCHEMAFULL
+                PERMISSIONS
+                    FOR select WHERE user_email = $auth.email OR granted_by = $auth.id
+                    FOR create, update, delete WHERE granted_by = $auth.id;
+            DEFINE FIELD spreadsheet ON TABLE spreadsheet_permission TYPE string;
             DEFINE FIELD user_email ON TABLE spreadsheet_permission TYPE string;
             DEFINE FIELD access_level ON TABLE spreadsheet_permission TYPE string; -- 'view' | 'edit'
             DEFINE FIELD granted_by ON TABLE spreadsheet_permission TYPE record<user>;
@@ -113,9 +119,12 @@ const initSchema = async () => {
             DEFINE INDEX unique_ss_access ON TABLE spreadsheet_permission COLUMNS spreadsheet, user_email UNIQUE;
         `);
 
-        // Sanitization Metadata Table (Versioning)
+        // Sanitization Metadata
         await db.query(`
-            DEFINE TABLE sanitization_metadata SCHEMAFULL;
+            DEFINE TABLE sanitization_metadata SCHEMAFULL
+                PERMISSIONS
+                    FOR select WHERE (SELECT id FROM uploads WHERE id = $parent.upload_id AND user_id = $auth.id)
+                    FOR create, update, delete NONE;
             DEFINE FIELD original_table ON sanitization_metadata TYPE string;
             DEFINE FIELD versions ON sanitization_metadata TYPE array; 
             DEFINE FIELD current_version ON sanitization_metadata TYPE number; 
@@ -124,9 +133,12 @@ const initSchema = async () => {
             DEFINE INDEX idx_original_table ON sanitization_metadata COLUMNS original_table UNIQUE;
         `);
 
-        // Connection Workspaces (Persistence)
+        // Connection Workspaces
         await db.query(`
-            DEFINE TABLE connection_workspace SCHEMALESS;
+            DEFINE TABLE connection_workspace SCHEMALESS
+                PERMISSIONS
+                    FOR select, update, delete WHERE user = $auth.id
+                    FOR create WHERE user = $auth.id;
             DEFINE FIELD connection_id ON TABLE connection_workspace TYPE string;
             DEFINE FIELD user ON TABLE connection_workspace TYPE record<user>;
             DEFINE FIELD workspace_data ON TABLE connection_workspace TYPE object;
@@ -135,34 +147,59 @@ const initSchema = async () => {
             DEFINE INDEX idx_workspace_conn ON TABLE connection_workspace COLUMNS connection_id, user UNIQUE;
         `);
 
-        // Knowledge Base for RAG
+        // Knowledge Base
         await db.query(`
-            DEFINE TABLE knowledge_chunk SCHEMAFULL;
+            DEFINE TABLE knowledge_chunk SCHEMAFULL
+                PERMISSIONS
+                    FOR select, update, delete WHERE user = $auth.id
+                    FOR create WHERE user = $auth.id;
             DEFINE FIELD content ON TABLE knowledge_chunk TYPE string;
             DEFINE FIELD embedding ON TABLE knowledge_chunk TYPE array<number>;
             DEFINE FIELD metadata ON TABLE knowledge_chunk TYPE object;
             DEFINE FIELD user ON TABLE knowledge_chunk TYPE record<user>;
             DEFINE FIELD created_at ON TABLE knowledge_chunk TYPE datetime DEFAULT time::now();
 
-            -- Vector Index for Semantic Search (MTREE)
-            -- Note: We use 1536 as a safe default for OpenAI, 
-            -- Gemini (768) will still work but might be less efficient with 1536 padding.
             DEFINE INDEX idx_vector ON TABLE knowledge_chunk FIELDS embedding MTREE DIMENSION 1536;
-
-            -- Full-Text Index for Keyword Search
             DEFINE ANALYZER rag_analyzer TOKENIZERS blank,class,camel,punct FILTERS lowercase,ascii;
             DEFINE INDEX idx_content ON TABLE knowledge_chunk FIELDS content SEARCH ANALYZER rag_analyzer BM25;
         `);
 
-        // User Secrets Table (Secure storage for API keys, etc)
+        // User Secrets
         await db.query(`
-            DEFINE TABLE user_secret SCHEMALESS;
+            DEFINE TABLE user_secret SCHEMALESS
+                PERMISSIONS
+                    FOR select, update, delete WHERE user = $auth.id
+                    FOR create WHERE user = $auth.id;
             DEFINE FIELD user ON TABLE user_secret TYPE record<user>;
             DEFINE FIELD name ON TABLE user_secret TYPE string;
-            DEFINE FIELD value ON TABLE user_secret TYPE string; -- Should ideally be encrypted
+            DEFINE FIELD value ON TABLE user_secret TYPE string;
             DEFINE FIELD created_at ON TABLE user_secret TYPE datetime DEFAULT time::now();
             
             DEFINE INDEX idx_user_secret ON TABLE user_secret COLUMNS user, name UNIQUE;
+        `);
+
+        // Transaction Tracking (Master Audit Log)
+        await db.query(`
+            DEFINE TABLE transaction_master SCHEMALESS
+                PERMISSIONS 
+                    FOR select, create, update, delete NONE; -- System/Admin only
+            DEFINE INDEX idx_stripe_session ON TABLE transaction_master COLUMNS stripe_session_id UNIQUE;
+        `);
+
+        // User Payment History (Private)
+        await db.query(`
+            DEFINE TABLE user_payment SCHEMAFULL
+                PERMISSIONS 
+                    FOR select WHERE user = $auth.id
+                    FOR create, update, delete NONE; -- System only via webhook
+            DEFINE FIELD user ON TABLE user_payment TYPE record<user>;
+            DEFINE FIELD amount ON TABLE user_payment TYPE number;
+            DEFINE FIELD currency ON TABLE user_payment TYPE string;
+            DEFINE FIELD tokens ON TABLE user_payment TYPE number;
+            DEFINE FIELD status ON TABLE user_payment TYPE string;
+            DEFINE FIELD description ON TABLE user_payment TYPE string;
+            DEFINE FIELD stripe_session_id ON TABLE user_payment TYPE string;
+            DEFINE FIELD created_at ON TABLE user_payment TYPE datetime DEFAULT time::now();
         `);
 
         console.log('[SurrealDB] Schema initialized');

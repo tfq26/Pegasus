@@ -48,35 +48,53 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
 <template>
   <div class="flex items-center gap-3 w-full">
     <!-- Run / Stop Controls -->
+    <!-- Run / Stop Controls -->
     <div class="flex items-center gap-2">
-      <button
-        @click="emit('run')"
-        :disabled="isExecuting"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-wait"
-        title="Execute query (Ctrl+Enter)"
-      >
-        <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
-        <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
-        <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button
+              @click="emit('run')"
+              :disabled="isExecuting"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-wait"
+            >
+              <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
+              <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
+              <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Execute query (Ctrl+Enter)</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
-      <button
-        @click="emit('save')"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
-        title="Save query (Ctrl+S)"
-      >
-        <Save class="w-3.5 h-3.5" />
-        <span class="hidden md:inline">Save</span>
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button
+              @click="emit('save')"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+            >
+              <Save class="w-3.5 h-3.5" />
+              <span class="hidden md:inline">Save</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Save query (Ctrl+S)</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
 
-      <button
-        @click="emit('stop')" 
-        v-if="isExecuting"
-        class="p-1.5 rounded-md text-destructive hover:bg-muted hover:text-destructive/80 transition-colors"
-        title="Stop execution"
-      >
-        <Square class="w-3.5 h-3.5 fill-current" />
-      </button>
+      <TooltipProvider v-if="isExecuting">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button
+              @click="emit('stop')" 
+              class="p-1.5 rounded-md text-destructive hover:bg-muted hover:text-destructive/80 transition-colors"
+            >
+              <Square class="w-3.5 h-3.5 fill-current" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Stop execution</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
 
     <!-- SQL Tools -->
@@ -91,7 +109,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
                <AlignLeft class="w-3.5 h-3.5" />
              </button>
           </TooltipTrigger>
-          <TooltipContent>Format SQL</TooltipContent>
+          <TooltipContent side="bottom">Format SQL</TooltipContent>
         </Tooltip>
       </TooltipProvider>
 
@@ -105,7 +123,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
                <Languages class="w-3.5 h-3.5" />
              </button>
           </TooltipTrigger>
-          <TooltipContent>Translate Query</TooltipContent>
+          <TooltipContent side="bottom">Translate Query</TooltipContent>
         </Tooltip>
       </TooltipProvider>
 
@@ -119,41 +137,47 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
                <Info class="w-3.5 h-3.5" />
              </button>
           </TooltipTrigger>
-          <TooltipContent>Explain Query Plan</TooltipContent>
+          <TooltipContent side="bottom">Explain Query Plan</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>
 
     <!-- History Dropdown -->
-    <DropdownMenu>
-      <DropdownMenuTrigger as-child>
-        <button
-           class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-1"
-           title="Recent Queries"
-         >
-           <History class="w-3.5 h-3.5" />
-         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-64 max-h-60 overflow-y-auto">
-         <template v-if="queryHistory && queryHistory.length">
-             <DropdownMenuItem
-                v-for="(q, i) in queryHistory.slice(0, 10)"
-                :key="i"
-                @click="emit('load-query', q.query)"
-                class="text-xs truncate"
-             >
-                {{ q.query }}
-             </DropdownMenuItem>
-         </template>
-         <div v-else class="p-2 text-xs text-muted-foreground text-center">No recent history</div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <button
+                 class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-1"
+               >
+                 <History class="w-3.5 h-3.5" />
+               </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent class="w-64 max-h-60 overflow-y-auto">
+               <template v-if="queryHistory && queryHistory.length">
+                   <DropdownMenuItem
+                      v-for="(q, i) in queryHistory.slice(0, 10)"
+                      :key="i"
+                      @click="emit('load-query', q.query)"
+                      class="text-xs truncate"
+                   >
+                      {{ q.query }}
+                   </DropdownMenuItem>
+               </template>
+               <div v-else class="p-2 text-xs text-muted-foreground text-center">No recent history</div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Recent Queries</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
 
     <div class="flex-1"></div>
 
     <!-- Query Options -->
     <div class="flex items-center gap-3 text-xs text-muted-foreground">
-        <div class="flex items-center gap-2" title="Query Timeout (seconds)">
+        <div class="flex items-center gap-2">
             <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Timeout</span>
             <input
                 :value="queryOptions.timeout"
@@ -165,7 +189,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
             />
         </div>
 
-        <div class="flex items-center gap-2" title="Max Rows">
+        <div class="flex items-center gap-2">
             <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Limit</span>
             <input
                 :value="queryOptions.limit"
@@ -177,7 +201,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
             />
         </div>
 
-        <div class="flex items-center gap-2" title="Auto-commit Transaction">
+        <div class="flex items-center gap-2">
             <label class="flex items-center gap-2 cursor-pointer">
                 <input
                 :checked="queryOptions.autoCommit"
@@ -192,13 +216,19 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
 
     <!-- Clear Button -->
      <div class="border-l border-border pl-2 ml-2">
-        <button
-        @click="emit('clear')"
-        class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        title="Clear editor"
-        >
-        <Eraser class="w-3.5 h-3.5" />
-        </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button
+              @click="emit('clear')"
+              class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <Eraser class="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Clear editor</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   </div>
 </template>

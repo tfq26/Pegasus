@@ -171,11 +171,11 @@ function formatTableName(tableName: string): string {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #292524;
+  background: hsl(var(--muted-foreground) / 0.3);
   border-radius: 10px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #44403c;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
 </style>
 

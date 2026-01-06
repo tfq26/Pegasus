@@ -1,8 +1,21 @@
 <template>
   <div class="h-full bg-background text-foreground flex overflow-hidden transition-colors duration-300">
-    <aside
-      class="w-64 border-r border-border bg-card/80 backdrop-blur-md p-6 flex flex-col sticky top-0 h-full overflow-y-auto z-10"
-    >
+    <!-- Loading State -->
+    <div v-if="isInitializing" class="flex flex-col items-center justify-center h-full w-full">
+      <div class="relative">
+        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
+        </div>
+      </div>
+      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Configuring Environment...</p>
+      <p class="text-muted-foreground text-sm mt-2">Loading core preferences and secure adapter configs</p>
+    </div>
+
+    <template v-else>
+      <aside
+        class="w-64 border-r border-border bg-card/80 backdrop-blur-md p-6 flex flex-col sticky top-0 h-full overflow-y-auto z-10"
+      >
       <h2 class="text-xl font-semibold text-primary mb-6">Settings</h2>
       <nav class="space-y-2">
         <button
@@ -50,9 +63,7 @@
           <DataTab :settings="settings" />
         </section>
 
-        <section v-if="activeTab === 'cloud'" class="fade-section">
-          <CloudTab :settings="settings" />
-        </section>
+
 
         <section v-if="activeTab === 'view'" class="fade-section">
           <ViewTab :settings="settings" />
@@ -104,6 +115,7 @@
         </button>
       </div>
     </main>
+    </template>
   </div>
 </template>
 
@@ -116,7 +128,7 @@ import GeneralTab from './GeneralTab.vue'
 import AITab from './AITab.vue'
 import QueriesTab from './QueriesTab.vue'
 import DataTab from './DataTab.vue'
-import CloudTab from './CloudTab.vue'
+
 import ViewTab from './ViewTab.vue'
 import IntegrationsTab from './IntegrationsTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
@@ -128,6 +140,8 @@ import { fetchConnectionSchema, QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
 import { usePlatform } from '@/composables/usePlatform'
 import { useRouter } from 'vue-router'
+import { useSettingsStore } from '@/stores/settings'
+import { storeToRefs } from 'pinia'
 
 defineOptions({ name: 'SettingsPage' })
 
@@ -137,6 +151,9 @@ const { isPhone } = usePlatform()
 const tabs = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI' },
+  { id: 'queries', label: 'Queries' },
+  { id: 'data', label: 'Data' },
+  { id: 'view', label: 'View' },
   { id: 'database', label: 'Database Connections' },
   { id: 'integrations', label: 'Linked Accounts' },
   { id: 'analytics', label: 'Analytics & Logs' },
@@ -144,6 +161,7 @@ const tabs = [
 ]
 
 const activeTab = ref('general')
+const isInitializing = ref(true)
 
 // --- Theme ---
 const mode = useColorMode({
@@ -160,37 +178,10 @@ const toggleTheme = () => {
 }
 
 // --- Settings model ---
-const settings = ref<SettingsModel>({
-  language: 'English',
-  aiDetail: 1,
-  enableContext: true,
-  enableCodeHints: true,
-  autoSaveQueries: true,
-  syntaxHighlighting: true,
-  showQueryTips: false,
-  autoRefresh: true,
-  showRowCount: true,
-  cloudProvider: 'Azure',
-  cloudRegion: 'eastus2',
-  showDashboardGrid: true,
-  compactMode: false,
-  githubConnected: false,
-  slackConnected: false,
-  azureConnected: true,
-  enabledModels: [],
-  chatAutoDeleteDays: 30,
-  azureCredentials: {
-    tenantId: '',
-    clientId: '',
-    clientSecret: '',
-    subscriptionId: ''
-  },
-  awsCredentials: {
-    accessKeyId: '',
-    secretAccessKey: '',
-    region: 'us-east-1'
-  }
-})
+const settingsStore = useSettingsStore()
+const { isLoading } = storeToRefs(settingsStore)
+import { unref } from 'vue'
+const settings = computed(() => unref(settingsStore.settings))
 
 const savedConnections = ref<ConnectionEntry[]>([])
 const connectionStatuses = ref<Record<string, ConnectionStatusState>>({})
@@ -508,18 +499,8 @@ const deleteConnection = async (id: string) => {
 
 const saveSettings = async () => {
   try {
-    const res = await fetch(`${QUERY_API_URL}/settings`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(settings.value)
-    })
-
-    if (res.ok) {
-      toast.success('Settings saved!')
-    } else {
-      toast.error('Failed to save settings')
-    }
+    await settingsStore.saveSettings()
+    toast.success('Settings saved!')
   } catch (e) {
     console.error('Failed to save settings:', e)
     toast.error('Failed to save settings')
@@ -535,33 +516,27 @@ onMounted(async () => {
     return
   }
 
-  // Wait for auth to complete and token to be stored
-  await new Promise(resolve => setTimeout(resolve, 100))
-  
-  loadConnections()
-  window.addEventListener('pegasus:connections-updated', connectionUpdateHandler)
-  
+  isInitializing.value = true
   try {
-    const res = await fetch(`${QUERY_API_URL}/settings`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-      credentials: 'include'
-    })
+    // Wait for auth to complete and token to be stored
+    await new Promise(resolve => setTimeout(resolve, 100))
     
-    if (res.ok) {
-      const data = await res.json()
-      if (data.settings && Object.keys(data.settings).length > 0) {
-        settings.value = { ...settings.value, ...data.settings }
-      }
-    }
+    // Load connections and settings in parallel
+    // settingsStore.loadSettings handles loading and merging
+    await Promise.all([
+      loadConnections(),
+      settingsStore.loadSettings()
+    ])
+
+    window.addEventListener('pegasus:connections-updated', connectionUpdateHandler)
   } catch (e) {
-    console.error('Failed to load settings:', e)
-    // Fallback to local storage if DB fails? 
-    // For now, let's stick to the requested DB implementation.
-    const saved = localStorage.getItem('pegasusSettings')
-    if (saved) settings.value = JSON.parse(saved)
+    console.error('[Settings] Initialization failed:', e)
+    toast.error('Failed to load settings')
+  } finally {
+    isInitializing.value = false
   }
 })
+
 
 onUnmounted(() => {
   window.removeEventListener('pegasus:connections-updated', connectionUpdateHandler)
@@ -572,6 +547,14 @@ onUnmounted(() => {
 .fade-section {
   animation: fadeIn 0.4s ease;
 }
+@keyframes spin-slow {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }

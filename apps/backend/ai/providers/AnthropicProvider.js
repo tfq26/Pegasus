@@ -61,12 +61,14 @@ export class AnthropicProvider extends AIProvider {
     }
 
     async listModels() {
+        // Curated models for data analysis
+        // Using -latest aliases for automatic updates
         const relevantModels = [
-            'claude-3-5-sonnet-latest',
-            'claude-3-5-haiku-latest',
-            'claude-3-opus-latest',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307'
+            // Pro tier
+            'claude-3-5-haiku-latest',   // Fast & affordable
+            'claude-3-5-sonnet-latest',  // Best for complex data analysis
+            // Pro+ tier
+            'claude-3-opus-latest'       // Most powerful for highly complex tasks
         ]
 
         return relevantModels.map(id => ({

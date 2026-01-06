@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp, Lock } from 'lucide-vue-next'
+import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp, Lock, Plus } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import type { ConnectionSchemaState } from '@/composables/useExplorerSchema'
 import TableList from './TableList.vue'
@@ -8,8 +8,18 @@ import TabList from './TabList.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 const workspaceStore = useWorkspaceStore()
-const tabs = computed(() => [...(workspaceStore.tabs as any)])
-const activeTabId = computed(() => workspaceStore.activeTabId as any)
+const tabs = computed(() => {
+  const ws = (workspaceStore as any).workspacesByConnection?.[props.connection.id]
+  return [...(ws?.tabs || [])]
+})
+const inactiveTabs = computed(() => {
+  const ws = (workspaceStore as any).workspacesByConnection?.[props.connection.id]
+  return [...(ws?.inactiveTabs || [])]
+})
+const activeTabId = computed(() => {
+  const ws = (workspaceStore as any).workspacesByConnection?.[props.connection.id]
+  return ws?.activeTabId || null
+})
 const viewMode = ref<'tables' | 'tabs'>('tables')
 
 const props = defineProps<{
@@ -26,6 +36,7 @@ const emit = defineEmits<{
   'edit-table': [connection: ConnectionEntry, table: string]
   'rename-table': [connection: ConnectionEntry, table: string]
   'delete-table': [connection: ConnectionEntry, table: string]
+  'add-table': [connection: ConnectionEntry]
 }>()
 
 function statusDotClasses(status?: ConnectionSchemaState['status']) {
@@ -100,6 +111,14 @@ function statusLabel(state?: ConnectionSchemaState) {
           </button>
           
           <button 
+            @click.stop="emit('add-table', connection)"
+            class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-purple-500/10 text-muted-foreground hover:text-purple-500 transition-all"
+            title="Add Table"
+          >
+            <Plus class="w-3.5 h-3.5" />
+          </button>
+          
+          <button 
             @click.stop="emit('delete', connection)"
             class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-rose-500 transition-all"
             title="Delete Connection"
@@ -144,9 +163,12 @@ function statusLabel(state?: ConnectionSchemaState) {
       <TabList
         v-if="selected && viewMode === 'tabs'"
         :tabs="tabs"
+        :inactive-tabs="inactiveTabs"
         :active-tab-id="activeTabId"
         @select="(id) => workspaceStore.setActiveTab(id)"
         @close="(id) => workspaceStore.closeTab(id)"
+        @restore="(id: string) => (workspaceStore as any).restoreTab(id)"
+        @delete-permanently="(id: string) => (workspaceStore as any).deleteInactiveTab(id)"
       />
     </article>
   </div>

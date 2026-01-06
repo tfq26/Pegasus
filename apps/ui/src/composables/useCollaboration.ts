@@ -9,6 +9,7 @@ const isConnected = ref(false);
 const collaborators = ref<any[]>([]);
 const cursors = ref<Record<string, { x: number, y: number, user: any }>>({});
 const chatMessages = ref<any[]>([]);
+const isAIThinking = ref(false);
 
 export function useCollaboration() {
     const { user } = useAuth();
@@ -91,7 +92,28 @@ export function useCollaboration() {
 
         socket.value.on('chat_history', (history) => {
             console.log('[Collaboration] Chat history received:', history);
-            chatMessages.value = history;
+            chatMessages.value = history || [];
+        });
+
+        socket.value.on('message_updated', (data) => {
+            // data: { id, content, isEdited }
+            const idx = chatMessages.value.findIndex(m => m.id === data.id);
+            if (idx !== -1) {
+                chatMessages.value[idx] = {
+                    ...chatMessages.value[idx],
+                    content: data.content,
+                    isEdited: data.isEdited
+                };
+            }
+        });
+
+        socket.value.on('message_deleted', (data) => {
+            // data: { id }
+            chatMessages.value = chatMessages.value.filter(m => m.id !== data.id);
+        });
+
+        socket.value.on('pegasus_thinking', (data) => {
+            isAIThinking.value = data.thinking;
         });
     };
 
@@ -132,13 +154,35 @@ export function useCollaboration() {
         socket.value.emit('cursor_move', { dashboardId, x, y });
     };
 
-    const sendChatMessage = (dashboardId: string, content: string) => {
+    const sendChatMessage = (dashboardId: string, messageData: { content: string, mentions?: any[], images?: any[] } | string) => {
         if (!socket.value?.connected) return;
-        socket.value.emit('chat_message', { dashboardId, content });
+
+        // Handle legacy string calls if any
+        const payload = typeof messageData === 'string'
+            ? { dashboardId, content: messageData }
+            : { dashboardId, ...messageData };
+
+        socket.value.emit('chat_message', payload);
+    };
+
+    const emitPegasusQuery = (dashboardId: string, query: string, parentId?: string) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('pegasus_query', { dashboardId, query, parentId });
+    };
+
+    const editChatMessage = (dashboardId: string, messageId: string, content: string) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('edit_message', { dashboardId, messageId, content });
+    };
+
+    const deleteChatMessage = (dashboardId: string, messageId: string) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('delete_message', { dashboardId, messageId });
     };
 
     return {
         isConnected,
+        isAIThinking,
         collaborators,
         cursors,
         chatMessages,
@@ -147,6 +191,9 @@ export function useCollaboration() {
         joinDashboard,
         leaveDashboard,
         emitCursorMove,
-        sendChatMessage
+        sendChatMessage,
+        emitPegasusQuery,
+        editChatMessage,
+        deleteChatMessage
     };
 }

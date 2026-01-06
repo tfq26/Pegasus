@@ -4,7 +4,7 @@ import { translateQuery, explainQuery } from '@/lib/api'
 
 export function useChatToolbar(workspaceRef: Ref<any>, selectedConnection?: Ref<any>) {
 
-    const handleExport = (format: 'csv' | 'xlsx') => {
+    const handleExport = (format: 'csv' | 'xlsx' | 'pdf') => {
         if (workspaceRef.value?.exportCurrentTable) {
             (workspaceRef.value as any).exportCurrentTable(format);
         } else {

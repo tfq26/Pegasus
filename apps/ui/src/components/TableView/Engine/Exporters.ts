@@ -1,12 +1,13 @@
 import { utils, writeFile } from 'xlsx';
 import { Engine } from './Engine';
 import type { CellPosition } from './types';
+import { toast } from '@/composables/useNotifications';
 
 /**
  * Handles data export to CSV format
  */
 export class CSVExporter {
-    static export(engine: Engine, filename: string = 'export.csv', range?: { start: CellPosition, end: CellPosition }) {
+    static async export(engine: Engine, filename: string = 'export.csv', range?: { start: CellPosition, end: CellPosition }) {
         const data = this.getData(engine, range);
 
         const csvContent = data.map(row =>
@@ -64,7 +65,7 @@ export class CSVExporter {
             // Determine max row
             const cells = engine.getCells();
             for (const k of cells.keys()) {
-                const r = parseInt(k.split(',')[0]);
+                const r = parseInt(k.split(',')[0] || '0');
                 if (!isNaN(r) && r > maxRow) maxRow = r;
             }
         }
@@ -88,7 +89,7 @@ export class CSVExporter {
  * Handles data export to Excel (.xlsx) format using SheetJS
  */
 export class ExcelExporter {
-    static export(engine: Engine, filename: string = 'export.xlsx', range?: { start: CellPosition, end: CellPosition }) {
+    static async export(engine: Engine, filename: string = 'export.xlsx', range?: { start: CellPosition, end: CellPosition }) {
         // Get headers excluding internal ones
         const allHeaders = engine.columnNames.filter(h => h !== '_rowid_');
 
@@ -103,7 +104,7 @@ export class ExcelExporter {
             minRow = Math.min(range.start.row, range.end.row);
             maxRow = Math.max(range.start.row, range.end.row);
 
-            allHeaders.forEach((h, i) => {
+            allHeaders.forEach((h, j) => {
                 const originalIndex = engine.columnNames.indexOf(h);
                 if (originalIndex >= minCol && originalIndex <= maxCol) {
                     headers.push(h);
@@ -117,7 +118,7 @@ export class ExcelExporter {
             // Determine max row
             const cells = engine.getCells();
             for (const k of cells.keys()) {
-                const r = parseInt(k.split(',')[0]);
+                const r = parseInt(k.split(',')[0] || '0');
                 if (!isNaN(r) && r > maxRow) maxRow = r;
             }
         }
@@ -139,5 +140,15 @@ export class ExcelExporter {
         const ws = utils.aoa_to_sheet(wsData);
         utils.book_append_sheet(wb, ws, "Sheet1");
         writeFile(wb, filename);
+    }
+}
+
+/**
+ * Handles data export to PDF format
+ */
+export class PDFExporter {
+    static async export(engine: Engine, filename: string = 'export.pdf') {
+        toast.info("PDF Export coming soon. For now, please use CSV or Excel.");
+        // In a real implementation, we'd use jspdf or a similar library here
     }
 }

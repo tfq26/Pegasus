@@ -67,9 +67,21 @@ export async function getExperimentalStatus(db, userId, jwtPayload = null) {
             };
         }
 
-        // 2. Fallback: Check SurrealDB for legacy/manual grants
+        // 1.1 Check SurrealDB for subscription tier (Pro+ gets automatic access)
         const userRec = `user:${userId}`;
+        const [userData] = await db.query(`SELECT subscription_tier FROM ${userRec}`);
+        const tier = userData && userData[0] ? userData[0].subscription_tier : 'free';
 
+        if (tier === 'pro_plus') {
+            return {
+                hasAccess: true,
+                source: 'tier_pro_plus',
+                requested: false,
+                requestedAt: null
+            };
+        }
+
+        // 2. Fallback: Check SurrealDB for legacy/manual grants
         // Check if user has experimental access
         const [access] = await db.query(`
             SELECT has_access, granted_at FROM experimental_access 

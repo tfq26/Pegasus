@@ -1,6 +1,19 @@
 <template>
-  <div class="w-full h-full flex flex-col text-foreground">
-    <!-- Header -->
+  <div class="w-full h-full flex flex-col text-foreground overflow-hidden">
+    <!-- Premium Loading State -->
+    <div v-if="isInitializing" class="flex flex-col items-center justify-center h-full w-full">
+      <div class="relative">
+        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
+        </div>
+      </div>
+      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Decompressing Dashboard...</p>
+      <p class="text-muted-foreground text-sm mt-2">Reconstructing visualizations and live data streams</p>
+    </div>
+
+    <template v-else>
+      <!-- Header -->
     <header class="border-b border-border bg-card/80 backdrop-blur-md px-6 py-3 flex items-center justify-between sticky top-0 z-10">
       <div class="flex items-center gap-3">
         <button 
@@ -66,6 +79,7 @@
           <Tooltip>
             <TooltipTrigger as-child>
               <button
+                ref="chatToggleRef"
                 @click="showChat = !showChat"
                 class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
                 :class="{ 'bg-muted text-foreground': showChat }"
@@ -190,8 +204,8 @@
       
 
       
-      <!-- Chat Sidebar (Right) - Overlay Mode -->
       <div 
+        ref="chatSidebarRef"
         class="border-l border-border z-50 shadow-xl transition-all duration-300 bg-card fixed top-[57px] bottom-0 right-0 w-[320px]"
         :class="[
           showChat ? 'translate-x-0' : 'translate-x-full'
@@ -199,8 +213,12 @@
       >
         <DashboardChat 
           :messages="chatMessages" 
+          :isAIThinking="isAIThinking"
           @close="showChat = false"
           @send="handleSendMessage"
+          @pegasus-query="handlePegasusQuery"
+          @edit="handleEditMessage"
+          @delete="handleDeleteMessage"
         />
       </div>
       
@@ -226,10 +244,7 @@
         <!-- Live Cursors Overlay -->
         <LiveCursors :cursors="cursors" />
 
-        <div v-if="isLoading" class="flex items-center justify-center h-full">
 
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
 
       <DraggableGrid
         v-if="currentDashboard"
@@ -461,6 +476,7 @@
       @save="handleSaveElement"
     />
   </div>
+    </template>
   </div>
 </template>
 
@@ -469,6 +485,7 @@ import { ref, onMounted, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
+import { useSettingsStore } from '@/stores/settings'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
 import CodeEditor from '@/components/Chat/CodeEditor.vue'
 import ElementEditorWrapper from '@/components/Dashboard/ElementEditorWrapper.vue'
@@ -532,9 +549,10 @@ const store = useDashboardStore()
 const dashboards = computed((): any[] => store.dashboards as any)
 const currentDashboard = computed((): any => store.currentDashboard as any)
 const isLoading = computed(() => store.isLoading)
+const isInitializing = ref(true)
 
 import Navbar from '@/components/Navbar.vue'
-import { useMediaQuery, useThrottleFn } from '@vueuse/core'
+import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke } from '@vueuse/core'
 import { usePlatform } from '@/composables/usePlatform'
 
 const { isPhone, isTablet } = usePlatform()
@@ -547,13 +565,64 @@ const {
   sendChatMessage,
   collaborators,
   cursors,
-  chatMessages
+  chatMessages,
+  emitPegasusQuery,
+  isAIThinking,
+  editChatMessage,
+  deleteChatMessage
 } = useCollaboration()
 
 const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
 
 const showChat = ref(false)
+const chatSidebarRef = ref<HTMLElement | null>(null)
+const chatToggleRef = ref<HTMLElement | null>(null)
 const dashboardContainer = ref<HTMLElement | null>(null)
+
+// Click outside to close chat
+onClickOutside(chatSidebarRef, () => {
+  if (showChat.value) {
+    showChat.value = false
+  }
+}, { ignore: [chatToggleRef] })
+
+// Keyboard Shortcuts
+onKeyStroke(['s', 'S'], (e) => {
+  // Cmd/Ctrl + S = Save
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    e.preventDefault()
+    handleSave()
+  }
+  // Alt/Option + S or Cmd + Shift + S = Share
+  if (e.altKey || (e.metaKey && e.shiftKey)) {
+    e.preventDefault()
+    handleShare()
+  }
+})
+
+onKeyStroke(['c', 'C'], (e) => {
+  // Alt/Option + C or Cmd + Shift + C = Toggle Chat
+  if (e.altKey || (e.metaKey && e.shiftKey)) {
+     e.preventDefault()
+     showChat.value = !showChat.value
+  }
+})
+
+onKeyStroke(['a', 'A', 'e', 'E'], (e) => {
+  // Alt/Option + E/A or Cmd + Shift + E/A = Add Element
+  if (e.altKey || (e.metaKey && e.shiftKey)) {
+    e.preventDefault()
+    showAddElementDialog.value = true
+  }
+})
+
+onKeyStroke(['i', 'I'], (e) => {
+  // Alt/Option + I or Cmd + Shift + I = Generate Insights
+  if (e.altKey || (e.metaKey && e.shiftKey)) {
+    e.preventDefault()
+    generateDashboardSummary()
+  }
+})
 
 // Watch for dashboard changes to join/leave rooms and save last viewed
 watch(() => currentDashboard.value?.id, (newId, oldId) => {
@@ -629,9 +698,27 @@ const onMouseLeave = () => {
     // Optionally signal cursor left
 }
 
-const handleSendMessage = (content: string) => {
+const handleSendMessage = (messageData: any) => {
   if (currentDashboard.value) {
-    sendChatMessage(currentDashboard.value.id, content)
+    sendChatMessage(currentDashboard.value.id, messageData)
+  }
+}
+
+const handlePegasusQuery = (query: string, messageData: any) => {
+  if (currentDashboard.value) {
+    emitPegasusQuery(currentDashboard.value.id, query, messageData.parentId)
+  }
+}
+
+const handleEditMessage = (messageId: string, content: string) => {
+  if (currentDashboard.value) {
+    editChatMessage(currentDashboard.value.id, messageId, content)
+  }
+}
+
+const handleDeleteMessage = (messageId: string) => {
+  if (currentDashboard.value) {
+    deleteChatMessage(currentDashboard.value.id, messageId)
   }
 }
 
@@ -648,9 +735,20 @@ const downloadFile = (element: any) => {
 }
 
 // Layout State
-const isCompact = ref(false)
+const settingsStore = useSettingsStore()
+// Use computed unref to avoid double-ref issues with Pinia setup store
+import { unref } from 'vue'
+const settings = computed(() => unref(settingsStore.settings))
+
+const isCompact = computed({
+  get: () => settings.value.compactMode,
+  set: (val) => settings.value.compactMode = val
+})
 const isLocked = ref(false)
-const showGrid = ref(false)
+const showGrid = computed({
+  get: () => settings.value.showDashboardGrid,
+  set: (val) => settings.value.showDashboardGrid = val
+})
 
 const isShared = computed(() => route.path.includes('/shared/'))
 
@@ -761,9 +859,14 @@ const handleSave = async () => {
   }
 }
 
-const handleDeleteDashboard = () => {
+const handleDeleteDashboard = async () => {
   if (!currentDashboard.value) return
-  showDeleteModal.value = true
+  
+  if (settings.value.confirmDestructive) {
+    showDeleteModal.value = true
+  } else {
+    await confirmDelete()
+  }
 }
 
 const confirmDelete = async () => {
@@ -1028,18 +1131,25 @@ const handleSaveElement = async (updatedElement: any) => {
 
 // Initialization
 onMounted(async () => {
-  await store.loadDashboards()
-  
-  const id = route.params.id as string
-  if (id) {
-    await store.selectDashboard(id)
-  } else if (dashboards.value.length > 0) {
-    // Auto-select first dashboard if none specified
-    router.replace(`/dashboard/${dashboards.value[0]!.id}`)
+  isInitializing.value = true
+  try {
+    await store.loadDashboards()
+    
+    const id = route.params.id as string
+    if (id) {
+      await store.selectDashboard(id)
+    } else if (dashboards.value.length > 0) {
+      // Auto-select first dashboard if none specified
+      router.replace(`/dashboard/${dashboards.value[0]!.id}`)
+    }
+    
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+  } catch (e) {
+    console.error('[Dashboard] Initialization failed:', e)
+  } finally {
+    isInitializing.value = false
   }
-  
-  window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
 })
 
 watch(() => route.params.id, async (newId) => {
@@ -1314,5 +1424,12 @@ const handleKeyUp = (e: KeyboardEvent) => {
 /* Grid Pattern */
 .bg-grid-pattern {
   background-attachment: local;
+}
+@keyframes spin-slow {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
 }
 </style>

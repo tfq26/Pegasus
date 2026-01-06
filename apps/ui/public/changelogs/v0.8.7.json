@@ -1,0 +1,104 @@
+{
+    "title": "v0.8.7 - Global Settings System",
+    "date": "2026-01-06",
+    "version": "0.8.7",
+    "description": "Complete overhaul of the application settings system, introducing a unified global store, functional AI parameters, and granular control over notifications, data views, and queries.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Global Settings Store",
+                    "description": "Unified preference management across the entire application.",
+                    "details": [
+                        "Single Source of Truth: Migrated all local state to a centralized Pinia store.",
+                        "Reactive Updates: Settings changes apply instantly across all components.",
+                        "Legacy Removal: Eliminated fragmented local storage sync logic."
+                    ]
+                },
+                {
+                    "title": "AI Control Center",
+                    "description": "Fine-tune your AI interactions with new backend-integrated controls.",
+                    "details": [
+                        "Temperature Control: Adjust creativity vs. precision for AI responses.",
+                        "Token Limits: Set custom max token limits for generated content.",
+                        "Real-time Passing: Preferences are sent dynamically with every AI request."
+                    ]
+                },
+                {
+                    "title": "Application Policies",
+                    "description": "Granular control over application behavior and safety.",
+                    "details": [
+                        "Destructive Confirmation: Toggle 'Confirm Destructive Actions' for safer deletes.",
+                        "Notification Control: Global toggle to enable or suppress application toasts.",
+                        "Smart Defaults: Safe defaults for all new users."
+                    ]
+                },
+                {
+                    "title": "Chat Collaboration Tools",
+                    "description": "Powerful new message interactions for real-time collaboration.",
+                    "details": [
+                        "Message Editing: Inline editing of your own sent messages.",
+                        "Message Deletion: Securely remove messages from the dashboard history.",
+                        "Threaded Replies: Contextual replies with smooth auto-scroll and pulse highlighting.",
+                        "Context Menus: Right-click messages for copy, reply, edit, and delete actions."
+                    ]
+                },
+                {
+                    "title": "Parallel Background Sync Engine",
+                    "description": "High-performance data synchronization for a zero-latency spreadsheet experience.",
+                    "details": [
+                        "Instant Workspace Entry: Decoupled initial booting from data fetching for a roughly 1-2s TTI (Time to Interactive).",
+                        "Parallel Batching: Simultaneous pre-loading of all connection tabs to eliminate delay when switching.",
+                        "Server-Side Aggregation: Integrated a new consolidated /load API endpoint reducing network round-trips by 50%.",
+                        "Background Hydration: Data now populates silently in the background without blocking user interaction."
+                    ]
+                },
+                {
+                    "title": "Advanced Export Suite",
+                    "description": "Professional-grade data portability with unified controls.",
+                    "details": [
+                        "Unified Export Hub: Consolidated CSV, Excel, and PDF export under a single streamlined dropdown menu.",
+                        "PDF Snapshots: Initial support for PDF document generation with real-time status notifications.",
+                        "High-Fidelity Dialogs: Replaced browser native alerts with a custom-styled Export Confirmation UI."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Workspace UX Refinement",
+                    "description": "Polishing the core workspace for a smoother professional workflow.",
+                    "details": [
+                        "Sync HUD: Added a subtle 'Syncing' HUD in the toolbar to track background database parity.",
+                        "Reliable Boot: Optimized connection restoration to ensure data loads automatically on page refresh.",
+                        "Toolbar Intelligence: Fixed mode-switching logic to ensure perfect context-aware tool visibility.",
+                        "Radix Standards: Standardized all menu interactions to @select events for 100% click reliability."
+                    ]
+                },
+                {
+                    "title": "Data View Customization",
+                    "description": "Personalize how you view data and dashboards.",
+                    "details": [
+                        "Compact Mode: Increased data density for power users.",
+                        "Row Counts: Toggleable analytical footers in results tables.",
+                        "Dashboard Grid: Visual toggle for dashboard layout guides."
+                    ]
+                },
+                {
+                    "title": "System Stability",
+                    "description": "Under-the-hood improvements for reliability.",
+                    "details": [
+                        "Type Safety: Standardized computed/unref patterns for robust reactivity.",
+                        "Cleanup: Removed unused 'Cloud' tab and legacy 'Language' settings.",
+                        "Reset: Fixed and verified visibility of all settings tabs.",
+                        "Bug Fixes: Resolved Dashboard Chat message delivery and AI query issues."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

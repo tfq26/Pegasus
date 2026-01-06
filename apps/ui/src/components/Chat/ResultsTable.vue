@@ -20,13 +20,19 @@ import { useTimeAgo, useStorage } from '@vueuse/core'
 
 const props = defineProps<{
   data: any[]
-  settings?: SettingsModel
 }>()
+
+import { useSettingsStore } from '@/stores/settings'
+import { unref } from 'vue'
+const settingsStore = useSettingsStore()
+// Use computed to ensure reactivity and consistent ref access
+const settings = computed(() => unref(settingsStore.settings))
 
 const selectedData = ref<any>(null)
 const isDialogOpen = ref(false)
 const currentPage = ref(1)
-const pageSize = ref(props.settings?.defaultPageSize || 50)
+// Use store setting for default page size
+const pageSize = ref(settings.value?.defaultPageSize || 50)
 const selectedRows = ref<Set<number>>(new Set())
 const zoomLevel = useStorage('pegasus-results-zoom', 0) // 0=xs, 1=sm, 2=base, 3=lg, 4=xl
 const zoomClasses = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl']
@@ -46,7 +52,7 @@ watch(() => props.data, () => {
   selectedRows.value.clear()
 })
 
-watch(() => props.settings?.defaultPageSize, (newSize) => {
+watch(() => settings.value?.defaultPageSize, (newSize) => {
   if (newSize) pageSize.value = newSize
 })
 
@@ -104,11 +110,11 @@ const formatValue = (val: any, columnName?: string): string => {
   if (typeof val === 'boolean') return val ? 'Yes' : 'No'
   
   // Date formatting
-  if (props.settings?.dateFormat && (val instanceof Date || (typeof val === 'string' && !isNaN(Date.parse(val)) && val.length > 10))) {
+  if (settings.value?.dateFormat && (val instanceof Date || (typeof val === 'string' && !isNaN(Date.parse(val)) && val.length > 10))) {
     const date = new Date(val)
-    if (props.settings.dateFormat === 'local') {
+    if (settings.value.dateFormat === 'local') {
       return date.toLocaleString()
-    } else if (props.settings.dateFormat === 'relative') {
+    } else if (settings.value.dateFormat === 'relative') {
       return useTimeAgo(date).value
     }
     // Default to ISO/Original for 'iso' or fallback
@@ -191,7 +197,7 @@ const toggleRowSelection = (index: number, event: MouseEvent) => {
 const copySelectedRows = async () => {
   if (selectedRows.value.size === 0) return
   
-  const delimiter = props.settings?.csvDelimiter || '\t'
+  const delimiter = settings.value?.csvDelimiter || '\t'
   const indices = Array.from(selectedRows.value).sort((a, b) => a - b)
   const rowsToCopy = indices.map(i => paginatedData.value[i])
   
@@ -211,7 +217,7 @@ const copySelectedRows = async () => {
 }
 
 const copyAllRows = async () => {
-  const delimiter = props.settings?.csvDelimiter || '\t'
+  const delimiter = settings.value?.csvDelimiter || '\t'
   const headers = columns.value.join(delimiter)
   const rows = paginatedData.value.map(row => 
     columns.value.map(col => formatValue(row[col])).join(delimiter)
@@ -243,7 +249,7 @@ const copyCellValue = async (value: any) => {
     <ContextMenu>
       <ContextMenuTrigger class="w-full flex-1 flex flex-col min-h-0">
         <div class="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
-          <table class="w-full text-left text-[12px] border-collapse relative">
+          <table class="w-full text-left text-[12px] border-collapse relative" :class="{ 'compact-mode': settings?.compactMode }">
             <thead class="sticky top-0 z-20">
               <tr class="bg-stone-900/80 backdrop-blur-md">
                 <th
@@ -308,7 +314,7 @@ const copyCellValue = async (value: any) => {
     </ContextMenu>
 
     <!-- Analytical Footer -->
-    <div class="flex items-center justify-between px-6 py-3 border-t border-stone-800/50 text-[10px] bg-stone-900/20 mt-auto shrink-0">
+    <div v-if="settings?.showRowCount" class="flex items-center justify-between px-6 py-3 border-t border-stone-800/50 text-[10px] bg-stone-900/20 mt-auto shrink-0">
       <div class="flex items-center gap-6">
         <div v-if="selectedRows.size > 0" class="flex items-center gap-2 px-3 py-1 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 font-bold uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
            <div class="w-1 h-1 rounded-full bg-violet-400 shadow-[0_0_8px_theme(colors.violet.400)]"></div>

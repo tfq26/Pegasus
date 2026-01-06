@@ -53,10 +53,12 @@ export class AIProvider {
         const response = await this.generateContent(messages, settings)
         const text = typeof response === 'string' ? response : response.text
         const usage = typeof response === 'string' ? null : response.usage
+        const toolCalls = typeof response === 'string' ? null : response.toolCalls
 
         return {
             text: PromptBuilder.cleanResponse(text, context.dialect),
-            usage
+            usage,
+            toolCalls
         }
     }
 

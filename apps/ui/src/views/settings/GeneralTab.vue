@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import type { SettingsModel } from './types'
+import { useSettingsStore } from '@/stores/settings'
+import { storeToRefs } from 'pinia'
 
 const props = defineProps<{
-  settings: SettingsModel
   isDark: boolean
   toggleTheme: () => void
 }>()
+
+const settingsStore = useSettingsStore()
+import { unref, computed } from 'vue'
+const settings = computed(() => unref(settingsStore.settings))
 </script>
 
 <template>
@@ -33,27 +37,10 @@ const props = defineProps<{
 
       <div class="flex justify-between items-center">
         <div>
-          <h3 class="text-foreground font-medium">Language</h3>
-          <p class="text-muted-foreground text-sm">Choose your interface language.</p>
-        </div>
-        <Select v-model="props.settings.language" class="w-40">
-          <SelectTrigger>
-            <SelectValue placeholder="Select language" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="English">English</SelectItem>
-            <SelectItem value="Spanish">Spanish</SelectItem>
-            <SelectItem value="French">French</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div class="flex justify-between items-center">
-        <div>
           <h3 class="text-foreground font-medium">Default Page Size</h3>
           <p class="text-muted-foreground text-sm">Rows per page in results table.</p>
         </div>
-        <Select v-model="props.settings.defaultPageSize" class="w-40">
+        <Select v-model="settings.defaultPageSize" class="w-40">
           <SelectTrigger>
             <SelectValue placeholder="Select size" />
           </SelectTrigger>
@@ -71,7 +58,7 @@ const props = defineProps<{
           <h3 class="text-foreground font-medium">Date Format</h3>
           <p class="text-muted-foreground text-sm">How dates should be displayed.</p>
         </div>
-        <Select v-model="props.settings.dateFormat" class="w-40">
+        <Select v-model="settings.dateFormat" class="w-40">
           <SelectTrigger>
             <SelectValue placeholder="Select format" />
           </SelectTrigger>
@@ -88,7 +75,7 @@ const props = defineProps<{
           <h3 class="text-foreground font-medium">CSV Delimiter</h3>
           <p class="text-muted-foreground text-sm">Separator for copied data.</p>
         </div>
-        <Select v-model="props.settings.csvDelimiter" class="w-40">
+        <Select v-model="settings.csvDelimiter" class="w-40">
           <SelectTrigger>
             <SelectValue placeholder="Select delimiter" />
           </SelectTrigger>
@@ -105,7 +92,7 @@ const props = defineProps<{
           <h3 class="text-foreground font-medium">Notifications</h3>
           <p class="text-muted-foreground text-sm">Enable toast notifications.</p>
         </div>
-        <Switch v-model:checked="props.settings.notifications" class="accent-violet-600" />
+        <Switch v-model:checked="settings.notifications" class="accent-violet-600" />
       </div>
 
       <div class="flex justify-between items-center">
@@ -113,7 +100,7 @@ const props = defineProps<{
           <h3 class="text-foreground font-medium">Confirm Destructive Actions</h3>
           <p class="text-muted-foreground text-sm">Ask before deleting items.</p>
         </div>
-        <Switch v-model:checked="props.settings.confirmDestructive" class="accent-violet-600" />
+        <Switch v-model:checked="settings.confirmDestructive" class="accent-violet-600" />
       </div>
     </div>
   </div>

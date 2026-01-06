@@ -71,11 +71,13 @@ export class OpenAIProvider extends AIProvider {
 
     async listModels() {
         // We return a curated list of models to ensure clean UI and avoid duplicates.
-        // We could verify against the API, but for now this ensures the user sees the models we support.
+        // Models are ordered by tier: Free → Pro → Pro+
         const relevantModels = [
-            'gpt-4.5-preview',
-            'o1-mini',
-            'gpt-4o-mini'
+            // Free tier
+            'gpt-5.1-mini',
+            // Pro tier
+            'o4-mini',
+            'gpt-5.1'
         ]
 
         return relevantModels.map(id => ({
@@ -89,12 +91,14 @@ export class OpenAIProvider extends AIProvider {
 
     formatModelName(id) {
         const names = {
-            'gpt-4.5-preview': 'GPT-4.5 Preview',
-            'gpt-4.1-turbo': 'GPT-4.1 Turbo',
-            'o1-preview': 'o1 Preview',
-            'o1-mini': 'o1 Mini',
             'gpt-4o': 'GPT-4o',
             'gpt-4o-mini': 'GPT-4o Mini',
+            'o1-mini': 'o1-mini',
+            'o1-preview': 'o1-preview',
+            'gpt-5.1': 'GPT-5.1',
+            'gpt-5.1-mini': 'GPT-5.1 Mini',
+            'o4-mini': 'o4 Mini',
+            'o3-mini': 'o3 Mini',
             'gpt-4-turbo': 'GPT-4 Turbo',
             'gpt-4': 'GPT-4'
         }
@@ -103,12 +107,14 @@ export class OpenAIProvider extends AIProvider {
 
     getModelDescription(id) {
         const descriptions = {
-            'gpt-4.5-preview': 'Latest preview model with enhanced capabilities',
-            'gpt-4.1-turbo': 'Improved performance and speed',
-            'o1-preview': 'Advanced reasoning model (Strawberry)',
-            'o1-mini': 'Efficient reasoning model',
-            'gpt-4o': 'Most capable model, best for complex reasoning',
+            'gpt-4o': 'Multimodal model, great for complex tasks',
             'gpt-4o-mini': 'Fast and affordable, good for most tasks',
+            'o1-mini': 'Reasoning model for complex problem-solving',
+            'o1-preview': 'Advanced reasoning with extended thinking',
+            'gpt-5.1': 'Latest flagship model with advanced reasoning',
+            'gpt-5.1-mini': 'Fast and efficient GPT-5.1 variant',
+            'o4-mini': 'Latest efficient reasoning model',
+            'o3-mini': 'Fast reasoning model',
             'gpt-4-turbo': 'High performance with 128k context',
             'gpt-4': 'Advanced reasoning and analysis'
         }
@@ -117,10 +123,10 @@ export class OpenAIProvider extends AIProvider {
 
     getContextWindow(id) {
         const windows = {
-            'gpt-4.5-preview': 128000,
-            'gpt-4.1-turbo': 128000,
-            'o1-preview': 128000,
-            'o1-mini': 128000,
+            'gpt-5.1': 128000,
+            'gpt-5.1-mini': 128000,
+            'o4-mini': 128000,
+            'o3-mini': 128000,
             'gpt-4o': 128000,
             'gpt-4o-mini': 128000,
             'gpt-4-turbo': 128000,

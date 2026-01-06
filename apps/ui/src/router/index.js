@@ -54,6 +54,7 @@ const router = createRouter({
     { path: '/stocks', redirect: '/dashboard' },
     { path: '/error', component: () => import('../views/ErrorPage.vue') },
     { path: '/wrangler', component: () => import('../views/WranglerView.vue') },
+    { path: '/pricing', component: () => import('../views/Pricing.vue') },
   ],
 })
 
@@ -84,8 +85,12 @@ router.beforeEach(async (to, from) => {
 
   // Web: Redirect to login if user is not authenticated and trying to access a protected path
   if (!isTauri.value && isProtectedPath && !token) {
-    console.log('[Router] Unauthenticated access to protected path, redirecting to login:', to.path)
-    return { path: '/login', query: { redirect: to.fullPath } }
+    await fetchUser()
+    const updatedToken = localStorage.getItem('auth_token')
+
+    if (!updatedToken) {
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
   }
 
   // Check if we're coming from a login flow

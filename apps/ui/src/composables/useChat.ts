@@ -103,7 +103,7 @@ export function useChat() {
         // Update tab label to chat title if available
         if (chat?.title) {
             newTab.label = chat.title
-            workspaceStore.saveToStorage()
+            workspaceStore.saveWorkspace()
         }
 
         selectedChatId.value = id
@@ -165,6 +165,8 @@ export function useChat() {
             const { generateAIQuery, QUERY_API_URL, getAuthHeaders } = await import('@/lib/api')
             const { buildConnectionPayload } = await import('@/lib/db-connections')
             const { useConnectionStore } = await import('@/stores/connection')
+            const { useSettingsStore } = await import('@/stores/settings')
+            const { storeToRefs } = await import('pinia')
 
             onProgress?.(10, 'Thinking...')
 
@@ -175,8 +177,21 @@ export function useChat() {
                 throw new Error('Connection not found')
             }
 
+            // Get Settings
+            const settingsStore = useSettingsStore()
+            const { settings } = storeToRefs(settingsStore)
+
+            // Ensure settings are loaded or use current value
+            if (!settings.value.activeModel) {
+                await settingsStore.loadSettings()
+            }
+            const { temperature, maxTokens } = settings.value
+
             // Generate SQL from natural language
-            const aiResponse = await generateAIQuery(prompt, connectionId, chatHistory.value)
+            const aiResponse = await generateAIQuery(prompt, connectionId, chatHistory.value, undefined, {
+                temperature,
+                maxTokens
+            })
 
             onProgress?.(40, 'Executing...')
 

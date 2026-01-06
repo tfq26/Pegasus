@@ -1322,6 +1322,54 @@ table.delete("/:tableName/share/:email", async (c) => {
     }
 })
 
+// 4. Combined Load (Schema + Data)
+table.post("/table/:tableName/load", async (c) => {
+    try {
+        const tableName = c.req.param("tableName")
+        const { connection, provider, limit = 2000, offset = 0 } = await c.req.json()
+
+        const token = getAuthToken(c)
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+        try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) return c.json({ error: `Provider not supported: ${provider}` }, 400)
+
+        const adapter = new Adapter(connection)
+
+        try {
+            await adapter.connect()
+
+            // Run schema and data queries in parallel on the server
+            const [fullSchema, rows] = await Promise.all([
+                adapter.getSchema(),
+                (async () => {
+                    let sql
+                    if (provider === 'surrealdb') {
+                        sql = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+                    } else if (provider === 'postgres' || provider === 'mysql') {
+                        const quote = provider === 'mysql' ? '`' : '"'
+                        sql = `SELECT * FROM ${quote}${tableName}${quote} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                    } else {
+                        sql = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                    }
+                    return adapter.query(sql)
+                })()
+            ])
+
+            await adapter.disconnect()
+
+            const columns = fullSchema[tableName] || []
+            return c.json({ columns, rows: Array.isArray(rows) ? rows : [] })
+        } catch (e) {
+            console.error(`[Load] Error:`, e.message);
+            return c.json({ error: e.message }, 500)
+        }
+    } catch (e) {
+        return c.json({ error: e.message }, 500)
+    }
+})
+
 // Check if current user has access to a spreadsheet
 table.get("/:tableName/access", async (c) => {
     try {

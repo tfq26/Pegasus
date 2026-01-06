@@ -29,6 +29,7 @@ import { parseExcel } from "./lib/excelParser.js"
 import { parseXML, flattenXML } from "./lib/xmlParser.js"
 import { authRoutes } from "./src/routes/auth.js"
 import { getAuthToken } from "./lib/auth.js"
+import { getPayments } from "./src/routes/payments.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import {
   EXPERIMENTAL_FEATURES,
@@ -41,6 +42,7 @@ import {
 } from "./experimental-features.js"
 import { notifyExperimentalRequest } from "./src/services/emailService.js"
 import { RAGService } from "./src/services/ragService.js"
+import { getUserUsageSummary } from "./lib/tierLimits.js"
 import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -67,37 +69,41 @@ if (!rawOrigins.includes("https://pegasus-ui-chi.vercel.app")) {
 }
 
 const allowedOrigins = rawOrigins;
+const frontendUrl = process.env.FRONTEND_URL || allowedOrigins[0];
 
 const app = new Hono()
 
-// Global Middleware (Applied to ALL routes)
-app.use("*", cors({
+// Refined CORS configuration
+const corsConfig = {
   origin: (origin) => {
-    // If no origin (e.g. server-to-server), use the primary allowed origin
-    if (!origin) return allowedOrigins[0]
+    if (!origin) return allowedOrigins[0];
 
-    // 1. Explicit match in allowed list
-    if (allowedOrigins.includes(origin)) return origin
+    // 1. Explicit whitelist
+    if (allowedOrigins.includes(origin)) return origin;
 
-    // 2. Pattern match for Pegasus Vercel deployments
+    // 2. Pegasus Vercel deployments (regex for better coverage)
     if (origin.endsWith('.vercel.app') && origin.includes('pegasus')) return origin;
 
-    // 3. Development environment matches
+    // 3. Local development
     const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-    if (!isProd) {
-      if (/^http:\/\/.+:5173$/.test(origin)) return origin;
-      if (/^http:\/\/localhost:1420$/.test(origin)) return origin;
-    }
+    if (!isProd && (origin.includes('localhost') || origin.includes('127.0.0.1'))) return origin;
 
-    console.warn(`[CORS] Rejected origin: ${origin}`);
     return null;
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
-  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With", "Accept"],
+  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With", "Accept", "Origin"],
   exposeHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
   maxAge: 86400
-}))
+};
+
+// Apply CORS globally
+app.use("*", cors(corsConfig))
+
+// Explicit handling for OPTIONS preflight
+app.options("*", (c) => {
+  return c.text('', 204);
+})
 
 if (typeof CompressionStream !== 'undefined') {
   app.use('*', compress())
@@ -146,12 +152,11 @@ app.onError((err, c) => {
 })
 
 // Mount all routes
-app.route('/auth', authRoutes)
-app.route('/', dashboardRoutes)
-app.route('/connections', connectionRoutes)
+// --- Experimental Features Router ---
+const experimental = new Hono()
+experimental.use("*", cors(corsConfig))
 
-// Experimental Features (Define before generic /api)
-app.get("/api/experimental/status", async (c) => {
+experimental.get("/status", async (c) => {
   const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
   try {
@@ -159,31 +164,27 @@ app.get("/api/experimental/status", async (c) => {
     const status = await getExperimentalStatus(db, payload.sub, payload)
     return c.json(status)
   } catch (error) {
-    console.error("Error getting experimental status:", error)
     return c.json({ error: error.message }, 500)
   }
 })
 
-app.post("/api/experimental/request", async (c) => {
+experimental.post("/request", async (c) => {
   const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
   try {
     const payload = await verify(token, jwtSecret)
     const { reason, email } = await c.req.json()
-    if (!reason || reason.trim().length < 20) {
-      return c.json({ error: "Reason must be at least 20 characters" }, 400)
-    }
+    if (!reason || reason.trim().length < 20) return c.json({ error: "Reason must be at least 20 characters" }, 400)
     const result = await createExperimentalRequest(db, payload.sub, reason, email)
     const userName = payload.firstName ? `${payload.firstName} ${payload.lastName || ''}`.trim() : payload.email;
     await notifyExperimentalRequest({ userEmail: email || payload.email, userName, reason });
     return c.json(result)
   } catch (error) {
-    console.error("Error creating experimental request:", error)
     return c.json({ error: error.message }, 500)
   }
 })
 
-app.get("/api/experimental/features", async (c) => {
+experimental.get("/features", async (c) => {
   const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
   try {
@@ -197,12 +198,11 @@ app.get("/api/experimental/features", async (c) => {
     }))
     return c.json({ features })
   } catch (error) {
-    console.error("Error getting experimental features:", error)
     return c.json({ error: error.message }, 500)
   }
 })
 
-app.post("/api/experimental/features/:featureId/toggle", async (c) => {
+experimental.post("/features/:featureId/toggle", async (c) => {
   const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)
   try {
@@ -216,11 +216,16 @@ app.post("/api/experimental/features/:featureId/toggle", async (c) => {
     const result = await toggleUserFeature(db, payload.sub, featureId, enabled)
     return c.json(result)
   } catch (error) {
-    console.error("Error toggling feature:", error)
     return c.json({ error: error.message }, 500)
   }
 })
 
+// Route Mounting
+app.route('/auth', authRoutes)
+app.route('/', dashboardRoutes)
+app.route('/connections', connectionRoutes)
+app.route('/experimental', experimental) // Mount as /experimental/features
+app.route('/api/experimental', experimental) // Also mount as /api/experimental/features for backward compatibility
 app.route('/api', tableRoutes)
 app.route('/', chatRoutes)
 app.route('/operations', operationRoutes)
@@ -231,6 +236,7 @@ app.route('/api/docs', docsRoutes)
 app.route('/rag', ragRoutes)
 app.route('/agent', agentRoutes)
 app.route('/weather', weatherRoutes)
+app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
@@ -323,6 +329,9 @@ app.post("/upload", async (c) => {
 
     const body = await c.req.parseBody()
     const file = body['file']
+    const connectionId = body['connectionId'] // Optional: add to existing connection
+
+    console.log(`[Upload] Received upload request. File: ${file?.name || 'none'}, ConnectionId: ${connectionId || 'new connection'}`)
 
     if (!file || !(file instanceof File)) {
       return c.json({ error: "No file uploaded" }, 400)
@@ -332,9 +341,50 @@ app.post("/upload", async (c) => {
     const fileSize = file.size
     const fileType = fileName.split('.').pop().toLowerCase()
 
-    // Use SurrealDB friendly IDs (alphanumeric)
-    const uploadUuid = crypto.randomUUID().replace(/-/g, '')
-    const uploadId = `uploads:${uploadUuid}`
+    // Check if we're adding to an existing connection
+    let uploadUuid
+    let uploadId
+    let existingUpload = null
+
+    if (connectionId) {
+      // Fetch the existing connection to get its upload ID
+      const connIdPart = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+      const [connections] = await db.query(
+        `SELECT * FROM connection WHERE id = type::thing('connection', $id)`,
+        { id: connIdPart }
+      )
+      const connection = connections?.[0]
+
+      console.log(`[Upload] Looking up connection ${connectionId}:`, connection ? 'found' : 'not found')
+
+      if (connection) {
+        // Parse the config (may be string or object)
+        let config = connection.config
+        if (typeof config === 'string') {
+          try { config = JSON.parse(config) } catch (e) { config = {} }
+        }
+
+        // Check for uploadId in surrealdb config
+        const uploadIdFromConfig = config?.surrealdb?.uploadId
+
+        if (uploadIdFromConfig) {
+          // Extract the UUID from the existing upload ID (format: "uploads:uuid")
+          uploadUuid = uploadIdFromConfig.replace('uploads:', '')
+          uploadId = uploadIdFromConfig
+          existingUpload = connection
+          console.log(`[Upload] Adding table to existing connection ${connectionId}, uploadId: ${uploadId}`)
+        } else {
+          console.log(`[Upload] Connection found but no uploadId. Config:`, config)
+          return c.json({ error: "Connection not found or not a file-based connection" }, 400)
+        }
+      } else {
+        return c.json({ error: "Connection not found" }, 400)
+      }
+    } else {
+      // Create new upload ID
+      uploadUuid = crypto.randomUUID().replace(/-/g, '')
+      uploadId = `uploads:${uploadUuid}`
+    }
 
     const uploadDir = path.join(os.tmpdir(), "uploads")
     const tempFilePath = path.join(uploadDir, `${uploadUuid}_${fileName}`)
@@ -368,9 +418,13 @@ app.post("/upload", async (c) => {
             console.warn('[Upload] XML interpretation returned no data, using original parser');
             const parseResult = await parseExcel(tempFilePath);
             data = parseResult.sheets;
+            console.log(`[Upload] Fallback parser returned ${Object.keys(data).length} sheets:`, Object.keys(data));
+            Object.entries(data).forEach(([sheet, rows]) => {
+              console.log(`[Upload] Sheet "${sheet}": ${rows?.length || 0} rows`);
+            });
             // Log confidence scores
-            Object.entries(parseResult.metadata).forEach(([sheet, meta]) => {
-              console.log(`[Upload] Sheet "${sheet}" confidence: ${meta.confidence.toFixed(2)} (${meta.method})`);
+            Object.entries(parseResult.metadata || {}).forEach(([sheet, meta]) => {
+              console.log(`[Upload] Sheet "${sheet}" confidence: ${meta.confidence?.toFixed(2) || 'N/A'} (${meta.method || 'unknown'})`);
               if (meta.warnings) console.warn(`[Upload] Warnings:`, meta.warnings);
             });
           }
@@ -411,23 +465,26 @@ app.post("/upload", async (c) => {
     }
 
 
-
-    // 1. Insert Metadata into Uploads DB (SurrealDB)
+    // 1. Insert Metadata into Uploads DB (SurrealDB) - only for NEW uploads
     // We explicitly define `id` to ensure we can reference it easily
     // We store the RAW file content as base64 to keep it in the single DB.
-    const fileBuffer = await file.arrayBuffer();
-    const base64Content = Buffer.from(fileBuffer).toString('base64');
+    if (!existingUpload) {
+      const fileBuffer = await file.arrayBuffer();
+      const base64Content = Buffer.from(fileBuffer).toString('base64');
 
-    await db.create(uploadId, {
-      user_id: userId ? `user:${userId}` : null,
-      filename: fileName,
-      size: fileSize,
-      format: fileType,
-      visibility: 'private',
-      created_at: new Date(),
-      file_data: base64Content, // Store raw file
-      excel_mapping: excelMapping // Store AI interpretation if available
-    });
+      await db.create(uploadId, {
+        user_id: userId ? `user:${userId}` : null,
+        filename: fileName,
+        size: fileSize,
+        format: fileType,
+        visibility: 'private',
+        created_at: new Date(),
+        file_data: base64Content, // Store raw file
+        excel_mapping: excelMapping // Store AI interpretation if available
+      });
+    } else {
+      console.log(`[Upload] Skipping metadata creation - adding to existing upload ${uploadId}`)
+    }
 
     // 2. Create tables and insert data into SurrealDB
     const createdTables = [];
@@ -491,7 +548,7 @@ app.post("/create-checkout-session", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
-    const { priceId } = await c.req.json()
+    const { priceId, tier } = await c.req.json()
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -503,12 +560,145 @@ app.post("/create-checkout-session", async (c) => {
           quantity: 1,
         },
       ],
-      success_url: `${allowedOrigins[0]}/profile?success=true`,
-      cancel_url: `${allowedOrigins[0]}/profile?canceled=true`,
+      metadata: {
+        type: 'subscription',
+        tier: tier || 'pro',
+        user_id: payload.sub
+      },
+      success_url: `${frontendUrl}/profile?success=true`,
+      cancel_url: `${frontendUrl}/profile?canceled=true`,
     })
 
     return c.json({ url: session.url })
   } catch (e) {
+    console.error('[Stripe] Checkout Session Error:', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.post("/create-token-checkout-session", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const { amount } = await c.req.json() // amount in units of 100k (e.g., 1, 3, 7)
+
+    if (!amount || amount < 1 || amount > 7) {
+      return c.json({ error: "Invalid amount. Must be between 1 and 7 (representing 100k to 700k)." }, 400)
+    }
+
+    // Pricing Logic
+    const unitPrice = 1000; // $10.00 in cents
+    const baseTotal = amount * unitPrice;
+    let finalTotal = baseTotal;
+
+    if (amount >= 7) {
+      finalTotal = baseTotal * 0.85; // 15% off
+    } else if (amount >= 3) {
+      finalTotal = baseTotal * 0.90; // 10% off
+    }
+
+    // 1. Fetch user data from DB
+    const [user] = await db.query(`SELECT stripe_customer_id, purchased_tokens, subscription_tier FROM type::thing('user', $rawId)`, { rawId: payload.sub });
+    const userRecord = user[0];
+    const customerId = userRecord?.stripe_customer_id;
+
+    // Surcharge Logic (Sustainability Fee if total capacity > 1M tokens)
+    const purchasedTokens = Number(userRecord?.purchased_tokens || 0);
+    const baseTokens = userRecord?.subscription_tier === 'pro' ? 200000 : 60000;
+    const projectedTotal = baseTokens + purchasedTokens + (amount * 100000);
+    const hasSurcharge = projectedTotal >= 1000000;
+
+    if (hasSurcharge) {
+      finalTotal = finalTotal * 1.25; // 25% Heavy Usage Surcharge
+    }
+
+    // Ensure integer cents
+    finalTotal = Math.round(finalTotal);
+
+    console.log(`[Stripe] Creating token session for ${payload.email} (Cust: ${customerId || 'New'}): ${amount * 100}k tokens. Current: ${purchasedTokens}, Goal: ${projectedTotal}, Surcharge: ${hasSurcharge}`);
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer: customerId || undefined,
+      customer_email: customerId ? undefined : payload.email,
+      allow_promotion_codes: true, // Enable coupons
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `${amount * 100}k AI Token Pack${hasSurcharge ? ' (+ Heavy Usage Fee)' : ''}`,
+              description: hasSurcharge
+                ? `One-time purchase of ${amount * 100},000 tokens including the sustainability fee for high-capacity accounts.`
+                : `One-time purchase of ${amount * 100},000 additional tokens.`,
+            },
+            unit_amount: finalTotal, // Stripe takes price per quantity unit. Wait, if quantity is 1 here, we just put total price.
+          },
+          quantity: 1, // Treating the entire pack as 1 item with a calculated price
+        },
+      ],
+      metadata: {
+        type: 'token_purchase',
+        token_amount: amount * 100000,
+        user_id: payload.sub
+      },
+      success_url: `${frontendUrl}/profile?tokens_purchased=true`,
+      cancel_url: `${frontendUrl}/profile?canceled=true`,
+    })
+
+    return c.json({ url: session.url })
+  } catch (e) {
+    console.error('[Stripe] Token Session Error:', e.message)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+app.post('/create-storage-checkout-session', async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const { amount } = await c.req.json() // amount in GB units (1, 2, 5, etc.)
+
+    if (!amount || amount < 1 || amount > 50) {
+      return c.json({ error: "Invalid amount. Must be between 1 and 50 GB." }, 400)
+    }
+
+    // Storage Price ID for recurring billing ($5/GB/mo)
+    const STORAGE_PRICE_ID = process.env.STRIPE_STORAGE_PRICE_ID || 'price_storage_recurring_5usd';
+
+    // Fetch customer ID from DB
+    const [user] = await db.query(`SELECT stripe_customer_id FROM type::thing('user', $rawId)`, { rawId: payload.sub });
+    const customerId = user[0]?.stripe_customer_id;
+
+    console.log(`[Stripe] Creating recurring storage session for ${payload.email}: ${amount}GB`);
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId || undefined,
+      customer_email: customerId ? undefined : payload.email,
+      allow_promotion_codes: true,
+      line_items: [
+        {
+          price: STORAGE_PRICE_ID,
+          quantity: amount,
+        },
+      ],
+      metadata: {
+        type: 'storage_subscription',
+        storage_gb: amount,
+        user_id: payload.sub
+      },
+      success_url: `${frontendUrl}/profile?storage_purchased=true`,
+      cancel_url: `${frontendUrl}/profile?canceled=true`,
+    })
+
+    return c.json({ url: session.url })
+  } catch (e) {
+    console.error('[Stripe] Storage Session Error:', e.message)
     return c.json({ error: e.message }, 500)
   }
 })
@@ -545,15 +735,48 @@ app.get("/subscription-status", async (c) => {
 
   try {
     const payload = await verify(token, jwtSecret)
-    const [user] = await db.query(`SELECT subscription_tier FROM user:${payload.sub}`);
+    const userId = payload.sub
+
+    // Get user's subscription tier from database
+    const [user] = await db.query(`SELECT subscription_tier, stripe_customer_id FROM user:${userId}`);
     const tier = user[0]?.subscription_tier || 'free'
-    return c.json({ tier })
+    const stripeCustomerId = user[0]?.stripe_customer_id
+
+    let status = null
+    let currentPeriodEnd = null
+
+    // If user has a Stripe customer ID, fetch subscription details
+    if (stripeCustomerId) {
+      try {
+        const subscriptions = await stripe.subscriptions.list({
+          customer: stripeCustomerId,
+          status: 'all',
+          limit: 1
+        })
+
+        if (subscriptions.data.length > 0) {
+          const subscription = subscriptions.data[0]
+          status = subscription.status
+          currentPeriodEnd = subscription.current_period_end
+        }
+      } catch (stripeError) {
+        console.error('[Subscription] Failed to fetch Stripe subscription:', stripeError)
+      }
+    }
+
+    return c.json({
+      tier,
+      status,
+      currentPeriodEnd
+    })
   } catch (e) {
+    console.error('[Subscription] Error:', e)
     return c.json({ error: "Failed to fetch status" }, 500)
   }
 })
 
 app.post("/webhook", async (c) => {
+  console.log("🔔 [Webhook] Incoming request from Stripe...");
   const sig = c.req.header('stripe-signature')
   const body = await c.req.text()
 
@@ -569,37 +792,201 @@ app.post("/webhook", async (c) => {
 
   // Handle the event
   switch (event.type) {
-    case 'checkout.session.completed':
-      const session = event.data.object
-      console.log(`[Webhook] Checkout completed for: ${session.customer_details?.email}`)
-      console.log(`[Webhook] Customer ID: ${session.customer}`)
+    case 'checkout.session.completed': {
+      const session = event.data.object;
+      const stripeSessionId = session.id;
+      const metadata = session.metadata || {};
+      const type = metadata.type || 'subscription';
+      const userId = metadata.user_id;
+      const dbUserId = userId ? (userId.startsWith('user:') ? userId : `user:${userId}`) : null;
 
-      // Update user subscription status
+      console.log(`[Webhook] Processing ${type} for ${session.customer_details?.email} (User: ${dbUserId})`);
+
+      // 1. Initial Master audit log
       try {
-        const result = await db.query(`
-            UPDATE user SET 
-               stripe_customer_id = $custId, 
-               subscription_tier = 'pro' 
-            WHERE email = $email;
+        await db.query(`
+          INSERT INTO transaction_master {
+              stripe_session_id: $sid,
+              status: 'pending',
+              type: $type,
+              user_id: $uid,
+              customer_id: $cid,
+              payload: $payload,
+              created_at: time::now()
+          }
         `, {
-          custId: session.customer,
-          email: session.customer_details.email
+          sid: stripeSessionId,
+          type: type,
+          uid: dbUserId,
+          cid: session.customer,
+          payload: session
         });
-        console.log(`[Webhook] Updated user to Pro:`, result)
-      } catch (dbErr) {
-        console.error(`[Webhook] DB update failed:`, dbErr)
+      } catch (logErr) {
+        console.error('[Webhook] Master log init failed:', logErr.message);
       }
-      break
-    case 'customer.subscription.deleted':
-      const subscription = event.data.object
-      console.log(`[Webhook] Subscription deleted for customer: ${subscription.customer}`)
+
+      try {
+        if (type === 'token_purchase') {
+          const tokenAmount = parseInt(metadata.token_amount);
+          if (!dbUserId) throw new Error("Missing user_id in metadata");
+
+          const rawId = dbUserId.includes(':') ? dbUserId.split(':')[1] : dbUserId;
+
+          console.log(`[Webhook] Updating tokens for user: ${dbUserId}, amount: ${tokenAmount}`);
+
+          await db.query(`
+              UPDATE type::thing('user', $rawId) SET 
+                  purchased_tokens = <int>(purchased_tokens OR 0) + <int>$amount,
+                  updated_at = time::now();
+          `, { rawId, amount: tokenAmount });
+
+          await db.query(`
+            INSERT INTO user_payment {
+                user: type::thing('user', $rawId),
+                amount: $amount,
+                currency: $cur,
+                tokens: $tokens,
+                status: 'completed',
+                description: $desc,
+                stripe_session_id: $sid,
+                created_at: time::now()
+            }
+          `, {
+            rawId,
+            amount: session.amount_total || 0,
+            cur: session.currency || 'usd',
+            tokens: tokenAmount,
+            desc: `${(tokenAmount / 1000).toFixed(0)}k AI Token Pack`,
+            sid: stripeSessionId
+          });
+
+        } else if (type === 'storage_purchase') {
+          const storageGb = parseInt(metadata.storage_gb);
+          const storageBytes = storageGb * 1024 * 1024 * 1024;
+          if (!dbUserId) throw new Error("Missing user_id in metadata");
+
+          const rawId = dbUserId.includes(':') ? dbUserId.split(':')[1] : dbUserId;
+
+          console.log(`[Webhook] Updating storage for user: ${dbUserId}, amount: ${storageGb}GB`);
+
+          await db.query(`
+              UPDATE type::thing('user', $rawId) SET 
+                  purchased_storage = <int>(purchased_storage OR 0) + <int>$amount,
+                  updated_at = time::now();
+          `, { rawId, amount: storageBytes });
+
+          await db.query(`
+            INSERT INTO user_payment {
+                user: type::thing('user', $rawId),
+                amount: $amount,
+                currency: $cur,
+                tokens: 0,
+                status: 'completed',
+                description: $desc,
+                stripe_session_id: $sid,
+                created_at: time::now()
+            }
+          `, {
+            rawId,
+            amount: session.amount_total || 0,
+            cur: session.currency || 'usd',
+            desc: `${storageGb}GB Vault Storage Expansion`,
+            sid: stripeSessionId
+          });
+
+        } else {
+          // Subscription handling
+          const email = session.customer_details?.email;
+          if (!email) throw new Error("Missing customer email");
+
+          const requestedTier = metadata.tier || 'pro';
+          const [userResult] = await db.query(`SELECT id FROM user WHERE email = $email`, { email });
+          const targetUserId = dbUserId || userResult[0]?.id;
+
+          await db.query(`
+              UPDATE user SET 
+                 stripe_customer_id = $custId, 
+                 subscription_tier = $tier 
+              WHERE email = $email;
+          `, {
+            custId: session.customer,
+            tier: requestedTier,
+            email: email
+          });
+
+          if (targetUserId) {
+            const rawTargetId = targetUserId.toString().includes(':') ? targetUserId.toString().split(':')[1] : targetUserId.toString();
+            await db.query(`
+              INSERT INTO user_payment {
+                  user: type::thing('user', $rawId),
+                  amount: $amount,
+                  currency: $cur,
+                  tokens: 0,
+                  status: 'completed',
+                  description: $desc,
+                  stripe_session_id: $sid,
+                  created_at: time::now()
+              }
+            `, {
+              rawId: rawTargetId,
+              amount: session.amount_total || 0,
+              cur: session.currency || 'usd',
+              desc: `${requestedTier === 'pro_plus' ? 'Pro+' : 'Pro'} Subscription Upgrade`,
+              sid: stripeSessionId
+            });
+          }
+          console.log(`[Webhook] Subscription update success for ${email} to ${requestedTier}`);
+        }
+
+        // Mark Master log as completed
+        await db.query(`
+            UPDATE transaction_master SET status = 'completed' WHERE stripe_session_id = $sid
+        `, { sid: stripeSessionId });
+
+      } catch (err) {
+        console.error(`[Webhook] Event processing failed:`, err.message);
+        try {
+          await db.query(`
+              UPDATE transaction_master SET status = 'failed', error = $err 
+              WHERE stripe_session_id = $sid
+          `, { sid: stripeSessionId, err: err.message });
+        } catch (e) { }
+      }
+      break;
+    }
+    case 'invoice.paid': {
+      const invoice = event.data.object;
+      const customerId = invoice.customer;
+      console.log(`[Webhook] Monthly Invoice Paid for ${customerId}. Resetting purchased tokens.`);
       await db.query(`
-          UPDATE user SET subscription_tier = 'free' 
+          UPDATE user SET 
+              purchased_tokens = 0,
+              updated_at = time::now()
           WHERE stripe_customer_id = $custId;
-      `, {
-        custId: subscription.customer
-      });
-      break
+      `, { custId: customerId });
+      break;
+    }
+    case 'customer.subscription.deleted': {
+      const subscription = event.data.object
+      const category = subscription.metadata?.type || 'subscription';
+      console.log(`[Webhook] Subscription deleted (${category}) for customer: ${subscription.customer}`)
+      if (category === 'storage_subscription') {
+        await db.query(`
+            UPDATE user SET 
+                purchased_storage = 0,
+                updated_at = time::now()
+            WHERE stripe_customer_id = $custId;
+         `, { custId: subscription.customer });
+      } else {
+        await db.query(`
+            UPDATE user SET 
+                subscription_tier = 'free',
+                updated_at = time::now() 
+            WHERE stripe_customer_id = $custId;
+         `, { custId: subscription.customer });
+      }
+      break;
+    }
     default:
       console.log(`[Webhook] Unhandled event type: ${event.type}`)
   }
@@ -654,6 +1041,89 @@ app.post("/sync-subscription", async (c) => {
     return c.json({ success: true, tier, customerId: customer.id })
   } catch (e) {
     console.error(`[Sync] Error:`, e)
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// Deep sync for payment history - pulls from Stripe API to backfill missing records
+app.post("/sync-payments", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+  try {
+    const payload = await verify(token, jwtSecret)
+    const email = payload.email
+    const sub = payload.sub || ''
+    const rawId = sub.includes(':') ? sub.split(':')[1] : sub
+
+    console.log(`[Sync Payments] Deep syncing for ${email}`)
+
+    // 1. Get Customer
+    const customers = await stripe.customers.list({ email, limit: 1 })
+    if (!customers.data.length) return c.json({ success: true, count: 0 })
+    const customer = customers.data[0]
+
+    // 2. Fetch Sessions
+    const sessions = await stripe.checkout.sessions.list({
+      customer: customer.id,
+      limit: 10,
+      status: 'complete'
+    })
+
+    let addedCount = 0
+    for (const session of sessions.data) {
+      const sid = session.id
+      // Check if already exists in DB
+      const [existing] = await db.query(`SELECT id FROM user_payment WHERE stripe_session_id = $sid`, { sid })
+
+      if (!existing || existing.length === 0) {
+        console.log(`[Sync Payments] Backfilling record for session: ${sid}`)
+        const metadata = session.metadata || {}
+        const tokenAmount = parseInt(metadata.token_amount || '0')
+        const isToken = metadata.type === 'token_purchase'
+
+        await db.query(`
+          INSERT INTO user_payment {
+            user: type::thing('user', $rawId),
+            amount: $amount,
+            currency: $cur,
+            tokens: $tokens,
+            status: 'completed',
+            description: $desc,
+            stripe_session_id: $sid,
+            created_at: time::from::unix($ts)
+          }
+        `, {
+          rawId: rawId,
+          amount: session.amount_total || 0,
+          cur: session.currency || 'usd',
+          tokens: tokenAmount,
+          desc: isToken ? `${(tokenAmount / 1000).toFixed(0)}k AI Token Pack` : 'Pro Subscription Upgrade',
+          sid: sid,
+          ts: session.created
+        })
+
+        // IMPORTANT: Also update the actual token balance on the user record during backfill
+        if (isToken && tokenAmount > 0) {
+          console.log(`[Sync Payments] Applying ${tokenAmount} tokens to user balance for session ${sid}`)
+          await db.query(`
+            UPDATE type::thing('user', $rawId) SET 
+                purchased_tokens = (purchased_tokens OR 0) + <int>$amount,
+                updated_at = time::now();
+          `, {
+            rawId: rawId,
+            amount: tokenAmount
+          });
+        }
+
+        addedCount++
+      }
+    }
+
+    console.log(`[Sync Payments] Successfully backfilled ${addedCount} records`)
+    return c.json({ success: true, count: addedCount })
+  } catch (e) {
+    console.error(`[Sync Payments] Error:`, e)
     return c.json({ error: e.message }, 500)
   }
 })
@@ -1501,10 +1971,41 @@ app.get("/usage", async (c) => {
     const userId = payload.sub
 
 
-    // Get total tokens used
+    // Get User Subscription Tier
+    const [userRecord] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM user:${userId}`);
+    const tier = userRecord[0]?.subscription_tier || 'free';
+    const purchasedTokens = Number(userRecord[0]?.purchased_tokens || 0);
+    const purchasedStorage = Number(userRecord[0]?.purchased_storage || 0);
+
+    // AI Token Limits
+    let baseLimit = 60000;
+    if (tier === 'pro_plus') baseLimit = 600000;
+    else if (tier === 'pro') baseLimit = 200000;
+
+    const limit = baseLimit + purchasedTokens;
+
+    // Storage Limits (in bytes)
+    // Free: 100MB, Pro: 500MB, Pro+: 10GB
+    let baseStorageLimit = 100 * 1024 * 1024;
+    if (tier === 'pro_plus') baseStorageLimit = 10 * 1024 * 1024 * 1024;
+    else if (tier === 'pro') baseStorageLimit = 500 * 1024 * 1024;
+
+    const storageLimit = baseStorageLimit + purchasedStorage;
+
+    // Calculate start of current month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    // Get total tokens used THIS MONTH
     const [tokenResult] = await db.query(
-      "SELECT math::sum(tokens_used) as total_tokens FROM query_history WHERE user = $user",
-      { user: `user:${userId}` }
+      `SELECT math::sum(tokens_used) as total_tokens FROM query_history 
+       WHERE user = $user AND created_at >= $start
+       GROUP ALL`,
+      {
+        user: `user:${userId}`,
+        start: startOfMonth
+      }
     );
     const totalTokens = tokenResult[0]?.total_tokens || 0
 
@@ -1548,10 +2049,20 @@ app.get("/usage", async (c) => {
       }
     }
 
+    // Get tier-based usage summary
+    const tierUsage = await getUserUsageSummary(db, userId, tier)
+
     return c.json({
       tokens: totalTokens,
+      limit: limit,
+      tier: tier,
+      purchasedTokens: purchasedTokens,
+      purchasedStorage: purchasedStorage,
       storage: totalStorage, // in bytes
-      storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB'
+      storageLimit: storageLimit,
+      storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
+      storageLimitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
+      tierUsage // Add tier-specific usage (connections, tables, dashboards)
     })
   } catch (e) {
     console.error("Fetch usage error:", e)
@@ -1603,37 +2114,9 @@ const startServer = async () => {
     // 4. Start Server
     if (isVercel) {
       console.log('[Main] Vercel mode');
-    } else if (isBun) {
-      console.log(`[Main] Bun server on port ${port}`);
-
-      // Note: Socket.io doesn't natively support Bun's WebSocket API
-      // For now, we run without real-time features on Bun
-      // TODO: Add proper Bun WebSocket support or use a Bun-native solution
-      console.log('[Main] Socket.io is not available in Bun mode');
-
-      const server = Bun.serve({
-        fetch: async (req, server) => {
-          try {
-            const url = new URL(req.url);
-            console.log(`[Request] ${req.method} ${url.pathname}${url.search}`);
-
-            const res = await app.fetch(req);
-
-            if (!res) {
-              console.error(`[Bun] Error: Hono returned no response for ${url.pathname}`);
-              return new Response("Not Found (Hono null)", { status: 404 });
-            }
-
-            return res;
-          } catch (e) {
-            console.error(`[Bun] Fatal fetch error:`, e);
-            return new Response(`Server error: ${e.message}`, { status: 500 });
-          }
-        },
-        port: Number(port)
-      });
     } else {
-      console.log(`[Main] Node server on port ${port}`);
+      // Use Node adapter for both Node AND Bun to ensure Socket.io compatibility
+      console.log(`[Main] Starting server on port ${port} (Runtime: ${isBun ? 'Bun (Node Compat)' : 'Node'})`);
       const server = serve({
         fetch: app.fetch,
         port: Number(port)

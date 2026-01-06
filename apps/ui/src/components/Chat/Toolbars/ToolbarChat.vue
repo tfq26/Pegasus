@@ -131,7 +131,7 @@ const contextUsage = 45
               <Eraser class="w-3.5 h-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent>Clear Chat</TooltipContent>
+          <TooltipContent side="bottom">Clear Chat</TooltipContent>
         </Tooltip>
       </TooltipProvider>
 
@@ -146,7 +146,7 @@ const contextUsage = 45
               <Download class="w-3.5 h-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent>Export Chat History</TooltipContent>
+          <TooltipContent side="bottom">Export Chat History</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>

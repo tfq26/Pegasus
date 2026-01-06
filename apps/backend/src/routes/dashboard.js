@@ -5,6 +5,7 @@ import { WorkOS } from "@workos-inc/node"
 import crypto from "crypto"
 import { db } from "../../db/surreal.js"
 import { SecretService } from "../services/SecretService.js"
+import { canCreateDashboard } from "../../lib/tierLimits.js"
 
 const dashboard = new Hono()
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
@@ -263,6 +264,21 @@ dashboard.post("/dashboards", async (c) => {
 
         // Ensure user exists in DB before linking
         await upsertUser(payload);
+
+        // Check tier limits before creating dashboard
+        const [userData] = await db.query(`SELECT subscription_tier FROM type::thing('user', $userId)`, { userId })
+        const tier = userData?.[0]?.subscription_tier || 'free'
+
+        const limitCheck = await canCreateDashboard(db, userId, tier)
+        if (!limitCheck.allowed) {
+            return c.json({
+                error: limitCheck.message,
+                limit: limitCheck.limit,
+                current: limitCheck.current,
+                tier,
+                upgradeRequired: true
+            }, 403)
+        }
 
         const { title, data } = await c.req.json()
 

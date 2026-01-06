@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, unref } from 'vue'
 import { useStorage } from '@vueuse/core'
 import { toast as sonnerToast } from 'vue-sonner'
 
@@ -41,26 +41,42 @@ const addNotification = (
 }
 
 // Wrapper for toast to verify compatibility
+import { useSettingsStore } from '@/stores/settings'
+import { storeToRefs } from 'pinia'
+
+const shouldShowToast = () => {
+    const settingsStore = useSettingsStore()
+    // Default to true if settings not loaded or undefined
+    const settings = computed(() => unref(settingsStore.settings))
+    // We can just use unref directly since this function is called at runtime
+    return settings.value?.notifications !== false
+}
+
 export const toast = {
     success: (message: string, options?: any) => {
         addNotification(message, 'success', options)
-        return sonnerToast.success(message, options)
+        if (shouldShowToast()) return sonnerToast.success(message, options)
+        return null
     },
     error: (message: string, options?: any) => {
         addNotification(message, 'error', options)
-        return sonnerToast.error(message, options)
+        if (shouldShowToast()) return sonnerToast.error(message, options)
+        return null
     },
     info: (message: string, options?: any) => {
         addNotification(message, 'info', options)
-        return sonnerToast.info(message, options)
+        if (shouldShowToast()) return sonnerToast.info(message, options)
+        return null
     },
     warning: (message: string, options?: any) => {
         addNotification(message, 'warning', options)
-        return sonnerToast.warning(message, options)
+        if (shouldShowToast()) return sonnerToast.warning(message, options)
+        return null
     },
     message: (message: string, options?: any) => {
         addNotification(message, 'default', options)
-        return sonnerToast.message(message, options)
+        if (shouldShowToast()) return sonnerToast.message(message, options)
+        return null
     },
     // Proxy other methods if needed
     dismiss: sonnerToast.dismiss,

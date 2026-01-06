@@ -166,6 +166,59 @@ export function initSocketServer(server, allowedOrigins) {
             io.to(room).emit("new_message", message);
         });
 
+        socket.on("edit_message", async (data) => {
+            // data: { dashboardId, messageId, content }
+            const room = `dashboard:${data.dashboardId}`;
+            const dashId = data.dashboardId.includes(':') ? data.dashboardId : `dashboard:${data.dashboardId}`;
+
+            try {
+                // Update message in dashboard.messages array
+                await db.query(`
+                    UPDATE ${dashId} SET 
+                        messages = messages.map(|$m| 
+                            if ($m.id == $messageId) {
+                                $m.content = $content,
+                                $m.updated_at = time::now(),
+                                $m.isEdited = true
+                            }
+                            return $m
+                        ),
+                        updated_at = time::now();
+                `, { messageId: data.messageId, content: data.content });
+
+                // Broadcast update to room
+                io.to(room).emit("message_updated", {
+                    id: data.messageId,
+                    content: data.content,
+                    isEdited: true
+                });
+                console.log('[Socket.io] Message edited successfully');
+            } catch (e) {
+                console.error("[Socket.io] Failed to edit message:", e);
+            }
+        });
+
+        socket.on("delete_message", async (data) => {
+            // data: { dashboardId, messageId }
+            const room = `dashboard:${data.dashboardId}`;
+            const dashId = data.dashboardId.includes(':') ? data.dashboardId : `dashboard:${data.dashboardId}`;
+
+            try {
+                // Remove message from dashboard.messages array
+                await db.query(`
+                    UPDATE ${dashId} SET 
+                        messages = messages.filter(|$m| $m.id != $messageId),
+                        updated_at = time::now();
+                `, { messageId: data.messageId });
+
+                // Broadcast deletion to room
+                io.to(room).emit("message_deleted", { id: data.messageId });
+                console.log('[Socket.io] Message deleted successfully');
+            } catch (e) {
+                console.error("[Socket.io] Failed to delete message:", e);
+            }
+        });
+
         // @Pegasus AI Query
         socket.on("pegasus_query", async (data) => {
             // data: { dashboardId, query, context? }
@@ -225,6 +278,7 @@ export function initSocketServer(server, allowedOrigins) {
                     content: aiResponseText,
                     isAIResponse: true,
                     timestamp: new Date().toISOString(),
+                    parentId: data.parentId || null,
                 };
 
                 // Save AI response to dashboard

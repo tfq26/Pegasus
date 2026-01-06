@@ -1,6 +1,32 @@
 <template>
-  <div class="flex w-full h-full text-stone-100 overflow-hidden">
-    <!-- Explorer sidebar -->
+  <div class="flex w-full h-full bg-background text-foreground overflow-hidden">
+    <!-- Initial Boot Loader (Only for Metadata/Auth) -->
+    <div v-if="isInitializing" 
+      class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background"
+    >
+      <div class="relative">
+        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
+        </div>
+      </div>
+      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">
+        {{ isInitializing ? 'Initializing Pegasus Workspace...' : 'Synchronizing Secure Data Vault...' }}
+      </p>
+      <p class="text-muted-foreground text-sm mt-2">
+        {{ isInitializing ? 'Establishing encrypted links and allocating compute...' : 'Loading all spreadsheet connections in parallel...' }}
+      </p>
+      
+      <div v-if="workspaceRef?.isDataLoading" class="mt-8 flex flex-col items-center">
+          <div class="h-1.5 w-64 bg-muted rounded-full overflow-hidden">
+            <div class="h-full bg-primary animate-pulse w-full"></div>
+          </div>
+          <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-4 font-black">Parallel Sync Protocol Active</p>
+      </div>
+    </div>
+
+    <template v-if="!isInitializing">
+      <!-- Explorer sidebar -->
     <ChatSidebar 
       v-show="sidebarOpen" 
       :side="sidebarSide" 
@@ -19,7 +45,7 @@
     />
     <button
       v-if="!sidebarOpen"
-      class="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-r-lg bg-stone-900/80 text-stone-400 hover:text-violet-400 hover:bg-stone-800 transition-all"
+      class="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-r-lg bg-muted/80 backdrop-blur-md text-muted-foreground hover:text-violet-500 dark:hover:text-violet-400 hover:bg-muted transition-all border border-l-0 border-border shadow-sm"
       @click="toggleSidebar"
       aria-label="Open sidebar"
     >
@@ -48,6 +74,7 @@
           :can-undo="canUndo"
           :can-redo="canRedo"
           :query-history="queryHistory"
+          :is-syncing="workspaceRef?.isDataLoading"
           @update:mode="mode = $event"
           @update:selected-connection-id="handleSelectConnection"
           @update:ai-options="aiOptions = $event"
@@ -62,7 +89,7 @@
           @visualize="handleVisualize"
           @sanitize="handleSanitize"
           @load-table-to-sheet="() => handleLoadTableToSheet(Array.isArray(queryResult) ? queryResult : [])"
-          @export="handleExport"
+          @export="onExportSelected"
           @update:private-mode="privateMode = $event"
           @update:live-mode="handleUpdateLiveMode"
           @share="shareDialogOpen = true"
@@ -133,6 +160,7 @@
         @save-dashboard="toast.success('Added to dashboard')"
         @execute-sanitize="executeSanitization"
         @apply-mutation="handleApplyMutation"
+        @confirm-export="onConfirmExport"
       />
 
        <DiffView
@@ -181,6 +209,7 @@
         resource-type="spreadsheet"
       />
     </div>
+    </template>
   </div>
 </template>
 
@@ -312,6 +341,7 @@ const queryOptions = ref({ limit: 1000, timeout: 30000, autoCommit: true })
 const encryptionKey = ref<any>('') 
 const availableModels = ref<any[]>([])
 const settings = ref<any>(null)
+const isInitializing = ref(true)
 
 // Collaboration state
 const liveMode = ref(false)
@@ -343,6 +373,12 @@ const queryHistory = ref<any[]>([])
 
 // Toolbar
 // Toolbar
+const { 
+    exportDialogVisible, 
+    exportFormat, 
+    openExportConfirmation 
+} = useChatDialogs()
+
 const {
     handleExport,
     handleFormat,
@@ -352,6 +388,15 @@ const {
     handleTranslate: translateAction,
     handleExplain: explainAction
 } = useChatToolbar(workspaceRef, selectedConnection)
+
+const onExportSelected = (format: 'csv' | 'xlsx' | 'pdf') => {
+    openExportConfirmation(format)
+}
+
+const onConfirmExport = (format: 'csv' | 'xlsx' | 'pdf') => {
+    handleExport(format)
+    exportDialogVisible.value = false
+}
 
 // Override handleVisualize to properly open the visualization dialog
 const handleVisualize = async () => {
@@ -472,7 +517,16 @@ const {
     resultsPanelVisible,
     dashboardPreviewConfig,
     dashboardPreviewVisible,
-    { aiOptions, encryptionKey, createChat }
+    { 
+        aiOptions, 
+        encryptionKey, 
+        createChat,
+        onAIResponse: (response: any) => {
+            if (workspaceRef.value?.handleAIResponse) {
+                workspaceRef.value.handleAIResponse(response)
+            }
+        }
+    }
 )
 
 // Table Actions
@@ -763,10 +817,12 @@ watch([queryResult, queryError], () => {
     if (queryResult.value || queryError.value) resultsPanelVisible.value = true
 })
 
-// Force results panel to the right when in spreadsheet mode
+// Force results panel to the right when in spreadsheet mode, bottom for chat
 watch(mode, (newMode) => {
     if (newMode === 'spreadsheet') {
         resultsPanelPosition.value = 'right'
+    } else if (newMode === 'chat') {
+        resultsPanelPosition.value = 'bottom'
     }
 }, { immediate: true })
 
@@ -798,32 +854,71 @@ watch(
     { immediate: true }
 )
 
-onMounted(async () => {
-    setTimeout(async () => { await connectionStore.loadConnections() }, 0)
-    window.addEventListener('pegasus:connections-updated', loadConnections)
-    await loadChats()
-    await loadQueries()
-    const key = await generateKey()
-    encryptionKey.value = key
-    
-    // Load Settings & Models
-    try {
-        settings.value = await fetchSettings()
-        const models = await getAIModels()
-        if (settings.value.enabledModels?.length) {
-            availableModels.value = models.filter((m: any) => settings.value.enabledModels.includes(m.id))
-        } else {
-            availableModels.value = models
-        }
-        if (availableModels.value.length && !aiOptions.value.model) aiOptions.value.model = availableModels.value[0].id
-    } catch (e) { console.warn(e) }
-    
-    // Initialize temporary workspace
-    await workspaceStore.loadWorkspace('temp')
-})
+// Redundant initialization removed - consolidated into second onMounted block
 
 onBeforeUnmount(() => {
     window.removeEventListener('pegasus:connections-updated', loadConnections)
 })
 
+onMounted(async () => {
+  isInitializing.value = true
+  try {
+    // 1. Load basic required data
+    await Promise.all([
+      loadConnections(),
+      loadChats(),
+      loadQueries()
+    ])
+
+    // 2. Setup Encryption
+    const key = await generateKey()
+    encryptionKey.value = key
+
+    // 3. Load models and settings in parallel
+    const [models, s] = await Promise.all([
+      getAIModels(),
+      fetchSettings()
+    ])
+    
+    // Filter models if settings restrict them
+    if (s.enabledModels?.length) {
+      availableModels.value = models.filter((m: any) => s.enabledModels.includes(m.id))
+    } else {
+      availableModels.value = models
+    }
+    settings.value = s
+    
+    if (availableModels.value.length && !aiOptions.value.model) {
+        aiOptions.value.model = availableModels.value[0].id
+    }
+    
+    // 4. Handle connection & workspace selection
+    // Use the local selectedConnectionId which is synced with the store
+    const initialId = (selectedConnectionId.value || connections.value[0]?.id || '') as string
+    if (initialId) {
+        console.log('[Chat] Initializing with connection:', initialId)
+        await handleSelectConnection(initialId)
+    } else {
+        await workspaceStore.loadWorkspace('temp')
+    }
+
+    window.addEventListener('pegasus:connections-updated', loadConnections)
+  } catch (e) {
+    console.error('[Chat] Initialization failed:', e)
+    toast.error('Failed to initialize workspace')
+  } finally {
+    isInitializing.value = false
+  }
+})
+
 </script>
+
+<style scoped>
+@keyframes spin-slow {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+</style>

@@ -131,10 +131,9 @@ export class GeminiProvider extends AIProvider {
     async listModels() {
         // The specific models we want to support
         const supportedModels = [
-            'gemini-2.5-pro',
-            'gemini-2.5-flash',
-            'gemini-3-pro-preview',
-            'gemini-3-flash-preview'
+            'gemini-2.5-flash-lite',
+            'gemini-3-flash-preview',
+            'gemini-3-pro-preview'
         ];
 
         try {
@@ -178,9 +177,9 @@ export class GeminiProvider extends AIProvider {
         // Fallback hardcoded list matching exactly what was requested
         return supportedModels.map(id => ({
             id: id,
-            name: id === 'gemini-2.5-pro' ? 'Gemini 2.5 Pro' :
-                id === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' :
-                    id === 'gemini-3-pro-preview' ? 'Gemini 3.0 Pro Preview' : 'Gemini 3.0 Flash Preview',
+            name: id === 'gemini-2.5-flash-lite' ? 'Gemini 2.5 Flash Lite' :
+                id === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash Preview' :
+                    id === 'gemini-3-pro-preview' ? 'Gemini 3.0 Pro Preview' : id,
             provider: 'gemini',
             description: 'Google Generative AI model',
             // Default context windows if API fetch fails

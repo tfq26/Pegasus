@@ -6,6 +6,7 @@ import { useStorage } from '@vueuse/core'
 
 // UI Components
 import AddConnectionModal from '@/components/AddConnectionModal.vue'
+import AddTableToConnectionModal from './Explorer/AddTableToConnectionModal.vue'
 import ConnectionItem from './Explorer/ConnectionItem.vue'
 import ChatHistoryList from './Explorer/ChatHistoryList.vue'
 import QueryLogList from './Explorer/QueryLogList.vue'
@@ -57,7 +58,8 @@ const { connections } = toRefs(props)
 const { 
   connectionSchemas, 
   schemaFor, 
-  refreshSchemas 
+  refreshSchemas,
+  refreshConnectionSchema
 } = useExplorerSchema(connections)
 
 const {
@@ -83,6 +85,24 @@ zoomLevel.value = persistentZoom.value
 const sidebarTabs = ['data', 'chats', 'queries'] as const
 const activeTab = ref<typeof sidebarTabs[number]>('data')
 const addConnectionModalOpen = ref(false)
+const addTableModalOpen = ref(false)
+const connectionForAddTable = ref<ConnectionEntry | null>(null)
+
+// --- Add Table to Connection Logic ---
+const handleAddTable = (conn: ConnectionEntry) => {
+  connectionForAddTable.value = conn
+  addTableModalOpen.value = true
+}
+
+const onTableAdded = () => {
+  // Specifically refresh the connection we just added to
+  if (connectionForAddTable.value) {
+    console.log('[Explorer] Refreshing schema for connection:', connectionForAddTable.value.id)
+    refreshConnectionSchema(connectionForAddTable.value)
+  }
+  // Also do a general refresh to be safe
+  refreshSchemas(true)
+}
 
 // --- Rename Logic ---
 const renamingTable = ref<{ conn: ConnectionEntry; oldName: string; newName: string } | null>(null)
@@ -302,6 +322,7 @@ const confirmClearQueries = async () => {
             @edit-table="(c, t) => emit('edit-table', c, t)"
             @rename-table="startRenameTable"
             @delete-table="handleDeleteTable"
+            @add-table="handleAddTable"
           />
         </div>
       </section>
@@ -353,6 +374,13 @@ const confirmClearQueries = async () => {
         :renaming-table="renamingTable"
         @cancel="renamingTable = null"
         @confirm="confirmRename"
+      />
+
+      <AddTableToConnectionModal
+        :open="addTableModalOpen"
+        :connection="connectionForAddTable"
+        @update:open="(v) => addTableModalOpen = v"
+        @table-added="onTableAdded"
       />
 
       <!-- Delete Table Confirmation -->

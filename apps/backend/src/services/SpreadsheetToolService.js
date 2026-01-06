@@ -228,6 +228,91 @@ export class SpreadsheetToolService {
             }
         });
 
+        // Generic AI processing tool for flexible transformations
+        this.registerTool({
+            name: "process_with_ai",
+            description: "Process or transform spreadsheet data using AI for tasks that don't fit other tools (e.g., 'create random groups', 'shuffle and assign', 'categorize items', 'generate creative output from data'). Use this when the user wants to manipulate, reorganize, or creatively transform the data.",
+            category: "spreadsheet",
+            parameters: {
+                type: "object",
+                properties: {
+                    task: {
+                        type: "string",
+                        description: "Clear description of what transformation or processing to perform on the data"
+                    },
+                    outputFormat: {
+                        type: "string",
+                        enum: ["table", "list", "text", "json"],
+                        description: "Desired output format for the result"
+                    },
+                    options: {
+                        type: "object",
+                        description: "Optional parameters for the task (e.g., { groupCount: 5 } for creating 5 groups)"
+                    }
+                },
+                required: ["task"]
+            },
+            handler: async ({ task, outputFormat = "table", options = {} }, context) => {
+                const { spreadsheetData } = context;
+
+                // This will be processed by the AI with the full data context
+                return {
+                    type: "ai_process_request",
+                    task,
+                    outputFormat,
+                    options,
+                    data: spreadsheetData.sampleData,
+                    headers: spreadsheetData.headers,
+                    rowCount: spreadsheetData.rowCount
+                };
+            }
+        });
+
+        // Generate new table tool
+        this.registerTool({
+            name: "generate_table",
+            description: "Create a new table with AI-generated data based on a description. Use this when asked to create, generate, or make a new table, list, or dataset (e.g., 'create a table of 20 students with names and grades', 'generate a product inventory list').",
+            category: "data_creation",
+            parameters: {
+                type: "object",
+                properties: {
+                    description: {
+                        type: "string",
+                        description: "Description of the table to create (e.g., 'list of 20 students with names, ages, and grades')"
+                    },
+                    tableName: {
+                        type: "string",
+                        description: "Name for the new table"
+                    },
+                    rowCount: {
+                        type: "number",
+                        description: "Number of rows to generate (default: 10)"
+                    },
+                    columns: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Optional: specific column names to include"
+                    },
+                    openInNewTab: {
+                        type: "boolean",
+                        description: "Whether to open the generated table in a new spreadsheet tab"
+                    }
+                },
+                required: ["description", "tableName"]
+            },
+            handler: async ({ description, tableName, rowCount = 10, columns, openInNewTab = false }, context) => {
+                // This will be processed by AI to generate the actual data
+                return {
+                    type: "generate_table_request",
+                    description,
+                    tableName,
+                    rowCount,
+                    columns,
+                    openInNewTab
+                };
+            }
+        });
+
         this.registerTool({
             name: "calculate_column",
             description: "Compute new column values with mathematical reasoning (e.g., 'calculate profit margin as (revenue - cost) / revenue')",
@@ -752,27 +837,51 @@ export class SpreadsheetToolService {
         return Array.from(this.tools.values()).map(t => ({
             name: t.name,
             description: t.description,
-            parameters: t.parameters
+            parameters: t.parameters,
+            category: t.category || 'general'
         }));
     }
 
+    // Get all tools - no restrictions, available everywhere
+    getAllTools() {
+        return this.getToolDefinitions();
+    }
+
+    // Get tools grouped by category for UI organization
+    getToolsByCategory() {
+        const tools = this.getToolDefinitions();
+        const categories = {
+            data_analysis: { name: 'Data Analysis', tools: [] },
+            data_creation: { name: 'Data Creation', tools: [] },
+            data_transformation: { name: 'Data Transformation', tools: [] },
+            visualization: { name: 'Visualization', tools: [] },
+            query: { name: 'SQL & Query', tools: [] },
+            general: { name: 'General', tools: [] }
+        };
+
+        for (const tool of tools) {
+            const category = tool.category || 'general';
+            if (categories[category]) {
+                categories[category].tools.push(tool);
+            } else {
+                categories.general.tools.push(tool);
+            }
+        }
+
+        return categories;
+    }
+
+    // Legacy methods - now return ALL tools for backwards compatibility
     getSpreadsheetTools() {
-        const spreadsheetToolNames = [
-            'analyze_data', 'calculate_column', 'apply_conditional_formatting',
-            'forecast', 'clean_data', 'summarize_data', 'compare_data',
-            'sort_data', 'suggest_chart', 'apply_template'
-        ];
-        return this.getToolDefinitions().filter(t => spreadsheetToolNames.includes(t.name));
+        // Return ALL tools - no restrictions
+        return this.getToolDefinitions();
     }
 
     getQueryTools() {
-        const queryToolNames = [
-            'get_table_schema', 'format_query', 'explain_query', 'optimize_query', 'fix_query_error',
-            'generate_query', 'create_index', 'generate_test_data',
-            'convert_dialect', 'save_as_view', 'diff_queries', 'analyze_query_performance'
-        ];
-        return this.getToolDefinitions().filter(t => queryToolNames.includes(t.name));
+        // Return ALL tools - no restrictions
+        return this.getToolDefinitions();
     }
+
 
     async callTool(name, args, context) {
         const tool = this.tools.get(name);

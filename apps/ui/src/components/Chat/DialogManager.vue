@@ -36,9 +36,15 @@
       />
 
       <MutationReviewDialog
-        v-model:open="mutationDialogVisible"
-        :mutation="mutationData || { method: '', reasoning: '', confirmation: '', query: {} }"
         @apply="$emit('apply-mutation', $event)"
+        :mutation="mutationData || { method: '', reasoning: '', confirmation: '', query: {} }"
+        v-model:open="mutationDialogVisible"
+      />
+
+      <ExportConfirmationDialog
+        v-model:open="exportDialogVisible"
+        :format="exportFormat"
+        @confirm="$emit('confirm-export', exportFormat)"
       />
     </div>
   </Teleport>
@@ -54,6 +60,7 @@ import DashboardElementPreview from '../Dashboard/DashboardElementPreview.vue'
 import SanitizePreviewDialog from './SanitizePreviewDialog.vue'
 import InDepthSummaryDialog from './InDepthSummaryDialog.vue'
 import MutationReviewDialog from './MutationReviewDialog.vue'
+import ExportConfirmationDialog from './ExportConfirmationDialog.vue'
 
 const props = defineProps<{
   connectionId: string
@@ -61,19 +68,22 @@ const props = defineProps<{
   results: any[]
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'resolve-ambiguity': [resolution: any]
   'continue-chat': [chatId: string]
   'save-dashboard': []
   'execute-sanitize': [fix: any]
   'apply-mutation': [mutation: any]
+  'confirm-export': [format: 'csv' | 'xlsx' | 'pdf']
 }>()
 
 const { 
   summaryDialogVisible, 
   summaryText,
   mutationDialogVisible,
-  mutationData
+  mutationData,
+  exportDialogVisible,
+  exportFormat
 } = useChatDialogs()
 
 // Use composables for state
@@ -92,6 +102,7 @@ const {
 // Debug Watcher
 import { watch, onMounted } from 'vue'
 watch(previewVisible, (v) => console.log('[DialogManager] previewVisible changed to:', v))
+watch(exportDialogVisible, (v) => console.log('[DialogManager] exportDialogVisible changed to:', v))
 onMounted(() => console.log('[DialogManager] Mounted'))
 
 </script>

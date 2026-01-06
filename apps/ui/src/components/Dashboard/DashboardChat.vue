@@ -1,8 +1,8 @@
 
 <template>
-  <div class="flex flex-col h-full border-l border-border bg-card w-[320px]">
+  <div class="flex flex-col h-full border-l border-border bg-card w-[320px] relative overflow-hidden">
     <!-- Header -->
-    <div class="p-3 border-b border-border flex items-center justify-between">
+    <div class="p-3 border-b border-border flex items-center justify-between z-10 bg-card">
       <h3 class="font-semibold text-sm">Chat</h3>
       <button 
         @click="$emit('close')" 
@@ -14,7 +14,7 @@
     </div>
 
     <!-- Messages List -->
-    <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4">
+    <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
       <div v-if="messages.length === 0" class="text-center text-muted-foreground text-sm py-8">
         No messages yet. Say hello!
       </div>
@@ -22,13 +22,28 @@
       <div 
         v-for="msg in messages" 
         :key="msg.id" 
-        class="flex flex-col gap-1"
-        :class="{ 'items-end': isCurrentUser(msg.user.id) }"
+        :id="`msg-${msg.id}`"
+        class="flex flex-col gap-1 group relative transition-all duration-500"
+        :class="[
+          { 'items-end': isCurrentUser(msg.user.id) },
+          { 'pulse-highlight': pulsingMessageId === msg.id }
+        ]"
       >
+        <!-- Reply chain indicator -->
+        <div 
+          v-if="msg.parentId" 
+          @click="scrollToMessage(msg.parentId)"
+          class="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1 ml-4 cursor-pointer hover:text-primary transition-colors" 
+          :class="{ 'mr-4 ml-0 flex-row-reverse': isCurrentUser(msg.user.id) }"
+        >
+           <CornerUpRight class="w-3 h-3" />
+           <span>Replying to a message</span>
+        </div>
+
         <div class="flex items-center gap-2" :class="{ 'flex-row-reverse': isCurrentUser(msg.user.id) }">
           <!-- Avatar -->
           <div 
-            class="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold border border-border overflow-hidden"
+            class="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold border border-border overflow-hidden shrink-0"
             :class="msg.isAIResponse ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white' : 'bg-primary/20'"
             :title="msg.user.email"
           >
@@ -37,47 +52,107 @@
              <span v-else>{{ getInitials(msg.user) }}</span>
           </div>
           
-          <span class="text-xs text-muted-foreground">
+          <span class="text-xs text-muted-foreground truncate max-w-[120px]">
             {{ msg.isAIResponse ? 'Pegasus' : (msg.user.firstName || (msg.user.email ? msg.user.email.split('@')[0] : 'Unknown')) }}
           </span>
           <span class="text-[10px] text-muted-foreground/60">
             {{ formatTime(msg.timestamp) }}
           </span>
+          <span v-if="msg.isEdited" class="text-[9px] text-muted-foreground/40 italic">(edited)</span>
         </div>
         
-        <div 
-          class="px-3 py-2 rounded-sm text-sm max-w-[85%] break-words"
-          :class="[
-            msg.isAIResponse
-              ? 'bg-violet-500/10 border border-violet-500/20 text-foreground'
-              : isCurrentUser(msg.user.id) 
-                ? 'bg-primary text-primary-foreground' 
-                : 'bg-muted text-foreground'
-          ]"
-        >
-          <!-- Render content with mentions highlighted -->
-          <span v-html="renderContent(msg.content, msg.mentions)"></span>
-          
-          <!-- Images -->
-          <div v-if="msg.images?.length" class="mt-2 space-y-2">
-            <img 
-              v-for="(img, idx) in msg.images" 
-              :key="idx"
-              :src="img.data || img.url"
-              class="max-w-full rounded-md cursor-pointer hover:opacity-90"
-              @click="openImagePreview(img.data || img.url)"
-            />
-          </div>
-        </div>
+        <!-- Message Context Menu Trigger Wrapper -->
+        <ContextMenu>
+          <ContextMenuTrigger>
+            <div 
+              class="px-3 py-2 rounded-xl text-sm max-w-[240px] break-words relative transition-all duration-200"
+              :class="[
+                msg.isAIResponse
+                  ? 'bg-violet-500/10 border border-violet-500/20 text-foreground'
+                  : isCurrentUser(msg.user.id) 
+                    ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/95' 
+                    : 'bg-muted text-foreground hover:bg-muted/80'
+              ]"
+            >
+              <!-- Editing Mode -->
+              <div v-if="editingMessageId === msg.id" class="flex flex-col gap-2 min-w-[180px]">
+                <textarea
+                  v-model="editContent"
+                  class="w-full bg-background/50 text-foreground text-xs p-2 rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary h-16 resize-none"
+                  @keydown.enter.prevent="saveEdit(msg.id)"
+                  @keydown.esc="cancelEdit"
+                  autoFocus
+                ></textarea>
+                <div class="flex justify-end gap-2">
+                  <button @click="cancelEdit" class="text-[10px] hover:underline">Cancel</button>
+                  <button @click="saveEdit(msg.id)" class="text-[10px] font-bold hover:underline">Save</button>
+                </div>
+              </div>
+
+              <!-- Normal Mode -->
+              <template v-else>
+                <span v-html="renderContent(msg.content, msg.mentions)"></span>
+                
+                <!-- Images -->
+                <div v-if="msg.images?.length" class="mt-2 space-y-2">
+                  <img 
+                    v-for="(img, idx) in msg.images" 
+                    :key="idx"
+                    :src="img.data || img.url"
+                    class="max-w-full rounded-md cursor-pointer hover:opacity-90 shadow-sm"
+                    @click="openImagePreview(img.data || img.url)"
+                  />
+                </div>
+              </template>
+            </div>
+          </ContextMenuTrigger>
+
+          <ContextMenuContent class="w-48">
+            <ContextMenuItem @click="copyToClipboard(msg.content)" class="gap-2">
+              <Copy class="w-3.5 h-3.5" />
+              <span>Copy Text</span>
+            </ContextMenuItem>
+            <ContextMenuItem @click="replyToMessage(msg)" class="gap-2">
+              <RotateCcw class="w-3.5 h-3.5" />
+              <span>Reply</span>
+            </ContextMenuItem>
+            
+            <template v-if="isCurrentUser(msg.user.id)">
+              <ContextMenuSeparator />
+              <ContextMenuItem @click="startEdit(msg)" class="gap-2">
+                <Edit2 class="w-3.5 h-3.5" />
+                <span>Edit Message</span>
+              </ContextMenuItem>
+              <ContextMenuItem @click="deleteMessage(msg.id)" class="gap-2 text-destructive focus:text-destructive">
+                <Trash2 class="w-3.5 h-3.5" />
+                <span>Delete Message</span>
+              </ContextMenuItem>
+            </template>
+          </ContextMenuContent>
+        </ContextMenu>
       </div>
       
       <!-- AI Thinking Indicator -->
-      <div v-if="isAIThinking" class="flex items-center gap-2 text-muted-foreground">
+      <div v-if="isAIThinking" class="flex items-center gap-2 text-muted-foreground animate-in fade-in slide-in-from-bottom-2">
         <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
           <Sparkles class="w-3 h-3 text-white animate-pulse" />
         </div>
         <span class="text-xs">Pegasus is thinking...</span>
       </div>
+    </div>
+
+    <!-- Reply Preview -->
+    <div v-if="replyTo" class="mx-3 mb-0 p-2 bg-muted/50 rounded-t-lg border-t border-x border-border flex items-center justify-between animate-in slide-in-from-bottom-2">
+      <div class="flex items-center gap-2 overflow-hidden">
+        <CornerDownRight class="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <div class="flex flex-col">
+          <span class="text-[10px] font-bold truncate">Replying to {{ replyTo.user.firstName || 'User' }}</span>
+          <span class="text-[9px] text-muted-foreground truncate">{{ replyTo.content }}</span>
+        </div>
+      </div>
+      <button @click="replyTo = null" class="p-1 hover:bg-muted rounded text-muted-foreground">
+        <X class="w-3 h-3" />
+      </button>
     </div>
 
     <!-- Input Area -->
@@ -92,9 +167,9 @@
         @close="closeMentionPopup"
       />
       
-      <form @submit.prevent="sendMessage" class="flex gap-2">
+      <form @submit.prevent="sendMessage" class="flex gap-2 items-end">
         <!-- Image Upload Button -->
-        <label class="p-2 hover:bg-muted rounded-md cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
+        <label class="p-2 hover:bg-muted rounded-md cursor-pointer text-muted-foreground hover:text-foreground transition-colors shrink-0 mb-0.5">
           <Paperclip class="w-4 h-4" />
           <input 
             type="file" 
@@ -105,19 +180,22 @@
           />
         </label>
         
-        <input 
-          ref="inputRef"
-          v-model="newMessage" 
-          type="text" 
-          placeholder="Type @ to mention..." 
-          class="flex-1 bg-muted rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-          @input="handleInput"
-          @keydown="handleKeydown"
-        >
+        <div class="flex-1 flex flex-col relative">
+          <textarea
+            ref="inputRef"
+            v-model="newMessage"
+            placeholder="Type @ to mention..."
+            class="w-full bg-muted rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary min-h-[40px] max-h-[120px] resize-none overflow-y-auto pt-[10px]"
+            @input="handleInput"
+            @keydown="handleKeydown"
+            rows="1"
+          ></textarea>
+        </div>
+
         <button 
           type="submit" 
           :disabled="!canSend"
-          class="p-2 bg-primary text-primary-foreground rounded-md disabled:opacity-50 hover:bg-primary/90"
+          class="p-2.5 bg-primary text-primary-foreground rounded-md disabled:opacity-50 hover:bg-primary/90 transition shadow-sm mb-0.5"
         >
           <Send class="w-4 h-4" />
         </button>
@@ -125,11 +203,11 @@
       
       <!-- Image Previews -->
       <div v-if="pendingImages.length" class="mt-2 flex gap-2 flex-wrap">
-        <div v-for="(img, idx) in pendingImages" :key="idx" class="relative group">
-          <img :src="img" class="w-16 h-16 object-cover rounded-md border border-border" />
+        <div v-for="(img, idx) in pendingImages" :key="idx" class="relative group animate-in zoom-in-75">
+          <img :src="img" class="w-14 h-14 object-cover rounded-md border border-border" />
           <button 
             @click="removePendingImage(idx)"
-            class="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-white rounded-full flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X class="w-3 h-3" />
           </button>
@@ -141,9 +219,20 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { X, Send, Sparkles, Paperclip } from 'lucide-vue-next'
+import { 
+  X, Send, Sparkles, Paperclip, CornerUpRight, RotateCcw, 
+  Copy, Edit2, Trash2, CornerDownRight 
+} from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
+import { toast } from '@/composables/useNotifications'
 import MentionPopup from './MentionPopup.vue'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu'
 
 interface Mention {
   type: 'pegasus' | 'user'
@@ -157,13 +246,21 @@ const props = defineProps<{
   isAIThinking?: boolean
 }>()
 
-const emit = defineEmits(['close', 'send', 'pegasus-query'])
+const emit = defineEmits(['close', 'send', 'pegasus-query', 'edit', 'delete'])
 const { user } = useAuth()
 
 const newMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<HTMLTextAreaElement | null>(null)
 const pendingImages = ref<string[]>([])
+
+// Edit state
+const editingMessageId = ref<string | null>(null)
+const editContent = ref('')
+
+// Thread state
+const replyTo = ref<any | null>(null)
+const pulsingMessageId = ref<string | null>(null)
 
 // Mention state
 const showMentionPopup = ref(false)
@@ -186,6 +283,7 @@ const getInitials = (u: any) => {
 }
 
 const formatTime = (ts: string) => {
+  if (!ts) return ''
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -193,8 +291,62 @@ const canSend = computed(() => {
   return newMessage.value.trim() || pendingImages.value.length > 0
 })
 
+// Message Actions
+const copyToClipboard = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
+  } catch (err) {
+    toast.error('Failed to copy')
+  }
+}
+
+const startEdit = (msg: any) => {
+  editingMessageId.value = msg.id
+  editContent.value = msg.content
+}
+
+const cancelEdit = () => {
+  editingMessageId.value = null
+  editContent.value = ''
+}
+
+const saveEdit = (messageId: string) => {
+  if (!editContent.value.trim()) return
+  emit('edit', messageId, editContent.value)
+  editingMessageId.value = null
+  editContent.value = ''
+}
+
+const deleteMessage = (messageId: string) => {
+  emit('delete', messageId)
+}
+
+const replyToMessage = (msg: any) => {
+  replyTo.value = msg
+  nextTick(() => {
+    inputRef.value?.focus()
+  })
+}
+
+const scrollToMessage = (messageId: string) => {
+  const element = document.getElementById(`msg-${messageId}`)
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    
+    // Trigger pulse animation
+    pulsingMessageId.value = messageId
+    setTimeout(() => {
+      pulsingMessageId.value = null
+    }, 2000)
+  } else {
+    toast.info('Parent message not found in history')
+  }
+}
+
 // Render message content with highlighted mentions
 const renderContent = (content: string, msgMentions?: Mention[]) => {
+  if (!content) return ''
   if (!msgMentions?.length) return escapeHtml(content)
   
   let result = escapeHtml(content)
@@ -203,8 +355,11 @@ const renderContent = (content: string, msgMentions?: Mention[]) => {
     const highlightClass = m.type === 'pegasus' 
       ? 'text-violet-400 font-medium' 
       : 'text-primary font-medium'
+    
+    // Use a regex with word boundaries to avoid partial replacement
+    const regex = new RegExp(`${mentionText}\\b`, 'g')
     result = result.replace(
-      mentionText, 
+      regex, 
       `<span class="${highlightClass}">${mentionText}</span>`
     )
   })
@@ -212,15 +367,26 @@ const renderContent = (content: string, msgMentions?: Mention[]) => {
 }
 
 const escapeHtml = (str: string) => {
+  if (!str) return ''
   return str.replace(/[&<>"']/g, (m) => {
     const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
     return map[m] || m
   })
 }
 
+// Auto-expand textarea
+watch(newMessage, () => {
+  nextTick(() => {
+    if (inputRef.value) {
+      inputRef.value.style.height = 'auto'
+      inputRef.value.style.height = inputRef.value.scrollHeight + 'px'
+    }
+  })
+})
+
 // Handle @ mention detection
 const handleInput = (e: Event) => {
-  const input = e.target as HTMLInputElement
+  const input = e.target as HTMLTextAreaElement
   const value = input.value
   const cursorPos = input.selectionStart || 0
   
@@ -228,21 +394,18 @@ const handleInput = (e: Event) => {
   const beforeCursor = value.substring(0, cursorPos)
   const atIndex = beforeCursor.lastIndexOf('@')
   
-  if (atIndex !== -1 && (atIndex === 0 || beforeCursor[atIndex - 1] === ' ')) {
+  if (atIndex !== -1 && (atIndex === 0 || beforeCursor[atIndex - 1] === ' ' || beforeCursor[atIndex - 1] === '\n')) {
     const query = beforeCursor.substring(atIndex + 1)
     // Only show popup if no space after @
-    if (!query.includes(' ')) {
+    if (!query.includes(' ') && !query.includes('\n')) {
       mentionStartIndex.value = atIndex
       mentionQuery.value = query
       showMentionPopup.value = true
       
       // Position popup above input
-      if (inputRef.value) {
-        const rect = inputRef.value.getBoundingClientRect()
-        mentionPopupPosition.value = {
-          top: -220,
-          left: 0
-        }
+      mentionPopupPosition.value = {
+        top: -180,
+        left: 0
       }
       return
     }
@@ -258,6 +421,12 @@ const handleKeydown = (e: KeyboardEvent) => {
       return
     }
   }
+
+  // Submit on Enter (Shift+Enter for new line)
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    sendMessage()
+  }
 }
 
 const handleMentionSelect = (item: { id: string, type: 'pegasus' | 'user', name: string }) => {
@@ -267,11 +436,14 @@ const handleMentionSelect = (item: { id: string, type: 'pegasus' | 'user', name:
   
   newMessage.value = `${beforeMention}@${item.name} ${afterMention}`
   
-  mentions.value.push({
-    type: item.type,
-    id: item.id,
-    name: item.name
-  })
+  // Track mentions for backend processing
+  if (!mentions.value.some(m => m.id === item.id)) {
+    mentions.value.push({
+      type: item.type,
+      id: item.id,
+      name: item.name
+    })
+  }
   
   closeMentionPopup()
   inputRef.value?.focus()
@@ -291,7 +463,7 @@ const handleImageUpload = async (e: Event) => {
   
   Array.from(files).forEach(file => {
     if (file.size > 5 * 1024 * 1024) {
-      // Skip files over 5MB
+      toast.error(`File ${file.name} is too large (> 5MB)`)
       return
     }
     
@@ -321,7 +493,8 @@ const sendMessage = () => {
   const messageData = {
     content: newMessage.value,
     mentions: [...mentions.value],
-    images: pendingImages.value.map(data => ({ data }))
+    images: pendingImages.value.map(data => ({ data })),
+    parentId: replyTo.value?.id || null
   }
   
   if (hasPegasusMention) {
@@ -334,17 +507,61 @@ const sendMessage = () => {
   
   emit('send', messageData)
   
+  // Cleanup
   newMessage.value = ''
   mentions.value = []
   pendingImages.value = []
+  replyTo.value = null
+  
+  if (inputRef.value) {
+    inputRef.value.style.height = 'auto'
+  }
 }
 
 // Auto-scroll to bottom on new messages
-watch(() => props.messages.length, () => {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
-  })
-})
+watch(() => props.messages.length, (newLen, oldLen) => {
+  if (newLen > oldLen) {
+    nextTick(() => {
+      if (messagesContainer.value) {
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      }
+    })
+  }
+}, { deep: true })
 </script>
+
+<style scoped>
+/* Custom scrollbar for message list */
+div::-webkit-scrollbar {
+  width: 4px;
+}
+div::-webkit-scrollbar-track {
+  background: transparent;
+}
+div::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+}
+div::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Pulse Highlight Animation */
+@keyframes pulse-highlight {
+  0% { transform: scale(1); background-color: transparent; }
+  25% { transform: scale(1.02); background-color: color-mix(in srgb, var(--primary), transparent 85%); }
+  50% { transform: scale(1); background-color: transparent; }
+  75% { transform: scale(1.02); background-color: color-mix(in srgb, var(--primary), transparent 85%); }
+  100% { transform: scale(1); background-color: transparent; }
+}
+
+.pulse-highlight {
+  animation: pulse-highlight 1.5s ease-in-out;
+  border-radius: 12px;
+  z-index: 5;
+}
+</style>

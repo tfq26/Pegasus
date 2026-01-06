@@ -7,6 +7,7 @@ export interface Tab {
     type: 'chat' | 'query' | 'table' | 'spreadsheet'
     label: string
     isDirty?: boolean  // Track unsaved changes
+    closedAt?: string // ISO string for history cleanup
     data?: {
         chatId?: string
         chatHistory?: any[]
@@ -26,6 +27,7 @@ export interface Tab {
 
 interface ConnectionWorkspace {
     tabs: Tab[]
+    inactiveTabs: Tab[] // Archived tabs
     activeTabId: string | null
 }
 
@@ -39,7 +41,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
     // Computed: Current workspace based on active connection
     const currentWorkspace = computed(() =>
-        workspacesByConnection.value[activeConnectionId.value] || { tabs: [], activeTabId: null }
+        workspacesByConnection.value[activeConnectionId.value] || { tabs: [], inactiveTabs: [], activeTabId: null }
     )
 
     const tabs = computed(() => currentWorkspace.value.tabs)
@@ -71,7 +73,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // Ensure a workspace exists for a connection
     function ensureWorkspace(connectionId: string) {
         if (!workspacesByConnection.value[connectionId]) {
-            workspacesByConnection.value[connectionId] = { tabs: [], activeTabId: null }
+            workspacesByConnection.value[connectionId] = { tabs: [], inactiveTabs: [], activeTabId: null }
         }
     }
 
@@ -93,8 +95,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 if (body.workspace) {
                     workspacesByConnection.value[connectionId] = {
                         tabs: body.workspace.tabs || [],
+                        inactiveTabs: body.workspace.inactiveTabs || [],
                         activeTabId: body.workspace.activeTabId || null
                     }
+                    cleanupOldTabs(connectionId)
                     console.log(`[WorkspaceStore] Loaded workspace for ${connectionId}`)
                 } else {
                     // Empty workspace, keep the initialized one
@@ -121,6 +125,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 const parsed = JSON.parse(stored)
                 workspacesByConnection.value['temp'] = {
                     tabs: parsed.tabs || [],
+                    inactiveTabs: parsed.inactiveTabs || [],
                     activeTabId: parsed.activeTabId || null
                 }
                 saveWorkspace()
@@ -137,6 +142,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 const workspace = currentWorkspace.value
                 const data = {
                     tabs: workspace.tabs,
+                    inactiveTabs: workspace.inactiveTabs,
                     activeTabId: workspace.activeTabId
                 }
 
@@ -206,7 +212,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         const index = workspace.tabs.findIndex(t => t.id === tabId)
         if (index === -1) return
 
-        workspace.tabs.splice(index, 1)
+        const [tab] = workspace.tabs.splice(index, 1)
+
+        // Move to inactive list instead of deleting
+        if (tab) {
+            tab.closedAt = new Date().toISOString()
+            workspace.inactiveTabs = [tab, ...(workspace.inactiveTabs || [])]
+        }
 
         if (workspace.activeTabId === tabId) {
             if (workspace.tabs.length > 0) {
@@ -218,7 +230,57 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         }
 
         saveWorkspace()
-        console.log('[WorkspaceStore] Closed tab:', tabId)
+        console.log('[WorkspaceStore] Archived tab to history:', tabId)
+    }
+
+    function restoreTab(tabId: string) {
+        const workspace = workspacesByConnection.value[activeConnectionId.value]
+        if (!workspace) return
+
+        const index = workspace.inactiveTabs?.findIndex(t => t.id === tabId)
+        if (index === -1 || index === undefined) return
+
+        const [tab] = workspace.inactiveTabs.splice(index, 1)
+        if (tab) {
+            delete tab.closedAt
+            workspace.tabs.push(tab)
+            workspace.activeTabId = tab.id
+            saveWorkspace()
+            console.log('[WorkspaceStore] Restored tab:', tabId)
+        }
+    }
+
+    function deleteInactiveTab(tabId: string) {
+        const workspace = workspacesByConnection.value[activeConnectionId.value]
+        if (!workspace) return
+
+        const index = workspace.inactiveTabs?.findIndex(t => t.id === tabId)
+        if (index === -1 || index === undefined) return
+
+        workspace.inactiveTabs.splice(index, 1)
+        saveWorkspace()
+        console.log('[WorkspaceStore] Permanently deleted tab from history:', tabId)
+    }
+
+    function cleanupOldTabs(connectionId?: string) {
+        const connId = connectionId || activeConnectionId.value
+        const workspace = workspacesByConnection.value[connId]
+        if (!workspace || !workspace.inactiveTabs) return
+
+        const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000
+        const now = Date.now()
+
+        const initialCount = workspace.inactiveTabs.length
+        workspace.inactiveTabs = workspace.inactiveTabs.filter(tab => {
+            if (!tab.closedAt) return true
+            const closedDate = new Date(tab.closedAt).getTime()
+            return (now - closedDate) < THIRTY_DAYS
+        })
+
+        if (workspace.inactiveTabs.length !== initialCount) {
+            console.log(`[WorkspaceStore] Cleaned up ${initialCount - workspace.inactiveTabs.length} old tabs for ${connId}`)
+            saveWorkspace()
+        }
     }
 
     function setActiveTab(tabId: string) {
@@ -306,12 +368,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         migrateUnsavedTabs,
         createTab,
         closeTab,
+        restoreTab,
+        deleteInactiveTab,
+        cleanupOldTabs,
         setActiveTab,
         updateTabData,
         setTabDirty,
         updateActiveTabData,
         updateActiveTabChatHistory,
         appendMessageToActiveTab,
-        getActiveTabChatHistory
+        getActiveTabChatHistory,
+        workspacesByConnection
     }
 })

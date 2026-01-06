@@ -316,21 +316,21 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
   <Transition name="fade">
     <div
       v-if="viewer.open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/80 backdrop-blur-md p-4 sm:p-8"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4 sm:p-8"
       @click.self="emit('close')"
     >
-      <div class="relative w-full max-w-6xl h-full max-h-[90vh] overflow-hidden flex flex-col rounded-[32px] border border-stone-800 bg-[#0a0a0b] shadow-2xl">
+      <div class="relative w-full max-w-6xl h-full max-h-[90vh] overflow-hidden flex flex-col rounded-[32px] border border-border bg-card shadow-2xl">
         <!-- Viewer Header -->
-        <div class="p-6 sm:px-8 border-b border-stone-800 flex items-center justify-between bg-stone-900/20">
+        <div class="p-6 sm:px-8 border-b border-border flex items-center justify-between bg-muted/30">
           <div class="flex items-center gap-4">
             <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 p-0.5 shadow-lg shadow-violet-500/10">
-              <div class="w-full h-full bg-[#0a0a0b] rounded-[14px] flex items-center justify-center">
-                <Table class="w-6 h-6 text-violet-400" />
+              <div class="w-full h-full bg-card rounded-[14px] flex items-center justify-center">
+                <Table class="w-6 h-6 text-violet-500 dark:text-violet-400" />
               </div>
             </div>
             <div>
-              <h3 class="text-lg font-bold text-white">{{ formatTableName(viewer.table, viewer.connection?.id) }}</h3>
-              <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-500">{{ viewer.connection?.nickname }} / {{ viewer.total ?? '...' }} Records</p>
+              <h3 class="text-lg font-bold text-foreground">{{ formatTableName(viewer.table, viewer.connection?.id) }}</h3>
+              <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{{ viewer.connection?.nickname }} / {{ viewer.total ?? '...' }} Records</p>
             </div>
           </div>
 
@@ -344,37 +344,37 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                Copy Selected ({{ selectedRows.size }})
             </button>
 
-            <div class="flex items-center bg-stone-900/60 rounded-xl p-1 border border-stone-800/50">
+            <div class="flex items-center bg-muted/60 rounded-xl p-1 border border-border/50">
               <button 
                 @click="textWrap = !textWrap"
                 :title="textWrap ? 'Disable text wrapping' : 'Enable text wrapping'"
-                class="p-2 rounded-lg hover:bg-stone-800 transition-all"
-                :class="textWrap ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-white'"
+                class="p-2 rounded-lg hover:bg-muted transition-all"
+                :class="textWrap ? 'text-violet-500 dark:text-violet-400 bg-muted' : 'text-muted-foreground hover:text-foreground'"
               >
                 <AlignJustify class="w-4 h-4" />
               </button>
-              <div class="h-4 w-[1px] bg-stone-800 mx-1"></div>
+              <div class="h-4 w-[1px] bg-border mx-1"></div>
               <button 
                 @click="autoFitColumns = !autoFitColumns"
                 :title="autoFitColumns ? 'Fixed column widths' : 'Auto-fit column widths'"
-                class="p-2 rounded-lg hover:bg-stone-800 transition-all"
-                :class="autoFitColumns ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-white'"
+                class="p-2 rounded-lg hover:bg-muted transition-all"
+                :class="autoFitColumns ? 'text-violet-500 dark:text-violet-400 bg-muted' : 'text-muted-foreground hover:text-foreground'"
               >
                 <Columns class="w-4 h-4" />
               </button>
             </div>
-            <div class="flex items-center bg-stone-900/60 rounded-xl p-1 border border-stone-800/50">
+            <div class="flex items-center bg-muted/60 rounded-xl p-1 border border-border/50">
               <button 
                 @click="emit('decrease-zoom')" 
-                class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-white disabled:opacity-20 transition-all"
+                class="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 transition-all"
                 :disabled="zoomLevel === 0"
               >
                 <Minus class="w-4 h-4" />
               </button>
-              <div class="h-4 w-[1px] bg-stone-800 mx-1"></div>
+              <div class="h-4 w-[1px] bg-border mx-1"></div>
               <button 
                 @click="emit('increase-zoom')" 
-                class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-white disabled:opacity-20 transition-all"
+                class="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 transition-all"
                 :disabled="zoomLevel === zoomClasses.length - 1"
               >
                 <Plus class="w-4 h-4" />
@@ -382,7 +382,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
             </div>
             <button
               @click="emit('close')"
-              class="w-10 h-10 rounded-full flex items-center justify-center bg-stone-900 border border-stone-800 text-stone-400 hover:text-white transition-all shadow-xl"
+              class="w-10 h-10 rounded-full flex items-center justify-center bg-muted border border-border text-muted-foreground hover:text-foreground transition-all shadow-xl"
             >
               <X class="w-5 h-5" />
             </button>
@@ -390,37 +390,37 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
         </div>
 
         <!-- Viewer Content -->
-        <div class="flex-1 overflow-hidden flex flex-col bg-stone-950/30">
+        <div class="flex-1 overflow-hidden flex flex-col bg-background/50">
           <!-- Toolbar -->
-          <div class="px-8 py-4 border-b border-stone-800 flex items-center gap-4 bg-[#0a0a0b]">
+          <div class="px-8 py-4 border-b border-border flex items-center gap-4 bg-card">
             <div class="relative flex-1 group">
-              <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-600 transition-colors group-focus-within:text-violet-500" />
+              <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-colors group-focus-within:text-violet-500" />
               <input
                 v-model="localSearchQuery"
                 type="text"
                 placeholder="Filter current view..."
-                class="w-full pl-10 pr-4 py-2 bg-stone-900/50 border border-stone-800 rounded-xl text-sm text-stone-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
+                class="w-full pl-10 pr-4 py-2 bg-muted/50 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
               />
             </div>
-            <div v-if="localSearchQuery" class="text-[10px] font-bold uppercase tracking-widest text-violet-400">
+            <div v-if="localSearchQuery" class="text-[10px] font-bold uppercase tracking-widest text-violet-500 dark:text-violet-400">
               {{ filteredAndSortedRows.length }} matches
             </div>
             <button 
                @click="emit('reload')" 
                title="Refresh data"
-               class="p-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-400 hover:text-white transition-all active:rotate-180 duration-500"
+               class="p-2 rounded-xl bg-muted border border-border text-muted-foreground hover:text-foreground transition-all active:rotate-180 duration-500"
             >
                 <RefreshCcw class="w-4 h-4" />
             </button>
           </div>
 
           <!-- Table -->
-          <div class="flex-1 overflow-auto px-8 py-6 scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent">
+          <div class="flex-1 overflow-auto px-8 py-6 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
             <div v-if="viewer.loading" class="h-full flex flex-col items-center justify-center py-20 space-y-4">
               <Loader2 class="w-8 h-8 text-violet-500 animate-spin" />
-              <p class="text-xs font-bold uppercase tracking-widest text-stone-600">Reading records...</p>
+              <p class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reading records...</p>
             </div>
-            <div v-else-if="viewer.error" class="p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-400 text-sm">
+            <div v-else-if="viewer.error" class="p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-500 dark:text-rose-400 text-sm">
               {{ viewer.error }}
             </div>
             
@@ -429,43 +429,43 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                 <table class="w-full border-separate border-spacing-0">
                   <thead>
                     <tr class="text-left">
-                      <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 w-10">
+                      <th class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 w-10">
                         <Checkbox 
                           :model-value="selectedRows.size === paginatedRows.length && paginatedRows.length > 0" 
                           @update:model-value="toggleAllSelection"
-                          class="border-stone-700 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
+                          class="border-border data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
                         />
                       </th>
-                      <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 w-10"></th>
+                      <th class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground w-10"></th>
                       <th
                         v-for="col in viewerColumns"
                         :key="col"
                         @click="emit('toggle-sort', col)"
-                        class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-500 cursor-pointer hover:text-white transition-colors"
+                        class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                       >
                         <div class="flex items-center gap-2">
                            {{ col }}
-                           <span v-if="sortColumn === col" class="text-violet-400">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
+                           <span v-if="sortColumn === col" class="text-violet-500 dark:text-violet-400">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
                         </div>
                       </th>
-                      <th class="sticky top-0 z-10 bg-[#0a0a0b]/80 backdrop-blur-sm border-b border-stone-800 px-4 py-3 w-10"></th>
+                      <th class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
                     <template v-for="(entry, index) in paginatedRows" :key="`row-${index}`">
                       <tr 
-                        class="group/row transition-colors hover:bg-stone-900/40"
+                        class="group/row transition-colors hover:bg-muted/40"
                         :class="selectedRows.has(index) ? 'bg-violet-500/5' : ''"
                       >
-                        <td class="px-4 py-3 border-b border-stone-800/50">
+                        <td class="px-4 py-3 border-b border-border/50">
                           <Checkbox 
                             :model-value="selectedRows.has(index)" 
                             @update:model-value="toggleRowSelection(index)"
-                            class="border-stone-700 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
+                            class="border-border data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
                           />
                         </td>
-                        <td class="px-4 py-3 border-b border-stone-800/50">
-                          <button @click.stop="toggleRowExpansion(index)" class="text-stone-700 hover:text-violet-400 transition-colors">
+                        <td class="px-4 py-3 border-b border-border/50">
+                          <button @click.stop="toggleRowExpansion(index)" class="text-muted-foreground/50 hover:text-violet-500 dark:hover:text-violet-400 transition-colors">
                             <ChevronDown v-if="expandedRows.has(index)" class="w-3.5 h-3.5" />
                             <ChevronRight v-else class="w-3.5 h-3.5" />
                           </button>
@@ -475,7 +475,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                           :key="col"
                           :style="getColumnStyle(col)"
                           @contextmenu="setContextMenuContext(index, col, entry)"
-                          class="px-4 py-3 border-b border-stone-800/50 text-xs font-medium text-stone-400 group-hover/row:text-stone-100 transition-colors relative"
+                          class="px-4 py-3 border-b border-border/50 text-xs font-medium text-muted-foreground group-hover/row:text-foreground transition-colors relative"
                           :class="[
                             textWrap ? 'whitespace-normal break-words' : 'truncate',
                             editingCell?.rowIndex === index && editingCell?.col === col ? 'bg-violet-500/10 ring-2 ring-violet-500 ring-inset z-20' : ''
@@ -488,21 +488,21 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                                  @blur="saveEdit"
                                  @keyup.enter="saveEdit"
                                  @keyup.esc="cancelEdit"
-                                 class="absolute inset-0 w-full h-full bg-stone-900 text-white px-4 border-none focus:outline-none focus:ring-0"
+                                 class="absolute inset-0 w-full h-full bg-background text-foreground px-4 border-none focus:outline-none focus:ring-0"
                               />
                            </template>
                            <template v-else>
                               {{ formatCellValue(entry[col]) }}
                            </template>
                         </td>
-                        <td class="px-4 py-3 border-b border-stone-800/50 text-right opacity-0 group-hover/row:opacity-100 transition-opacity">
-                            <button @contextmenu="setContextMenuContext(index, viewerColumns[0], entry)" class="text-stone-600 hover:text-white transition-colors p-1">
+                        <td class="px-4 py-3 border-b border-border/50 text-right opacity-0 group-hover/row:opacity-100 transition-opacity">
+                            <button @contextmenu="setContextMenuContext(index, viewerColumns[0], entry)" class="text-muted-foreground hover:text-foreground transition-colors p-1">
                                 <MoreVertical class="w-4 h-4" />
                             </button>
                         </td>
                       </tr>
                       <tr v-if="expandedRows.has(index)">
-                        <td :colspan="viewerColumns.length + 3" class="p-6 bg-stone-900/20 border-b border-stone-800/50">
+                        <td :colspan="viewerColumns.length + 3" class="p-6 bg-muted/20 border-b border-border/50">
                           <JsonViewer :data="entry" :text-size="viewerTextSizeClass || ''" />
                         </td>
                       </tr>
@@ -511,49 +511,49 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                 </table>
               </ContextMenuTrigger>
 
-              <ContextMenuContent class="w-56 bg-[#0a0a0b] border-stone-800 text-stone-300">
-                <ContextMenuItem @select="handleContextMenuAction('copy-cell')" class="gap-2 focus:bg-stone-900 focus:text-white">
-                  <Copy class="w-4 h-4 text-stone-500" />
+              <ContextMenuContent class="w-56 bg-card border-border text-foreground">
+                <ContextMenuItem @select="handleContextMenuAction('copy-cell')" class="gap-2 focus:bg-muted focus:text-foreground">
+                  <Copy class="w-4 h-4 text-muted-foreground" />
                   <span>Copy Cell Value</span>
                 </ContextMenuItem>
-                <ContextMenuItem @select="handleContextMenuAction('copy-row')" class="gap-2 focus:bg-stone-900 focus:text-white">
-                  <Copy class="w-4 h-4 text-stone-500" />
+                <ContextMenuItem @select="handleContextMenuAction('copy-row')" class="gap-2 focus:bg-muted focus:text-foreground">
+                  <Copy class="w-4 h-4 text-muted-foreground" />
                   <span>Copy Row (JSON)</span>
                 </ContextMenuItem>
-                <ContextMenuSeparator class="bg-stone-800" />
-                <ContextMenuItem @select="handleContextMenuAction('edit-cell')" class="gap-2 focus:bg-stone-900 focus:text-white">
-                  <Edit2 class="w-4 h-4 text-stone-500" />
+                <ContextMenuSeparator class="bg-border" />
+                <ContextMenuItem @select="handleContextMenuAction('edit-cell')" class="gap-2 focus:bg-muted focus:text-foreground">
+                  <Edit2 class="w-4 h-4 text-muted-foreground" />
                   <span>Edit Cell</span>
                 </ContextMenuItem>
-                <ContextMenuSeparator class="bg-stone-800" />
-                <ContextMenuItem @select="handleContextMenuAction('delete-row')" class="gap-2 focus:bg-rose-500/10 focus:text-rose-400 text-rose-500">
+                <ContextMenuSeparator class="bg-border" />
+                <ContextMenuItem @select="handleContextMenuAction('delete-row')" class="gap-2 focus:bg-rose-500/10 focus:text-rose-500 text-rose-500">
                   <Trash2 class="w-4 h-4" />
                   <span>Delete Record</span>
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
-            <div v-else class="py-20 text-center text-stone-600 font-bold uppercase tracking-widest text-xs">
+            <div v-else class="py-20 text-center text-muted-foreground font-bold uppercase tracking-widest text-xs">
               No entries found
             </div>
           </div>
 
           <!-- Footer -->
-          <div class="px-8 py-4 border-t border-stone-800 bg-stone-900/10 flex items-center justify-between">
+          <div class="px-8 py-4 border-t border-border bg-muted/10 flex items-center justify-between">
             <div class="flex items-center gap-6">
-              <span v-if="selectedRows.size" class="text-[10px] font-bold uppercase tracking-widest text-violet-400 bg-violet-500/10 px-2 py-1 rounded">
+              <span v-if="selectedRows.size" class="text-[10px] font-bold uppercase tracking-widest text-violet-500 dark:text-violet-400 bg-violet-500/10 px-2 py-1 rounded">
                 {{ selectedRows.size }} selected
               </span>
-              <span class="text-[10px] font-bold uppercase tracking-widest text-stone-600">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 Showing {{ paginatedRows.length }} of {{ filteredAndSortedRows.length }} records
               </span>
               
               <!-- Rows per page selector -->
               <div class="flex items-center gap-2">
-                <span class="text-[10px] font-bold uppercase tracking-widest text-stone-600">Per page:</span>
+                <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Per page:</span>
                 <select 
                   v-model.number="rowsPerPage"
                   @change="handleLimitChange"
-                  class="px-2 py-1 bg-stone-900/50 border border-stone-800 rounded text-xs text-stone-200 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+                  class="px-2 py-1 bg-muted/50 border border-border rounded text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/20"
                 >
                   <option :value="10">10</option>
                   <option :value="25">25</option>
@@ -597,11 +597,11 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #1c1c1e;
+  background: hsl(var(--muted-foreground) / 0.3);
   border-radius: 20px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #2c2c2e;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }

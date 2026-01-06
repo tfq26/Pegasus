@@ -1,25 +1,25 @@
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden relative bg-[#0a0a0b] min-h-[300px]">
+  <div class="flex-1 flex flex-col overflow-hidden relative bg-background min-h-[300px]">
     <!-- Technical Grid Background -->
-    <div class="absolute inset-0 pointer-events-none z-0 opacity-[0.03]" 
-         style="background-image: radial-gradient(#ffffff 1px, transparent 1px); background-size: 32px 32px;">
+    <div class="absolute inset-0 pointer-events-none z-0 opacity-[0.03] dark:opacity-[0.05]" 
+         style="background-image: radial-gradient(currentColor 1px, transparent 1px); background-size: 32px 32px;">
     </div>
-    <div class="absolute inset-0 pointer-events-none z-0 bg-gradient-to-b from-transparent via-[#0a0a0b]/10 to-[#0a0a0b]"></div>
+    <div class="absolute inset-0 pointer-events-none z-0 bg-gradient-to-b from-transparent via-background/10 to-background"></div>
 
     <!-- Analytical Feed -->
     <div 
       v-if="props.mode === 'chat'" 
       ref="historyContainer"
-      class="flex-1 overflow-y-auto px-6 sm:px-8 py-4 space-y-4 scroll-smooth scrollbar-thin scrollbar-thumb-stone-800 scrollbar-track-transparent relative z-10"
+      class="flex-1 overflow-y-auto px-6 sm:px-8 py-4 space-y-4 scroll-smooth scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent relative z-10"
       @scroll="handleScroll"
     >
       <!-- Load more indicator -->
       <div 
         v-if="hasMore" 
         ref="loadMoreTrigger"
-        class="text-center pb-8 border-b border-stone-900"
+        class="text-center pb-8 border-b border-border"
       >
-        <div v-if="isLoadingMore" class="flex items-center justify-center space-x-2 text-[10px] font-bold uppercase tracking-[0.2em] text-stone-600">
+        <div v-if="isLoadingMore" class="flex items-center justify-center space-x-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
           <Loader2 class="w-3 h-3 animate-spin" />
           <span>Restoring older context...</span>
         </div>
@@ -38,8 +38,8 @@
               :class="[
                 'w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold border transition-all duration-300',
                 msg.role === 'user' 
-                  ? 'bg-stone-900 border-stone-800 text-stone-500' 
-                  : 'bg-violet-500/10 border-violet-500/20 text-violet-400 shadow-[0_0_10px_-2px_theme(colors.violet.500)]'
+                  ? 'bg-muted border-border text-muted-foreground' 
+                  : 'bg-violet-500/10 border-violet-500/20 text-violet-500 dark:text-violet-400 shadow-[0_0_10px_-2px_theme(colors.violet.500)]'
               ]"
             >
 
@@ -53,11 +53,11 @@
                  <img :src="pegasusLogo" class="w-full h-full object-contain" alt="Pegasus" />
               </div>
             </div>
-            <span class="text-[10px] font-black uppercase tracking-[0.2em]" :class="msg.role === 'user' ? 'text-stone-500' : 'text-violet-400'">
+            <span class="text-[10px] font-black uppercase tracking-[0.2em]" :class="msg.role === 'user' ? 'text-muted-foreground' : 'text-violet-500 dark:text-violet-400'">
               {{ msg.role === 'user' ? getUserLabel() : 'Pegasus' }}
             </span>
-            <div class="h-px flex-1 bg-stone-900"></div>
-            <span class="text-[9px] font-mono text-stone-700 uppercase">
+            <div class="h-px flex-1 bg-border"></div>
+            <span class="text-[9px] font-mono text-muted-foreground/50 uppercase">
                {{ formatTime(msg.timestamp) }}
             </span>
           </div>
@@ -66,12 +66,12 @@
           <div class="pl-7 space-y-1">
             <!-- Chart Rendering for AI responses with chart data -->
             <div v-if="msg.role === 'assistant' && isChartContent(msg.content)" class="w-full max-w-2xl space-y-3">
-              <div class="text-sm font-medium text-stone-400 mb-2">{{ parseChartConfig(msg.content).title }}</div>
+              <div class="text-sm font-medium text-muted-foreground mb-2">{{ parseChartConfig(msg.content).title }}</div>
               <ChartRenderer 
                 :type="parseChartConfig(msg.content).type" 
                 :data="parseChartConfig(msg.content).data"
                 :options="{ responsive: true, maintainAspectRatio: true, plugins: { legend: { display: true } } }"
-                class="rounded-lg border border-stone-800 bg-stone-900/50 p-4 h-[300px]"
+                class="rounded-lg border border-border bg-muted/30 p-4 h-[300px]"
               />
               <button 
                 @click="$emit('add-to-dashboard', parseChartConfig(msg.content))"
@@ -84,7 +84,7 @@
             <!-- Regular Text Content -->
             <div 
               v-else
-              class="text-stone-300 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white markdown-chat"
+              class="text-foreground/90 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white markdown-chat"
             >
                 <div class="break-words">
                   <div v-if="shouldTruncate(msg.content) && !isExpanded(msg)" v-html="renderMarkdown(getTruncatedContent(msg.content))"></div>
@@ -108,7 +108,7 @@
               <!-- Copy Button (All messages) -->
               <button 
                 @click="copyToClipboard(msg.content)" 
-                class="flex items-center space-x-2 px-2 py-1 rounded bg-stone-900/50 border border-stone-800/50 text-[10px] text-stone-500 hover:text-stone-200 hover:border-stone-700 transition-all"
+                class="flex items-center space-x-2 px-2 py-1 rounded bg-muted/50 border border-border/50 text-[10px] text-muted-foreground hover:text-foreground hover:border-border transition-all"
               >
                 <component :is="copied === msg.content ? Check : Copy" class="w-3 h-3" />
                 <span>{{ copied === msg.content ? 'Copied' : 'Copy' }}</span>
@@ -118,7 +118,7 @@
                <button 
                 v-if="msg.role === 'user'"
                 @click="handleRetry(msg.content)" 
-                class="flex items-center space-x-2 px-2 py-1 rounded bg-stone-900/50 border border-stone-800/50 text-[10px] text-stone-500 hover:text-violet-400 hover:border-violet-500/30 transition-all"
+                class="flex items-center space-x-2 px-2 py-1 rounded bg-muted/50 border border-border/50 text-[10px] text-muted-foreground hover:text-violet-500 hover:border-violet-500/30 transition-all"
               >
                 <RefreshCw class="w-3 h-3" />
                 <span>Retry</span>
@@ -143,13 +143,13 @@
       class="flex-shrink-0 relative z-20 pb-2 px-6 sm:px-8"
     >
       <div 
-        class="max-w-4xl mx-auto rounded-lg overflow-hidden transition-all duration-500 border relative group/input shadow-2xl"
+        class="max-w-4xl mx-auto rounded-lg overflow-hidden transition-all duration-500 border relative group/input shadow-xl dark:shadow-2xl shadow-stone-200/50 dark:shadow-black"
         :class="[
-          isInputFocused ? 'border-violet-500/40 bg-stone-800/70' : 'border-stone-800 bg-stone-800/50'
+          isInputFocused ? 'border-violet-500/40 bg-background' : 'border-border bg-muted/40'
         ]"
       >
         <!-- Thinking Progress Bar -->
-        <div v-if="props.isThinking" class="absolute top-0 left-0 right-0 h-[2px] bg-stone-800 overflow-hidden">
+        <div v-if="props.isThinking" class="absolute top-0 left-0 right-0 h-[2px] bg-muted overflow-hidden">
            <div class="h-full bg-violet-500 animate-[progress_1.5s_infinite_linear] shadow-[0_0_8px_theme(colors.violet.500)]" style="width: 30%"></div>
         </div>
 
@@ -158,7 +158,7 @@
             v-model="localInput"
             rows="1"
             placeholder="Type a message..."
-            class="w-full min-h-[44px] max-h-[300px] bg-transparent text-stone-200 p-3 pr-[140px] resize-none focus:outline-none font-sans text-[14px] placeholder:text-stone-600 leading-normal scrollbar-none transition-all duration-300"
+            class="w-full min-h-[44px] max-h-[300px] bg-transparent text-foreground p-3 pr-[140px] resize-none focus:outline-none font-sans text-[14px] placeholder:text-muted-foreground/50 leading-normal scrollbar-none transition-all duration-300"
             @focus="isInputFocused = true"
             @blur="isInputFocused = false"
             @keydown.enter.exact.prevent="$emit('submit')"
@@ -174,8 +174,8 @@
               class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all font-bold uppercase tracking-[0.1em] text-[10px]"
               :class="[
                 localInput.trim() && !props.isThinking 
-                  ? 'bg-stone-100 text-stone-950 hover:bg-white shadow-lg' 
-                  : 'bg-stone-900 text-stone-700 opacity-50 cursor-not-allowed'
+                  ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-lg' 
+                  : 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed'
               ]"
             >
               <Zap v-if="!props.isThinking" class="w-3.5 h-3.5" />
@@ -212,7 +212,6 @@ import {
 import MarkdownIt from 'markdown-it'
 import { useAuth } from '@/composables/useAuth'
 import { useColorMode, usePreferredDark } from '@vueuse/core'
-import { useChatDialogs } from '@/composables/useChatDialogs'
 
 const { user } = useAuth()
 const mode = useColorMode()
@@ -262,30 +261,23 @@ const displayCount = ref(20)
 const observer = ref<IntersectionObserver | null>(null)
 const copied = ref('')
 const expandedMessages = ref(new Set<number>())
-const { openSummary } = useChatDialogs()
 
 const isExpanded = (msg: any) => expandedMessages.value.has(msg.timestamp)
 
 const shouldTruncate = (content: string) => {
   const text = formatContent(content)
-  return text.length > 400 || (text.match(/\n/g) || []).length > 2
+  return text.length > 800 || (text.match(/\n/g) || []).length > 12
 }
 
 const getTruncatedContent = (content: string) => {
   const text = formatContent(content)
-  if (text.length <= 400) return text
-  return text.substring(0, 380) + '...'
+  if (text.length <= 800) return text
+  return text.substring(0, 750) + '...'
 }
 
 const handleReadMore = (msg: any) => {
-  const fullText = formatContent(msg.content)
-  if (fullText.length > 1000) {
-    // If extremely long, open in dialog
-    openSummary(fullText)
-  } else {
-    // Otherwise just expand in-place
-    expandedMessages.value.add(msg.timestamp)
-  }
+  // Always expand in-place as requested, avoiding flow-breaking dialogs
+  expandedMessages.value.add(msg.timestamp)
 }
 
 
@@ -454,7 +446,7 @@ watch(() => props.history?.length, async () => {
 }
 
 .glass-card {
-  background: rgba(10, 10, 11, 0.4);
+  background: var(--background);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -483,11 +475,11 @@ watch(() => props.history?.length, async () => {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #1c1c1e;
+  background: var(--border);
   border-radius: 20px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #2c2c2e;
+  background: var(--muted-foreground);
 }
 
 .scrollbar-none::-webkit-scrollbar {
@@ -501,7 +493,7 @@ watch(() => props.history?.length, async () => {
 /* Markdown Chat Styling */
 .markdown-chat :deep(p) { margin-bottom: 0.75rem; }
 .markdown-chat :deep(p:last-child) { margin-bottom: 0; }
-.markdown-chat :deep(strong) { color: #fff; font-weight: 700; }
+.markdown-chat :deep(strong) { color: var(--foreground); font-weight: 700; }
 .markdown-chat :deep(ul) { list-style: disc; padding-left: 1.25rem; margin-bottom: 0.75rem; }
 .markdown-chat :deep(ol) { list-style: decimal; padding-left: 1.25rem; margin-bottom: 0.75rem; }
 .markdown-chat :deep(li) { margin-bottom: 0.25rem; }
@@ -511,17 +503,17 @@ watch(() => props.history?.length, async () => {
   border-radius: 0.25rem; 
   font-family: monospace; 
   font-size: 0.85em; 
-  color: #a78bfa;
+  color: var(--violet-500);
 }
 .markdown-chat :deep(pre) { 
-  background: #000; 
+  background: var(--muted); 
   padding: 0.75rem; 
   border-radius: 0.5rem; 
   margin: 0.75rem 0; 
   overflow-x: auto; 
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
 }
 .markdown-chat :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 12px; }
-.markdown-chat :deep(th), .markdown-chat :deep(td) { border: 1px solid #2d2d2d; padding: 6px 10px; text-align: left; }
-.markdown-chat :deep(th) { background: #1a1a1a; font-weight: bold; }
+.markdown-chat :deep(th), .markdown-chat :deep(td) { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.markdown-chat :deep(th) { background: var(--muted); font-weight: bold; }
 </style>

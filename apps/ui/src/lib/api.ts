@@ -136,11 +136,12 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
   return 0
 }
 
-export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = [], activeTable?: string) {
+export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = [], activeTable?: string, options: { temperature?: number, maxTokens?: number } = {}) {
   const requestBody: any = {
     prompt,
     connectionId,
-    context
+    context,
+    ...options
   };
 
   // Only include activeTable if it has a value
@@ -159,7 +160,7 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
     }
   }
 
-  return { query: body.query, usage: body.usage }
+  return { ...body, query: body.query, usage: body.usage }
 }
 
 export async function translateQuery(query: string, targetDialect: string, connectionId: string) {
@@ -380,8 +381,23 @@ export async function uploadFile(file: File) {
   return api.upload<any>('/upload', formData)
 }
 
-export async function createCheckoutSession(priceId: string) {
-  return api.post('/create-checkout-session', { priceId })
+export async function uploadFileToConnection(file: File, connectionId: string) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('connectionId', connectionId)
+  return api.upload<any>('/upload', formData)
+}
+
+export async function createCheckoutSession(priceId: string, tier?: string) {
+  return api.post('/create-checkout-session', { priceId, tier })
+}
+
+export async function createTokenCheckoutSession(amount: number) {
+  return api.post('/create-token-checkout-session', { amount })
+}
+
+export async function createStorageCheckoutSession(amount: number) {
+  return api.post('/create-storage-checkout-session', { amount })
 }
 
 export async function createPortalSession() {
@@ -423,6 +439,15 @@ export async function getUsageStats() {
 export async function syncSubscription() {
   return api.post('/sync-subscription')
 }
+
+export async function syncPayments() {
+  return api.post('/sync-payments')
+}
+
+export async function getPayments() {
+  return api.get<{ success: boolean, payments: any[] }>('/payments')
+}
+
 
 export async function uploadDashboardFile(dashboardId: string, file: File) {
   const formData = new FormData()
