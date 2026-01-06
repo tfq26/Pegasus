@@ -51,8 +51,8 @@ console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 const port = process.env.PORT || 3000;
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
+const rawOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
   : [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -61,30 +61,40 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     "https://pegasus-ui-chi.vercel.app"
   ];
 
+// Always ensure the reported production origin is in the list as a backup
+if (!rawOrigins.includes("https://pegasus-ui-chi.vercel.app")) {
+  rawOrigins.push("https://pegasus-ui-chi.vercel.app");
+}
+
+const allowedOrigins = rawOrigins;
+
 const app = new Hono()
 
 // Global Middleware (Applied to ALL routes)
-// MUST be before routes to handle preflight and headers correctly
 app.use("*", cors({
   origin: (origin) => {
+    // If no origin (e.g. server-to-server), use the primary allowed origin
     if (!origin) return allowedOrigins[0]
 
-    // Explicit match
+    // 1. Explicit match in allowed list
     if (allowedOrigins.includes(origin)) return origin
 
-    // General match for Pegasus Vercel deployments
+    // 2. Pattern match for Pegasus Vercel deployments
     if (origin.endsWith('.vercel.app') && origin.includes('pegasus')) return origin;
 
+    // 3. Development environment matches
     const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-    if (!isProd && /^http:\/\/.+:5173$/.test(origin)) return origin;
-    if (!isProd && /^http:\/\/localhost:1420$/.test(origin)) return origin;
+    if (!isProd) {
+      if (/^http:\/\/.+:5173$/.test(origin)) return origin;
+      if (/^http:\/\/localhost:1420$/.test(origin)) return origin;
+    }
 
-    // Fallback to null (safe rejection)
+    console.warn(`[CORS] Rejected origin: ${origin}`);
     return null;
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
-  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
+  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With", "Accept"],
   exposeHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
   maxAge: 86400
 }))
@@ -110,6 +120,11 @@ if (isVercel) {
 
 // Global Error Handlers
 app.notFound((c) => {
+  const origin = c.req.header('origin')
+  if (origin && (allowedOrigins.includes(origin) || (origin.endsWith('.vercel.app') && origin.includes('pegasus')))) {
+    c.header('Access-Control-Allow-Origin', origin)
+    c.header('Access-Control-Allow-Credentials', 'true')
+  }
   return c.text('404 Not Found', 404)
 })
 
@@ -134,6 +149,78 @@ app.onError((err, c) => {
 app.route('/auth', authRoutes)
 app.route('/', dashboardRoutes)
 app.route('/connections', connectionRoutes)
+
+// Experimental Features (Define before generic /api)
+app.get("/api/experimental/status", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const status = await getExperimentalStatus(db, payload.sub, payload)
+    return c.json(status)
+  } catch (error) {
+    console.error("Error getting experimental status:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+app.post("/api/experimental/request", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const { reason, email } = await c.req.json()
+    if (!reason || reason.trim().length < 20) {
+      return c.json({ error: "Reason must be at least 20 characters" }, 400)
+    }
+    const result = await createExperimentalRequest(db, payload.sub, reason, email)
+    const userName = payload.firstName ? `${payload.firstName} ${payload.lastName || ''}`.trim() : payload.email;
+    await notifyExperimentalRequest({ userEmail: email || payload.email, userName, reason });
+    return c.json(result)
+  } catch (error) {
+    console.error("Error creating experimental request:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+app.get("/api/experimental/features", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const status = await getExperimentalStatus(db, payload.sub, payload)
+    if (!status.hasAccess) return c.json({ error: "No experimental access" }, 403)
+    const enabledFeatures = await getUserFeatureFlags(db, payload.sub)
+    const features = Object.values(EXPERIMENTAL_FEATURES).map(feature => ({
+      ...feature,
+      enabled: enabledFeatures.includes(feature.id)
+    }))
+    return c.json({ features })
+  } catch (error) {
+    console.error("Error getting experimental features:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+app.post("/api/experimental/features/:featureId/toggle", async (c) => {
+  const token = getAuthToken(c)
+  if (!token) return c.json({ error: "Unauthorized" }, 401)
+  try {
+    const payload = await verify(token, jwtSecret)
+    const status = await getExperimentalStatus(db, payload.sub, payload)
+    if (!status.hasAccess) return c.json({ error: "No experimental access" }, 403)
+    const { featureId } = c.req.param()
+    const { enabled } = await c.req.json()
+    const featureExists = Object.values(EXPERIMENTAL_FEATURES).some(f => f.id === featureId)
+    if (!featureExists) return c.json({ error: "Invalid feature ID" }, 400)
+    const result = await toggleUserFeature(db, payload.sub, featureId, enabled)
+    return c.json(result)
+  } catch (error) {
+    console.error("Error toggling feature:", error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 app.route('/api', tableRoutes)
 app.route('/', chatRoutes)
 app.route('/operations', operationRoutes)
@@ -627,110 +714,8 @@ app.get("/api/users/search", async (c) => {
   }
 })
 
-// ==================== EXPERIMENTAL FEATURES API ====================
+// (Experimental routes moved to route definition section)
 
-// Get experimental status for current user
-app.get("/api/experimental/status", async (c) => {
-  const token = getAuthToken(c)
-  if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-  try {
-    const payload = await verify(token, jwtSecret)
-    const status = await getExperimentalStatus(db, payload.sub, payload)
-    return c.json(status)
-  } catch (error) {
-    console.error("Error getting experimental status:", error)
-    return c.json({ error: error.message }, 500)
-  }
-})
-
-// Request experimental access
-app.post("/api/experimental/request", async (c) => {
-  const token = getAuthToken(c)
-  if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-  try {
-    const payload = await verify(token, jwtSecret)
-    const { reason, email } = await c.req.json()
-
-    if (!reason || reason.trim().length < 20) {
-      return c.json({ error: "Reason must be at least 20 characters" }, 400)
-    }
-
-    const result = await createExperimentalRequest(db, payload.sub, reason, email)
-
-    // Send email notification to admin
-    const userName = payload.firstName
-      ? `${payload.firstName} ${payload.lastName || ''}`.trim()
-      : payload.email;
-
-    await notifyExperimentalRequest({
-      userEmail: email || payload.email,
-      userName,
-      reason
-    });
-
-    return c.json(result)
-  } catch (error) {
-    console.error("Error creating experimental request:", error)
-    return c.json({ error: error.message }, 500)
-  }
-})
-
-// Get available experimental features
-app.get("/api/experimental/features", async (c) => {
-  const token = getAuthToken(c)
-  if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-  try {
-    const payload = await verify(token, jwtSecret)
-    const status = await getExperimentalStatus(db, payload.sub, payload)
-
-    if (!status.hasAccess) {
-      return c.json({ error: "No experimental access" }, 403)
-    }
-
-    const enabledFeatures = await getUserFeatureFlags(db, payload.sub)
-    const features = Object.values(EXPERIMENTAL_FEATURES).map(feature => ({
-      ...feature,
-      enabled: enabledFeatures.includes(feature.id)
-    }))
-
-    return c.json({ features })
-  } catch (error) {
-    console.error("Error getting experimental features:", error)
-    return c.json({ error: error.message }, 500)
-  }
-})
-
-// Toggle a feature flag
-app.post("/api/experimental/features/:featureId/toggle", async (c) => {
-  const token = getAuthToken(c)
-  if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-  try {
-    const payload = await verify(token, jwtSecret)
-    const status = await getExperimentalStatus(db, payload.sub, payload)
-
-    if (!status.hasAccess) {
-      return c.json({ error: "No experimental access" }, 403)
-    }
-
-    const { featureId } = c.req.param()
-    const { enabled } = await c.req.json()
-
-    const featureExists = Object.values(EXPERIMENTAL_FEATURES).some(f => f.id === featureId)
-    if (!featureExists) {
-      return c.json({ error: "Invalid feature ID" }, 400)
-    }
-
-    const result = await toggleUserFeature(db, payload.sub, featureId, enabled)
-    return c.json(result)
-  } catch (error) {
-    console.error("Error toggling feature:", error)
-    return c.json({ error: error.message }, 500)
-  }
-})
 
 // Helper: Check if user is admin (matches DEVELOPER_EMAIL)
 const isAdminUser = (payload) => {
