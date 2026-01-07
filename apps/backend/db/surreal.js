@@ -51,8 +51,9 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
 // Initialize Schema & Permissions
 const initSchema = async () => {
     try {
-        // Users Table
+        // Combined Schema Definition - running in a single batch to reduce round-trips
         await db.query(`
+            -- Users Table
             DEFINE TABLE user SCHEMALESS
                 PERMISSIONS 
                     FOR select, update WHERE id = $auth.id
@@ -63,11 +64,8 @@ const initSchema = async () => {
             DEFINE FIELD purchased_storage ON TABLE user TYPE number DEFAULT 0;
             DEFINE FIELD stripe_customer_id ON TABLE user TYPE string DEFAULT "";
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
-        `);
 
-
-        // Dashboards Table
-        await db.query(`
+            -- Dashboards Table
             DEFINE TABLE dashboard SCHEMALESS
                 PERMISSIONS
                     FOR select WHERE owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.id AND user = $auth.id)
@@ -78,12 +76,9 @@ const initSchema = async () => {
             DEFINE FIELD cover_image ON TABLE dashboard TYPE string;
             DEFINE FIELD created_at ON TABLE dashboard TYPE datetime DEFAULT time::now();
             DEFINE FIELD updated_at ON TABLE dashboard TYPE datetime DEFAULT time::now();
-            
             DEFINE INDEX idx_owner ON TABLE dashboard COLUMNS owner;
-        `);
 
-        // Dashboard Elements (Granular)
-        await db.query(`
+            -- Dashboard Elements
             DEFINE TABLE dashboard_element SCHEMALESS
                 PERMISSIONS
                     FOR select WHERE dashboard.owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.dashboard AND user = $auth.id)
@@ -91,42 +86,33 @@ const initSchema = async () => {
             DEFINE FIELD dashboard ON TABLE dashboard_element TYPE record<dashboard>;
             DEFINE FIELD type ON TABLE dashboard_element TYPE string;
             DEFINE FIELD created_by ON TABLE dashboard_element TYPE record<user>;
-            
             DEFINE INDEX idx_dashboard ON TABLE dashboard_element COLUMNS dashboard;
-        `);
 
-        // Dashboard Permissions (Sharing)
-        await db.query(`
+            -- Dashboard Permissions
             DEFINE TABLE dashboard_permission SCHEMALESS
                 PERMISSIONS
                     FOR select WHERE user = $auth.id OR dashboard.owner = $auth.id
                     FOR create, update, delete WHERE dashboard.owner = $auth.id;
             DEFINE FIELD user ON TABLE dashboard_permission TYPE record<user>;
             DEFINE FIELD dashboard ON TABLE dashboard_permission TYPE record<dashboard>;
-            DEFINE FIELD role ON TABLE dashboard_permission TYPE string; -- 'editor', 'viewer'
+            DEFINE FIELD role ON TABLE dashboard_permission TYPE string; 
             DEFINE FIELD can_share ON TABLE dashboard_permission TYPE bool DEFAULT false;
             DEFINE FIELD can_download ON TABLE dashboard_permission TYPE bool DEFAULT false;
-            
             DEFINE INDEX unique_access ON TABLE dashboard_permission COLUMNS user, dashboard UNIQUE;
-        `);
 
-        // Spreadsheet Permissions
-        await db.query(`
+            -- Spreadsheet Permissions
             DEFINE TABLE spreadsheet_permission SCHEMAFULL
                 PERMISSIONS
                     FOR select WHERE user_email = $auth.email OR granted_by = $auth.id
                     FOR create, update, delete WHERE granted_by = $auth.id;
             DEFINE FIELD spreadsheet ON TABLE spreadsheet_permission TYPE string;
             DEFINE FIELD user_email ON TABLE spreadsheet_permission TYPE string;
-            DEFINE FIELD access_level ON TABLE spreadsheet_permission TYPE string; -- 'view' | 'edit'
+            DEFINE FIELD access_level ON TABLE spreadsheet_permission TYPE string;
             DEFINE FIELD granted_by ON TABLE spreadsheet_permission TYPE record<user>;
             DEFINE FIELD granted_at ON TABLE spreadsheet_permission TYPE datetime DEFAULT time::now();
-            
             DEFINE INDEX unique_ss_access ON TABLE spreadsheet_permission COLUMNS spreadsheet, user_email UNIQUE;
-        `);
 
-        // Sanitization Metadata
-        await db.query(`
+            -- Sanitization Metadata
             DEFINE TABLE sanitization_metadata SCHEMAFULL
                 PERMISSIONS
                     FOR select WHERE (SELECT id FROM uploads WHERE id = $parent.upload_id AND user_id = $auth.id)
@@ -135,12 +121,9 @@ const initSchema = async () => {
             DEFINE FIELD versions ON sanitization_metadata TYPE array; 
             DEFINE FIELD current_version ON sanitization_metadata TYPE number; 
             DEFINE FIELD upload_id ON sanitization_metadata TYPE string;
-            
             DEFINE INDEX idx_original_table ON sanitization_metadata COLUMNS original_table UNIQUE;
-        `);
 
-        // Connection Workspaces
-        await db.query(`
+            -- Connection Workspaces
             DEFINE TABLE connection_workspace SCHEMALESS
                 PERMISSIONS
                     FOR select, update, delete WHERE user = $auth.id
@@ -149,12 +132,9 @@ const initSchema = async () => {
             DEFINE FIELD user ON TABLE connection_workspace TYPE record<user>;
             DEFINE FIELD workspace_data ON TABLE connection_workspace TYPE object;
             DEFINE FIELD expires_at ON TABLE connection_workspace TYPE datetime;
-            
             DEFINE INDEX idx_workspace_conn ON TABLE connection_workspace COLUMNS connection_id, user UNIQUE;
-        `);
 
-        // Knowledge Base
-        await db.query(`
+            -- Knowledge Base (Vector Store)
             DEFINE TABLE knowledge_chunk SCHEMAFULL
                 PERMISSIONS
                     FOR select, update, delete WHERE user = $auth.id
@@ -164,14 +144,11 @@ const initSchema = async () => {
             DEFINE FIELD metadata ON TABLE knowledge_chunk TYPE object;
             DEFINE FIELD user ON TABLE knowledge_chunk TYPE record<user>;
             DEFINE FIELD created_at ON TABLE knowledge_chunk TYPE datetime DEFAULT time::now();
-
             DEFINE INDEX idx_vector ON TABLE knowledge_chunk FIELDS embedding MTREE DIMENSION 1536;
             DEFINE ANALYZER rag_analyzer TOKENIZERS blank,class,camel,punct FILTERS lowercase,ascii;
             DEFINE INDEX idx_content ON TABLE knowledge_chunk FIELDS content SEARCH ANALYZER rag_analyzer BM25;
-        `);
 
-        // User Secrets
-        await db.query(`
+            -- User Secrets
             DEFINE TABLE user_secret SCHEMALESS
                 PERMISSIONS
                     FOR select, update, delete WHERE user = $auth.id
@@ -180,24 +157,19 @@ const initSchema = async () => {
             DEFINE FIELD name ON TABLE user_secret TYPE string;
             DEFINE FIELD value ON TABLE user_secret TYPE string;
             DEFINE FIELD created_at ON TABLE user_secret TYPE datetime DEFAULT time::now();
-            
             DEFINE INDEX idx_user_secret ON TABLE user_secret COLUMNS user, name UNIQUE;
-        `);
 
-        // Transaction Tracking (Master Audit Log)
-        await db.query(`
+            -- Transaction Tracking
             DEFINE TABLE transaction_master SCHEMALESS
                 PERMISSIONS 
-                    FOR select, create, update, delete NONE; -- System/Admin only
+                    FOR select, create, update, delete NONE;
             DEFINE INDEX idx_stripe_session ON TABLE transaction_master COLUMNS stripe_session_id UNIQUE;
-        `);
 
-        // User Payment History (Private)
-        await db.query(`
+            -- User Payment History
             DEFINE TABLE user_payment SCHEMAFULL
                 PERMISSIONS 
                     FOR select WHERE user = $auth.id
-                    FOR create, update, delete NONE; -- System only via webhook
+                    FOR create, update, delete NONE;
             DEFINE FIELD user ON TABLE user_payment TYPE record<user>;
             DEFINE FIELD amount ON TABLE user_payment TYPE number;
             DEFINE FIELD currency ON TABLE user_payment TYPE string;
@@ -209,7 +181,7 @@ const initSchema = async () => {
             DEFINE FIELD created_at ON TABLE user_payment TYPE datetime DEFAULT time::now();
         `);
 
-        console.log('[SurrealDB] Schema initialized');
+        console.log('[SurrealDB] Schema initialized (Batch Mode)');
     } catch (e) {
         // Ignore "table already exists" errors
         if (e.message && e.message.includes('already exists')) {
