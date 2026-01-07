@@ -599,10 +599,16 @@ app.post("/create-token-checkout-session", async (c) => {
       finalTotal = baseTotal * 0.90; // 10% off
     }
 
-    // 1. Fetch user data from DB
-    const [user] = await db.query(`SELECT stripe_customer_id, purchased_tokens, subscription_tier FROM type::thing('user', $rawId)`, { rawId: payload.sub });
+    // 1. Fetch user data from DB (coerce types to handle NONE values)
+    const [user] = await db.query(`
+      SELECT 
+        type::string(stripe_customer_id OR "") as stripe_customer_id,
+        type::number(purchased_tokens OR 0) as purchased_tokens,
+        type::string(subscription_tier OR 'free') as subscription_tier
+      FROM type::thing('user', $rawId)
+    `, { rawId: payload.sub });
     const userRecord = user[0];
-    const customerId = userRecord?.stripe_customer_id;
+    const customerId = userRecord?.stripe_customer_id || null;
 
     // Surcharge Logic (Sustainability Fee if total capacity > 1M tokens)
     const purchasedTokens = Number(userRecord?.purchased_tokens || 0);
@@ -670,9 +676,12 @@ app.post('/create-storage-checkout-session', async (c) => {
     // Storage Price ID for recurring billing ($5/GB/mo)
     const STORAGE_PRICE_ID = process.env.STRIPE_STORAGE_PRICE_ID || 'price_storage_recurring_5usd';
 
-    // Fetch customer ID from DB
-    const [user] = await db.query(`SELECT stripe_customer_id FROM type::thing('user', $rawId)`, { rawId: payload.sub });
-    const customerId = user[0]?.stripe_customer_id;
+    // Fetch customer ID from DB (coerce type to handle NONE values)
+    const [user] = await db.query(`
+      SELECT type::string(stripe_customer_id OR "") as stripe_customer_id 
+      FROM type::thing('user', $rawId)
+    `, { rawId: payload.sub });
+    const customerId = user[0]?.stripe_customer_id || null;
 
     console.log(`[Stripe] Creating recurring storage session for ${payload.email}: ${amount}GB`);
 
