@@ -61,7 +61,7 @@ const initSchema = async () => {
             DEFINE FIELD subscription_tier ON TABLE user TYPE string DEFAULT 'free';
             DEFINE FIELD purchased_tokens ON TABLE user TYPE number DEFAULT 0;
             DEFINE FIELD purchased_storage ON TABLE user TYPE number DEFAULT 0;
-            DEFINE FIELD stripe_customer_id ON TABLE user TYPE string;
+            DEFINE FIELD stripe_customer_id ON TABLE user TYPE string DEFAULT "";
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
         `);
 
@@ -70,10 +70,12 @@ const initSchema = async () => {
             UPDATE user SET 
                 purchased_tokens = <int>(purchased_tokens OR 0),
                 purchased_storage = <int>(purchased_storage OR 0),
-                subscription_tier = subscription_tier OR 'free'
+                subscription_tier = subscription_tier OR 'free',
+                stripe_customer_id = stripe_customer_id OR ""
             WHERE purchased_tokens = NONE 
                OR purchased_storage = NONE 
-               OR subscription_tier = NONE;
+               OR subscription_tier = NONE
+               OR stripe_customer_id = NONE;
         `);
 
         // Dashboards Table
