@@ -65,6 +65,17 @@ const initSchema = async () => {
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
         `);
 
+        // Migration: Backfill existing users who might have NONE/NULL for these fields
+        await db.query(`
+            UPDATE user SET 
+                purchased_tokens = <int>(purchased_tokens OR 0),
+                purchased_storage = <int>(purchased_storage OR 0),
+                subscription_tier = subscription_tier OR 'free'
+            WHERE purchased_tokens = NONE 
+               OR purchased_storage = NONE 
+               OR subscription_tier = NONE;
+        `);
+
         // Dashboards Table
         await db.query(`
             DEFINE TABLE dashboard SCHEMALESS
