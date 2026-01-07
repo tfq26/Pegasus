@@ -57,6 +57,11 @@ const initSchema = async () => {
                 PERMISSIONS 
                     FOR select, update WHERE id = $auth.id
                     FOR create, delete NONE;
+            DEFINE FIELD email ON TABLE user TYPE string;
+            DEFINE FIELD subscription_tier ON TABLE user TYPE string DEFAULT 'free';
+            DEFINE FIELD purchased_tokens ON TABLE user TYPE number DEFAULT 0;
+            DEFINE FIELD purchased_storage ON TABLE user TYPE number DEFAULT 0;
+            DEFINE FIELD stripe_customer_id ON TABLE user TYPE string;
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
         `);
 
@@ -195,7 +200,8 @@ const initSchema = async () => {
             DEFINE FIELD user ON TABLE user_payment TYPE record<user>;
             DEFINE FIELD amount ON TABLE user_payment TYPE number;
             DEFINE FIELD currency ON TABLE user_payment TYPE string;
-            DEFINE FIELD tokens ON TABLE user_payment TYPE number;
+            DEFINE FIELD tokens ON TABLE user_payment TYPE number DEFAULT 0;
+            DEFINE FIELD storage_bytes ON TABLE user_payment TYPE number DEFAULT 0;
             DEFINE FIELD status ON TABLE user_payment TYPE string;
             DEFINE FIELD description ON TABLE user_payment TYPE string;
             DEFINE FIELD stripe_session_id ON TABLE user_payment TYPE string;

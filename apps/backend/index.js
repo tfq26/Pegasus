@@ -846,6 +846,7 @@ app.post("/webhook", async (c) => {
                 amount: $amount,
                 currency: $cur,
                 tokens: $tokens,
+                storage_bytes: 0,
                 status: 'completed',
                 description: $desc,
                 stripe_session_id: $sid,
@@ -881,6 +882,7 @@ app.post("/webhook", async (c) => {
                 amount: $amount,
                 currency: $cur,
                 tokens: 0,
+                storage_bytes: $storage_bytes,
                 status: 'completed',
                 description: $desc,
                 stripe_session_id: $sid,
@@ -890,6 +892,7 @@ app.post("/webhook", async (c) => {
             rawId,
             amount: session.amount_total || 0,
             cur: session.currency || 'usd',
+            storage_bytes: storageBytes,
             desc: `${storageGb}GB Vault Storage Expansion`,
             sid: stripeSessionId
           });
@@ -922,6 +925,7 @@ app.post("/webhook", async (c) => {
                   amount: $amount,
                   currency: $cur,
                   tokens: 0,
+                  storage_bytes: 0,
                   status: 'completed',
                   description: $desc,
                   stripe_session_id: $sid,
@@ -957,13 +961,8 @@ app.post("/webhook", async (c) => {
     case 'invoice.paid': {
       const invoice = event.data.object;
       const customerId = invoice.customer;
-      console.log(`[Webhook] Monthly Invoice Paid for ${customerId}. Resetting purchased tokens.`);
-      await db.query(`
-          UPDATE user SET 
-              purchased_tokens = 0,
-              updated_at = time::now()
-          WHERE stripe_customer_id = $custId;
-      `, { custId: customerId });
+      console.log(`[Webhook] Monthly Invoice Paid for ${customerId}`);
+      // Removed automatic purchased_tokens reset - purchased boosts should remain
       break;
     }
     case 'customer.subscription.deleted': {
@@ -1081,6 +1080,8 @@ app.post("/sync-payments", async (c) => {
         const metadata = session.metadata || {}
         const tokenAmount = parseInt(metadata.token_amount || '0')
         const isToken = metadata.type === 'token_purchase'
+        const storageGb = parseInt(metadata.storage_gb || '0')
+        const isStorage = metadata.type === 'storage_purchase'
 
         await db.query(`
           INSERT INTO user_payment {
@@ -1088,6 +1089,7 @@ app.post("/sync-payments", async (c) => {
             amount: $amount,
             currency: $cur,
             tokens: $tokens,
+            storage_bytes: $storage_bytes,
             status: 'completed',
             description: $desc,
             stripe_session_id: $sid,
@@ -1098,22 +1100,26 @@ app.post("/sync-payments", async (c) => {
           amount: session.amount_total || 0,
           cur: session.currency || 'usd',
           tokens: tokenAmount,
-          desc: isToken ? `${(tokenAmount / 1000).toFixed(0)}k AI Token Pack` : 'Pro Subscription Upgrade',
+          storage_bytes: storageGb * 1024 * 1024 * 1024,
+          desc: isToken ? `${(tokenAmount / 1000).toFixed(0)}k AI Token Pack` : (isStorage ? `${storageGb}GB Vault Storage Expansion` : 'Pro Subscription Upgrade'),
           sid: sid,
           ts: session.created
         })
 
-        // IMPORTANT: Also update the actual token balance on the user record during backfill
+        // Also update the actual token/storage balance on the user record during backfill
         if (isToken && tokenAmount > 0) {
-          console.log(`[Sync Payments] Applying ${tokenAmount} tokens to user balance for session ${sid}`)
           await db.query(`
-            UPDATE type::thing('user', $rawId) SET 
-                purchased_tokens = (purchased_tokens OR 0) + <int>$amount,
-                updated_at = time::now();
-          `, {
-            rawId: rawId,
-            amount: tokenAmount
-          });
+              UPDATE type::thing('user', $rawId) SET 
+                  purchased_tokens = <int>(purchased_tokens OR 0) + <int>$amount,
+                  updated_at = time::now();
+          `, { rawId, amount: tokenAmount });
+        } else if (isStorage && storageGb > 0) {
+          const storageBytes = storageGb * 1024 * 1024 * 1024;
+          await db.query(`
+              UPDATE type::thing('user', $rawId) SET 
+                  purchased_storage = <int>(purchased_storage OR 0) + <int>$amount,
+                  updated_at = time::now();
+          `, { rawId, amount: storageBytes });
         }
 
         addedCount++
@@ -1123,7 +1129,7 @@ app.post("/sync-payments", async (c) => {
     console.log(`[Sync Payments] Successfully backfilled ${addedCount} records`)
     return c.json({ success: true, count: addedCount })
   } catch (e) {
-    console.error(`[Sync Payments] Error:`, e)
+    console.error(`[Sync Payments]Error: `, e)
     return c.json({ error: e.message }, 500)
   }
 })
@@ -1144,30 +1150,30 @@ app.get("/api/users/search", async (c) => {
 
     // Debug: Check total user count
     const [totalUsers] = await db.query(`SELECT count() as total FROM user GROUP ALL`);
-    console.log(`[User Search] Total users in database: ${totalUsers?.[0]?.total || 0}`);
+    console.log(`[User Search] Total users in database: ${totalUsers?.[0]?.total || 0} `);
 
     // SurrealDB Search
     // Note: Use CONTAINS or string functions.
     // 'users' table is now 'user' table.
-    // user ID is `user:uuid` but payload.sub might be just uuid? We assumed payload.sub matches.
+    // user ID is `user: uuid` but payload.sub might be just uuid? We assumed payload.sub matches.
 
-    // We need to fetch ID but strip `user:` prefix for frontend if frontend expects pure UUID.
+    // We need to fetch ID but strip `user: ` prefix for frontend if frontend expects pure UUID.
     // Or we update frontend to handle prefixes. Ideally we strip it for compatibility.
 
     const [users] = await db.query(`
-        SELECT 
-            string::split(<string>id, ':')[1] as id, 
-            email, 
-            first_name, 
-            last_name, 
-            profile_picture_url 
-        FROM user 
-        WHERE (string::lowercase(email) CONTAINS string::lowercase($q)
-           OR string::lowercase(first_name) CONTAINS string::lowercase($q)
-           OR string::lowercase(last_name) CONTAINS string::lowercase($q))
-        AND id != $user
-        LIMIT 5;
-    `, {
+          SELECT
+          string:: split(<string>id, ':')[1] as id,
+            email,
+            first_name,
+            last_name,
+            profile_picture_url
+            FROM user
+            WHERE (string::lowercase(email) CONTAINS string::lowercase($q)
+            OR string::lowercase(first_name) CONTAINS string::lowercase($q)
+            OR string::lowercase(last_name) CONTAINS string::lowercase($q))
+            AND id != $user
+            LIMIT 5;
+            `, {
       q: query,
       user: `user:${payload.sub}`
     });
@@ -1224,17 +1230,17 @@ app.get("/api/admin/experimental/requests", async (c) => {
 
     // Fetch all pending requests with user info
     const [requests] = await db.query(`
-      SELECT 
-        id,
-        user,
-        reason,
-        email,
-        status,
-        requested_at
-      FROM experimental_request 
-      WHERE status = 'pending'
-      ORDER BY requested_at DESC
-    `);
+            SELECT
+            id,
+            user,
+            reason,
+            email,
+            status,
+            requested_at
+            FROM experimental_request
+            WHERE status = 'pending'
+            ORDER BY requested_at DESC
+            `);
 
     return c.json({ requests: requests || [] })
   } catch (error) {
@@ -1289,12 +1295,12 @@ app.post("/api/admin/experimental/reject", async (c) => {
 
     // Update request status to rejected
     await db.query(`
-      UPDATE $requestId SET 
-        status = 'rejected',
-        rejection_reason = $reason,
-        reviewed_at = time::now(),
-        reviewed_by = $reviewedBy
-    `, {
+            UPDATE $requestId SET
+            status = 'rejected',
+            rejection_reason = $reason,
+            reviewed_at = time::now(),
+            reviewed_by = $reviewedBy
+            `, {
       requestId,
       reason: reason || 'No reason provided',
       reviewedBy: adminPayload.sub
@@ -1310,7 +1316,7 @@ app.post("/api/admin/experimental/reject", async (c) => {
 // Test DB Route
 app.get("/test-db", async (c) => {
   try {
-    const rs = await db.query("RETURN { val: 1 }")
+    const rs = await db.query("RETURN {val: 1 }")
     return c.json({ success: true, rs })
   } catch (e) {
     return c.json({ success: false, error: e.message, stack: e.stack, url: process.env.TURSO_DB_URL }, 500)
@@ -1400,17 +1406,17 @@ app.get("/fix-user", async (c) => {
 
     // We can run these in parallel or batch
     await db.query(`
-        DELETE dashboard WHERE owner = $user;
-        DELETE connection WHERE user = $user;
-        -- Settings are on user record, so they go with user
-        DELETE dashboard_element WHERE created_by = $user;
-        DELETE query_history WHERE user = $user; 
-        DELETE chat WHERE user = $user;
-        DELETE dashboard_permission WHERE user = $user;
-        
-        -- Finally delete user
-        DELETE ${userId};
-    `, { user: userId });
+            DELETE dashboard WHERE owner = $user;
+            DELETE connection WHERE user = $user;
+            -- Settings are on user record, so they go with user
+            DELETE dashboard_element WHERE created_by = $user;
+            DELETE query_history WHERE user = $user;
+            DELETE chat WHERE user = $user;
+            DELETE dashboard_permission WHERE user = $user;
+
+            -- Finally delete user
+            DELETE ${userId};
+            `, { user: userId });
 
     return c.json({ success: true, message: `Deleted user ${email} and all related data` })
   } catch (e) {
@@ -1477,11 +1483,11 @@ app.post("/settings", async (c) => {
 
     // Merge settings into user record
     await db.query(`
-        UPDATE user:${userId} MERGE {
-            settings: $settings,
+            UPDATE user:${userId} MERGE {
+              settings: $settings,
             updated_at: time::now()
         };
-    `, { settings });
+            `, { settings });
 
     return c.json({ ok: true })
   } catch (error) {
@@ -1623,7 +1629,7 @@ app.post("/api/query-by-id", async (c) => {
     // TODO: Add support for shared dashboards/connections here
     if (ownerId !== requesterId) {
       console.warn(`[query-by-id] Permission denied. Owner: ${ownerId}, Requester: ${requesterId}`);
-      // return c.json({ error: 'Permission denied for this connection' }, 403)
+      // return c.json({error: 'Permission denied for this connection' }, 403)
       // For now, let's ALLOW it if the user has access to a dashboard that uses this connection?
       // Actually, for safety, let's just log it and see if that's the issue.
     }
@@ -1811,11 +1817,11 @@ app.get("/queries", async (c) => {
     const userId = payload.sub
 
     const [queries] = await db.query(`
-        SELECT * FROM query_history 
-        WHERE user = $user 
-        ORDER BY created_at DESC 
-        LIMIT 50;
-    `, { user: `user:${userId}` });
+            SELECT * FROM query_history
+            WHERE user = $user
+            ORDER BY created_at DESC
+            LIMIT 50;
+            `, { user: `user:${userId}` });
 
     // Map to frontend expected format
     const mapped = queries.map(q => ({
@@ -1853,8 +1859,8 @@ app.post("/queries", async (c) => {
 
     // Create record
     const [created] = await db.query(`
-        CREATE query_history CONTENT {
-            user: $user,
+            CREATE query_history CONTENT {
+              user: $user,
             query: $query,
             source: $source,
             model: $model,
@@ -1863,7 +1869,7 @@ app.post("/queries", async (c) => {
             tokens_used: $tokens_used,
             created_at: time::now()
         };
-    `, {
+            `, {
       user: `user:${userId}`,
       query,
       source: source || 'user',
@@ -2001,7 +2007,7 @@ app.get("/usage", async (c) => {
     const [tokenResult] = await db.query(
       `SELECT math::sum(tokens_used) as total_tokens FROM query_history 
        WHERE user = $user AND created_at >= $start
-       GROUP ALL`,
+            GROUP ALL`,
       {
         user: `user:${userId}`,
         start: startOfMonth
@@ -2021,7 +2027,7 @@ app.get("/usage", async (c) => {
       try {
         const config = JSON.parse(row.config)
         // Check for sqlite path in config
-        // Config structure is usually { sqlite: { path: '...' } } based on other endpoints
+        // Config structure is usually {sqlite: {path: '...' } } based on other endpoints
         const sqliteConfig = config.sqlite
 
         if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {

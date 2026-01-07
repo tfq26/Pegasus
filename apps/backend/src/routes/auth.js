@@ -182,13 +182,19 @@ auth.get("/me", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+
+        // Fetch full user record for live stats (tier, tokens, etc)
+        const [userData] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM user:${userId}`);
+        const userRecord = userData[0] || {};
 
         // Get user's feature flags
-        const featureFlags = await getUserFeatureFlags(db, payload.sub)
+        const featureFlags = await getUserFeatureFlags(db, userId)
 
         const response = {
             user: {
                 ...payload,
+                ...userRecord,
                 featureFlags
             },
             token
