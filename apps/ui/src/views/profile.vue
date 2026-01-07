@@ -512,8 +512,8 @@ const handleBuyTokens = async () => {
         isBuyingTokens.value = true
         const result = await createTokenCheckoutSession(tokenPurchaseAmount.value)
         if (result && (result as any).url) window.location.href = (result as any).url
-    } catch (e) {
-        toast.error('Failed to initiate purchase')
+    } catch (e: any) {
+        toast.error(e.message || 'Failed to initiate purchase')
     } finally {
         isBuyingTokens.value = false
     }
@@ -524,8 +524,8 @@ const handleBuyStorage = async () => {
         isBuyingStorage.value = true
         const result = await createStorageCheckoutSession(storagePurchaseAmount.value)
         if (result && (result as any).url) window.location.href = (result as any).url
-    } catch (e) {
-        toast.error('Failed to initiate purchase')
+    } catch (e: any) {
+        toast.error(e.message || 'Failed to initiate purchase')
     } finally {
         isBuyingStorage.value = false
     }
