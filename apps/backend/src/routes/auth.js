@@ -37,6 +37,10 @@ const upsertUser = async (payload) => {
                     first_name = $firstName,
                     last_name = $lastName,
                     profile_picture_url = $pic,
+                    subscription_tier = subscription_tier OR 'free',
+                    purchased_tokens = type::number(purchased_tokens OR 0),
+                    purchased_storage = type::number(purchased_storage OR 0),
+                    stripe_customer_id = type::string(stripe_customer_id OR ""),
                     updated_at = time::now();
             `, {
                 email: payload.email,
@@ -53,6 +57,10 @@ const upsertUser = async (payload) => {
                     first_name: $firstName,
                     last_name: $lastName,
                     profile_picture_url: $pic,
+                    subscription_tier: 'free',
+                    purchased_tokens: 0,
+                    purchased_storage: 0,
+                    stripe_customer_id: "",
                     created_at: time::now(),
                     updated_at: time::now()
                 };
