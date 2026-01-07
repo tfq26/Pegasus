@@ -65,18 +65,6 @@ const initSchema = async () => {
             DEFINE INDEX email ON TABLE user COLUMNS email UNIQUE;
         `);
 
-        // Migration: Backfill existing users who might have NONE/NULL for these fields
-        await db.query(`
-            UPDATE user SET 
-                purchased_tokens = <int>(purchased_tokens OR 0),
-                purchased_storage = <int>(purchased_storage OR 0),
-                subscription_tier = subscription_tier OR 'free',
-                stripe_customer_id = stripe_customer_id OR ""
-            WHERE purchased_tokens = NONE 
-               OR purchased_storage = NONE 
-               OR subscription_tier = NONE
-               OR stripe_customer_id = NONE;
-        `);
 
         // Dashboards Table
         await db.query(`
