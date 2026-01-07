@@ -1313,6 +1313,38 @@ app.post("/api/admin/experimental/reject", async (c) => {
   }
 })
 
+// Emergency Migration Endpoint - Fix missing user fields
+app.get("/api/emergency-migrate-users", async (c) => {
+  try {
+    console.log('[Emergency Migration] Starting user field migration...');
+
+    // Get all users and update their fields unconditionally
+    const result = await db.query(`
+      LET $users = (SELECT * FROM user);
+      
+      FOR $user IN $users {
+        UPDATE $user.id SET 
+          purchased_tokens = type::number($user.purchased_tokens ?? 0),
+          purchased_storage = type::number($user.purchased_storage ?? 0),
+          subscription_tier = type::string($user.subscription_tier ?? 'free'),
+          stripe_customer_id = type::string($user.stripe_customer_id ?? "")
+      };
+      
+      RETURN { count: count($users) };
+    `);
+
+    console.log('[Emergency Migration] Migration completed:', result);
+    return c.json({
+      success: true,
+      message: 'User fields migrated successfully',
+      result
+    });
+  } catch (e) {
+    console.error('[Emergency Migration] Error:', e);
+    return c.json({ success: false, error: e.message, stack: e.stack }, 500);
+  }
+})
+
 // Test DB Route
 app.get("/test-db", async (c) => {
   try {
