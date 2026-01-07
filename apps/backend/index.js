@@ -599,16 +599,17 @@ app.post("/create-token-checkout-session", async (c) => {
       finalTotal = baseTotal * 0.90; // 10% off
     }
 
-    // 1. Fetch user data from DB (coerce types to handle NONE values)
-    const [user] = await db.query(`
-      SELECT 
-        type::string(stripe_customer_id OR "") as stripe_customer_id,
-        type::number(purchased_tokens OR 0) as purchased_tokens,
-        type::string(subscription_tier OR 'free') as subscription_tier
-      FROM type::thing('user', $rawId)
-    `, { rawId: payload.sub });
+    // 1. Fetch user data from DB (Simpler query, handle logic in JS)
+    console.log(`[Stripe] Looking up user ${payload.sub} for token purchase...`);
+    const [user] = await db.query(`SELECT * FROM type::thing('user', $rawId)`, { rawId: payload.sub });
     const userRecord = user[0];
-    const customerId = userRecord?.stripe_customer_id || null;
+
+    // Robust Customer ID handling
+    let customerId = userRecord?.stripe_customer_id;
+    if (!customerId || typeof customerId !== 'string' || !customerId.startsWith('cus_')) {
+      console.log(`[Stripe] Invalid or missing customer ID for ${payload.email}: ${customerId}. Will create new guest session.`);
+      customerId = undefined; // Force undefined so Stripe treats it as guest/new
+    }
 
     // Surcharge Logic (Sustainability Fee if total capacity > 1M tokens)
     const purchasedTokens = Number(userRecord?.purchased_tokens || 0);
@@ -676,12 +677,14 @@ app.post('/create-storage-checkout-session', async (c) => {
     // Storage Price ID for recurring billing ($5/GB/mo)
     const STORAGE_PRICE_ID = process.env.STRIPE_STORAGE_PRICE_ID || 'price_storage_recurring_5usd';
 
-    // Fetch customer ID from DB (coerce type to handle NONE values)
-    const [user] = await db.query(`
-      SELECT type::string(stripe_customer_id OR "") as stripe_customer_id 
-      FROM type::thing('user', $rawId)
-    `, { rawId: payload.sub });
-    const customerId = user[0]?.stripe_customer_id || null;
+    // Fetch customer ID from DB (Simpler query, handle logic in JS)
+    const [user] = await db.query(`SELECT * FROM type::thing('user', $rawId)`, { rawId: payload.sub });
+    let customerId = user[0]?.stripe_customer_id;
+
+    if (!customerId || typeof customerId !== 'string' || !customerId.startsWith('cus_')) {
+      console.log(`[Stripe] Invalid or missing customer ID for ${payload.email} (Storage): ${customerId}. Will create new guest session.`);
+      customerId = undefined;
+    }
 
     console.log(`[Stripe] Creating recurring storage session for ${payload.email}: ${amount}GB`);
 
