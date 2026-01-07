@@ -662,6 +662,14 @@ app.post("/create-token-checkout-session", async (c) => {
   }
 })
 
+app.get('/api/config/plans', (c) => {
+  return c.json({
+    pro: process.env.STRIPE_PRICE_PRO_ID || 'price_pro_standard',
+    pro_plus: process.env.STRIPE_PRICE_PRO_PLUS_ID || 'price_pro_plus_standard',
+    storage: process.env.STRIPE_STORAGE_PRICE_ID || 'price_storage_recurring_5usd'
+  })
+})
+
 app.post('/create-storage-checkout-session', async (c) => {
   const token = getAuthToken(c)
   if (!token) return c.json({ error: "Unauthorized" }, 401)

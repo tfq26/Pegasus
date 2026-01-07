@@ -432,6 +432,10 @@ export async function getSubscriptionStatus() {
   return api.get('/subscription-status')
 }
 
+export async function fetchPricingConfig() {
+  return api.get<{ pro: string, pro_plus: string, storage: string }>('/api/config/plans')
+}
+
 export async function getUsageStats() {
   return api.get('/usage')
 }
