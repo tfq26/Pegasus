@@ -12,11 +12,18 @@ const auth = new Hono()
 const workos = new WorkOS(process.env.WORKOS_API_KEY || "sk_test_placeholder")
 const clientId = process.env.WORKOS_CLIENT_ID
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-const redirectUri = process.env.WORKOS_REDIRECT_URI || "http://localhost:3000/auth/callback"
+const redirectUri = process.env.WORKOS_REDIRECT_URI ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/auth/callback` : "http://localhost:3000/auth/callback")
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : ["http://localhost:5173", "http://127.0.0.1:5173"]
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "https://pegasus-ui-chi.vercel.app"
+    ]
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
@@ -161,12 +168,22 @@ auth.get("/callback", async (c) => {
         const returnTo = getCookie(c, "auth_return_to");
         if (returnTo) {
             deleteCookie(c, "auth_return_to");
+            console.log(`[Auth] Redirecting to return_to: ${returnTo}`);
             const redirectUrl = new URL(returnTo)
             redirectUrl.searchParams.set('token', token)
             return c.redirect(redirectUrl.toString());
         }
 
-        const frontendUrl = allowedOrigins[0] || "http://localhost:5173"
+        // Fallback: Pick the best frontend URL from allowedOrigins
+        const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+        let frontendUrl = allowedOrigins.find(o => o.includes('vercel.app')) || allowedOrigins[0];
+
+        // If not in production, localhost is fine
+        if (!isProd) {
+            frontendUrl = allowedOrigins.find(o => o.includes('localhost')) || allowedOrigins[0];
+        }
+
+        console.log(`[Auth] No return_to found, falling back to: ${frontendUrl}`);
         const redirectUrl = new URL(frontendUrl)
         redirectUrl.searchParams.set('token', token)
         return c.redirect(redirectUrl.toString())
