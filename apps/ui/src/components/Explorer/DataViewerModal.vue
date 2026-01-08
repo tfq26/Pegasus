@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed, ref, nextTick, watch, onMounted } from 'vue'
+import { useSettingsStore } from '@/stores/settings'
+import { storeToRefs } from 'pinia'
+const settingsStore = useSettingsStore()
+const { settings } = storeToRefs(settingsStore)
 import { 
   Table, Minus, Plus, X, Search, Loader2, 
   ChevronDown, ChevronRight, AlignJustify, Columns,
@@ -49,7 +53,7 @@ const localSearchQuery = computed({
 const expandedRows = ref<Set<number>>(new Set())
 const selectedRows = ref<Set<number>>(new Set())
 const currentPage = ref(1)
-const rowsPerPage = ref(10)
+const rowsPerPage = ref(settings.value?.defaultPageSize || 50)
 const textWrap = ref(false)
 const autoFitColumns = ref(false)
 
@@ -140,6 +144,13 @@ const saveEdit = () => {
   editingCell.value = null
 }
 
+onMounted(() => {
+  // Sync with settings on mount
+  if (settings.value?.defaultPageSize) {
+    rowsPerPage.value = settings.value.defaultPageSize
+  }
+})
+
 const cancelEdit = () => {
   editingCell.value = null
 }
@@ -175,11 +186,15 @@ const columnWidths = computed(() => {
 })
 
 const getColumnStyle = (col: string) => {
-  if (!autoFitColumns.value) return { maxWidth: '200px' }
+  if (autoFitColumns.value) {
+    return { 
+      width: `${columnWidths.value[col] || 150}px`,
+      minWidth: `${columnWidths.value[col] || 150}px`
+    }
+  }
   return { 
-    width: `${columnWidths.value[col] || 150}px`,
-    minWidth: `${columnWidths.value[col] || 150}px`,
-    maxWidth: autoFitColumns.value ? 'none' : '200px'
+    minWidth: '120px',
+    maxWidth: 'none'
   }
 }
 
@@ -319,7 +334,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
       class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4 sm:p-8"
       @click.self="emit('close')"
     >
-      <div class="relative w-full max-w-6xl h-full max-h-[90vh] overflow-hidden flex flex-col rounded-[32px] border border-border bg-card shadow-2xl">
+      <div class="relative w-full max-w-[95vw] h-full max-h-[95vh] overflow-hidden flex flex-col rounded-xl border border-border bg-card shadow-2xl">
         <!-- Viewer Header -->
         <div class="p-6 sm:px-8 border-b border-border flex items-center justify-between bg-muted/30">
           <div class="flex items-center gap-4">
@@ -475,9 +490,10 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                           :key="col"
                           :style="getColumnStyle(col)"
                           @contextmenu="setContextMenuContext(index, col, entry)"
-                          class="px-4 py-3 border-b border-border/50 text-xs font-medium text-muted-foreground group-hover/row:text-foreground transition-colors relative"
+                          class="px-4 py-3 border-b border-border/50 font-medium text-muted-foreground group-hover/row:text-foreground transition-colors relative"
                           :class="[
-                            textWrap ? 'whitespace-normal break-words' : 'truncate',
+                            viewerTextSizeClass,
+                            textWrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
                             editingCell?.rowIndex === index && editingCell?.col === col ? 'bg-violet-500/10 ring-2 ring-violet-500 ring-inset z-20' : ''
                           ]"
                         >
@@ -496,14 +512,14 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                            </template>
                         </td>
                         <td class="px-4 py-3 border-b border-border/50 text-right opacity-0 group-hover/row:opacity-100 transition-opacity">
-                            <button @contextmenu="setContextMenuContext(index, viewerColumns[0], entry)" class="text-muted-foreground hover:text-foreground transition-colors p-1">
+                            <button @contextmenu="setContextMenuContext(index, viewerColumns[0] || '', entry)" class="text-muted-foreground hover:text-foreground transition-colors p-1">
                                 <MoreVertical class="w-4 h-4" />
                             </button>
                         </td>
                       </tr>
                       <tr v-if="expandedRows.has(index)">
                         <td :colspan="viewerColumns.length + 3" class="p-6 bg-muted/20 border-b border-border/50">
-                          <JsonViewer :data="entry" :text-size="viewerTextSizeClass || ''" />
+                          <JsonViewer :data="entry" :text-size="viewerTextSizeClass" />
                         </td>
                       </tr>
                     </template>

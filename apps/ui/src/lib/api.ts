@@ -353,8 +353,7 @@ export async function inviteUserToDashboard(dashboardId: string, email: string) 
 }
 
 export async function fetchDashboardPermissions(dashboardId: string) {
-  const body = await api.get<{ permissions: any[] }>(`/dashboards/${dashboardId}/permissions`)
-  return body.permissions || []
+  return api.get<{ permissions: any[], currentUserRole?: string, owner?: any }>(`/dashboards/${dashboardId}/permissions`)
 }
 
 export async function removeDashboardPermission(dashboardId: string, email: string) {

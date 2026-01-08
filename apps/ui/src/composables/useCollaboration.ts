@@ -113,6 +113,18 @@ export function useCollaboration() {
         socket.value.on('pegasus_thinking', (data) => {
             isAIThinking.value = data.thinking;
         });
+
+        socket.value.on('dashboard_deleted', (data) => {
+            console.log('[Collaboration] Dashboard has been deleted:', data.dashboardId);
+            // Clean up collaboration state
+            cursors.value = {};
+            collaborators.value = [];
+            chatMessages.value = [];
+            // Optional: trigger redirect if we're on that dashboard
+            if (window.location.pathname.includes(data.dashboardId.split(':').pop())) {
+                window.location.href = '/';
+            }
+        });
     };
 
     const disconnect = () => {
@@ -192,6 +204,7 @@ export function useCollaboration() {
         sendChatMessage,
         emitPegasusQuery,
         editChatMessage,
-        deleteChatMessage
+        deleteChatMessage,
+        socket
     };
 }

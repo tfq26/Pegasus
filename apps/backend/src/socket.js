@@ -6,7 +6,7 @@ import { createHmac } from "crypto";
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
 
 // Helper to normalize dashboard ID and room name
-const getRoom = (id) => {
+export const getRoom = (id) => {
     if (!id) return null;
     // Always take the last part of a colon-separated ID (handles dashboard:UUID or just UUID)
     const cleanId = id.toString().split(':').pop();
@@ -20,6 +20,10 @@ const getSpreadsheetRoom = (id) => {
     return `spreadsheet:${cleanId}`;
 };
 
+let ioInstance = null;
+
+export const getIO = () => ioInstance;
+
 export function initSocketServer(server, allowedOrigins) {
     const io = new Server(server || undefined, {
         cors: {
@@ -28,6 +32,8 @@ export function initSocketServer(server, allowedOrigins) {
             credentials: true
         }
     });
+
+    ioInstance = io;
 
 
     io.use(async (socket, next) => {
@@ -139,7 +145,11 @@ export function initSocketServer(server, allowedOrigins) {
                     socket.emit("chat_history", []);
                 }
             } catch (e) {
-                console.error("[Socket.io] Failed to fetch chat history:", e);
+                if (e.message?.includes('not found')) {
+                    console.warn(`[Socket.io] Dashboard ${dashId} not found, skipping history`);
+                } else {
+                    console.error("[Socket.io] Failed to fetch chat history:", e);
+                }
                 socket.emit("chat_history", []);
             }
         });
@@ -207,7 +217,11 @@ export function initSocketServer(server, allowedOrigins) {
 
                 console.log('[Socket.io] Message saved successfully');
             } catch (e) {
-                console.error("[Socket.io] Failed to save message:", e);
+                if (e.message?.includes('not found')) {
+                    console.warn(`[Socket.io] Cannot save message: Dashboard ${dashId} deleted`);
+                } else {
+                    console.error("[Socket.io] Failed to save message:", e);
+                }
             }
 
             // Handle @user mentions - notify mentioned users

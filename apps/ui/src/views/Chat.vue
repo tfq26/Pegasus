@@ -205,8 +205,9 @@
       <!-- Share Dialog -->
       <ShareDialog
         v-model:open="shareDialogOpen"
-        :spreadsheet-id="activeTableName"
-        resource-type="spreadsheet"
+        :dashboard-id="(mode as any) === 'dashboard' ? workspaceRef?.activeDashboardId : undefined"
+        :spreadsheet-id="(mode as any) !== 'dashboard' ? activeTableName : undefined"
+        :resource-type="(mode as any) === 'dashboard' ? 'dashboard' : 'spreadsheet'"
       />
     </div>
     </template>
@@ -233,6 +234,7 @@ import UnsavedTabWarning from '@/components/Workspace/UnsavedTabWarning.vue'
 import UnsavedTabsDialog from '@/components/Workspace/UnsavedTabsDialog.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
+import { useCollaboration } from '@/composables/useCollaboration' 
 import { useConnectionStore } from '@/stores/connection'
 import { useChatDialogs } from '@/composables/useChatDialogs'
 import { useChat } from '@/composables/useChat'
@@ -903,6 +905,20 @@ onMounted(async () => {
     }
 
     window.addEventListener('pegasus:connections-updated', loadConnections)
+    
+    // Setup socket listeners for permissions
+    const { socket } = useCollaboration()
+    if (socket.value) {
+        socket.value.on('permission_updated', (data: any) => {
+            if (data.type === 'invite') {
+                toast.success(data.message)
+            } else if (data.type === 'update') {
+                toast.info(data.message)
+            } else if (data.type === 'remove') {
+                toast.error(data.message || `Your access to '${data.title}' has been revoked`)
+            }
+        })
+    }
   } catch (e) {
     console.error('[Chat] Initialization failed:', e)
     toast.error('Failed to initialize workspace')

@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { toast } from '@/composables/useNotifications'
 import { fetchTableEntries, runQuery } from '@/lib/api'
 import type { ConnectionEntry } from '@/lib/db-connections'
+import { useSettingsStore } from '@/stores/settings'
 
 export interface ViewerState {
     open: boolean
@@ -36,10 +37,12 @@ export function useDataViewer() {
     const sortColumn = ref<string | null>(null)
     const sortDirection = ref<'asc' | 'desc'>('asc')
 
-    // Track current limit for reload operations
-    const currentLimit = ref(50)
+    const settingsStore = useSettingsStore()
 
-    const openViewer = async (connection: ConnectionEntry, table: string, limit: number = 50) => {
+    // Track current limit for reload operations
+    const currentLimit = ref((settingsStore.settings as any).defaultPageSize || 50)
+
+    const openViewer = async (connection: ConnectionEntry, table: string, limit: number = (settingsStore.settings as any).defaultPageSize || 50) => {
         currentLimit.value = limit
         viewer.value = {
             ...viewer.value,
