@@ -83,8 +83,11 @@ const corsConfig = {
     // 1. Explicit whitelist
     if (allowedOrigins.includes(origin)) return origin;
 
-    // 2. Pegasus Vercel deployments (regex for better coverage)
-    if (origin.endsWith('.vercel.app') && origin.includes('pegasus')) return origin;
+    // 2. Extra safety for exact production deployment
+    if (origin === "https://pegasus-ui-chi.vercel.app") return origin;
+
+    // 3. Pegasus Vercel deployments (regex for better coverage)
+    if (origin.endsWith('.vercel.app') && (origin.includes('pegasus') || origin.includes('tfq26'))) return origin;
 
     // 3. Local development
     const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
@@ -101,11 +104,6 @@ const corsConfig = {
 
 // Apply CORS globally
 app.use("*", cors(corsConfig))
-
-// Explicit handling for OPTIONS preflight
-app.options("*", (c) => {
-  return c.text('', 204);
-})
 
 if (typeof CompressionStream !== 'undefined') {
   app.use('*', compress())
