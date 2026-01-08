@@ -192,7 +192,7 @@ const signInWithWorkOS = async () => {
       if (tokenData.access_token) {
         // Success!
         console.log('[SignIn] Device authorized for:', tokenData.user?.email)
-        // localStorage.setItem('auth_token', tokenData.access_token)
+        localStorage.setItem('auth_token', tokenData.access_token)
         
         // Store authorized user for display
         authorizedUser.value = tokenData.user

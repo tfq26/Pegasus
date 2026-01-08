@@ -45,8 +45,7 @@ class ApiClient {
         }
 
         // Add Authorization header if we have a token in localStorage
-        // const token = localStorage.getItem('auth_token')
-        const token = null
+        const token = localStorage.getItem('auth_token')
         if (token) {
             headers['Authorization'] = `Bearer ${token}`
         }
@@ -180,8 +179,7 @@ export function getAuthHeaders(): HeadersInit {
         'Content-Type': 'application/json'
     }
 
-    // const token = localStorage.getItem('auth_token')
-    const token = null
+    const token = localStorage.getItem('auth_token')
     if (token) {
         headers['Authorization'] = `Bearer ${token}`
     }

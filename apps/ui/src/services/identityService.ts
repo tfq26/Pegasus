@@ -81,8 +81,9 @@ class IdentityService {
 
         try {
             const headers: HeadersInit = { 'Content-Type': 'application/json' }
-            if (explicitToken) {
-                headers['Authorization'] = `Bearer ${explicitToken}`
+            const token = explicitToken || localStorage.getItem('auth_token')
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`
             }
 
             console.log('[IdentityService] Calling /auth/me...')
