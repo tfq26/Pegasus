@@ -85,7 +85,7 @@ class ApiClient {
             }
 
             console.warn('[ApiClient] Unauthorized (401). Clearing token and redirecting to login.')
-            // localStorage.removeItem('auth_token')
+            localStorage.removeItem('auth_token')
             if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
                 window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
             }

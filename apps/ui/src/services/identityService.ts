@@ -153,6 +153,7 @@ class IdentityService {
         // Clear local state immediately
         this._user.value = null
         this._initialized = false
+        localStorage.removeItem('auth_token')
         sessionStorage.clear()
 
         // Use redirect-based logout to ensure the browser processes the Set-Cookie header
