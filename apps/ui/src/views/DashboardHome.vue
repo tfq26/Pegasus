@@ -544,13 +544,15 @@ import {
 import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
 import UpgradeModal from '@/components/UpgradeModal.vue'
 import { toast } from '@/composables/useNotifications'
-import { useTierLimits } from '@/composables/useTierLimits'
+import { useEntitlements } from '@/composables/useEntitlements'
+import { useAuth } from '@/composables/useAuth'
 import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 
+const { user } = useAuth()
 const router = useRouter()
 const store = useDashboardStore()
 const { dashboards, isLoading } = storeToRefs(store)
-const { dashboardUsage, handleLimitError } = useTierLimits()
+const { dashboardUsage, handleLimitError } = useEntitlements()
 
 const searchQuery = ref('')
 const sortBy = ref('updated')

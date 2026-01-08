@@ -45,7 +45,8 @@ class ApiClient {
         }
 
         // Add Authorization header if we have a token in localStorage
-        const token = localStorage.getItem('auth_token')
+        // const token = localStorage.getItem('auth_token')
+        const token = null
         if (token) {
             headers['Authorization'] = `Bearer ${token}`
         }
@@ -85,7 +86,7 @@ class ApiClient {
             }
 
             console.warn('[ApiClient] Unauthorized (401). Clearing token and redirecting to login.')
-            localStorage.removeItem('auth_token')
+            // localStorage.removeItem('auth_token')
             if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
                 window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
             }
@@ -179,7 +180,8 @@ export function getAuthHeaders(): HeadersInit {
         'Content-Type': 'application/json'
     }
 
-    const token = localStorage.getItem('auth_token')
+    // const token = localStorage.getItem('auth_token')
+    const token = null
     if (token) {
         headers['Authorization'] = `Bearer ${token}`
     }

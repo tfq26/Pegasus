@@ -25,12 +25,13 @@ export interface Operation {
 }
 
 const operations = ref<Operation[]>([])
-const history = ref<Operation[]>(JSON.parse(localStorage.getItem('operation_history') || '[]'))
+// const history = ref<Operation[]>(JSON.parse(localStorage.getItem('operation_history') || '[]'))
+const history = ref<Operation[]>([])
 const MAX_HISTORY = 50
 
 // Persist to localStorage
 watch(history, (newHistory) => {
-    localStorage.setItem('operation_history', JSON.stringify(newHistory.slice(0, MAX_HISTORY)))
+    // localStorage.setItem('operation_history', JSON.stringify(newHistory.slice(0, MAX_HISTORY)))
 }, { deep: true })
 
 async function syncToBackend(op: Operation) {

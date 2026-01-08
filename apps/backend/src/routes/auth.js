@@ -24,7 +24,7 @@ const upsertUser = async (payload) => {
         const userId = payload.sub || payload.id
         const userRecordId = `user:${userId}`
 
-        console.log(`[Auth] Upserting user: ${userRecordId}`)
+
 
         // Check if user exists first
         const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
@@ -48,7 +48,7 @@ const upsertUser = async (payload) => {
                 lastName: payload.lastName,
                 pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
             });
-            console.log(`[Auth] User updated: ${payload.email}`)
+
         } else {
             // User doesn't exist, create
             await db.query(`
@@ -70,7 +70,7 @@ const upsertUser = async (payload) => {
                 lastName: payload.lastName,
                 pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
             });
-            console.log(`[Auth] User created: ${payload.email}`)
+
         }
 
     } catch (e) {
@@ -128,7 +128,7 @@ auth.get("/callback", async (c) => {
 
         if (existingUserRs[0] && existingUserRs[0].length > 0) {
             const existingId = existingUserRs[0][0].id;
-            console.log(`[Auth] Email ${user.email} exists with different ID (${existingId}). Cleaning up old user...`)
+
             await db.query(`DELETE ${existingId}`);
         }
 
@@ -177,11 +177,47 @@ auth.get("/callback", async (c) => {
 })
 
 auth.get("/logout", (c) => {
-    deleteCookie(c, "session")
+
+
+    // Explicitly overwrite the cookie with past expiration
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
+
+    // Use deleteCookie for maximum compatibility
+    deleteCookie(c, "session", {
+        path: "/",
+        secure: isProduction,
+        httpOnly: true,
+        sameSite: "Lax",
+    })
+
+    // Also set it to empty with maxAge 0 as a fallback
+    setCookie(c, "session", "", {
+        path: "/",
+        secure: isProduction,
+        httpOnly: true,
+        sameSite: "Lax",
+        maxAge: 0,
+        expires: new Date(0)
+    })
+
+
+
+    // Support redirect-based logout for better browser cookie handling
+    const redirectUrl = c.req.query("redirect")
+    if (redirectUrl) {
+
+        return c.redirect(redirectUrl)
+    }
+
     return c.json({ success: true })
 })
 
 auth.get("/me", async (c) => {
+    // Force no-cache logic for this sensitive endpoint
+    c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    c.header('Pragma', 'no-cache')
+    c.header('Expires', '0')
+
     const token = getAuthToken(c)
 
     if (!token) {

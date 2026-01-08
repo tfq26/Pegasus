@@ -7,7 +7,7 @@ import { QUERY_API_URL } from '@/lib/api';
 const socket = ref<Socket | null>(null);
 const isConnected = ref(false);
 const collaborators = ref<any[]>([]);
-const cursors = ref<Record<string, { x: number, y: number, user: any }>>({});
+const cursors = ref<Record<string, { x: number, y: number, user: any, lastUpdated: number }>>({});
 const chatMessages = ref<any[]>([]);
 const isAIThinking = ref(false);
 
@@ -22,13 +22,10 @@ export function useCollaboration() {
         if (socket.value?.connected) return;
 
         const token = localStorage.getItem('auth_token');
-        if (!token) {
-            console.warn('[Collaboration] No auth token found, cannot connect to socket');
-            return;
-        }
+        // Even if no token in localStorage, try to connect as the server now supports cookie fallback
 
         socket.value = io(SERVER_URL, {
-            auth: { token },
+            auth: token ? { token } : {},
             transports: ['polling', 'websocket'], // Try polling first for better compatibility
             reconnectionAttempts: 5,
             reconnectionDelay: 5000,
@@ -81,7 +78,8 @@ export function useCollaboration() {
             cursors.value[data.socketId] = {
                 x: data.x,
                 y: data.y,
-                user: data.user
+                user: data.user,
+                lastUpdated: Date.now()
             };
         });
 

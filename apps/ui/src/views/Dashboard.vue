@@ -58,7 +58,7 @@
             'bg-emerald-500/10 text-emerald-500': userRole === 'viewer'
           }"
         >
-          {{ userRole.charAt(0).toUpperCase() + userRole.slice(1) }}
+          {{ (userRole || 'viewer').charAt(0).toUpperCase() + (userRole || 'viewer').slice(1) }}
         </div>
       </div>
       
@@ -630,7 +630,7 @@ watch(() => currentDashboard.value?.id, (newId, oldId) => {
   if (newId) {
     joinDashboard(newId)
     // Save as last viewed dashboard for navbar navigation
-    localStorage.setItem('pegasus-last-dashboard', newId)
+    // localStorage.setItem('pegasus-last-dashboard', newId)
   }
 }, { immediate: true })
 
@@ -787,9 +787,9 @@ const showDeleteModal = ref(false)
 // User Role - determine if user is owner
 const userRole = computed<'owner' | 'editor' | 'viewer' | null>(() => {
   if (!currentDashboard.value) return null
-  // For now, all dashboards created by the user are owned by them
-  // In the future, this could check dashboard.owner against current user ID
-  return 'owner'
+  const role = currentDashboard.value.access_level
+  if (!role || typeof role !== 'string') return 'viewer'
+  return role as 'owner' | 'editor' | 'viewer'
 })
 
 // Computed grid style for background pattern

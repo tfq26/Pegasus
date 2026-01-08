@@ -123,11 +123,12 @@ const stopResize = () => {
   document.body.style.cursor = ''
   
   // Save preference
-  localStorage.setItem('pegasus-sidebar-width', String(sidebarWidth.value))
+  // localStorage.setItem('pegasus-sidebar-width', String(sidebarWidth.value))
 }
 
 onMounted(() => {
-  const saved = localStorage.getItem('pegasus-sidebar-width')
+  // const saved = localStorage.getItem('pegasus-sidebar-width')
+  const saved = null
   if (saved) {
     sidebarWidth.value = Number(saved)
   }

@@ -33,7 +33,7 @@ const upsertUser = async (payload) => {
         const userId = payload.sub || payload.id
         const userRecordId = `user:${userId}`
 
-        console.log(`[Dashboard] Upserting user: ${userRecordId}`)
+
 
         // Check if user exists first
         const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
@@ -53,7 +53,7 @@ const upsertUser = async (payload) => {
                 lastName: payload.lastName || payload.last_name,
                 pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
             });
-            console.log(`[Dashboard] User updated: ${payload.email}`)
+
         } else {
             // User doesn't exist by ID. Check if email is taken by another ID (stale record/collision)
             const [emailCheck] = await db.query(`SELECT id FROM user WHERE email = $email`, { email: payload.email });
@@ -84,7 +84,7 @@ const upsertUser = async (payload) => {
                 lastName: payload.lastName || payload.last_name,
                 pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
             });
-            console.log(`[Dashboard] User created: ${payload.email}`)
+
         }
 
     } catch (e) {
@@ -227,7 +227,7 @@ dashboard.get("/dashboards", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
 
-        console.log(`[Dashboard] Fetching dashboards for user: user:${userId}`)
+
 
         const [dashboards] = await db.query(`
         SELECT 
@@ -245,7 +245,7 @@ dashboard.get("/dashboards", async (c) => {
             userId: userId
         });
 
-        console.log(`[Dashboard] Found ${dashboards?.length || 0} dashboards:`, JSON.stringify(dashboards))
+
 
         return c.json({ dashboards })
     } catch (e) {
@@ -283,7 +283,7 @@ dashboard.post("/dashboards", async (c) => {
         const { title, data } = await c.req.json()
 
         // Create Dashboard Record with embedded data
-        console.log('[Dashboard] Creating dashboard for user:', userId, 'Title:', title);
+
         const [created] = await db.query(`
         CREATE dashboard CONTENT {
             title: $title,
@@ -300,7 +300,7 @@ dashboard.post("/dashboards", async (c) => {
             data: data || { layout: [], elements: [] }
         });
 
-        console.log('[Dashboard] DB Create Result:', JSON.stringify(created));
+
 
         if (!created || !created[0]) {
             console.error('[Dashboard] DB returned no result/records');
@@ -308,7 +308,7 @@ dashboard.post("/dashboards", async (c) => {
         }
 
         const dashboardId = created[0].id;
-        console.log('[Dashboard] Created dashboard with', data?.elements?.length || 0, 'elements');
+
 
         return c.json({ id: dashboardId })
     } catch (e) {
@@ -426,7 +426,7 @@ dashboard.post("/dashboards/:id/elements/widget", async (c) => {
             WHERE owner = type::thing('user', $userId)
         `, { data, userId })
 
-        console.log(`[Dashboard] Created widget element: ${widgetType} (${elementId})`)
+
         return c.json({ id: elementId, element: newElement })
     } catch (e) {
         console.error('[Dashboard] Widget creation error:', e)
@@ -496,7 +496,7 @@ dashboard.get("/dashboards/:id", async (c) => {
         let id = c.req.param("id")
         if (!id.includes(':')) id = `dashboard:${id}`
 
-        console.log(`[Dashboard] Fetching dashboard: ${id} for user: ${userId}`)
+
 
         // Fetch Dashboard with embedded data
         const [result] = await db.query(`
@@ -575,7 +575,7 @@ dashboard.get("/dashboards/:id", async (c) => {
             }
         };
 
-        console.log(`[Dashboard] Returning dashboard with ${responseDashboard.data.elements?.length || 0} elements`)
+
 
         return c.json({ dashboard: responseDashboard })
     } catch (e) {
@@ -595,10 +595,8 @@ dashboard.put("/dashboards/:id", async (c) => {
 
         const { title, data } = await c.req.json()
 
-        console.log('[Dashboard] Update request for:', id)
-        console.log('[Dashboard] Title:', title)
-        console.log('[Dashboard] Data elements:', data?.elements?.length || 0)
-        console.log('[Dashboard] Data layout:', JSON.stringify(data?.layout, null, 2))
+
+
 
         // Build update query
         const updates = []
@@ -781,26 +779,15 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
 
         // 1. Verify Ownership
         const userRecId = `user:${userId}`;
-        console.log(`[Invite] Verifying ownership for dashboard ${id}, user ${userRecId}`);
 
-        try {
-            // Check if dashboard exists first
-            const [exists] = await db.query(`SELECT * FROM ${id}`);
-            console.log(`[Invite] Dashboard exists check:`, !!exists[0]);
-            if (exists[0]) {
-                console.log(`[Invite] Dashboard owner:`, exists[0].owner);
-                console.log(`[Invite] Current user:`, userRecId);
-                console.log(`[Invite] Match?`, exists[0].owner.toString() === userRecId);
-            }
-        } catch (err) {
-            console.error('[Invite] Error checking dashboard:', err);
-        }
+
+
 
         const [ownerCheck] = await db.query(`SELECT 1 FROM ${id} WHERE <string>owner = $user;`, { user: userRecId });
-        console.log(`[Invite] Owner check result:`, ownerCheck);
+
 
         if (!ownerCheck.length) {
-            console.warn(`[Invite] Ownership verification failed for dashboard ${id} and user ${userRecId}`);
+
             return c.json({ error: "Dashboard not found or unauthorized" }, 404)
         }
 
@@ -820,7 +807,7 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
         const targetUserId = localUserCheck[0].id;
 
         // 3. Grant Permission
-        console.log(`[Invite] Granting permission. Target: ${targetUserId}, Dashboard: ${id}`);
+
         try {
             await db.query(`
                 DELETE dashboard_permission WHERE user=type::thing($target) AND dashboard=type::thing($dashboard);
@@ -834,7 +821,7 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
                 target: targetUserId,
                 dashboard: id
             });
-            console.log(`[Invite] Permission granted successfully`);
+
         } catch (queryErr) {
             console.error(`[Invite] Permission query failed:`, queryErr);
             throw queryErr;

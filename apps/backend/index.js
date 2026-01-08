@@ -30,6 +30,7 @@ import { parseXML, flattenXML } from "./lib/xmlParser.js"
 import { authRoutes } from "./src/routes/auth.js"
 import { getAuthToken } from "./lib/auth.js"
 import { getPayments } from "./src/routes/payments.js"
+import adminFixTier from "./src/routes/admin-fix-tier.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import {
   EXPERIMENTAL_FEATURES,
@@ -42,6 +43,7 @@ import {
 } from "./experimental-features.js"
 import { notifyExperimentalRequest } from "./src/services/emailService.js"
 import { RAGService } from "./src/services/ragService.js"
+import { EntitlementService } from "./src/services/EntitlementService.js"
 import { getUserUsageSummary } from "./lib/tierLimits.js"
 import Stripe from "stripe"
 import fs from "node:fs/promises"
@@ -222,6 +224,7 @@ experimental.post("/features/:featureId/toggle", async (c) => {
 
 // Route Mounting
 app.route('/auth', authRoutes)
+app.route('/admin-fix', adminFixTier) // Temporary admin endpoint for fixing subscription tiers
 app.route('/', dashboardRoutes)
 app.route('/connections', connectionRoutes)
 app.route('/experimental', experimental) // Mount as /experimental/features
@@ -565,7 +568,7 @@ app.post("/create-checkout-session", async (c) => {
         tier: tier || 'pro',
         user_id: payload.sub
       },
-      success_url: `${frontendUrl}/profile?success=true`,
+      success_url: `${frontendUrl}/profile?session_id={CHECKOUT_SESSION_ID}&type=subscription`,
       cancel_url: `${frontendUrl}/profile?canceled=true`,
     })
 
@@ -588,21 +591,21 @@ app.post("/create-token-checkout-session", async (c) => {
       return c.json({ error: "Invalid amount. Must be between 1 and 7 (representing 100k to 700k)." }, 400)
     }
 
-    // Pricing Logic
-    const unitPrice = 1000; // $10.00 in cents
-    const baseTotal = amount * unitPrice;
-    let finalTotal = baseTotal;
-
-    if (amount >= 7) {
-      finalTotal = baseTotal * 0.85; // 15% off
-    } else if (amount >= 3) {
-      finalTotal = baseTotal * 0.90; // 10% off
-    }
-
-    // 1. Fetch user data from DB (Simpler query, handle logic in JS)
+    // 1. Fetch user data from DB to get tier
     console.log(`[Stripe] Looking up user ${payload.sub} for token purchase...`);
-    const [user] = await db.query(`SELECT * FROM type::thing('user', $rawId)`, { rawId: payload.sub });
+    const [user] = await db.query(`SELECT subscription_tier, stripe_customer_id FROM type::thing('user', $rawId)`, { rawId: payload.sub });
     const userRecord = user[0];
+    const tier = userRecord?.subscription_tier || 'free';
+
+    // Tier-based pricing (per 100k tokens)
+    const tierPricing = {
+      free: 1200,      // $12.00 in cents
+      pro: 800,        // $8.00 in cents (33% discount)
+      pro_plus: 600    // $6.00 in cents (50% discount)
+    };
+
+    const unitPrice = tierPricing[tier] || tierPricing.free;
+    const finalTotal = amount * unitPrice;
 
     // Robust Customer ID handling
     let customerId = userRecord?.stripe_customer_id;
@@ -611,20 +614,7 @@ app.post("/create-token-checkout-session", async (c) => {
       customerId = undefined; // Force undefined so Stripe treats it as guest/new
     }
 
-    // Surcharge Logic (Sustainability Fee if total capacity > 1M tokens)
-    const purchasedTokens = Number(userRecord?.purchased_tokens || 0);
-    const baseTokens = userRecord?.subscription_tier === 'pro' ? 200000 : 60000;
-    const projectedTotal = baseTokens + purchasedTokens + (amount * 100000);
-    const hasSurcharge = projectedTotal >= 1000000;
-
-    if (hasSurcharge) {
-      finalTotal = finalTotal * 1.25; // 25% Heavy Usage Surcharge
-    }
-
-    // Ensure integer cents
-    finalTotal = Math.round(finalTotal);
-
-    console.log(`[Stripe] Creating token session for ${payload.email} (Cust: ${customerId || 'New'}): ${amount * 100}k tokens. Current: ${purchasedTokens}, Goal: ${projectedTotal}, Surcharge: ${hasSurcharge}`);
+    console.log(`[Stripe] Creating ${tier} tier token session for ${payload.email}: ${amount * 100}k tokens at $${(unitPrice / 100).toFixed(2)}/100k`);
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -636,10 +626,8 @@ app.post("/create-token-checkout-session", async (c) => {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `${amount * 100}k AI Token Pack${hasSurcharge ? ' (+ Heavy Usage Fee)' : ''}`,
-              description: hasSurcharge
-                ? `One-time purchase of ${amount * 100},000 tokens including the sustainability fee for high-capacity accounts.`
-                : `One-time purchase of ${amount * 100},000 additional tokens.`,
+              name: `${amount * 100}k AI Token Pack`,
+              description: `One-time purchase of ${amount * 100},000 additional AI tokens.`,
             },
             unit_amount: finalTotal, // Stripe takes price per quantity unit. Wait, if quantity is 1 here, we just put total price.
           },
@@ -651,7 +639,7 @@ app.post("/create-token-checkout-session", async (c) => {
         token_amount: amount * 100000,
         user_id: payload.sub
       },
-      success_url: `${frontendUrl}/profile?tokens_purchased=true`,
+      success_url: `${frontendUrl}/profile?session_id={CHECKOUT_SESSION_ID}&type=token`,
       cancel_url: `${frontendUrl}/profile?canceled=true`,
     })
 
@@ -666,7 +654,23 @@ app.get('/api/config/plans', (c) => {
   return c.json({
     pro: process.env.STRIPE_PRICE_PRO_ID || 'price_pro_standard',
     pro_plus: process.env.STRIPE_PRICE_PRO_PLUS_ID || 'price_pro_plus_standard',
-    storage: process.env.STRIPE_STORAGE_PRICE_ID || 'price_storage_recurring_5usd'
+    storage: {
+      free: {
+        pricePerGB: 2.00,
+        maxGB: 25,
+        description: '$2/GB/month - Up to 25GB'
+      },
+      pro: {
+        pricePerGB: 1.25,
+        maxGB: 50,
+        description: '$1.25/GB/month - Up to 50GB'
+      },
+      pro_plus: {
+        pricePerGB: 1.25,
+        maxGB: 200,
+        description: '$1.25/GB/month - Up to 200GB'
+      }
+    }
   })
 })
 
@@ -678,23 +682,47 @@ app.post('/create-storage-checkout-session', async (c) => {
     const payload = await verify(token, jwtSecret)
     const { amount } = await c.req.json() // amount in GB units (1, 2, 5, etc.)
 
-    if (!amount || amount < 1 || amount > 50) {
-      return c.json({ error: "Invalid amount. Must be between 1 and 50 GB." }, 400)
+    // Get user's tier to determine pricing and limits
+    const [user] = await db.query(`SELECT subscription_tier, stripe_customer_id FROM type::thing('user', $rawId)`, { rawId: payload.sub });
+    const tier = user[0]?.subscription_tier || 'free'
+    let customerId = user[0]?.stripe_customer_id;
+
+    // Tier-based limits and pricing
+    const tierConfig = {
+      free: {
+        maxGB: 25,
+        priceId: process.env.STRIPE_STORAGE_PRICE_FREE || 'price_storage_free',
+        price: '$2'
+      },
+      pro: {
+        maxGB: 50,
+        priceId: process.env.STRIPE_STORAGE_PRICE_PAID || process.env.STRIPE_STORAGE_PRICE_PRO || 'price_storage_paid',
+        price: '$1.25'
+      },
+      pro_plus: {
+        maxGB: 200,
+        priceId: process.env.STRIPE_STORAGE_PRICE_PAID || process.env.STRIPE_STORAGE_PRICE_PRO_PLUS || 'price_storage_paid',
+        price: '$1.25'
+      }
     }
 
-    // Storage Price ID for recurring billing ($5/GB/mo)
-    const STORAGE_PRICE_ID = process.env.STRIPE_STORAGE_PRICE_ID || 'price_storage_recurring_5usd';
+    const config = tierConfig[tier] || tierConfig.free
 
-    // Fetch customer ID from DB (Simpler query, handle logic in JS)
-    const [user] = await db.query(`SELECT * FROM type::thing('user', $rawId)`, { rawId: payload.sub });
-    let customerId = user[0]?.stripe_customer_id;
+    // Validate amount based on tier
+    if (!amount || amount < 1 || amount > config.maxGB) {
+      return c.json({
+        error: `Invalid amount. ${tier === 'free' ? 'Free' : tier === 'pro' ? 'Pro' : 'Pro+'} users can purchase between 1 and ${config.maxGB} GB.`,
+        maxGB: config.maxGB,
+        tier: tier
+      }, 400)
+    }
 
     if (!customerId || typeof customerId !== 'string' || !customerId.startsWith('cus_')) {
       console.log(`[Stripe] Invalid or missing customer ID for ${payload.email} (Storage): ${customerId}. Will create new guest session.`);
       customerId = undefined;
     }
 
-    console.log(`[Stripe] Creating recurring storage session for ${payload.email}: ${amount}GB`);
+    console.log(`[Stripe] Creating ${tier} tier storage session for ${payload.email}: ${amount}GB at ${config.price}/GB/mo`);
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -703,16 +731,17 @@ app.post('/create-storage-checkout-session', async (c) => {
       allow_promotion_codes: true,
       line_items: [
         {
-          price: STORAGE_PRICE_ID,
+          price: config.priceId,
           quantity: amount,
         },
       ],
       metadata: {
         type: 'storage_subscription',
         storage_gb: amount,
-        user_id: payload.sub
+        user_id: payload.sub,
+        tier: tier
       },
-      success_url: `${frontendUrl}/profile?storage_purchased=true`,
+      success_url: `${frontendUrl}/profile?session_id={CHECKOUT_SESSION_ID}&type=storage`,
       cancel_url: `${frontendUrl}/profile?canceled=true`,
     })
 
@@ -757,10 +786,68 @@ app.get("/subscription-status", async (c) => {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
 
+
+
     // Get user's subscription tier from database
-    const [user] = await db.query(`SELECT subscription_tier, stripe_customer_id FROM user:${userId}`);
-    const tier = user[0]?.subscription_tier || 'free'
+    const [user] = await db.query(`SELECT subscription_tier, stripe_customer_id, email FROM user:${userId}`);
+
+
+    let tier = user[0]?.subscription_tier || 'free'
     const stripeCustomerId = user[0]?.stripe_customer_id
+
+    // Auto-fix: If tier is 'free', check payment history for subscription payments
+    if (tier === 'free') {
+      const rawId = userId.replace('user:', '')
+
+
+      const [payments] = await db.query(`
+        SELECT * FROM user_payment 
+        WHERE user = type::thing('user', $rawId)
+        AND string::lowercase(description) CONTAINS 'subscription'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, { rawId });
+
+
+
+
+      if (payments && payments.length > 0) {
+        const payment = payments[0]
+
+
+        // Determine tier from payment description
+        if (payment.description.includes('Pro Plus')) {
+          tier = 'pro_plus'
+        } else if (payment.description.includes('Pro')) {
+          tier = 'pro'
+        }
+
+        // Get Stripe customer ID from the session if we don't have one
+        let customerIdToUpdate = stripeCustomerId
+        if (!customerIdToUpdate && payment.stripe_session_id) {
+          try {
+            const session = await stripe.checkout.sessions.retrieve(payment.stripe_session_id)
+            customerIdToUpdate = session.customer
+
+          } catch (e) {
+            console.warn('[Subscription] Could not retrieve session:', e.message)
+          }
+        }
+
+        // Update the database record
+        if (tier !== 'free') {
+          await db.query(`
+            UPDATE user:${userId} SET 
+              subscription_tier = $tier,
+              stripe_customer_id = $customerId
+          `, { tier, customerId: customerIdToUpdate || '' });
+
+
+        }
+      }
+    }
+
+
 
     let status = null
     let currentPeriodEnd = null
@@ -774,26 +861,30 @@ app.get("/subscription-status", async (c) => {
           limit: 1
         })
 
+
+
         if (subscriptions.data.length > 0) {
           const subscription = subscriptions.data[0]
           status = subscription.status
           currentPeriodEnd = subscription.current_period_end
+
         }
       } catch (stripeError) {
         console.error('[Subscription] Failed to fetch Stripe subscription:', stripeError)
       }
     }
 
-    return c.json({
-      tier,
-      status,
-      currentPeriodEnd
-    })
+    const response = { tier, status, currentPeriodEnd }
+
+    return c.json(response)
   } catch (e) {
     console.error('[Subscription] Error:', e)
     return c.json({ error: "Failed to fetch status" }, 500)
   }
 })
+
+// Initialize Services
+const entitlementService = new EntitlementService(db);
 
 app.post("/webhook", async (c) => {
   console.log("🔔 [Webhook] Incoming request from Stripe...");
@@ -804,7 +895,7 @@ app.post("/webhook", async (c) => {
 
   try {
     event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
-    console.log(`[Webhook] Received event: ${event.type}`)
+    // console.log(`[Webhook] Received event: ${event.type}`)
   } catch (err) {
     console.error(`[Webhook] Signature verification failed:`, err.message)
     return c.json({ error: `Webhook Error: ${err.message}` }, 400)
@@ -817,200 +908,130 @@ app.post("/webhook", async (c) => {
       const stripeSessionId = session.id;
       const metadata = session.metadata || {};
       const type = metadata.type || 'subscription';
-      const userId = metadata.user_id;
+      const userId = metadata.user_id; // Expect "user:ID" or "ID"
       const dbUserId = userId ? (userId.startsWith('user:') ? userId : `user:${userId}`) : null;
 
-      console.log(`[Webhook] Processing ${type} for ${session.customer_details?.email} (User: ${dbUserId})`);
+      console.log(`[Webhook] Processing ${type} for ${session.customer_details?.email} (User: ${dbUserId}, Session: ${stripeSessionId})`);
 
-      // 1. Initial Master audit log
-      try {
-        await db.query(`
-          INSERT INTO transaction_master {
-              stripe_session_id: $sid,
-              status: 'pending',
-              type: $type,
-              user_id: $uid,
-              customer_id: $cid,
-              payload: $payload,
-              created_at: time::now()
-          }
-        `, {
-          sid: stripeSessionId,
-          type: type,
-          uid: dbUserId,
-          cid: session.customer,
-          payload: session
-        });
-      } catch (logErr) {
-        console.error('[Webhook] Master log init failed:', logErr.message);
+      // 1. Idempotency Check
+      const processStart = Date.now();
+      const isProcessed = await entitlementService.isTransactionProcessed(stripeSessionId);
+      if (isProcessed) {
+        console.log(`[Webhook] Transaction ${stripeSessionId} already processed. Skipping.`);
+        return c.json({ received: true });
       }
+
+      // 2. Initialize Transaction Log
+      await entitlementService.initTransaction(
+        stripeSessionId,
+        type,
+        dbUserId,
+        session.customer,
+        session
+      );
 
       try {
         if (type === 'token_purchase') {
-          const tokenAmount = parseInt(metadata.token_amount);
           if (!dbUserId) throw new Error("Missing user_id in metadata");
+          const tokenAmount = parseInt(metadata.token_amount);
 
-          const rawId = dbUserId.includes(':') ? dbUserId.split(':')[1] : dbUserId;
-
-          console.log(`[Webhook] Updating tokens for user: ${dbUserId}, amount: ${tokenAmount}`);
-
-          await db.query(`
-              UPDATE type::thing('user', $rawId) SET 
-                  purchased_tokens = <int>(purchased_tokens OR 0) + <int>$amount,
-                  updated_at = time::now();
-          `, { rawId, amount: tokenAmount });
-
-          await db.query(`
-            INSERT INTO user_payment {
-                user: type::thing('user', $rawId),
-                amount: $amount,
-                currency: $cur,
-                tokens: $tokens,
-                storage_bytes: 0,
-                status: 'completed',
-                description: $desc,
-                stripe_session_id: $sid,
-                created_at: time::now()
-            }
-          `, {
-            rawId,
-            amount: session.amount_total || 0,
-            cur: session.currency || 'usd',
-            tokens: tokenAmount,
-            desc: `${(tokenAmount / 1000).toFixed(0)}k AI Token Pack`,
-            sid: stripeSessionId
-          });
+          await entitlementService.grantTokens(
+            dbUserId,
+            tokenAmount,
+            stripeSessionId,
+            session.amount_total,
+            session.currency
+          );
 
         } else if (type === 'storage_purchase') {
+          if (!dbUserId) throw new Error("Missing user_id in metadata");
           const storageGb = parseInt(metadata.storage_gb);
           const storageBytes = storageGb * 1024 * 1024 * 1024;
-          if (!dbUserId) throw new Error("Missing user_id in metadata");
 
-          const rawId = dbUserId.includes(':') ? dbUserId.split(':')[1] : dbUserId;
-
-          console.log(`[Webhook] Updating storage for user: ${dbUserId}, amount: ${storageGb}GB`);
-
-          await db.query(`
-              UPDATE type::thing('user', $rawId) SET 
-                  purchased_storage = <int>(purchased_storage OR 0) + <int>$amount,
-                  updated_at = time::now();
-          `, { rawId, amount: storageBytes });
-
-          await db.query(`
-            INSERT INTO user_payment {
-                user: type::thing('user', $rawId),
-                amount: $amount,
-                currency: $cur,
-                tokens: 0,
-                storage_bytes: $storage_bytes,
-                status: 'completed',
-                description: $desc,
-                stripe_session_id: $sid,
-                created_at: time::now()
-            }
-          `, {
-            rawId,
-            amount: session.amount_total || 0,
-            cur: session.currency || 'usd',
-            storage_bytes: storageBytes,
-            desc: `${storageGb}GB Vault Storage Expansion`,
-            sid: stripeSessionId
-          });
+          await entitlementService.grantStorage(
+            dbUserId,
+            storageBytes,
+            stripeSessionId,
+            session.amount_total,
+            session.currency
+          );
 
         } else {
-          // Subscription handling
+          // Subscription handling (Pro / Pro+)
           const email = session.customer_details?.email;
           if (!email) throw new Error("Missing customer email");
-
           const requestedTier = metadata.tier || 'pro';
-          const [userResult] = await db.query(`SELECT id FROM user WHERE email = $email`, { email });
-          const targetUserId = dbUserId || userResult[0]?.id;
 
-          await db.query(`
-              UPDATE user SET 
-                 stripe_customer_id = $custId, 
-                 subscription_tier = $tier 
-              WHERE email = $email;
-          `, {
-            custId: session.customer,
-            tier: requestedTier,
-            email: email
-          });
-
-          if (targetUserId) {
-            const rawTargetId = targetUserId.toString().includes(':') ? targetUserId.toString().split(':')[1] : targetUserId.toString();
-            await db.query(`
-              INSERT INTO user_payment {
-                  user: type::thing('user', $rawId),
-                  amount: $amount,
-                  currency: $cur,
-                  tokens: 0,
-                  storage_bytes: 0,
-                  status: 'completed',
-                  description: $desc,
-                  stripe_session_id: $sid,
-                  created_at: time::now()
-              }
-            `, {
-              rawId: rawTargetId,
-              amount: session.amount_total || 0,
-              cur: session.currency || 'usd',
-              desc: `${requestedTier === 'pro_plus' ? 'Pro+' : 'Pro'} Subscription Upgrade`,
-              sid: stripeSessionId
-            });
-          }
-          console.log(`[Webhook] Subscription update success for ${email} to ${requestedTier}`);
+          await entitlementService.updateSubscription(
+            email,
+            requestedTier,
+            session.customer,
+            stripeSessionId,
+            session.amount_total,
+            session.currency
+          );
         }
 
-        // Mark Master log as completed
-        await db.query(`
-            UPDATE transaction_master SET status = 'completed' WHERE stripe_session_id = $sid
-        `, { sid: stripeSessionId });
+        // 3. Mark Complete
+        await entitlementService.completeTransaction(stripeSessionId);
+        console.log(`[Webhook] Transaction ${stripeSessionId} completed in ${Date.now() - processStart}ms`);
 
       } catch (err) {
         console.error(`[Webhook] Event processing failed:`, err.message);
-        try {
-          await db.query(`
-              UPDATE transaction_master SET status = 'failed', error = $err 
-              WHERE stripe_session_id = $sid
-          `, { sid: stripeSessionId, err: err.message });
-        } catch (e) { }
+        await entitlementService.failTransaction(stripeSessionId, err.message);
       }
       break;
     }
+
     case 'invoice.paid': {
       const invoice = event.data.object;
       const customerId = invoice.customer;
       console.log(`[Webhook] Monthly Invoice Paid for ${customerId}`);
-      // Removed automatic purchased_tokens reset - purchased boosts should remain
+      // Future: Log recurring payment in user_payment table
       break;
     }
+
     case 'customer.subscription.deleted': {
       const subscription = event.data.object
       const category = subscription.metadata?.type || 'subscription';
-      console.log(`[Webhook] Subscription deleted (${category}) for customer: ${subscription.customer}`)
+      const customerId = subscription.customer;
+
       if (category === 'storage_subscription') {
-        await db.query(`
-            UPDATE user SET 
-                purchased_storage = 0,
-                updated_at = time::now()
-            WHERE stripe_customer_id = $custId;
-         `, { custId: subscription.customer });
+        await entitlementService.removeStorageSubscription(customerId);
       } else {
-        await db.query(`
-            UPDATE user SET 
-                subscription_tier = 'free',
-                updated_at = time::now() 
-            WHERE stripe_customer_id = $custId;
-         `, { custId: subscription.customer });
+        await entitlementService.removeSubscription(customerId);
       }
       break;
     }
+
     default:
-      console.log(`[Webhook] Unhandled event type: ${event.type}`)
+    // console.log(`[Webhook] Unhandled event type: ${event.type}`)
   }
 
   return c.json({ received: true })
+})
+
+// New: Polling Endpoint for Payment Status
+app.get('/api/payment/status/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId');
+  if (!sessionId) return c.json({ error: "Missing sessionId" }, 400);
+
+  const isProcessed = await entitlementService.isTransactionProcessed(sessionId);
+
+  // If processed, we can double check if it was successful or failed by looking at the DB record, 
+  // but implies 'completed' status in isTransactionProcessed implementation.
+
+  // Let's refine isTransactionProcessed to return the full status object if possible, 
+  // but for now boolean is effectively "success" or "already done".
+
+  // To distinguish "pending" vs "not found", we might need a direct query here or update service
+  // For simplicity: If processed (completed), return success. 
+
+  if (isProcessed) {
+    return c.json({ status: 'completed' });
+  } else {
+    return c.json({ status: 'pending' });
+  }
 })
 
 // Manual subscription sync - fetches status from Stripe and updates DB
@@ -1075,7 +1096,7 @@ app.post("/sync-payments", async (c) => {
     const sub = payload.sub || ''
     const rawId = sub.includes(':') ? sub.split(':')[1] : sub
 
-    console.log(`[Sync Payments] Deep syncing for ${email}`)
+
 
     // 1. Get Customer
     const customers = await stripe.customers.list({ email, limit: 1 })
@@ -1096,7 +1117,7 @@ app.post("/sync-payments", async (c) => {
       const [existing] = await db.query(`SELECT id FROM user_payment WHERE stripe_session_id = $sid`, { sid })
 
       if (!existing || existing.length === 0) {
-        console.log(`[Sync Payments] Backfilling record for session: ${sid}`)
+
         const metadata = session.metadata || {}
         const tokenAmount = parseInt(metadata.token_amount || '0')
         const isToken = metadata.type === 'token_purchase'
@@ -1146,7 +1167,7 @@ app.post("/sync-payments", async (c) => {
       }
     }
 
-    console.log(`[Sync Payments] Successfully backfilled ${addedCount} records`)
+
     return c.json({ success: true, count: addedCount })
   } catch (e) {
     console.error(`[Sync Payments]Error: `, e)
@@ -2032,8 +2053,27 @@ app.get("/usage", async (c) => {
     // Get User Subscription Tier
     const [userRecord] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM user:${userId}`);
     const tier = userRecord[0]?.subscription_tier || 'free';
-    const purchasedTokens = Number(userRecord[0]?.purchased_tokens || 0);
-    const purchasedStorage = Number(userRecord[0]?.purchased_storage || 0);
+
+    // Calculate purchased tokens and storage from payment history
+    const rawId = userId.replace('user:', '')
+    const [tokenPayments] = await db.query(`
+      SELECT math::sum(tokens) as total_tokens FROM user_payment
+      WHERE user = type::thing('user', $rawId)
+      AND tokens > 0
+      GROUP ALL
+    `, { rawId });
+
+    const [storagePayments] = await db.query(`
+      SELECT math::sum(storage_bytes) as total_storage FROM user_payment
+      WHERE user = type::thing('user', $rawId)
+      AND storage_bytes > 0
+      GROUP ALL
+    `, { rawId });
+
+    const purchasedTokens = Number(tokenPayments[0]?.total_tokens || 0);
+    const purchasedStorage = Number(storagePayments[0]?.total_storage || 0);
+
+
 
     // AI Token Limits
     let baseLimit = 60000;
@@ -2110,6 +2150,23 @@ app.get("/usage", async (c) => {
     // Get tier-based usage summary
     const tierUsage = await getUserUsageSummary(db, userId, tier)
 
+    // Add tokens and storage to tierUsage for frontend compatibility
+    tierUsage.tokens = {
+      current: totalTokens,
+      limit: limit,
+      purchased: purchasedTokens,
+      percentage: limit > 0 ? Math.round((totalTokens / limit) * 100) : 0
+    }
+
+    tierUsage.storage = {
+      current: totalStorage,
+      limit: storageLimit,
+      purchased: purchasedStorage,
+      currentFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
+      limitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
+      percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0
+    }
+
     return c.json({
       tokens: totalTokens,
       limit: limit,
@@ -2120,7 +2177,7 @@ app.get("/usage", async (c) => {
       storageLimit: storageLimit,
       storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
       storageLimitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
-      tierUsage // Add tier-specific usage (connections, tables, dashboards)
+      tierUsage // Add tier-specific usage (connections, tables, dashboards, tokens, storage)
     })
   } catch (e) {
     console.error("Fetch usage error:", e)

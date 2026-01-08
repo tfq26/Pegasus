@@ -1,9 +1,24 @@
-
 import { Server } from "socket.io";
-import { verify } from "hono/jwt";
+import { verify, decode } from "hono/jwt";
 import { db } from "../db/surreal.js";
+import { createHmac } from "crypto";
 
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
+
+// Helper to normalize dashboard ID and room name
+const getRoom = (id) => {
+    if (!id) return null;
+    // Always take the last part of a colon-separated ID (handles dashboard:UUID or just UUID)
+    const cleanId = id.toString().split(':').pop();
+    return `dashboard:${cleanId}`;
+};
+
+// Helper to normalize spreadsheet ID and room name
+const getSpreadsheetRoom = (id) => {
+    if (!id) return null;
+    const cleanId = id.toString().split(':').pop();
+    return `spreadsheet:${cleanId}`;
+};
 
 export function initSocketServer(server, allowedOrigins) {
     const io = new Server(server || undefined, {
@@ -14,15 +29,27 @@ export function initSocketServer(server, allowedOrigins) {
         }
     });
 
-    console.log("[Socket.io] Server initialized");
 
     io.use(async (socket, next) => {
-        const token = socket.handshake.auth.token || socket.handshake.query.token;
+        let token = socket.handshake.auth.token || socket.handshake.query.token;
+
+        // Fallback to cookie if token is missing (useful for browser clients)
+        if (!token && socket.handshake.headers.cookie) {
+            const cookies = socket.handshake.headers.cookie.split(';');
+            const sessionCookie = cookies.find(c => c.trim().startsWith('session='));
+            if (sessionCookie) {
+                token = sessionCookie.split('=')[1].trim();
+                // console.log('[Socket.io] Using token from session cookie');
+            }
+        }
+
         if (!token) {
+            console.warn('[Socket.io] No auth token provided');
             return next(new Error("Authentication error"));
         }
 
         try {
+            // First try standard verification
             const payload = await verify(token, jwtSecret);
             socket.user = {
                 id: payload.sub,
@@ -33,6 +60,41 @@ export function initSocketServer(server, allowedOrigins) {
             };
             next();
         } catch (err) {
+            // Handle expired tokens gracefully for WebSockets
+            if (err.message.includes("expired") || err.name === "JwtTokenExpired") {
+                try {
+                    const { payload } = decode(token);
+
+                    // CRITICAL: Manually verify signature before trusting the expired payload
+                    const parts = token.split('.');
+                    if (parts.length === 3) {
+                        const hmac = createHmac('sha256', jwtSecret);
+                        hmac.update(parts[0] + '.' + parts[1]);
+                        const expectedSignature = hmac.digest('base64url');
+
+                        if (expectedSignature === parts[2]) {
+                            // Signature matches! Allow a 24-hour grace period for WebSockets
+                            const now = Math.floor(Date.now() / 1000);
+                            const gracePeriod = 24 * 60 * 60; // 24 hours
+
+                            if (now < (payload.exp || 0) + gracePeriod) {
+                                // console.log(`[Socket.io] Grace period allowed for: ${payload.email}`);
+                                socket.user = {
+                                    id: payload.sub,
+                                    email: payload.email,
+                                    firstName: payload.firstName,
+                                    lastName: payload.lastName,
+                                    profilePictureUrl: payload.profilePictureUrl || payload.profile_picture_url
+                                };
+                                return next();
+                            }
+                        }
+                    }
+                } catch (decodeErr) {
+                    console.error("[Socket.io] Manual verification failed:", decodeErr.message);
+                }
+            }
+
             console.error("[Socket.io] Auth failed:", err.message);
             next(new Error("Authentication error"));
         }
@@ -42,9 +104,11 @@ export function initSocketServer(server, allowedOrigins) {
         console.log(`[Socket.io] User connected: ${socket.user.email} (${socket.id})`);
 
         socket.on("join_dashboard", async (dashboardId) => {
-            const room = `dashboard:${dashboardId}`;
+            const room = getRoom(dashboardId);
+            if (!room) return;
+
             socket.join(room);
-            console.log(`[Socket.io] User ${socket.user.email} joined ${room}`);
+            // console.log(`[Socket.io] User ${socket.user.email} joined ${room}`);
 
             // Broadcast presence to others in the room
             socket.to(room).emit("user_joined", {
@@ -62,17 +126,16 @@ export function initSocketServer(server, allowedOrigins) {
 
             // Fetch and emit chat history from dashboard.messages array
             try {
-                // Normalize dashboard ID
+                // Normalize dashboard ID for DB query
                 const dashId = dashboardId.includes(':') ? dashboardId : `dashboard:${dashboardId}`;
 
                 // Fetch messages directly from dashboard document
                 const [dashboards] = await db.query(`SELECT messages FROM ${dashId}`);
 
                 if (dashboards && dashboards[0] && dashboards[0].messages) {
-                    console.log('[Socket.io] Chat history found:', dashboards[0].messages.length, 'messages');
+                    // console.log('[Socket.io] Chat history found:', dashboards[0].messages.length, 'messages');
                     socket.emit("chat_history", dashboards[0].messages);
                 } else {
-                    console.log('[Socket.io] No chat history found for dashboard');
                     socket.emit("chat_history", []);
                 }
             } catch (e) {
@@ -82,15 +145,19 @@ export function initSocketServer(server, allowedOrigins) {
         });
 
         socket.on("leave_dashboard", (dashboardId) => {
-            const room = `dashboard:${dashboardId}`;
+            const room = getRoom(dashboardId);
+            if (!room) return;
+
             socket.leave(room);
-            console.log(`[Socket.io] User ${socket.user.email} left ${room}`);
+            // console.log(`[Socket.io] User ${socket.user.email} left ${room}`);
             socket.to(room).emit("user_left", { socketId: socket.id });
         });
 
         socket.on("cursor_move", (data) => {
             // data: { dashboardId, x, y }
-            const room = `dashboard:${data.dashboardId}`;
+            const room = getRoom(data.dashboardId);
+            if (!room) return;
+
             // Volatile means it can be dropped if network is busy (perfect for cursors)
             socket.to(room).volatile.emit("cursor_update", {
                 socketId: socket.id,
@@ -102,7 +169,10 @@ export function initSocketServer(server, allowedOrigins) {
 
         socket.on("chat_message", async (data) => {
             // data: { dashboardId, content, mentions?, images?, parentId? }
-            const room = `dashboard:${data.dashboardId}`;
+            const room = getRoom(data.dashboardId);
+            if (!room) return;
+
+            // console.log(`[Socket.io] Received chat_message from ${socket.user.email} in room ${room}`);
 
             // Create message object with all user data embedded
             const message = {
@@ -163,12 +233,15 @@ export function initSocketServer(server, allowedOrigins) {
             }
 
             // Broadcast to room
+            console.log(`[Socket.io] Broadcasting message to room ${room}`);
             io.to(room).emit("new_message", message);
+            console.log(`[Socket.io] Message broadcasted successfully`);
         });
 
         socket.on("edit_message", async (data) => {
             // data: { dashboardId, messageId, content }
-            const room = `dashboard:${data.dashboardId}`;
+            const room = getRoom(data.dashboardId);
+            if (!room) return;
             const dashId = data.dashboardId.includes(':') ? data.dashboardId : `dashboard:${data.dashboardId}`;
 
             try {
@@ -200,7 +273,8 @@ export function initSocketServer(server, allowedOrigins) {
 
         socket.on("delete_message", async (data) => {
             // data: { dashboardId, messageId }
-            const room = `dashboard:${data.dashboardId}`;
+            const room = getRoom(data.dashboardId);
+            if (!room) return;
             const dashId = data.dashboardId.includes(':') ? data.dashboardId : `dashboard:${data.dashboardId}`;
 
             try {
@@ -222,7 +296,8 @@ export function initSocketServer(server, allowedOrigins) {
         // @Pegasus AI Query
         socket.on("pegasus_query", async (data) => {
             // data: { dashboardId, query, context? }
-            const room = `dashboard:${data.dashboardId}`;
+            const room = getRoom(data.dashboardId);
+            if (!room) return;
 
             console.log('[Socket.io] Pegasus query:', data.query);
 
@@ -317,8 +392,12 @@ export function initSocketServer(server, allowedOrigins) {
         // SPREADSHEET COLLABORATION EVENTS
         // ========================================
 
+        // spreadsheet handlers helper
+        // (already defined globally)
+
         socket.on("join_spreadsheet", async (spreadsheetId) => {
-            const room = `spreadsheet:${spreadsheetId}`;
+            const room = getSpreadsheetRoom(spreadsheetId);
+            if (!room) return;
             socket.join(room);
             console.log(`[Socket.io] User ${socket.user.email} joined ${room}`);
 
@@ -339,7 +418,8 @@ export function initSocketServer(server, allowedOrigins) {
         });
 
         socket.on("leave_spreadsheet", (spreadsheetId) => {
-            const room = `spreadsheet:${spreadsheetId}`;
+            const room = getSpreadsheetRoom(spreadsheetId);
+            if (!room) return;
             socket.leave(room);
             console.log(`[Socket.io] User ${socket.user.email} left ${room}`);
             socket.to(room).emit("spreadsheet_user_left", { socketId: socket.id });
@@ -347,7 +427,8 @@ export function initSocketServer(server, allowedOrigins) {
 
         socket.on("cell_focus", (data) => {
             // data: { spreadsheetId, row, col }
-            const room = `spreadsheet:${data.spreadsheetId}`;
+            const room = getSpreadsheetRoom(data.spreadsheetId);
+            if (!room) return;
             socket.activeCell = { row: data.row, col: data.col };
 
             socket.to(room).emit("cell_focus_update", {
@@ -360,7 +441,8 @@ export function initSocketServer(server, allowedOrigins) {
 
         socket.on("cell_edit", (data) => {
             // data: { spreadsheetId, row, col, value }
-            const room = `spreadsheet:${data.spreadsheetId}`;
+            const room = getSpreadsheetRoom(data.spreadsheetId);
+            if (!room) return;
 
             socket.to(room).emit("cell_edit_update", {
                 socketId: socket.id,
@@ -372,7 +454,8 @@ export function initSocketServer(server, allowedOrigins) {
         });
 
         socket.on("kick_all_collaborators", (spreadsheetId) => {
-            const room = `spreadsheet:${spreadsheetId}`;
+            const room = getSpreadsheetRoom(spreadsheetId);
+            if (!room) return;
             console.log(`[Socket.io] Kicking all collaborators from ${room} (Private Mode)`);
 
             // Emit kick event to all in room except sender

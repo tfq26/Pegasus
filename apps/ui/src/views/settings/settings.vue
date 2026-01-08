@@ -294,7 +294,7 @@ const testConnection = async (conn: ConnectionEntry) => {
 
 const commitConnections = (emitEvent = true) => {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(savedConnections.value))
+  // window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(savedConnections.value))
   if (emitEvent) {
     window.dispatchEvent(new CustomEvent('pegasus:connections-updated'))
   }
@@ -353,7 +353,7 @@ const summaryFor = (conn: ConnectionEntry) => {
 }
 
 const loadConnections = async (retryCount = 0) => {
-  console.log(`[Settings] loadConnections called, retry: ${retryCount}, token in localStorage:`, !!localStorage.getItem('auth_token'))
+  // console.log(`[Settings] loadConnections called, retry: ${retryCount}, token in localStorage:`, !!localStorage.getItem('auth_token'))
   try {
     const res = await fetch(`${QUERY_API_URL}/connections`, {
       method: 'GET',

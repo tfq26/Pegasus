@@ -1,38 +1,42 @@
-
 <template>
-  <div class="flex items-center -space-x-2">
-    <div 
-      v-for="collaborator in collaborators" 
-      :key="collaborator.socketId"
-      class="relative group"
-      :title="collaborator.user.email"
-    >
-      <div class="w-8 h-8 rounded-lg border-2 border-background bg-muted flex items-center justify-center overflow-hidden text-xs font-medium text-foreground">
-        <img 
-          v-if="collaborator.user.profilePictureUrl" 
-          :src="collaborator.user.profilePictureUrl" 
-          class="w-full h-full object-cover"
-        >
-        <span v-else>{{ getInitials(collaborator.user) }}</span>
-      </div>
-      
-      <!-- Tooltip -->
-      <div class="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md border border-border z-[100]">
-        {{ collaborator.user.firstName || collaborator.user.email }}
-      </div>
-    </div>
-    
-    <!-- More count if needed (simplified for now to show all) -->
+  <div class="flex items-center">
+    <Tooltip :items="mappedCollaborators" />
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+import Tooltip from '@/components/usersTooltip/Tooltip.vue'
+
+const props = defineProps<{
   collaborators: any[]
 }>()
 
-const getInitials = (u: any) => {
-  if (u.firstName && u.lastName) return (u.firstName[0] + u.lastName[0]).toUpperCase()
-  return u.email?.substring(0, 2).toUpperCase() || '?'
+const getCollaboratorColor = (socketId: string) => {
+  const colors = [
+    '#FF3B30', // Red
+    '#34C759', // Green
+    '#007AFF', // Blue
+    '#FF9500', // Orange
+    '#AF52DE', // Purple
+    '#5856D6', // Indigo
+    '#FF2D55', // Pink
+    '#30B0C7', // Teal
+  ]
+  let hash = 0
+  for (let i = 0; i < socketId.length; i++) {
+    hash = socketId.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return colors[Math.abs(hash) % colors.length]
 }
+
+const mappedCollaborators = computed(() => {
+  return props.collaborators.map((c, idx) => ({
+    id: idx, // Tooltip expects a number id
+    name: c.user?.firstName || c.user?.email?.split('@')[0] || 'Guest',
+    designation: c.user?.email || 'Collaborator',
+    image: c.user?.profilePictureUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.user?.firstName || 'G')}&background=random`,
+    color: getCollaboratorColor(c.socketId)
+  }))
+})
 </script>

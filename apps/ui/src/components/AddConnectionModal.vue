@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import ConnectionDialog from '@/components/ConnectionDialog.vue'
 import UpgradeModal from '@/components/UpgradeModal.vue'
 import { defaultConnectionForm } from '@/views/settings/types'
 import type { ConnectionFormState } from '@/views/settings/types'
 import { useConnectionStore } from '@/stores/connection'
-import { useTierLimits } from '@/composables/useTierLimits'
+import { useEntitlements } from '@/composables/useEntitlements'
 import { toast } from '@/composables/useNotifications'
 
 const connectionStore = useConnectionStore()
-const { canCreateConnection: tierAllowsConnection, connectionUsage, handleLimitError, fetchTierUsage } = useTierLimits()
+const { canCreateConnection: tierAllowsConnection, connectionUsage, handleLimitError, fetchEntitlements } = useEntitlements()
 
 const props = defineProps<{
   open: boolean
@@ -33,9 +33,12 @@ const isSaving = ref(false)
 watch(() => props.open, async (isOpen) => {
   if (isOpen) {
     form.value = getFreshForm()
-    // Fetch latest tier usage
-    await fetchTierUsage()
   }
+})
+
+onMounted(async () => {
+    // Refresh limits when opening
+    await fetchEntitlements()
 })
 
 const canAddConnection = computed(() => {

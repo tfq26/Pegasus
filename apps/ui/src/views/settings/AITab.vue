@@ -10,7 +10,7 @@ const isTauri = computed(() => '__TAURI_INTERNALS__' in window)
 import type { SettingsModel } from './types'
 import { getAIModels } from '@/lib/api'
 import { localAI, type OllamaStatus } from '@/services/LocalAIService'
-import { useSubscription } from '@/composables/useSubscription'
+import { useEntitlements } from '@/composables/useEntitlements'
 import UpgradeModal from '@/components/UpgradeModal.vue'
 import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle, Lock } from 'lucide-vue-next'
 
@@ -26,7 +26,7 @@ const isStartingLocal = ref(false)
 const pullProgress = ref<any>(null)
 const showUpgradeModal = ref(false)
 
-const { subscriptionTier, fetchSubscription, hasTierAccess } = useSubscription()
+const { subscriptionTier, fetchEntitlements, isPro, isProPlus } = useEntitlements()
 
 const checkLocalStatus = async () => {
   localStatus.value = await localAI.getStatus()
@@ -64,7 +64,7 @@ onMounted(async () => {
     }
     
     // Fetch subscription info first
-    await fetchSubscription()
+    await fetchEntitlements()
     
     const [cloudModelsResponse, _] = await Promise.all([
       getAIModels(),

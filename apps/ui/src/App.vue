@@ -4,6 +4,8 @@ import { useRoute } from 'vue-router'
 import Navbar from './components/Navbar.vue'
 import DesktopNavbar from './components/DesktopNavbar.vue'
 import { Toaster } from '@/components/ui/sonner'
+import { identityService } from '@/services/identityService'
+import { entitlementService } from '@/services/entitlementService'
 import { useAuth } from '@/composables/useAuth'
 import { usePrefetch } from '@/composables/usePrefetch'
 import { useConnectionStore } from '@/stores/connection'
@@ -87,8 +89,13 @@ onMounted(async () => {
     // Tauri offline: use local auth (handled by router guard)
     console.log('[App] Running in Tauri offline - using local auth')
   } else {
-    // Web or Tauri online: use WorkOS auth
-    fetchUser()
+    // IdentityService initialization
+    console.log('[App] Initializing Identity service...')
+    identityService.init().then(() => {
+        if (identityService.isAuthenticated) {
+            entitlementService.fetch()
+        }
+    })
   }
 })
 

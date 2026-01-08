@@ -273,32 +273,48 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { createCheckoutSession, createPortalSession, getUsageStats } from '@/lib/api'
+import { useEntitlements } from '@/composables/useEntitlements'
+import { createCheckoutSession, createPortalSession, fetchPricingConfig } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 
 const router = useRouter()
 const { user } = useAuth()
-const subscriptionTier = ref('free')
-const isLoadingTier = ref(true)
+// Use global entitlements
+const { 
+  subscriptionTier, 
+  fetchEntitlements, 
+  isLoading: isLoadingTier 
+} = useEntitlements()
+
+const priceIds = ref({
+    pro: 'price_pro_standard',
+    pro_plus: 'price_pro_plus_standard'
+})
 
 onMounted(async () => {
-  if (user.value) {
-    try {
-      const stats = await getUsageStats() as any
-      subscriptionTier.value = stats.tier || 'free'
-    } catch (e) {
-      console.error('Failed to fetch tier:', e)
-    } finally {
-      isLoadingTier.value = false
+    // Parallel fetch: Entitlements + Config
+    const promises: Promise<any>[] = [fetchPricingConfig()]
+    
+    if (user.value) {
+        promises.push(fetchEntitlements())
     }
-  } else {
-    isLoadingTier.value = false
-  }
+
+    try {
+        const [config] = await Promise.all(promises)
+        if (config) {
+            priceIds.value = {
+                pro: config.pro,
+                pro_plus: config.pro_plus
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load pricing page data', e)
+    }
 })
 
 const handleBuy = async (tier: string) => {
   try {
-    const priceId = tier === 'pro' ? 'price_pro_standard' : 'price_1SmdFaGUiKevQtleWObUU2sw'
+    const priceId = tier === 'pro' ? priceIds.value.pro : priceIds.value.pro_plus
     const result = await createCheckoutSession(priceId, tier)
     if (result && (result as any).url) {
       window.location.href = (result as any).url

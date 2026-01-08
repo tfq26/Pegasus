@@ -60,12 +60,18 @@ const router = createRouter({
 
 // Refresh user state after login redirects
 router.beforeEach(async (to, from) => {
-  const { fetchUser, user } = useAuth()
-  const token = localStorage.getItem('auth_token')
+  const { user, isAuthenticated, fetchUser } = useAuth()
 
   // List of paths that require authentication
   const protectedPaths = ['/query', '/dashboard', '/profile', '/settings', '/feedback', '/admin']
   const isProtectedPath = protectedPaths.some(path => to.path.startsWith(path))
+
+  // Public paths that should skip auth checks entirely
+  const publicPaths = ['/login', '/signin', '/local-auth', '/auth/device', '/pricing', '/docs', '/releases', '/error', '/shared']
+  const isPublicPath = publicPaths.some(path => to.path.startsWith(path))
+
+  // Skip guard for public paths
+  if (isPublicPath) return
 
   // For Tauri desktop + offline, check local auth instead
   if (isTauri.value && !navigator.onLine && isProtectedPath) {
@@ -74,21 +80,24 @@ router.beforeEach(async (to, from) => {
       const { checkSession } = useDesktopAuth()
       const localUser = await checkSession()
 
-      if (!localUser && !token) {
+      if (!localUser) {
         console.log('[Router] Desktop offline: No local user, redirecting to local-auth')
         return { path: '/local-auth', query: { redirect: to.fullPath } }
       }
     } catch (e) {
       console.warn('[Router] Desktop auth check failed:', e)
     }
+    return
   }
 
-  // Web: Redirect to login if user is not authenticated and trying to access a protected path
-  if (!isTauri.value && isProtectedPath && !token) {
+  // Web: Check authentication for protected paths
+  if (isProtectedPath && !isAuthenticated.value) {
+    // Try to fetch user (in case they have a valid session cookie)
     await fetchUser()
-    const updatedToken = localStorage.getItem('auth_token')
 
-    if (!updatedToken) {
+    // After fetching, if still not authenticated, redirect to login
+    if (!isAuthenticated.value) {
+      console.log('[Router] Not authenticated, redirecting to login')
       return { path: '/login', query: { redirect: to.fullPath } }
     }
   }

@@ -20,7 +20,7 @@ export const getPayments = async (c) => {
         const rawId = sub.includes(':') ? sub.split(':')[1] : sub;
         const userId = `user:${rawId}`;
 
-        console.log(`[Payments API] Fetching history for user: ${userId}`);
+
 
         // Fetch user payments - RLS allows this query to only return the user's records
         const [payments] = await db.query(`
@@ -30,7 +30,8 @@ export const getPayments = async (c) => {
             LIMIT 50
         `, { rawId });
 
-        console.log(`[Payments API] Found ${payments?.length || 0} records`);
+
+
 
         return c.json({
             success: true,

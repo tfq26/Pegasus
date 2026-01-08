@@ -12,7 +12,8 @@ const mode = useColorMode({
 
 // Initialize to auto mode if no preference is set
 onMounted(() => {
-  const stored = localStorage.getItem('pegasus-theme')
+  // const stored = localStorage.getItem('pegasus-theme')
+  const stored = null
   if (!stored) {
     mode.value = 'auto'
   }

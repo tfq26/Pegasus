@@ -12,6 +12,24 @@
       <p class="text-muted-foreground text-sm mt-2">Securing your session and fetching encrypted data</p>
     </div>
 
+    <!-- Payment Verification Overlay -->
+    <div v-if="isVerifyingPayment" class="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+        <div class="bg-card border border-border rounded-xl p-8 shadow-2xl max-w-sm w-full text-center">
+            <div class="relative mx-auto mb-6 h-20 w-20">
+                <div class="absolute inset-0 rounded-full border-4 border-primary/30 animate-ping"></div>
+                <div class="absolute inset-0 rounded-full border-4 border-t-primary animate-spin"></div>
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+            </div>
+            <h3 class="text-xl font-bold mb-2">Verifying Purchase</h3>
+            <p class="text-muted-foreground text-sm mb-6">Please wait while we confirm your transaction with the payment provider...</p>
+            <div class="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+                <div class="h-full bg-primary animate-progress-indeterminate"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Not Logged In -->
     <div v-else-if="!typedUser" class="max-w-md mx-auto mt-20 w-full bg-card border border-border rounded-xl p-8 shadow-lg text-center">
       <div class="mb-6">
@@ -272,8 +290,8 @@
           </div>
 
 
-           <!-- Expand Vault Storage (Pro/Pro+ Only) -->
-           <div v-if="subscriptionTier === 'pro' || subscriptionTier === 'pro_plus'" class="bg-card border border-border rounded-xl p-6 shadow-sm relative overflow-hidden">
+           <!-- Expand Vault Storage -->
+           <div class="bg-card border border-border rounded-xl p-6 shadow-sm relative overflow-hidden">
              <div class="absolute top-0 right-0 p-3 opacity-10 text-blue-500">
                <svg xmlns="http://www.w3.org/2000/svg" class="h-32 w-32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><rect width="20" height="8" x="2" y="8" rx="2"/></svg>
              </div>
@@ -417,7 +435,8 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { createCheckoutSession, createPortalSession, getSubscriptionStatus, getUsageStats, syncSubscription, syncPayments, createTokenCheckoutSession, createStorageCheckoutSession, getPayments } from '@/lib/api'
+import { useEntitlements } from '@/composables/useEntitlements'
+import { createCheckoutSession, createPortalSession, syncPayments, syncSubscription, createTokenCheckoutSession, createStorageCheckoutSession, getPayments, checkPaymentStatus } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 import Slider from '@/components/ui/slider/Slider.vue'
 
@@ -425,23 +444,49 @@ defineOptions({ name: 'ProfilePage' })
 
 const router = useRouter()
 const { user, fetchUser, logout } = useAuth()
+// Use global entitlements state
+const { 
+  subscriptionTier, 
+  subscriptionStatus, 
+  subscriptionDetails, 
+  tierUsage, 
+  fetchEntitlements, 
+  isLoading: isEntitlementsLoading 
+} = useEntitlements()
+
 const isPageLoading = ref(true)
 const typedUser = computed(() => user.value as any)
-const subscriptionTier = ref('free')
-const usageStats = ref({ 
-  tokens: 0, 
-  limit: 100000, 
-  purchasedTokens: 0, 
-  storage: 0, 
-  storageLimit: 500 * 1024 * 1024,
-  purchasedStorage: 0,
-  storageFormatted: '0 MB',
-  storageLimitFormatted: '500 MB'
+
+// Usage Stats (Computed from tierUsage or default)
+const usageStats = computed(() => {
+  if (tierUsage.value) {
+    return {
+      tokens: tierUsage.value.tokens?.current || 0,
+      limit: tierUsage.value.tokens?.limit || 0,
+      purchasedTokens: tierUsage.value.tokens?.purchased || 0,
+      storage: tierUsage.value.storage?.current || 0,
+      storageLimit: tierUsage.value.storage?.limit || 0,
+      purchasedStorage: tierUsage.value.storage?.purchased || 0,
+      storageFormatted: tierUsage.value.storage?.currentFormatted || '0 MB',
+      storageLimitFormatted: tierUsage.value.storage?.limitFormatted || '0 MB'
+    }
+  }
+  return { 
+    tokens: 0, 
+    limit: 0, 
+    purchasedTokens: 0, 
+    storage: 0, 
+    storageLimit: 0,
+    purchasedStorage: 0,
+    storageFormatted: '0 MB',
+    storageLimitFormatted: '0 MB'
+  }
 })
+
 const syncing = ref(false)
-const subscriptionDetails = ref<any>(null)
 const payments = ref<any[]>([])
 const isLoadingPayments = ref(false)
+const isVerifyingPayment = ref(false)
 
 // Token Purchase State
 const tokenPurchaseAmount = ref(1) // 1 unit = 100k
@@ -460,10 +505,51 @@ const tokenPurchaseList = computed({
 const storagePurchaseAmount = ref(1) // 1 unit = 1GB
 const isBuyingStorage = ref(false)
 
+// Tier-based storage configuration
+const storageConfig = computed(() => {
+  const tier = subscriptionTier.value
+  const configs = {
+    free: { pricePerGB: 2.00, maxGB: 25 },
+    pro: { pricePerGB: 1.25, maxGB: 50 },
+    pro_plus: { pricePerGB: 1.25, maxGB: 200 }
+  }
+  return configs[tier] || configs.free
+})
+
+const storageMaxGB = computed(() => storageConfig.value.maxGB)
+const storagePricePerGB = computed(() => `$${storageConfig.value.pricePerGB.toFixed(2)}`)
+
+const storageAtTierLimit = computed(() => {
+  return storagePurchaseAmount.value >= storageMaxGB.value
+})
+
+const storageLimitMessage = computed(() => {
+  const tier = subscriptionTier.value
+  if (tier === 'free') return `Free users can purchase up to ${storageMaxGB.value}GB`
+  if (tier === 'pro') return `Pro users can purchase up to ${storageMaxGB.value}GB`
+  return `Pro+ users can purchase up to ${storageMaxGB.value}GB`
+})
+
+const storageUpgradeTier = computed(() => {
+  const tier = subscriptionTier.value
+  if (tier === 'free') return 'Pro'
+  if (tier === 'pro') return 'Pro+'
+  return ''
+})
+
+const storageUpgradeLimit = computed(() => {
+  const tier = subscriptionTier.value
+  if (tier === 'free') return 50
+  if (tier === 'pro') return 200
+  return 200
+})
+
 watch(storagePurchaseAmount, (val) => {
-  if (val > 50) storagePurchaseAmount.value = 50
+  const max = storageMaxGB.value
+  if (val > max) storagePurchaseAmount.value = max
   if (val < 1 && val !== null) storagePurchaseAmount.value = 1
 })
+
 const storagePurchaseList = computed({
   get: () => [storagePurchaseAmount.value],
   set: (val: number[]) => {
@@ -474,28 +560,22 @@ const storagePurchaseList = computed({
 })
 
 const calculatedStoragePrice = computed(() => {
-    return (storagePurchaseAmount.value * 5).toFixed(2)
+    return (storagePurchaseAmount.value * storageConfig.value.pricePerGB).toFixed(2)
 })
 
 const calculatedTokenPrice = computed(() => {
     const units = tokenPurchaseAmount.value
-    const basePrice = units * 10
-    let finalPrice = basePrice
+    const tier = subscriptionTier.value
     
-    // 1. Volume Discounts
-    if (units >= 7) {
-        finalPrice = basePrice * 0.85
-    } else if (units >= 3) {
-        finalPrice = basePrice * 0.90
+    // Tier-based pricing (per 100k tokens)
+    const tierPricing = {
+      free: 12,      // $12.00
+      pro: 8,        // $8.00 (33% discount)
+      pro_plus: 6    // $6.00 (50% discount)
     }
-
-    // 2. Heavy Usage Surcharge (if projected total capacity > 1M tokens)
-    const currentLimit = usageStats.value?.limit || 100000
-    const projectedLimit = currentLimit + (units * 100000)
     
-    if (projectedLimit >= 1000000) {
-        finalPrice = finalPrice * 1.25
-    }
+    const pricePerUnit = tierPricing[tier] || tierPricing.free
+    const finalPrice = units * pricePerUnit
     
     return finalPrice.toFixed(2)
 })
@@ -544,8 +624,7 @@ const fetchPayments = async () => {
     }
 
     // 3. Re-fetch usage stats to reflect any newly purchased tokens
-    const usage = await getUsageStats()
-    usageStats.value = usage as any
+    await fetchEntitlements(true)
   } catch (err) {
     console.error('Failed to fetch payments or usage:', err)
   } finally {
@@ -559,46 +638,47 @@ onMounted(async () => {
   try {
     await fetchUser()
     if (typedUser.value) {
-      // Check for success/cancel query params
+      // Check for Stripe Session ID to verify
       const params = new URLSearchParams(window.location.search)
-      if (params.get('tokens_purchased') === 'true') {
-          toast.success('Tokens purchased successfully!')
-          window.history.replaceState({}, '', '/profile')
-      }
-      if (params.get('storage_purchased') === 'true') {
-          toast.success('Storage expansion successful!')
-          window.history.replaceState({}, '', '/profile')
-      }
-      if (params.get('canceled') === 'true') {
-          toast.error('Purchase canceled')
-          window.history.replaceState({}, '', '/profile')
+      const sessionId = params.get('session_id')
+      if (sessionId) {
+          isVerifyingPayment.value = true
+          // Poll for status
+          let attempts = 0
+          const maxAttempts = 20 // 20 * 1s = 20s timeout
+          
+          const poll = async () => {
+              try {
+                  const res = await checkPaymentStatus(sessionId)
+                  if (res && res.status === 'completed') {
+                      isVerifyingPayment.value = false
+                      toast.success('Purchase confirmed & applied!')
+                      // Clear Query Params
+                      window.history.replaceState({}, '', '/profile')
+                      // Reload everything
+                      await fetchPayments()
+                  } else {
+                      attempts++
+                      if (attempts < maxAttempts) {
+                          setTimeout(poll, 1000)
+                      } else {
+                          isVerifyingPayment.value = false
+                          toast.warning('Purchase verification timed out. It may appear shortly.')
+                          await fetchPayments()
+                      }
+                  }
+              } catch (e) {
+                  console.error("Polling error", e)
+                  isVerifyingPayment.value = false
+              }
+          }
+          poll()
+          return // Skip default fetch, poll will trigger it
       }
 
       // Start with payment sync (which now updates usage too)
       await fetchPayments()
-
-      // Usage is already updated by fetchPayments, but we can do a final sync of sub details
-      try {
-        syncing.value = true
-        const result = await syncSubscription() as any
-        if (result.tier) {
-          subscriptionTier.value = result.tier
-        }
-        if (result.subscriptionDetails) {
-          subscriptionDetails.value = result.subscriptionDetails
-        }
-      } catch (e) {
-        console.error('Failed to sync subscription', e)
-        try {
-          const status = await getSubscriptionStatus() as any
-          subscriptionTier.value = status.tier
-          if (status.subscriptionDetails) {
-            subscriptionDetails.value = status.subscriptionDetails
-          }
-        } catch {}
-      } finally {
-        syncing.value = false
-      }
+      await fetchEntitlements(true)
     }
   } finally {
     isPageLoading.value = false
@@ -616,16 +696,11 @@ const handleUpgrade = () => {
 const handleSyncSubscription = async () => {
   syncing.value = true
   try {
-    const result = await syncSubscription() as any
-    if (result.success) {
-      subscriptionTier.value = result.tier
-      if (result.subscriptionDetails) {
-          subscriptionDetails.value = result.subscriptionDetails
-      }
-      toast.success(`Synced! Your plan: ${result.tier}`)
-    } else if (result.error) {
-      toast.error(result.error)
-    }
+    // 1. Force backend to sync with Stripe
+    await syncSubscription()
+    // 2. Refresh local state
+    await fetchEntitlements(true)
+    toast.success(`Synced!`)
   } catch (e) {
     toast.error('Failed to sync subscription')
   } finally {
@@ -645,5 +720,13 @@ const goToLogin = () => {
 }
 .animate-spin-slow {
   animation: spin-slow 3s linear infinite;
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(20%); }
+  100% { transform: translateX(100%); }
+}
+.animate-progress-indeterminate {
+  animation: progress-indeterminate 1.5s infinite linear;
 }
 </style>

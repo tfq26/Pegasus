@@ -436,6 +436,10 @@ export async function fetchPricingConfig() {
   return api.get<{ pro: string, pro_plus: string, storage: string }>('/api/config/plans')
 }
 
+export async function checkPaymentStatus(sessionId: string) {
+  return api.get<{ status: string }>(`/api/payment/status/${sessionId}`)
+}
+
 export async function getUsageStats() {
   return api.get('/usage')
 }
