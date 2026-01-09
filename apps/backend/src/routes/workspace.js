@@ -32,14 +32,14 @@ const upsertUser = async (payload) => {
                 return existingByEmail[0].id.toString();
             } else {
                 // 3. Create new
-                await db.query(`
+                const [created] = await db.query(`
                     CREATE ${userRecordId} CONTENT {
                         email: $email,
                         created_at: time::now(),
                         updated_at: time::now()
                     };
                 `, { email: payload.email });
-                return userRecordId;
+                return created && created[0] ? created[0].id.toString() : userRecordId;
             }
         }
     } catch (e) {
@@ -60,9 +60,10 @@ const authMiddleware = async (c, next) => {
 
         // Use resolved ID logic from other routes (strip prefix if needed)
         if (resolvedId) {
-            const parts = resolvedId.toString().split(':')
+            const resolvedStr = resolvedId.toString();
+            const parts = resolvedStr.split(':')
             if (parts.length > 1) userId = parts[1]
-            else userId = resolvedId
+            else userId = resolvedStr
         }
 
         c.set('userId', userId)

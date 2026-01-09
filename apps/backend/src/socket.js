@@ -27,7 +27,18 @@ export const getIO = () => ioInstance;
 export function initSocketServer(server, allowedOrigins) {
     const io = new Server(server || undefined, {
         cors: {
-            origin: allowedOrigins,
+            origin: (origin, callback) => {
+                const isAllowed = !origin ||
+                    allowedOrigins.includes(origin) ||
+                    (origin.endsWith('.vercel.app') && (origin.includes('pegasus') || origin.includes('tfq26')));
+
+                if (isAllowed) {
+                    callback(null, true);
+                } else {
+                    console.warn(`[Socket.io] CORS blocked origin: ${origin}`);
+                    callback(new Error('Not allowed by CORS'));
+                }
+            },
             methods: ["GET", "POST"],
             credentials: true
         }

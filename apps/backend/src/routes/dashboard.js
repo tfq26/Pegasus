@@ -286,9 +286,12 @@ dashboard.post("/dashboards", async (c) => {
             cover_image: data?.cover_image || '',
             data: data || { layout: [], elements: [] }
         });
+
+        if (!created || !created[0]) throw new Error("Failed to create dashboard");
         return c.json({ id: created[0].id })
     } catch (e) {
-        return c.json({ error: "Failed to create dashboard" }, 500)
+        console.error("[Dashboard] Create error:", e);
+        return c.json({ error: "Failed to create dashboard: " + e.message }, 500)
     }
 })
 
@@ -391,22 +394,28 @@ dashboard.put("/dashboards/:id", async (c) => {
         if (!id.includes(':')) id = `dashboard:${id}`
         const { title, data } = await c.req.json()
 
+        // 1. Check Permissions First (Two-step is more stable in SurrealDB JS)
+        const role = await getDashboardRole(userId, id);
+        if (role !== 'owner' && role !== 'editor' && role !== 'write') {
+            return c.json({ error: "Unauthorized access or insufficient permissions" }, 403)
+        }
+
         const updates = []
-        const params = { userId }
+        const params = { userId, id }
         if (title) { updates.push('title = $title'); params.title = title; }
         if (data?.cover_image !== undefined) { updates.push('cover_image = $cover_image'); params.cover_image = data.cover_image; }
         if (data) { updates.push('data = $data'); params.data = data; }
         updates.push('updated_at = time::now()')
 
-        const query = `
-            UPDATE ${id} SET ${updates.join(', ')}
-            WHERE owner = type::thing('user', $userId)
-               OR (SELECT role FROM dashboard_permission WHERE user=type::thing('user', $userId) AND dashboard=$parent.id)[0] IN ['editor', 'owner'];
-        `
-        await db.query(query, params);
+        if (updates.length > 1) { // More than just updated_at
+            const query = `UPDATE ${id} SET ${updates.join(', ')}`;
+            await db.query(query, params);
+        }
+
         return c.json({ ok: true })
     } catch (e) {
-        return c.json({ error: "Failed to update dashboard" }, 500)
+        console.error("[Dashboard] Update error:", e);
+        return c.json({ error: "Failed to update dashboard: " + e.message }, 500)
     }
 })
 

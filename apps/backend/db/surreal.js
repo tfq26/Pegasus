@@ -82,6 +82,7 @@ const initSchema = async () => {
             DEFINE TABLE dashboard_element SCHEMALESS
                 PERMISSIONS
                     FOR select WHERE dashboard.owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.dashboard AND user = $auth.id)
+                    FOR create FULL
                     FOR update, delete WHERE dashboard.owner = $auth.id OR (SELECT id FROM dashboard_permission WHERE dashboard = $parent.dashboard AND user = $auth.id AND role = 'editor');
             DEFINE FIELD dashboard ON TABLE dashboard_element TYPE record<dashboard>;
             DEFINE FIELD type ON TABLE dashboard_element TYPE string;

@@ -67,7 +67,7 @@ const allowedOrigins = [
   "http://127.0.0.1:1420",
   "https://pegasus-ui-chi.vercel.app",
   frontendUrl
-];
+].filter(Boolean);
 
 const app = new Hono()
 
@@ -100,6 +100,14 @@ const corsConfig = {
 
 // Apply CORS globally
 app.use("*", cors(corsConfig))
+
+// Request Logger
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  console.log(`[${c.req.method}] ${c.req.url} - ${c.res.status} (${ms}ms)`);
+});
 
 if (typeof CompressionStream !== 'undefined') {
   app.use('*', compress())

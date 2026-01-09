@@ -9,6 +9,8 @@ export class WorkspaceService {
     static async getWorkspace(userId, connectionId) {
         try {
             // Check for existing workspace
+            console.log(`[WorkspaceService] Fetching workspace for user: ${userId}, connection: ${connectionId}`);
+
             const [result] = await db.query(`
                 SELECT * FROM connection_workspace 
                 WHERE user = type::thing('user', $userId) 
@@ -18,6 +20,7 @@ export class WorkspaceService {
 
             if (result && result.length > 0) {
                 const workspace = result[0];
+                console.log(`[WorkspaceService] Found workspace for user ${userId}`);
 
                 // Check expiration for temp workspaces
                 if (connectionId === 'temp' && workspace.expires_at) {
@@ -30,9 +33,10 @@ export class WorkspaceService {
                     }
                 }
 
-                return workspace.workspace_data;
+                return workspace.workspace_data || {};
             }
 
+            console.log(`[WorkspaceService] No workspace found for user: ${userId}, connection: ${connectionId}`);
             return null;
         } catch (error) {
             console.error("[WorkspaceService] Error getting workspace:", error);
