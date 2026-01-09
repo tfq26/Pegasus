@@ -110,7 +110,7 @@
 
                <div class="flex justify-between items-center" v-if="subscriptionDetails">
                   <span class="text-xs text-muted-foreground">Renews On</span>
-                  <span class="text-sm font-medium">{{ new Date(subscriptionDetails.renewalDate).toLocaleDateString() }}</span>
+                  <span class="text-sm font-medium">{{ subscriptionDetails.renewalDate && new Date(subscriptionDetails.renewalDate).getTime() > 0 ? new Date(subscriptionDetails.renewalDate).toLocaleDateString() : 'N/A' }}</span>
                </div>
                <div class="flex justify-between items-center" v-if="subscriptionDetails">
                   <span class="text-xs text-muted-foreground">Amount</span>

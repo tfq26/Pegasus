@@ -997,6 +997,41 @@ app.post("/webhook", async (c) => {
       break;
     }
 
+    case 'customer.subscription.updated': {
+      const subscription = event.data.object;
+      const customerId = subscription.customer;
+      const status = subscription.status;
+      const currentPeriodEnd = subscription.current_period_end;
+
+      console.log(`[Webhook] Subscription updated for ${customerId}. Status: ${status}`);
+
+      // We need to find the user by customerId to update them
+      // This query is slightly inefficient without an index on stripe_customer_id, but acceptable for low volume webhooks
+      const [users] = await db.query(`SELECT id, email FROM user WHERE stripe_customer_id = $cid`, { cid: customerId });
+
+      if (users && users.length > 0) {
+        const user = users[0];
+        const tier = subscription.plan?.nickname?.toLowerCase().includes('pro+') ? 'pro_plus' : 'pro'; // Simple heuristic
+
+        await db.query(`
+          UPDATE ${user.id} SET 
+            subscription_tier = $tier,
+            subscription_status = $status,
+            subscription_renews_at = $renewsAt,
+            updated_at = time::now()
+        `, {
+          tier: status === 'active' ? tier : 'free',
+          status,
+          renewsAt: new Date(currentPeriodEnd * 1000).toISOString()
+        });
+
+        console.log(`[Webhook] Synced user ${user.id} subscription. Tier: ${tier}, Renews: ${new Date(currentPeriodEnd * 1000).toISOString()}`);
+      } else {
+        console.log(`[Webhook] No user found for customer ${customerId}`);
+      }
+      break;
+    }
+
     case 'customer.subscription.deleted': {
       const subscription = event.data.object
       const category = subscription.metadata?.type || 'subscription';

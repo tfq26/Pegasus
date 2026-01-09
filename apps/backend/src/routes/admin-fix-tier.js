@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { db } from '../../db/surreal.js';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "sk_test_placeholder";
+const stripe = new Stripe(stripeSecretKey);
 const adminFix = new Hono();
 
 // TEMPORARY: Fix subscription tier for user based on payment history
