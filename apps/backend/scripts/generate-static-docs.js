@@ -13,12 +13,11 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getDocsIndex, getGuide, getRelease, getGuides, getReleases } from '../src/services/docsService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// Load environment variables manually
+// 1. Load environment variables BEFORE any other imports
 const envPath = path.join(__dirname, '../.env')
 if (fs.existsSync(envPath)) {
     const envContent = fs.readFileSync(envPath, 'utf-8')
@@ -30,6 +29,9 @@ if (fs.existsSync(envPath)) {
         }
     })
 }
+
+// 2. Define names but don't import yet to avoid early DB initialization
+let getDocsIndex, getGuide, getRelease, getGuides, getReleases;
 
 // Output directory in the UI public folder
 const DOCS_OUTPUT_DIR = path.join(__dirname, '../../ui/public/_docs')
@@ -61,8 +63,24 @@ function writeJSON(filePath, data) {
 async function generateStaticDocs() {
     console.log('📚 Generating static documentation files...\n')
 
+    // Check if database is configured before proceeding
+    const dbUrl = process.env.NEON_DATABASE_URL
+    if (!dbUrl) {
+        console.warn('⚠️  NEON_DATABASE_URL not found in environment.')
+        console.warn('⚠️  Skipping static docs generation. Documentation will be served live from the database at runtime.')
+        return
+    }
+
     try {
         ensureDirectories()
+
+        // 2. Load services dynamically now that ENV is ready
+        const services = await import('../src/services/docsService.js')
+        getDocsIndex = services.getDocsIndex
+        getGuide = services.getGuide
+        getRelease = services.getRelease
+        getGuides = services.getGuides
+        getReleases = services.getReleases
 
         // 1. Generate index
         console.log('1️⃣  Generating index...')

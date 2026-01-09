@@ -163,8 +163,22 @@ const releaseData = ref<any>(null)
 const fetchIndex = async () => {
   isLoadingList.value = true
   try {
-    // Use centralized API client instead of raw fetch
-    const data = await api.get<any>('/api/docs')
+    let data;
+    try {
+      // 1. Try static file first (Generated at build time)
+      const res = await fetch('/_docs/index.json')
+      if (res.ok) {
+        data = await res.json()
+        console.log('[Docs] Loaded from static index')
+      } else {
+        throw new Error('Static index not found')
+      }
+    } catch (e) {
+      // 2. Fallback to live API
+      console.log('[Docs] Falling back to live API index')
+      data = await api.get<any>('/api/docs')
+    }
+
     guides.value = data.guides || []
     
     // Sort changelogs by version (latest first)
@@ -187,7 +201,6 @@ const fetchIndex = async () => {
         selectItem('release', latestRelease)
       }
     }
-    await new Promise(resolve => setTimeout(resolve, 600))
   } catch (e) {
     console.error('Failed to fetch docs index', e)
   } finally {
@@ -199,9 +212,25 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
   if (!slug) return
   isLoadingContent.value = true
   try {
-    // Use centralized API client instead of raw fetch
-    const endpoint = type === 'guide' ? `/api/docs/guides/${slug}` : `/api/docs/releases/${slug}`
-    const data = await api.get<any>(endpoint)
+    let data;
+    const staticFolder = type === 'guide' ? 'guides' : 'releases'
+    const staticPath = `/_docs/${staticFolder}/${slug}.json`
+    
+    try {
+      // 1. Try static file first
+      const res = await fetch(staticPath)
+      if (res.ok) {
+        data = await res.json()
+        console.log(`[Docs] Loaded ${slug} from static storage`)
+      } else {
+        throw new Error('Static content not found')
+      }
+    } catch (e) {
+      // 2. Fallback to live API
+      console.log(`[Docs] Fetching ${slug} from live API`)
+      const endpoint = type === 'guide' ? `/api/docs/guides/${slug}` : `/api/docs/releases/${slug}`
+      data = await api.get<any>(endpoint)
+    }
     
     if (type === 'guide') {
       contentType.value = data.content_type || 'markdown'
@@ -212,13 +241,14 @@ const fetchContent = async (type: 'guide' | 'release', slug: string) => {
       }
       releaseData.value = null
     } else {
-      // For releases, the backend returns { data: release } structure for consistency with marketing
+      // For releases, normalization
       const release = data.data || data
       releaseData.value = release
       contentType.value = 'markdown'
       content.value = ''
     }
   } catch (e) {
+    console.error(`[Docs] Error loading ${slug}:`, e)
     content.value = '<div class="text-center py-20 text-destructive">Failed to load content.</div>'
   } finally {
     isLoadingContent.value = false
