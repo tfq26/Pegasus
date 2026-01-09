@@ -10,8 +10,10 @@ import { RAGService } from "../services/ragService.js"
 import { getUserFeatureFlags } from "../../experimental-features.js"
 import { filterModelsByTier } from "../../lib/tierLimits.js"
 
+import { ConfigService } from "../services/ConfigService.js"
+
 const chat = new Hono()
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
+const jwtSecret = ConfigService.getJwtSecret()
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {

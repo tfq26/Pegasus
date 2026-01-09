@@ -4,8 +4,10 @@ import { verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { canCreateConnection } from "../../lib/tierLimits.js"
 
+import { ConfigService } from "../services/ConfigService.js"
+
 const connections = new Hono()
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
+const jwtSecret = ConfigService.getJwtSecret()
 
 // Helper
 const upsertUser = async (payload) => {

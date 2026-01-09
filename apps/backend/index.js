@@ -846,6 +846,7 @@ app.get("/subscription-status", async (c) => {
     let status = null
     let amount = 0
     let interval = 'month'
+    let currentPeriodEnd = null
 
     // If user has a Stripe customer ID, fetch subscription details
     if (stripeCustomerId) {

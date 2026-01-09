@@ -1,0 +1,48 @@
+# Use the official Bun image
+FROM oven/bun:1.1 AS base
+WORKDIR /usr/src/app
+
+# --- Stage 1: Install dependencies ---
+FROM base AS install
+RUN mkdir -p /temp/dev
+COPY package.json bun.lock /temp/dev/
+COPY apps/backend/package.json /temp/dev/apps/backend/
+COPY apps/ui/package.json /temp/dev/apps/ui/
+RUN cd /temp/dev && bun install --frozen-lockfile
+
+# install with --production (exclude devDependencies)
+RUN mkdir -p /temp/prod
+COPY package.json bun.lock /temp/prod/
+COPY apps/backend/package.json /temp/prod/apps/backend/
+COPY apps/ui/package.json /temp/prod/apps/ui/
+RUN cd /temp/prod && bun install --frozen-lockfile --production
+
+# --- Stage 2: Prerelease (copy all files and build) ---
+FROM base AS prerelease
+COPY --from=install /temp/dev/node_modules node_modules
+COPY . .
+
+# Run build if needed (backend might not need a build if it's JS, but we trigger it for consistency)
+RUN bun run build
+
+# --- Stage 3: Release (The final image) ---
+FROM node:20-slim AS release
+WORKDIR /usr/src/app
+
+# Install bun just to have it if needed (optional)
+# RUN npm install -g bun
+
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=prerelease /usr/src/app/apps/backend apps/backend
+COPY --from=prerelease /usr/src/app/package.json .
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Expose the port
+EXPOSE 3000
+
+# Run the backend
+WORKDIR /usr/src/app/apps/backend
+CMD [ "node", "index.js" ]

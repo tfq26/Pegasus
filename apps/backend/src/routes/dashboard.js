@@ -8,21 +8,13 @@ import { SecretService } from "../services/SecretService.js"
 import { canCreateDashboard } from "../../lib/tierLimits.js"
 import { getIO, getRoom } from "../socket.js"
 
-const dashboard = new Hono()
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-const workos = new WorkOS(process.env.WORKOS_API_KEY || "sk_test_placeholder")
+import { ConfigService } from "../services/ConfigService.js"
 
-// Helper to get token from cookie or Authorization header
-const getToken = (c) => {
-    let token = getCookie(c, "session")
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
-    }
-    return token
-}
+const dashboard = new Hono()
+const jwtSecret = ConfigService.getJwtSecret()
+const workos = new WorkOS(ConfigService.getWorkOSConfig().apiKey)
+
+import { getAuthToken } from "../../lib/auth.js"
 
 // Helper to ensure user exists
 const upsertUser = async (payload) => {
@@ -156,7 +148,7 @@ const notifyPermissionChange = async (email, dashboardId, role, type = 'update')
 
 // Legacy single dashboard endpoint
 dashboard.get("/dashboard", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -174,7 +166,7 @@ dashboard.get("/dashboard", async (c) => {
 })
 
 dashboard.post("/dashboard/elements", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -206,7 +198,7 @@ dashboard.post("/dashboard/elements", async (c) => {
 })
 
 dashboard.delete("/dashboard/elements/:id", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -221,7 +213,7 @@ dashboard.delete("/dashboard/elements/:id", async (c) => {
 })
 
 dashboard.put("/dashboard/elements/:id", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -248,7 +240,7 @@ dashboard.put("/dashboard/elements/:id", async (c) => {
 })
 
 dashboard.get("/dashboards", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -266,7 +258,7 @@ dashboard.get("/dashboards", async (c) => {
 })
 
 dashboard.post("/dashboards", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -301,7 +293,7 @@ dashboard.post("/dashboards", async (c) => {
 })
 
 dashboard.get("/dashboards/shared", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -345,7 +337,7 @@ dashboard.get("/dashboards/shared", async (c) => {
 })
 
 dashboard.get("/dashboards/:id", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -390,7 +382,7 @@ dashboard.get("/dashboards/:id", async (c) => {
 })
 
 dashboard.put("/dashboards/:id", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -419,7 +411,7 @@ dashboard.put("/dashboards/:id", async (c) => {
 })
 
 dashboard.post("/dashboards/:id/share", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -443,7 +435,7 @@ dashboard.post("/dashboards/:id/share", async (c) => {
 
 // Privacy
 dashboard.put("/dashboards/:id/privacy", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -468,7 +460,7 @@ dashboard.put("/dashboards/:id/privacy", async (c) => {
 })
 
 dashboard.delete("/dashboards/:id", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -498,7 +490,7 @@ dashboard.delete("/dashboards/:id", async (c) => {
 // Unified Permission Management
 
 dashboard.get("/dashboards/:id/permissions", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -561,7 +553,7 @@ dashboard.get("/dashboards/:id/permissions", async (c) => {
 })
 
 dashboard.post("/dashboards/:id/share/invite", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -601,7 +593,7 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
 })
 
 dashboard.put("/dashboards/:id/permissions/:email", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -654,7 +646,7 @@ dashboard.put("/dashboards/:id/permissions/:email", async (c) => {
 })
 
 dashboard.delete("/dashboards/:id/permissions/:email", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
@@ -721,7 +713,7 @@ dashboard.get("/shared/dashboard/:token", async (c) => {
 
 // Files
 dashboard.post("/dashboards/:dashboardId/files", async (c) => {
-    const token = getToken(c)
+    const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)

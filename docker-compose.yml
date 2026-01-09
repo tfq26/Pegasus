@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Pegasus Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - SURREAL_URL=ws://surrealdb:8000/rpc
+      - SURREAL_USER=root
+      - SURREAL_PASS=root
+      - SURREAL_NS=pegasus
+      - SURREAL_DB=pegasus
+      # Add other ENVs here or via .env file
+    depends_on:
+      - surrealdb
+    restart: always
+
+  # SurrealDB
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    command: start --user root --pass root --bind 0.0.0.0:8000 file:/mydata/pegasus.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./pegasus_data:/mydata
+    restart: always
+
+  # Pegasus UI (Optional, if you want to host it containerized)
+  # ui:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.ui
+  #   ports:
+  #     - "80:80"
+  #   environment:
+  #     - VITE_QUERY_API_URL=http://localhost:3000
+  #   depends_on:
+  #     - backend
