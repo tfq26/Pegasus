@@ -106,6 +106,11 @@ app.use('*', async (c, next) => {
   const start = Date.now();
   await next();
   const ms = Date.now() - start;
+
+  // Skip high-frequency polling logs to keep console clean
+  const isPolling = c.req.url.includes('/status') || c.req.url.includes('/usage') || c.req.url.includes('/subscription-status');
+  if (isPolling && (c.res.status === 200 || c.res.status === 304)) return;
+
   console.log(`[${c.req.method}] ${c.req.url} - ${c.res.status} (${ms}ms)`);
 });
 
@@ -919,7 +924,7 @@ app.post("/webhook", async (c) => {
   let event
 
   try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
+    event = await stripe.webhooks.constructEventAsync(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
     // console.log(`[Webhook] Received event: ${event.type}`)
   } catch (err) {
     console.error(`[Webhook] Signature verification failed:`, err.message)
