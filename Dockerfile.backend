@@ -4,22 +4,19 @@ WORKDIR /usr/src/app
 
 # --- Stage 1: Install dependencies ---
 FROM base AS install
-RUN mkdir -p /temp/dev
-COPY package.json bun.lock /temp/dev/
-COPY apps/backend/package.json /temp/dev/apps/backend/
-COPY apps/ui/package.json /temp/dev/apps/ui/
-RUN cd /temp/dev && bun install --no-frozen-lockfile
 
-# install with --production (exclude devDependencies)
-RUN mkdir -p /temp/prod
-COPY package.json bun.lock /temp/prod/
-COPY apps/backend/package.json /temp/prod/apps/backend/
-COPY apps/ui/package.json /temp/prod/apps/ui/
-RUN cd /temp/prod && bun install --production --no-frozen-lockfile
+# Disable CI lockfile checking
+ENV CI=false
+
+RUN mkdir -p /temp/deps
+COPY package.json bun.lock /temp/deps/
+COPY apps/backend/package.json /temp/deps/apps/backend/
+COPY apps/ui/package.json /temp/deps/apps/ui/
+RUN cd /temp/deps && bun install
 
 # --- Stage 2: Prerelease (copy all files and build) ---
 FROM base AS prerelease
-COPY --from=install /temp/dev/node_modules node_modules
+COPY --from=install /temp/deps/node_modules node_modules
 COPY . .
 
 # Run build if needed (backend might not need a build if it's JS, but we trigger it for consistency)
@@ -32,7 +29,7 @@ WORKDIR /usr/src/app
 # Install bun just to have it if needed (optional)
 # RUN npm install -g bun
 
-COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=install /temp/deps/node_modules node_modules
 COPY --from=prerelease /usr/src/app/apps/backend apps/backend
 COPY --from=prerelease /usr/src/app/package.json .
 
