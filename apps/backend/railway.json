@@ -7,6 +7,6 @@
         "numReplicas": 1,
         "sleepApplication": false,
         "restartPolicyType": "ON_FAILURE",
-        "startCommand": "node index.js"
+        "startCommand": "bun run index.js"
     }
 }
