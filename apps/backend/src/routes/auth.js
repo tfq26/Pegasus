@@ -4,60 +4,71 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
 import { db } from "../../db/surreal.js"
 import { getAuthToken } from "../../lib/auth.js"
-import { getUserFeatureFlags, getExperimentalStatus } from "../../experimental-features.js"
+import { getUserFeatureFlags } from "../../experimental-features.js"
+import { ConfigService } from "../services/ConfigService.js"
 
 const auth = new Hono()
 
 // Configuration
-const workos = new WorkOS(process.env.WORKOS_API_KEY || "sk_test_placeholder")
-const clientId = process.env.WORKOS_CLIENT_ID
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
-const redirectUri = process.env.WORKOS_REDIRECT_URI ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/auth/callback` : "http://localhost:3000/auth/callback")
+const { apiKey, clientId, redirectUri } = ConfigService.getWorkOSConfig()
+const workos = new WorkOS(apiKey)
+const jwtSecret = ConfigService.getJwtSecret()
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:1420",
-        "http://127.0.0.1:1420",
-        "https://pegasus-ui-chi.vercel.app"
-    ]
+/**
+ * [AUTH_TRACE] Helper to finalize login and redirect to frontend
+ */
+const finalizeLogin = async (c, { token, user, traceId, returnTo }) => {
+    const isProduction = ConfigService.isProduction()
+    const frontendUrl = ConfigService.getFrontendUrl()
+
+    console.log(`[AUTH_TRACE] [${traceId}] Finalizing login for ${user.email}`)
+
+    // 1. Set temporary session cookie for handshake/cross-domain compatibility
+    setCookie(c, "session", token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "Lax",
+        path: "/",
+        maxAge: 60 * 60 * 24, // 24 hours
+    })
+
+    // 2. Prepare the final redirect URL
+    let targetUrl = returnTo || frontendUrl
+    const finalRedirect = new URL(targetUrl, frontendUrl)
+
+    // 3. Append token to URL so frontend identityService can capture and store it
+    finalRedirect.searchParams.set('token', token)
+
+    console.log(`[AUTH_TRACE] [${traceId}] Redirection sequence: ${finalRedirect.toString()}`)
+    return c.redirect(finalRedirect.toString())
+}
 
 // Helper to ensure user exists in DB
-const upsertUser = async (payload) => {
+const upsertUser = async (payload, traceId = 'system') => {
     try {
         const userId = payload.sub || payload.id
         const userRecordId = `user:${userId}`
 
+        console.log(`[AUTH_TRACE] [${traceId}] Syncing user record: ${userRecordId}`)
 
+        const firstName = payload.firstName || payload.first_name || ""
+        const lastName = payload.lastName || payload.last_name || ""
+        const pic = payload.profilePictureUrl || payload.profile_picture_url || null
 
-        // Check if user exists first
-        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`);
+        // Check if user exists
+        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`)
 
         if (existing && existing.length > 0) {
-            // User exists, just update
             await db.query(`
                 UPDATE ${userRecordId} SET 
                     email = $email,
                     first_name = $firstName,
                     last_name = $lastName,
                     profile_picture_url = $pic,
-                    subscription_tier = subscription_tier OR 'free',
-                    purchased_tokens = type::number(purchased_tokens OR 0),
-                    purchased_storage = type::number(purchased_storage OR 0),
-                    stripe_customer_id = type::string(stripe_customer_id OR ""),
                     updated_at = time::now();
-            `, {
-                email: payload.email,
-                firstName: payload.firstName,
-                lastName: payload.lastName,
-                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-            });
-
+            `, { email: payload.email, firstName, lastName, pic })
+            console.log(`[AUTH_TRACE] [${traceId}] Record updated.`)
         } else {
-            // User doesn't exist, create
             await db.query(`
                 CREATE ${userRecordId} CONTENT {
                     email: $email,
@@ -71,31 +82,31 @@ const upsertUser = async (payload) => {
                     created_at: time::now(),
                     updated_at: time::now()
                 };
-            `, {
-                email: payload.email,
-                firstName: payload.firstName,
-                lastName: payload.lastName,
-                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-            });
-
+            `, { email: payload.email, firstName, lastName, pic })
+            console.log(`[AUTH_TRACE] [${traceId}] New record created.`)
         }
-
     } catch (e) {
-        console.error("[Auth] Failed to upsert user:", e)
+        console.error(`[AUTH_TRACE] [${traceId}] Failed to upsert user:`, e.message)
         throw e
     }
 }
 
 // Routes
 auth.get("/login", (c) => {
-    const returnTo = c.req.query("return_to");
+    const returnTo = c.req.query("return_to")
+    const traceId = Math.random().toString(36).substring(7)
+    const isProduction = ConfigService.isProduction()
+
+    console.log(`[AUTH_TRACE] [${traceId}] Login initiated. return_to: ${returnTo || 'none'}`)
+
     if (returnTo) {
         setCookie(c, "auth_return_to", returnTo, {
             httpOnly: true,
             path: '/',
-            maxAge: 300, // 5 min
-            sameSite: 'Lax'
-        });
+            maxAge: 300,
+            sameSite: 'Lax',
+            secure: isProduction
+        })
     }
 
     const authorizationUrl = workos.userManagement.getAuthorizationUrl({
@@ -104,42 +115,44 @@ auth.get("/login", (c) => {
         redirectUri,
     })
 
+    console.log(`[AUTH_TRACE] [${traceId}] Redirecting to WorkOS...`)
     return c.redirect(authorizationUrl)
 })
 
 auth.get("/callback", async (c) => {
     const code = c.req.query("code")
+    const traceId = Math.random().toString(36).substring(7)
+    const isProduction = ConfigService.isProduction()
+
+    console.log(`[AUTH_TRACE] [${traceId}] Callback received. Exchange start.`)
 
     if (!code) {
+        console.error(`[AUTH_TRACE] [${traceId}] Error: No code in callback query params.`)
         return c.json({ error: "No code provided" }, 400)
     }
 
     try {
-        console.log("Auth Debug Info:")
-        console.log("- Redirect URI:", redirectUri)
-        console.log("- Client ID:", clientId)
-
         const { user } = await workos.userManagement.authenticateWithCode({
             code,
             clientId,
             redirectUri,
         })
 
-        console.log("WorkOS User Object:", user.email)
+        console.log(`[AUTH_TRACE] [${traceId}] WorkOS auth success: ${user.email}`)
 
-        // Check for email collision (different ID)
+        // Cleanup duplicate records by email if they exist with different IDs
         const existingUserRs = await db.query("SELECT id FROM user WHERE email = $email AND id != $userId", {
             email: user.email,
             userId: `user:${user.id}`
-        });
+        })
 
         if (existingUserRs[0] && existingUserRs[0].length > 0) {
-            const existingId = existingUserRs[0][0].id;
-
-            await db.query(`DELETE ${existingId}`);
+            const existingId = existingUserRs[0][0].id
+            console.log(`[AUTH_TRACE] [${traceId}] Conflict resolution: Removing stale record ${existingId}`)
+            await db.query(`DELETE ${existingId}`)
         }
 
-        await upsertUser(user);
+        await upsertUser(user, traceId)
 
         const payload = {
             sub: user.id,
@@ -148,85 +161,46 @@ auth.get("/callback", async (c) => {
             lastName: user.lastName,
             profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null,
             organizationName: user.organizationName || user.organization?.name || null,
-            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
+            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 Days
         }
 
         const token = await sign(payload, jwtSecret)
-        const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
 
-        // Cookie configuration for mobile compatibility
-        const cookieOptions = {
-            httpOnly: true,
-            secure: isProduction,
-            sameSite: "Lax",
-            path: "/",
-            maxAge: 60 * 60 * 24, // 24 hours
-        }
-
-        setCookie(c, "session", token, cookieOptions)
-
-        const returnTo = getCookie(c, "auth_return_to");
+        const returnTo = getCookie(c, "auth_return_to")
         if (returnTo) {
-            deleteCookie(c, "auth_return_to");
-            console.log(`[Auth] Redirecting to return_to: ${returnTo}`);
-            const redirectUrl = new URL(returnTo)
-            redirectUrl.searchParams.set('token', token)
-            return c.redirect(redirectUrl.toString());
+            deleteCookie(c, "auth_return_to", { path: '/', secure: isProduction })
         }
 
-        // Fallback: Pick the best frontend URL from allowedOrigins
-        const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-        let frontendUrl = allowedOrigins.find(o => o.includes('vercel.app')) || allowedOrigins[0];
+        return finalizeLogin(c, { token, user, traceId, returnTo })
 
-        // If not in production, localhost is fine
-        if (!isProd) {
-            frontendUrl = allowedOrigins.find(o => o.includes('localhost')) || allowedOrigins[0];
-        }
-
-        console.log(`[Auth] No return_to found, falling back to: ${frontendUrl}`);
-        const redirectUrl = new URL(frontendUrl)
-        redirectUrl.searchParams.set('token', token)
-        return c.redirect(redirectUrl.toString())
     } catch (error) {
-        console.error("Auth error:", error)
-        return c.json({ error: error.message }, 500)
+        console.error(`[AUTH_TRACE] [${traceId}] Auth failure:`, error.message)
+        const frontendUrl = ConfigService.getFrontendUrl()
+        return c.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error.message)}`)
     }
 })
 
 auth.get("/logout", (c) => {
+    const isProduction = ConfigService.isProduction()
+    const traceId = Math.random().toString(36).substring(7)
+    const frontendUrl = ConfigService.getFrontendUrl()
 
+    console.log(`[AUTH_TRACE] [${traceId}] Logout requested. Purging server sessions.`)
 
-    // Explicitly overwrite the cookie with past expiration
-    const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
-
-    // Use deleteCookie for maximum compatibility
-    deleteCookie(c, "session", {
+    // Clear session cookies
+    const cookieOptions = {
         path: "/",
         secure: isProduction,
         httpOnly: true,
         sameSite: "Lax",
-    })
-
-    // Also set it to empty with maxAge 0 as a fallback
-    setCookie(c, "session", "", {
-        path: "/",
-        secure: isProduction,
-        httpOnly: true,
-        sameSite: "Lax",
-        maxAge: 0,
-        expires: new Date(0)
-    })
-
-
-
-    // Support redirect-based logout for better browser cookie handling
-    const redirectUrl = c.req.query("redirect")
-    if (redirectUrl) {
-
-        return c.redirect(redirectUrl)
     }
 
-    return c.json({ success: true })
+    deleteCookie(c, "session", cookieOptions)
+    setCookie(c, "session", "", { ...cookieOptions, maxAge: 0, expires: new Date(0) })
+
+    const redirectUrl = c.req.query("redirect") || frontendUrl
+    console.log(`[AUTH_TRACE] [${traceId}] Logout complete. Redirecting to: ${redirectUrl}`)
+    return c.redirect(redirectUrl)
 })
 
 auth.get("/me", async (c) => {
@@ -263,7 +237,7 @@ auth.get("/me", async (c) => {
 
         return c.json(response)
     } catch (error) {
-        console.error('[Auth /me] Token verification failed:', error.message)
+        console.error(`[AUTH_TRACE] [/me] Token verification failed: ${error.message}`)
         return c.json({ error: "Invalid token" }, 401)
     }
 })
@@ -290,7 +264,7 @@ auth.post('/device/code', async (c) => {
     return c.json({
         device_code: deviceCode,
         user_code: code,
-        verification_url: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/device`,
+        verification_url: `${ConfigService.getFrontendUrl()}/auth/device`,
         expires_in: 600
     })
 })

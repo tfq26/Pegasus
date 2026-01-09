@@ -6,6 +6,7 @@ import { handle } from '@hono/node-server/vercel'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
 import { initSocketServer } from "./src/socket.js"
+import { ConfigService } from "./src/services/ConfigService.js"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
 import { db, connectDB } from "./db/surreal.js"
@@ -53,25 +54,20 @@ import os from "node:os"
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 
 const port = process.env.PORT || 3000;
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
+const jwtSecret = ConfigService.getJwtSecret();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder");
-const rawOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
-    "https://pegasus-ui-chi.vercel.app"
-  ];
 
-// Always ensure the reported production origin is in the list as a backup
-if (!rawOrigins.includes("https://pegasus-ui-chi.vercel.app")) {
-  rawOrigins.push("https://pegasus-ui-chi.vercel.app");
-}
+const frontendUrl = ConfigService.getFrontendUrl();
+const isProd = ConfigService.isProduction();
 
-const allowedOrigins = rawOrigins;
-const frontendUrl = process.env.FRONTEND_URL || allowedOrigins[0];
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:1420",
+  "http://127.0.0.1:1420",
+  "https://pegasus-ui-chi.vercel.app",
+  frontendUrl
+];
 
 const app = new Hono()
 
@@ -848,7 +844,8 @@ app.get("/subscription-status", async (c) => {
 
 
     let status = null
-    let currentPeriodEnd = null
+    let amount = 0
+    let interval = 'month'
 
     // If user has a Stripe customer ID, fetch subscription details
     if (stripeCustomerId) {
@@ -859,20 +856,30 @@ app.get("/subscription-status", async (c) => {
           limit: 1
         })
 
-
-
         if (subscriptions.data.length > 0) {
           const subscription = subscriptions.data[0]
           status = subscription.status
           currentPeriodEnd = subscription.current_period_end
 
+          if (subscription.items.data.length > 0) {
+            const price = subscription.items.data[0].price
+            amount = price.unit_amount
+            interval = price.recurring?.interval || 'month'
+          }
         }
       } catch (stripeError) {
         console.error('[Subscription] Failed to fetch Stripe subscription:', stripeError)
       }
     }
 
-    const response = { tier, status, currentPeriodEnd }
+    const response = {
+      tier,
+      status,
+      currentPeriodEnd,
+      amount,
+      interval,
+      renewalDate: currentPeriodEnd ? new Date(currentPeriodEnd * 1000).toISOString() : null
+    }
 
     return c.json(response)
   } catch (e) {

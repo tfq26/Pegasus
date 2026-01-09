@@ -1,6 +1,11 @@
 <template>
-  <div class="w-full min-h-full bg-background">
-    <div class="max-w-6xl mx-auto p-6 sm:p-10 space-y-12">
+  <div class="w-full min-h-full bg-background relative">
+    <LoadingScreen 
+      v-if="isLoading" 
+      title="Accessing Support Nexus"
+      message="Establishing secure connection to feedback protocols..."
+    />
+    <div v-else class="max-w-6xl mx-auto p-6 sm:p-10 space-y-12 animate-in fade-in duration-700">
       
       <!-- Header -->
       <div class="text-center space-y-4">
@@ -236,13 +241,13 @@
           </form>
         </div>
       </section>
-
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { submitFeedback } from '@/lib/api'
 import { useNotifications, toast } from '@/composables/useNotifications'
 import { Sparkles, MessageSquare, Check, Send, Beaker, Clock, BookOpen, ArrowRight } from 'lucide-vue-next'
@@ -264,6 +269,7 @@ const experimentalForm = ref({
 })
 
 const isSubmittingExperimental = ref(false)
+const isLoading = ref(true)
 
 const isExperimentalFormValid = computed(() => {
   return experimentalForm.value.reason.trim().length > 20 &&
@@ -320,7 +326,14 @@ const handleExperimentalRequest = async () => {
 }
 
 onMounted(async () => {
-  await loadExperimentalStatus()
+  isLoading.value = true
+  try {
+    await loadExperimentalStatus()
+    // Artificial delay for smooth reveal
+    await new Promise(resolve => setTimeout(resolve, 600))
+  } finally {
+    isLoading.value = false
+  }
 })
 
 const form = ref({

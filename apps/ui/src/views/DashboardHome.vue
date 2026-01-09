@@ -1,16 +1,11 @@
 <template>
   <div class="w-full h-full flex flex-col bg-background text-foreground overflow-hidden">
     <!-- Loading State -->
-    <div v-if="isInitializing" class="flex flex-col items-center justify-center h-full w-full">
-      <div class="relative">
-        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
-        </div>
-      </div>
-      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Synchronizing Dashboards...</p>
-      <p class="text-muted-foreground text-sm mt-2">Connecting to your secure visualization node</p>
-    </div>
+    <LoadingScreen 
+      v-if="isInitializing" 
+      title="Synchronizing Dashboards"
+      message="Connecting to your secure visualization node..."
+    />
 
     <template v-else>
       <!-- Top Bar -->
@@ -505,6 +500,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'

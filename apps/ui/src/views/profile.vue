@@ -1,19 +1,15 @@
 <template>
   <div class="min-h-screen bg-background text-foreground p-4 md:p-8 xl:p-12 transition-all duration-500">
     <!-- Loading State -->
-    <div v-if="isPageLoading" class="flex flex-col items-center justify-center min-h-[80vh]">
-      <div class="relative">
-        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
-        </div>
-      </div>
-      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Initializing Pegasus Vault...</p>
-      <p class="text-muted-foreground text-sm mt-2">Securing your session and fetching encrypted data</p>
-    </div>
+    <!-- Loading State -->
+    <LoadingScreen 
+      v-if="isPageLoading" 
+      title="Initializing Pegasus Vault"
+      message="Securing your session and fetching encrypted data..."
+    />
 
     <!-- Payment Verification Overlay -->
-    <div v-if="isVerifyingPayment" class="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+    <div v-else-if="isVerifyingPayment" class="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
         <div class="bg-card border border-border rounded-xl p-8 shadow-2xl max-w-sm w-full text-center">
             <div class="relative mx-auto mb-6 h-20 w-20">
                 <div class="absolute inset-0 rounded-full border-4 border-primary/30 animate-ping"></div>
@@ -433,6 +429,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useEntitlements } from '@/composables/useEntitlements'
@@ -443,7 +440,7 @@ import Slider from '@/components/ui/slider/Slider.vue'
 defineOptions({ name: 'ProfilePage' })
 
 const router = useRouter()
-const { user, fetchUser, logout } = useAuth()
+const { user, fetchUser, logout, isLoading: isAuthLoading } = useAuth()
 // Use global entitlements state
 const { 
   subscriptionTier, 
@@ -454,7 +451,11 @@ const {
   isLoading: isEntitlementsLoading 
 } = useEntitlements()
 
-const isPageLoading = ref(true)
+const initialLoading = ref(true)
+const isPageLoading = computed(() => {
+    // Keep loading true if any critical service is still fetching or if we're in the initial boot sequence
+    return initialLoading.value || isAuthLoading.value || isEntitlementsLoading.value
+})
 const typedUser = computed(() => user.value as any)
 
 // Usage Stats (Computed from tierUsage or default)
@@ -634,54 +635,58 @@ const fetchPayments = async () => {
 
 
 onMounted(async () => {
-  isPageLoading.value = true
+  initialLoading.value = true
   try {
-    await fetchUser()
-    if (typedUser.value) {
-      // Check for Stripe Session ID to verify
-      const params = new URLSearchParams(window.location.search)
-      const sessionId = params.get('session_id')
-      if (sessionId) {
-          isVerifyingPayment.value = true
-          // Poll for status
-          let attempts = 0
-          const maxAttempts = 20 // 20 * 1s = 20s timeout
-          
-          const poll = async () => {
-              try {
-                  const res = await checkPaymentStatus(sessionId)
-                  if (res && res.status === 'completed') {
-                      isVerifyingPayment.value = false
-                      toast.success('Purchase confirmed & applied!')
-                      // Clear Query Params
-                      window.history.replaceState({}, '', '/profile')
-                      // Reload everything
-                      await fetchPayments()
-                  } else {
-                      attempts++
-                      if (attempts < maxAttempts) {
-                          setTimeout(poll, 1000)
-                      } else {
-                          isVerifyingPayment.value = false
-                          toast.warning('Purchase verification timed out. It may appear shortly.')
-                          await fetchPayments()
-                      }
-                  }
-              } catch (e) {
-                  console.error("Polling error", e)
-                  isVerifyingPayment.value = false
-              }
+    // Check for Stripe Session ID to verify
+    const params = new URLSearchParams(window.location.search)
+    const sessionId = params.get('session_id')
+    
+    if (sessionId) {
+      isVerifyingPayment.value = true
+      let attempts = 0
+      const maxAttempts = 20
+      
+      const poll = async () => {
+        try {
+          const res = await checkPaymentStatus(sessionId)
+          if (res && res.status === 'completed') {
+            isVerifyingPayment.value = false
+            toast.success('Purchase confirmed & applied!')
+            window.history.replaceState({}, '', '/profile')
+            await fetchPayments()
+            await fetchEntitlements(true)
+          } else {
+            attempts++
+            if (attempts < maxAttempts) {
+              setTimeout(poll, 1000)
+            } else {
+              isVerifyingPayment.value = false
+              toast.warning('Purchase verification timed out. It may appear shortly.')
+              await fetchPayments()
+              await fetchEntitlements(true)
+            }
           }
-          poll()
-          return // Skip default fetch, poll will trigger it
+        } catch (e) {
+          console.error("Polling error", e)
+          isVerifyingPayment.value = false
+        }
       }
-
-      // Start with payment sync (which now updates usage too)
-      await fetchPayments()
-      await fetchEntitlements(true)
+      poll()
     }
+
+    // Parallelize all initial data fetching for maximum performance
+    await Promise.all([
+      user.value ? Promise.resolve() : fetchUser(),
+      fetchPayments(),
+      fetchEntitlements(true)
+    ])
+    
+    // Minimal delay for visual polish (250ms is almost imperceptible but smooths out component mount)
+    await new Promise(resolve => setTimeout(resolve, 250))
+  } catch (err) {
+    console.error('[Profile] Initialization error:', err)
   } finally {
-    isPageLoading.value = false
+    initialLoading.value = false
   }
 })
 
@@ -718,8 +723,26 @@ const goToLogin = () => {
   from { transform: rotate(360deg); }
   to { transform: rotate(0deg); }
 }
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
+@keyframes progress-active {
+  0% { width: 0%; }
+  30% { width: 40%; }
+  60% { width: 75%; }
+  100% { width: 100%; }
+}
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.animate-progress-active {
+  animation: progress-active 2.5s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+  position: relative;
+}
+.animate-progress-active::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: shimmer 1.5s infinite;
 }
 @keyframes progress-indeterminate {
   0% { transform: translateX(-100%); }

@@ -1,16 +1,11 @@
 <template>
   <div class="h-full bg-background text-foreground flex overflow-hidden transition-colors duration-300">
     <!-- Loading State -->
-    <div v-if="isInitializing" class="flex flex-col items-center justify-center h-full w-full">
-      <div class="relative">
-        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
-        </div>
-      </div>
-      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Configuring Environment...</p>
-      <p class="text-muted-foreground text-sm mt-2">Loading core preferences and secure adapter configs</p>
-    </div>
+    <LoadingScreen 
+      v-if="isInitializing" 
+      title="Configuring Environment"
+      message="Loading core preferences and secure adapter configs..."
+    />
 
     <template v-else>
       <aside
@@ -122,6 +117,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useColorMode } from '@vueuse/core'
 import { toast } from '@/composables/useNotifications'
 import GeneralTab from './GeneralTab.vue'

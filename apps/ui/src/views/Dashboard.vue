@@ -1,16 +1,11 @@
 <template>
   <div class="w-full h-full flex flex-col text-foreground overflow-hidden">
     <!-- Premium Loading State -->
-    <div v-if="isInitializing" class="flex flex-col items-center justify-center h-full w-full">
-      <div class="relative">
-        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
-        </div>
-      </div>
-      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">Decompressing Dashboard...</p>
-      <p class="text-muted-foreground text-sm mt-2">Reconstructing visualizations and live data streams</p>
-    </div>
+    <LoadingScreen 
+      v-if="isInitializing" 
+      title="Decompressing Dashboard"
+      message="Reconstructing visualizations and live data streams..."
+    />
 
     <template v-else>
       <!-- Header -->
@@ -482,6 +477,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, onBeforeUnmount } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
@@ -580,11 +576,11 @@ const chatToggleRef = ref<HTMLElement | null>(null)
 const dashboardContainer = ref<HTMLElement | null>(null)
 
 // Click outside to close chat
-onClickOutside(chatSidebarRef, () => {
+onClickOutside(chatSidebarRef as any, () => {
   if (showChat.value) {
     showChat.value = false
   }
-}, { ignore: [chatToggleRef] })
+}, { ignore: [chatToggleRef as any] })
 
 // Keyboard Shortcuts
 onKeyStroke(['s', 'S'], (e) => {

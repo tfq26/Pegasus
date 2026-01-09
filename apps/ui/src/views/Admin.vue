@@ -22,9 +22,11 @@
       </div>
 
       <!-- Loading -->
-      <div v-else-if="loading" class="flex items-center justify-center py-16">
-        <div class="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full"></div>
-      </div>
+      <LoadingScreen 
+        v-else-if="loading" 
+        title="Accessing Admin Chamber"
+        message="Verifying credentials and loading restricted metrics..."
+      />
 
       <!-- Admin Content -->
       <div v-else class="space-y-6">
@@ -125,6 +127,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { toast } from '@/composables/useNotifications'
 
 const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'

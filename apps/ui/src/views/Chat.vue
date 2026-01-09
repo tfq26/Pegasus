@@ -1,29 +1,11 @@
 <template>
   <div class="flex w-full h-full bg-background text-foreground overflow-hidden">
     <!-- Initial Boot Loader (Only for Metadata/Auth) -->
-    <div v-if="isInitializing" 
-      class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background"
-    >
-      <div class="relative">
-        <div class="h-24 w-24 rounded-full border-t-4 border-b-4 border-primary animate-spin"></div>
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-           <div class="h-16 w-16 rounded-full border-t-4 border-b-4 border-primary/30 animate-spin-slow"></div>
-        </div>
-      </div>
-      <p class="mt-8 text-xl font-bold tracking-tight text-foreground animate-pulse">
-        {{ isInitializing ? 'Initializing Pegasus Workspace...' : 'Synchronizing Secure Data Vault...' }}
-      </p>
-      <p class="text-muted-foreground text-sm mt-2">
-        {{ isInitializing ? 'Establishing encrypted links and allocating compute...' : 'Loading all spreadsheet connections in parallel...' }}
-      </p>
-      
-      <div v-if="workspaceRef?.isDataLoading" class="mt-8 flex flex-col items-center">
-          <div class="h-1.5 w-64 bg-muted rounded-full overflow-hidden">
-            <div class="h-full bg-primary animate-pulse w-full"></div>
-          </div>
-          <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-4 font-black">Parallel Sync Protocol Active</p>
-      </div>
-    </div>
+    <LoadingScreen 
+      v-if="isInitializing" 
+      :title="isInitializing ? 'Initializing Pegasus Workspace' : 'Synchronizing Secure Data Vault'"
+      :message="isInitializing ? 'Establishing encrypted links and allocating compute...' : 'Loading all spreadsheet connections in parallel...'"
+    />
 
     <template v-if="!isInitializing">
       <!-- Explorer sidebar -->
@@ -216,6 +198,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref } from 'vue'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRoute } from 'vue-router'
 import { toast } from '@/composables/useNotifications'
 import { storeToRefs } from 'pinia'

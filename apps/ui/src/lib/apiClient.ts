@@ -35,6 +35,10 @@ class ApiClient {
         this.baseUrl = baseUrl
     }
 
+    getBaseUrl(): string {
+        return this.baseUrl
+    }
+
     /**
      * Get headers with automatic auth token injection
      */
@@ -84,11 +88,23 @@ class ApiClient {
                 throw new Error('Unauthorized')
             }
 
-            console.warn('[ApiClient] Unauthorized (401). Clearing token and redirecting to login.')
+            console.warn('[ApiClient] Unauthorized (401). Clearing state and redirecting to login.')
+
+            // 1. Clear tokens
             localStorage.removeItem('auth_token')
-            if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-                window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
+            sessionStorage.clear()
+
+            // 2. Notify other services (IdentityService) to purge state
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('pegasus:unauthorized'))
+
+                // 3. Redirect to login
+                if (!window.location.pathname.startsWith('/login')) {
+                    const currentPath = window.location.pathname + window.location.search
+                    window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
+                }
             }
+
             throw new Error('Unauthorized')
         }
 

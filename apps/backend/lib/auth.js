@@ -6,12 +6,17 @@ import { getCookie } from "hono/cookie"
  * @returns {string|null} The token or null
  */
 export const getAuthToken = (c) => {
-    let token = getCookie(c, "session")
-    if (!token) {
-        const authHeader = c.req.header("Authorization")
-        if (authHeader && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring(7)
-        }
+    // 1. Primary Source: Authorization Header
+    const authHeader = c.req.header("Authorization")
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+        return authHeader.substring(7)
     }
-    return token
+
+    // 2. Secondary/Fallback: Session Cookie (for compatibility/handshakes)
+    const cookieToken = getCookie(c, "session")
+    if (cookieToken) {
+        return cookieToken
+    }
+
+    return null
 }

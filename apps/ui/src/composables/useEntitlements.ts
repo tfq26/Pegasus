@@ -6,6 +6,7 @@ export function useEntitlements() {
     // Reactive wrappers around entitlementService state
     const subscriptionTier = computed(() => entitlementService.tier)
     const subscriptionStatus = computed(() => entitlementService.status)
+    const subscriptionDetails = computed(() => entitlementService.details)
     const tierUsage = computed(() => entitlementService.usage)
     const isLoading = computed(() => entitlementService.isLoading)
 
@@ -28,6 +29,7 @@ export function useEntitlements() {
         // State
         subscriptionTier,
         subscriptionStatus,
+        subscriptionDetails,
         tierUsage,
         isLoading,
 

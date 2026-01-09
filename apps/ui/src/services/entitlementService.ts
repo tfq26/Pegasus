@@ -8,6 +8,7 @@ class EntitlementService {
     private _tier = ref<Tier>('free')
     private _status = ref<'active' | 'canceled' | 'past_due' | null>(null)
     private _usage = ref<any>(null)
+    private _details = ref<any>(null)
     private _isLoading = ref(false)
     private _lastFetched = 0
     private CACHE_DURATION = 5 * 60 * 1000
@@ -16,6 +17,7 @@ class EntitlementService {
     get tier() { return this._tier.value }
     get status() { return this._status.value }
     get usage() { return this._usage.value }
+    get details() { return this._details.value }
     get isLoading() { return this._isLoading.value }
 
     // Computed-like helpers (for use in components)
@@ -43,6 +45,7 @@ class EntitlementService {
 
             this._tier.value = subData.tier || 'free'
             this._status.value = subData.status || null
+            this._details.value = subData
             this._usage.value = usageData.tierUsage || null
             this._lastFetched = now
         } catch (e) {
@@ -55,6 +58,7 @@ class EntitlementService {
     reset() {
         this._tier.value = 'free'
         this._status.value = null
+        this._details.value = null
         this._usage.value = null
         this._lastFetched = 0
     }

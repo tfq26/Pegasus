@@ -1,4 +1,5 @@
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
+import { api } from '@/lib/apiClient'
 
 export interface User {
     id: string
@@ -19,6 +20,12 @@ class IdentityService {
         if (typeof window !== 'undefined') {
             window.addEventListener('online', () => { this._isOnline.value = true })
             window.addEventListener('offline', () => { this._isOnline.value = false })
+
+            // Centralized listener for 401s from any service
+            window.addEventListener('pegasus:unauthorized', () => {
+                console.warn('[IdentityService] pegasus:unauthorized event received')
+                this.purgeState()
+            })
         }
     }
 
@@ -33,10 +40,6 @@ class IdentityService {
         return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
     }
 
-    private getApiUrl() {
-        return import.meta.env.VITE_QUERY_API_URL || `${window.location.protocol}//${window.location.hostname}:3000`
-    }
-
     /**
      * Initialize the identity service. 
      * Handles URL tokens and initial user fetch.
@@ -46,31 +49,45 @@ class IdentityService {
         if (this._initialized) return
         this._initialized = true
 
-        const token = this.checkUrlToken()
-        console.log('[IdentityService] URL token:', token ? 'found' : 'not found')
-        await this.fetchUser(token)
+        this.checkUrlToken()
+        await this.fetchUser()
     }
 
     private checkUrlToken() {
-        if (typeof window === 'undefined') return null
-        const params = new URLSearchParams(window.location.search)
-        const token = params.get('token')
+        if (typeof window === 'undefined') return
+
+        // 1. Check top-level search params
+        let params = new URLSearchParams(window.location.search)
+        let token = params.get('token')
+
+        // 2. If not found, check if it's nested in a redirect param (common with complex redirections)
+        if (!token) {
+            const redirectParam = params.get('redirect')
+            if (redirectParam && redirectParam.includes('token=')) {
+                const nestedMatch = redirectParam.match(/[?&]token=([^&]+)/)
+                if (nestedMatch && nestedMatch[1]) {
+                    token = nestedMatch[1]
+                    console.log('[IdentityService] Found nested token in redirect param')
+                }
+            }
+        }
 
         if (token) {
-            console.log('[IdentityService] Token found in URL')
+            console.log('[IdentityService] Token captured, updating storage')
             localStorage.setItem('auth_token', token)
 
-            // Clean up URL
-            params.delete('token')
-            const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '')
-            window.history.replaceState({}, '', newUrl)
-            return token
+            // Clean up URL: remove token ONLY if it was top-level
+            // If it's nested, the whole redirect param might be needed until the next hop
+            if (params.has('token')) {
+                params.delete('token')
+                const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '')
+                window.history.replaceState({}, '', newUrl)
+            }
         }
-        return null
     }
 
-    async fetchUser(explicitToken: string | null = null) {
-        console.log('[IdentityService] fetchUser() called, explicitToken:', explicitToken ? 'provided' : 'none')
+    async fetchUser() {
+        console.log('[IdentityService] fetchUser() called')
         this._isLoading.value = true
 
         if (this.isTauri() && !this._isOnline.value) {
@@ -80,31 +97,24 @@ class IdentityService {
         }
 
         try {
-            const headers: HeadersInit = { 'Content-Type': 'application/json' }
-            const token = explicitToken || localStorage.getItem('auth_token')
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`
-            }
-
-            console.log('[IdentityService] Calling /auth/me...')
-            const res = await fetch(`${this.getApiUrl()}/auth/me`, {
-                credentials: 'include',
-                headers,
-                cache: 'no-store'
+            console.log('[IdentityService] Fetching profile via ApiClient...')
+            const data = await api.get<{ user: User; token?: string }>('/auth/me', {
+                skipAuthRedirect: true // Don't redirect if /me fails initial check
             })
 
-            if (!res.ok) throw new Error('Failed to fetch user')
+            if (data.user) {
+                console.log('[IdentityService] Profile loaded:', data.user.email)
+                this._user.value = data.user
 
-            const data = await res.json()
-            console.log('[IdentityService] /auth/me response:', data.user ? 'user found' : 'no user')
-            this._user.value = data.user
-
-            // Re-store token if provided
-            if (data.token) {
-                localStorage.setItem('auth_token', data.token)
+                // Refresh token if server provided a new one
+                if (data.token) {
+                    localStorage.setItem('auth_token', data.token)
+                }
+            } else {
+                this._user.value = null
             }
         } catch (e) {
-            console.error('[IdentityService] fetchUser failed:', e)
+            console.warn('[IdentityService] fetchUser failed or unauthenticated:', (e as Error).message)
             this._user.value = null
         } finally {
             this._isLoading.value = false
@@ -112,7 +122,7 @@ class IdentityService {
     }
 
     async login() {
-        const API_URL = this.getApiUrl()
+        const API_URL = api.getBaseUrl()
 
         if (this.isTauri() && !this._isOnline.value) {
             window.location.href = '/local-auth'
@@ -138,8 +148,20 @@ class IdentityService {
         window.location.href = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
     }
 
+    /**
+     * Centralized state purge.
+     * Use this when a session is invalidated (logout or 401).
+     */
+    purgeState() {
+        console.log('[IdentityService] purgeState() - Clearing all local auth state')
+        this._user.value = null
+        this._initialized = false
+        localStorage.removeItem('auth_token')
+        sessionStorage.clear()
+    }
+
     async logout() {
-        const API_URL = this.getApiUrl()
+        const API_URL = api.getBaseUrl()
 
         if (this.isTauri()) {
             try {
@@ -150,14 +172,10 @@ class IdentityService {
             }
         }
 
-        // Clear local state immediately
-        this._user.value = null
-        this._initialized = false
-        localStorage.removeItem('auth_token')
-        sessionStorage.clear()
+        this.purgeState()
 
-        // Use redirect-based logout to ensure the browser processes the Set-Cookie header
-        // This avoids race conditions with fetch-based logout
+        // Perform server-side logout to clear cookies
+        // Redirect back to home after server-side cleanup
         window.location.href = `${API_URL}/auth/logout?redirect=${encodeURIComponent(window.location.origin)}`
     }
 }
