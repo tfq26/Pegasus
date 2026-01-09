@@ -1,5 +1,5 @@
-# Use the official Bun image
-FROM oven/bun:1.1 AS base
+# Use the official Bun image (must match local Bun version for lockfile compatibility)
+FROM oven/bun:1.2 AS base
 WORKDIR /usr/src/app
 
 # --- Stage 1: Install dependencies ---
