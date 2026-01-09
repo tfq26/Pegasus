@@ -42,7 +42,8 @@ export const isOnline = computed(() => _isOnline.value)
  */
 export const isMobile = computed(() => {
     if (typeof navigator === 'undefined') return false
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    // Exclude iPad from isMobile to ensure it gets the desktop/tablet layout
+    return /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
 })
 
 /**

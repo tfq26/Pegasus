@@ -2,7 +2,10 @@ import { Surreal } from 'surrealdb';
 
 const db = new Surreal();
 
-const url = process.env.SURREAL_URL || 'ws://127.0.0.1:8000/rpc';
+const rawUrl = (process.env.SURREAL_URL || 'ws://127.0.0.1:8000').trim();
+// SurrealDB 1.x JS driver expects the bare host/port, the /rpc suffix often causes "Failed to retrieve remote version" errors
+const url = rawUrl.endsWith('/rpc') ? rawUrl.slice(0, -4) : rawUrl;
+
 const user = process.env.SURREAL_USER || 'root';
 const pass = process.env.SURREAL_PASS || 'root';
 const ns = process.env.SURREAL_NS || 'test';
@@ -22,6 +25,7 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
         }
     }
 
+    let lastError = null;
     for (let i = 0; i < retries; i++) {
         try {
             console.log(`[SurrealDB] Connecting to ${url}... (Attempt ${i + 1}/${retries})`);
@@ -40,12 +44,14 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
             await initSchema();
             return db;
         } catch (e) {
+            lastError = e;
             console.error(`[SurrealDB] Connection attempt ${i + 1} failed:`, e.message);
             if (i < retries - 1) await new Promise(res => setTimeout(res, delay));
         }
     }
+
     console.error('[SurrealDB] Could not connect after multiple attempts.');
-    return db;
+    throw lastError || new Error('Failed to connect to SurrealDB');
 };
 
 // Initialize Schema & Permissions

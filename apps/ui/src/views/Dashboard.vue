@@ -259,7 +259,7 @@
             :element="getElement(item.i)"
             :is-locked="isLocked"
             :is-ctrl-pressed="isCtrlPressed"
-            :is-mobile="isPhone || isTablet"
+            :is-mobile="isPhone"
             @remove="removeElement(item.i)"
             @edit-element="handleEditElement(getElement(item.i)!)"
             @edit-query="handleEditQuery(getElement(item.i)!)"
