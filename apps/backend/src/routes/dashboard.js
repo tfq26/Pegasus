@@ -339,6 +339,83 @@ dashboard.get("/dashboards/shared", async (c) => {
     }
 })
 
+dashboard.get("/dashboards/recent", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+
+        // Query dashboards through the 'accessed' relationship
+        const [results] = await db.query(`
+            SELECT 
+                accessed_at,
+                out.id as id,
+                out.title as title,
+                out.owner as owner_id,
+                out.cover_image as cover_image,
+                out.updated_at as updated_at,
+                out.is_public as is_public,
+                (out.owner = type::thing('user', $userId)) as is_owner
+            FROM accessed 
+            WHERE in = type::thing('user', $userId)
+            ORDER BY accessed_at DESC 
+            LIMIT 12;
+        `, { userId });
+
+        // Fetch shared roles for recent dashboards that the user doesn't own
+        const dashboards = await Promise.all(results.map(async (item) => {
+            let role = item.is_owner ? 'owner' : null;
+
+            if (!role) {
+                const [permCheck] = await db.query(`
+                    SELECT role FROM dashboard_permission 
+                    WHERE dashboard = $dashId 
+                    AND user = type::thing('user', $userId) 
+                    LIMIT 1;
+                `, { dashId: item.id, userId });
+                role = permCheck?.[0]?.role || (item.is_public ? 'viewer' : 'none');
+            }
+
+            return {
+                id: item.id.toString().split(':')[1] || item.id,
+                title: item.title,
+                cover_image: item.cover_image,
+                updated_at: item.updated_at,
+                accessed_at: item.accessed_at,
+                access_role: role,
+                is_owner: item.is_owner
+            };
+        }));
+
+        return c.json({ dashboards })
+    } catch (e) {
+        console.error("[Recent] Error:", e);
+        return c.json({ error: "Failed to fetch recent dashboards" }, 500)
+    }
+})
+
+dashboard.post("/dashboards/:id/access", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let id = c.req.param("id")
+        if (!id.includes(':')) id = `dashboard:${id}`
+
+        // Record the access using a RELATE statement (creates or updates)
+        await db.query(`
+            RELATE type::thing('user', $userId)->accessed->${id} 
+            SET accessed_at = time::now();
+        `, { userId });
+
+        return c.json({ ok: true })
+    } catch (e) {
+        return c.json({ error: "Failed to track access" }, 500)
+    }
+})
+
 dashboard.get("/dashboards/:id", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)

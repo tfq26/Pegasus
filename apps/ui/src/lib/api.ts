@@ -343,6 +343,15 @@ export async function fetchSharedDashboard(token: string) {
   return body.dashboard
 }
 
+export async function fetchRecentDashboards() {
+  const body = await api.get<{ dashboards: any[] }>('/dashboards/recent')
+  return body.dashboards || []
+}
+
+export async function trackDashboardAccess(id: string) {
+  return api.post(`/dashboards/${id}/access`)
+}
+
 export async function searchUsers(query: string) {
   const body = await api.get<{ users: any[] }>(`/api/users/search?q=${encodeURIComponent(query)}`)
   return body.users || []

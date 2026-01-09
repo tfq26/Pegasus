@@ -69,6 +69,17 @@
             <!-- Tabs -->
             <div class="flex items-center gap-1 bg-muted/50 p-1 rounded-lg">
               <button 
+                @click="activeTab = 'recent'"
+                :class="[
+                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                  activeTab === 'recent' 
+                    ? 'bg-background text-foreground shadow-sm' 
+                    : 'text-muted-foreground hover:text-foreground'
+                ]"
+              >
+                Recents
+              </button>
+              <button 
                 @click="activeTab = 'my'"
                 :class="[
                   'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
@@ -188,7 +199,9 @@
                 <h3 class="font-medium truncate text-sm group-hover:text-primary transition-colors">{{ dashboard.title }}</h3>
                 <div class="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                   <LayoutDashboard class="w-3 h-3" />
-                  <span>Opened {{ formatDate(dashboard.updated_at) }}</span>
+                  <span v-if="activeTab === 'recent'">Accessed {{ formatDate(dashboard.accessed_at) }}</span>
+                  <span v-else-if="activeTab === 'shared'">Shared {{ formatDate(dashboard.shared_at) }}</span>
+                  <span v-else>Modified {{ formatDate(dashboard.updated_at) }}</span>
                 </div>
               </div>
             </div>
@@ -547,17 +560,18 @@ import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 const { user } = useAuth()
 const router = useRouter()
 const store = useDashboardStore()
-const { dashboards, isLoading } = storeToRefs(store)
+const { dashboards, recentDashboards, isLoading } = storeToRefs(store)
 const { dashboardUsage, handleLimitError } = useEntitlements()
 
 const searchQuery = ref('')
 const sortBy = ref('updated')
-const activeTab = ref('my') // 'my' | 'shared'
+const activeTab = ref('recent') // 'recent' | 'my' | 'shared'
 const sharedDashboards = ref<any[]>([])
 const isLoadingShared = ref(false)
+const isLoadingRecent = ref(false)
 const isInitializing = ref(true)
 
-// Fetch shared dashboards when tab changes
+// Fetch data when tab changes
 watch(activeTab, async (val) => {
   if (val === 'shared' && sharedDashboards.value.length === 0) {
     isLoadingShared.value = true
@@ -565,32 +579,50 @@ watch(activeTab, async (val) => {
       sharedDashboards.value = await fetchSharedDashboards()
     } catch (e) {
       console.error('Failed to load shared dashboards:', e)
-      // Fallback to empty list, don't show toast to user
       sharedDashboards.value = []
     } finally {
       isLoadingShared.value = false
+    }
+  } else if (val === 'recent') {
+    isLoadingRecent.value = true
+    try {
+      await store.loadRecentDashboards()
+    } catch (e) {
+      console.error('Failed to load recent dashboards:', e)
+    } finally {
+      isLoadingRecent.value = false
     }
   }
 })
 
 const filteredDashboards = computed(() => {
   // Select source based on active tab
-  let source = activeTab.value === 'my' ? (dashboards.value as any) : sharedDashboards.value
+  const source = activeTab.value === 'recent' 
+    ? [...(recentDashboards.value as any || [])] 
+    : activeTab.value === 'my' 
+      ? [...(dashboards.value as any || [])]
+      : [...(sharedDashboards.value || [])]
+  
+  let result = source
   
   // Filter by search
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
-    source = source.filter((d: any) => d.title?.toLowerCase().includes(q))
+    result = result.filter((d: any) => d.title?.toLowerCase().includes(q))
   }
   
-  // Sort
-  return [...source].sort((a, b) => {
+  // Sort (only if not in 'recent' tab which has its own intrinsic sort)
+  if (activeTab.value === 'recent' && sortBy.value === 'updated') {
+    return result // Backend already sorts by accessed_at
+  }
+
+  return result.sort((a, b) => {
     if (sortBy.value === 'name') {
       return (a.title || '').localeCompare(b.title || '')
     } else {
       // Sort by updated_at or shared_at depending on tab
-      const dateA = activeTab.value === 'shared' ? (a.shared_at || a.updated_at) : a.updated_at
-      const dateB = activeTab.value === 'shared' ? (b.shared_at || b.updated_at) : b.updated_at
+      const dateA = activeTab.value === 'shared' ? (a.shared_at || a.updated_at) : (a.accessed_at || a.updated_at)
+      const dateB = activeTab.value === 'shared' ? (b.shared_at || b.updated_at) : (b.accessed_at || b.updated_at)
       return new Date(dateB as any).getTime() - new Date(dateA as any).getTime()
     }
   })
@@ -860,10 +892,16 @@ const handleLinkImport = async () => {
 onMounted(async () => {
     isInitializing.value = true
     try {
-        await store.loadDashboards()
-        // Pre-load shared dashboards silently if needed, or wait for tab change
-    } catch (e) {
-        console.error('Failed to load dashboards:', e)
+        const { fetchEntitlements } = useEntitlements()
+        
+        // Parallelize all initial data fetching for maximum performance
+        await Promise.all([
+          store.loadDashboards(),
+          store.loadRecentDashboards(),
+          fetchEntitlements(true).catch(() => {})
+        ])
+    } catch (err) {
+        console.error('[DashboardHome] Initialization error:', err)
     } finally {
         isInitializing.value = false
     }

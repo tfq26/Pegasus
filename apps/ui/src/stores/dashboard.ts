@@ -7,6 +7,8 @@ import {
     updateDashboard,
     deleteDashboard,
     shareDashboard,
+    fetchRecentDashboards,
+    trackDashboardAccess,
     QUERY_API_URL,
     api
 } from '@/lib/api'
@@ -39,6 +41,7 @@ export interface Dashboard {
 
 export const useDashboardStore = defineStore('dashboard', () => {
     const dashboards = ref<Dashboard[]>([])
+    const recentDashboards = ref<Dashboard[]>([])
     const currentDashboard = ref<Dashboard | null>(null)
     const parameters = ref<Record<string, any>>({})
     const isLoading = ref(false)
@@ -60,7 +63,18 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    const loadRecentDashboards = async () => {
+        try {
+            recentDashboards.value = await fetchRecentDashboards()
+        } catch (e: any) {
+            console.error('Failed to load recent dashboards:', e)
+        }
+    }
+
     const selectDashboard = async (id: string, forceRefresh = false) => {
+        // Track access in backend (fire and forget)
+        trackDashboardAccess(id).catch(err => console.error('Failed to track access:', err))
+
         // If we already have the dashboard and not forcing refresh, just set it
         const existing = dashboards.value.find(d => d.id === id)
         if (existing && !forceRefresh) {
@@ -440,6 +454,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
     return {
         dashboards,
+        recentDashboards,
         currentDashboard,
         parameters,
         isLoading,
@@ -448,6 +463,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         analysisResult,
         error,
         loadDashboards,
+        loadRecentDashboards,
         selectDashboard,
         updateParameter,
         createNewDashboard,
