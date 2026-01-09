@@ -787,7 +787,18 @@ app.get("/subscription-status", async (c) => {
 
 
     let tier = user[0]?.subscription_tier || 'free'
-    const stripeCustomerId = user[0]?.stripe_customer_id
+    let stripeCustomerId = user[0]?.stripe_customer_id
+    const email = user[0]?.email
+
+    // Fallback: If no customer ID in DB, try to find by email
+    if (!stripeCustomerId && email) {
+      const customers = await stripe.customers.list({ email, limit: 1 })
+      if (customers.data.length > 0) {
+        stripeCustomerId = customers.data[0].id
+        // Save it for next time
+        await db.query(`UPDATE user:${userId} SET stripe_customer_id = $cid`, { cid: stripeCustomerId })
+      }
+    }
 
     // Auto-fix: If tier is 'free', check payment history for subscription payments
     if (tier === 'free') {
@@ -1143,6 +1154,9 @@ app.post("/sync-payments", async (c) => {
     const customers = await stripe.customers.list({ email, limit: 1 })
     if (!customers.data.length) return c.json({ success: true, count: 0 })
     const customer = customers.data[0]
+
+    // Save customer ID back to user record for future use
+    await db.query(`UPDATE type::thing('user', $rawId) SET stripe_customer_id = $cid`, { rawId, cid: customer.id })
 
     // 2. Fetch Sessions
     const sessions = await stripe.checkout.sessions.list({
