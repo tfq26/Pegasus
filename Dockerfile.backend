@@ -8,14 +8,14 @@ RUN mkdir -p /temp/dev
 COPY package.json bun.lock /temp/dev/
 COPY apps/backend/package.json /temp/dev/apps/backend/
 COPY apps/ui/package.json /temp/dev/apps/ui/
-RUN cd /temp/dev && bun install
+RUN cd /temp/dev && bun install --no-frozen-lockfile
 
 # install with --production (exclude devDependencies)
 RUN mkdir -p /temp/prod
 COPY package.json bun.lock /temp/prod/
 COPY apps/backend/package.json /temp/prod/apps/backend/
 COPY apps/ui/package.json /temp/prod/apps/ui/
-RUN cd /temp/prod && bun install --production
+RUN cd /temp/prod && bun install --production --no-frozen-lockfile
 
 # --- Stage 2: Prerelease (copy all files and build) ---
 FROM base AS prerelease
