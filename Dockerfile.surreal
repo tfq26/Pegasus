@@ -1,0 +1,13 @@
+FROM surrealdb/surrealdb:latest
+
+# Switch to root user to fix Railway Volume permission issues
+USER root
+
+# Create the data directory and ensure it has correct permissions
+RUN mkdir -p /data && chmod 777 /data
+
+# Default entrypoint
+ENTRYPOINT ["/surreal"]
+
+# Default command
+CMD ["start"]
