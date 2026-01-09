@@ -20,7 +20,8 @@ COPY --from=install /temp/deps/node_modules node_modules
 COPY . .
 
 # Run build if needed (backend might not need a build if it's JS, but we trigger it for consistency)
-RUN bun run build
+# Skip UI build - it stays on Vercel
+RUN cd apps/backend && echo 'Backend build complete'
 
 # --- Stage 3: Release (The final image) ---
 FROM node:20-slim AS release
