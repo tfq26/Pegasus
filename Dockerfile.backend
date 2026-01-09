@@ -40,4 +40,4 @@ EXPOSE 3000
 
 # Run the backend
 WORKDIR /usr/src/app/apps/backend
-CMD [ "bun", "run", "index.js" ]
+CMD [ "bun", "index.js" ]
