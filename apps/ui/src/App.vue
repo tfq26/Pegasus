@@ -75,28 +75,27 @@ const connectionStore = useConnectionStore()
 
 // Fetch user on app mount - skip for Tauri when offline
 onMounted(async () => {
+  // IdentityService initialization MUST happen first to capture tokens from URL
+  if (!(isTauri.value && !navigator.onLine)) {
+    console.log('[App] Initializing Identity service...')
+    await identityService.init()
+    
+    if (identityService.isAuthenticated) {
+        entitlementService.fetch()
+    }
+  } else {
+    console.log('[App] Running in Tauri offline - skipping Identity service init')
+  }
+
+  // Initialize connections globally - only after potential tokens are captured
+  connectionStore.loadConnections()
+
   // Setup Global Listeners
   window.addEventListener('unhandledrejection', handleUnhandledRejection)
   window.addEventListener('error', handleWindowError)
 
   // Detect if running in Tauri
   isDesktop.value = isTauri.value
-
-  // Initialize connections globally
-  connectionStore.loadConnections()
-
-  if (isTauri.value && !navigator.onLine) {
-    // Tauri offline: use local auth (handled by router guard)
-    console.log('[App] Running in Tauri offline - using local auth')
-  } else {
-    // IdentityService initialization
-    console.log('[App] Initializing Identity service...')
-    identityService.init().then(() => {
-        if (identityService.isAuthenticated) {
-            entitlementService.fetch()
-        }
-    })
-  }
 })
 
 onUnmounted(() => {
