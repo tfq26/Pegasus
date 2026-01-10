@@ -4,18 +4,6 @@ const db = new Surreal();
 
 const rawUrl = (process.env.SURREAL_URL || 'ws://127.0.0.1:8000').trim();
 
-// Normalize URL for SurrealDB 1.x driver
-// 1. Many environments (like Railway/Docker) work more reliably if we use http:// instead of ws:// 
-//    for the initial connect() call, as the driver handles the protocol upgrade.
-// 2. We'll try the URL both ways if needed, but starting with http is generally safer.
-let url = rawUrl;
-if (url.startsWith('ws://')) url = url.replace('ws://', 'http://');
-if (url.startsWith('wss://')) url = url.replace('wss://', 'https://');
-
-// If the URL has /rpc, we keep it as it's the official endpoint, 
-// but some versions prefer the base URL. We'll stick to what the user provided or the base.
-// const url = rawUrl.endsWith('/rpc') ? rawUrl.slice(0, -4) : rawUrl;
-
 const user = process.env.SURREAL_USER || 'root';
 const pass = process.env.SURREAL_PASS || 'root';
 const ns = process.env.SURREAL_NS || 'test';
@@ -23,53 +11,91 @@ const dbName = process.env.SURREAL_DB || 'test';
 
 export let isConnected = false;
 
-export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, delay = process.env.VERCEL === '1' ? 500 : 2000) => {
-    // If we think we are connected, verify it with a ping
+// Function to try connecting with a specific URL
+async function tryConnect(targetUrl) {
+    console.log(`[SurrealDB] Attempting connection to: ${targetUrl}`);
+    // Create a new instance for each attempt to avoid sticky failed states
+    const connectionDb = new Surreal();
+    await connectionDb.connect(targetUrl);
+    await connectionDb.signin({ username: user, password: pass });
+    await connectionDb.use({ namespace: ns, database: dbName });
+    return connectionDb;
+}
+
+export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, delay = process.env.VERCEL === '1' ? 500 : 3000) => {
     if (isConnected) {
         try {
             await db.query('INFO FOR DB');
             return db;
         } catch (e) {
-            console.warn('[SurrealDB] Connection was lost, reconnecting...');
             isConnected = false;
         }
     }
 
     let lastError = null;
+
+    // Prepare candidate URLs
+    let base = rawUrl;
+    if (base.endsWith('/rpc')) base = base.slice(0, -4);
+    if (base.endsWith('/')) base = base.slice(0, -1);
+
+    // Protocol variants
+    const protocols = base.startsWith('ws') ? ['http', 'ws'] : ['http', 'ws'];
+    const prefix = base.includes('://') ? base.split('://')[1] : base;
+    const isSecure = base.startsWith('wss') || base.startsWith('https');
+
+    const candidates = [];
+    protocols.forEach(p => {
+        const proto = isSecure ? (p === 'http' ? 'https' : 'wss') : p;
+        candidates.push(`${proto}://${prefix}`);
+        candidates.push(`${proto}://${prefix}/rpc`);
+    });
+
+    // Remove duplicates
+    const uniqueCandidates = [...new Set(candidates)];
+
     for (let i = 0; i < retries; i++) {
-        try {
-            console.log(`[SurrealDB] Connecting to ${url}... (Attempt ${i + 1}/${retries})`);
+        for (const candidate of uniqueCandidates) {
+            try {
+                console.log(`[SurrealDB] Connecting... (Attempt ${i + 1}/${retries}, URL: ${candidate})`);
 
-            // 1. Connect
-            // We use a timeout to prevent the AbortError from hanging indefinitely
-            await db.connect(url);
+                // We'll replace the global db instance with the successful one
+                const resultDb = await tryConnect(candidate);
 
-            // 2. Signin
-            await db.signin({ username: user, password: pass });
+                // Copy connection state to global 'db' instance
+                // In Surreal 1.x, we can't easily "swap" the internal socket, 
+                // but we can re-connect the global one once we know which URL works.
+                if (db !== resultDb) {
+                    await db.connect(candidate);
+                    await db.signin({ username: user, password: pass });
+                    await db.use({ namespace: ns, database: dbName });
+                }
 
-            // 3. Select DB
-            await db.use({ namespace: ns, database: dbName });
-
-            isConnected = true;
-            console.log('[SurrealDB] Connected successfully');
-            await initSchema();
-            return db;
-        } catch (e) {
-            lastError = e;
-            console.error(`[SurrealDB] Connection attempt ${i + 1} failed: ${e.message}`);
-
-            // If it's a version retrieval failure, try appending /rpc on the next attempt if it's not there
-            if (e.message.includes('remote version') && !url.endsWith('/rpc')) {
-                console.log('[SurrealDB] Retrying with /rpc suffix...');
-                url = `${url.endsWith('/') ? url : url + '/'}rpc`;
+                isConnected = true;
+                console.log('[SurrealDB] Connected successfully');
+                await initSchema();
+                return db;
+            } catch (e) {
+                lastError = e;
+                // Only log the first candidate failure in detail to avoid log spam, 
+                // but log the final one if all fail.
+                if (candidate === uniqueCandidates[uniqueCandidates.length - 1]) {
+                    console.error(`[SurrealDB] All candidates failed for attempt ${i + 1}: ${e.message}`);
+                }
             }
+        }
 
-            if (i < retries - 1) await new Promise(res => setTimeout(res, delay));
+        if (i < retries - 1) {
+            console.log(`[SurrealDB] Waiting ${delay}ms before next retry batch...`);
+            await new Promise(res => setTimeout(res, delay));
         }
     }
 
     console.error('[SurrealDB] Could not connect after multiple attempts.');
-    if (lastError) console.error('[SurrealDB] Last Error Stack:', lastError.stack);
+    if (lastError) {
+        console.error('[SurrealDB] Last Error Message:', lastError.message);
+        console.error('[SurrealDB] Last Error Stack:', lastError.stack);
+    }
     throw lastError || new Error('Failed to connect to SurrealDB');
 };
 
