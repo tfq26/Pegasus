@@ -172,7 +172,11 @@ dashboard.post("/dashboard/elements", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         await upsertUser(payload)
-        const { type, title, config, query, dashboardId } = await c.req.json()
+        const { type, title, config, query, dashboardId, created_by_name } = await c.req.json()
+
+        // Use provided name or generate from payload
+        const creatorName = created_by_name || (`${payload.firstName || ''} ${payload.lastName || ''}`.trim() || payload.email);
+
         const [created] = await db.query(`
             CREATE dashboard_element CONTENT {
                 dashboard: $dashboard,
@@ -181,6 +185,7 @@ dashboard.post("/dashboard/elements", async (c) => {
                 config: $config,
                 query: $query,
                 created_by: $user,
+                created_by_name: $userName,
                 created_at: time::now()
             };
         `, {
@@ -189,7 +194,8 @@ dashboard.post("/dashboard/elements", async (c) => {
             title,
             config: typeof config === 'string' ? JSON.parse(config) : config,
             query,
-            user: `user:${userId}`
+            user: `user:${userId}`,
+            userName: creatorName
         });
         return c.json({ id: created[0].id.toString().split(':')[1] || created[0].id })
     } catch (e) {
@@ -444,6 +450,23 @@ dashboard.get("/dashboards/:id", async (c) => {
         const cleanId = (rid) => rid.toString().split(':')[1] || rid.toString();
         let elements = dashboard.data?.elements || [];
 
+        // Enrich elements with creator names if missing and we have IDs
+        // This handles cases where elements were created before we started storing names
+        const enrichedElements = await Promise.all(elements.map(async (el) => {
+            if (!el.created_by_name && !el.created_by_name_filled && el.created_by && el.created_by.includes(':')) {
+                try {
+                    const [userResult] = await db.query(`SELECT first_name, last_name, email FROM ${el.created_by}`);
+                    if (userResult && userResult[0]) {
+                        const name = `${userResult[0].first_name || ''} ${userResult[0].last_name || ''}`.trim() || userResult[0].email;
+                        return { ...el, created_by_name: name, created_by_name_filled: true };
+                    }
+                } catch (err) {
+                    console.warn(`[Dashboard] Failed to fetch user details for ${el.created_by}:`, err.message);
+                }
+            }
+            return el;
+        }));
+
         // Return dashboard with embedded data
         const responseDashboard = {
             ...dashboard,
@@ -452,7 +475,7 @@ dashboard.get("/dashboards/:id", async (c) => {
             data: {
                 ...(dashboard.data || {}),
                 layout: dashboard.data?.layout || [],
-                elements: elements
+                elements: enrichedElements
             }
         };
         return c.json({ dashboard: responseDashboard })

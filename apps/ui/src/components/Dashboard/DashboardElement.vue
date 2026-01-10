@@ -19,7 +19,7 @@
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>Created by: {{ element?.created_by || 'Unknown' }}</p>
+                      <p>Created by: {{ element?.created_by_name || element?.created_by || 'Unknown' }}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

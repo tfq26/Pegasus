@@ -12,6 +12,7 @@ import {
     QUERY_API_URL,
     api
 } from '@/lib/api'
+import { identityService } from '@/services/identityService'
 
 export interface DashboardElement {
     id: string
@@ -23,6 +24,7 @@ export interface DashboardElement {
     lastResult?: any
     cacheUntil?: number
     refreshFrequency?: number // minutes, 0 means live
+    created_by_name?: string
 }
 
 export interface Dashboard {
@@ -231,10 +233,18 @@ export const useDashboardStore = defineStore('dashboard', () => {
             }
 
             // Create updated data object
+            const userName = identityService.user
+                ? `${identityService.user.firstName || ''} ${identityService.user.lastName || ''}`.trim() || identityService.user.email
+                : 'Unknown'
+
             const updatedData = {
                 ...currentData,
                 layout: [...currentLayout, newLayoutItem],
-                elements: [...(currentData.elements || []), { ...element, id: newId }]
+                elements: [...(currentData.elements || []), {
+                    ...element,
+                    id: newId,
+                    created_by_name: userName
+                }]
             }
 
             // apply optimistic update to currentDashboard
