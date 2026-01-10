@@ -175,9 +175,9 @@ export function useCollaboration() {
         socket.value.emit('chat_message', payload);
     };
 
-    const emitPegasusQuery = (dashboardId: string, query: string, parentId?: string) => {
+    const emitPegasusQuery = (dashboardId: string, query: string, parentId?: string, context?: any[]) => {
         if (!socket.value?.connected) return;
-        socket.value.emit('pegasus_query', { dashboardId, query, parentId });
+        socket.value.emit('pegasus_query', { dashboardId, query, parentId, context });
     };
 
     const editChatMessage = (dashboardId: string, messageId: string, content: string) => {

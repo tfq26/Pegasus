@@ -324,39 +324,29 @@ export function initSocketServer(server, allowedOrigins) {
             const room = getRoom(data.dashboardId);
             if (!room) return;
 
-            console.log('[Socket.io] Pegasus query:', data.query);
-
             try {
                 // Notify room that AI is thinking
                 io.to(room).emit("pegasus_thinking", { thinking: true });
 
-                // Get dashboard context (elements, tables)
+                // Get dashboard title
                 const dashId = data.dashboardId.includes(':')
                     ? data.dashboardId
                     : `dashboard:${data.dashboardId}`;
 
-                const [dashboards] = await db.query(`SELECT elements, title FROM ${dashId}`);
+                const [dashboards] = await db.query(`SELECT title FROM ${dashId}`);
                 const dashboard = dashboards?.[0];
 
-                // Build context string from dashboard elements
-                let contextStr = "";
-                if (dashboard?.elements?.length) {
-                    const tables = dashboard.elements.filter(e => e.type === 'table');
-                    if (tables.length) {
-                        contextStr = `Dashboard contains tables: ${tables.map(t => t.config?.tableName || 'Unknown').join(', ')}. `;
-                    }
-                }
-
-                // Call AI (use existing chat service or similar)
-                const response = await fetch(`http://localhost:${process.env.PORT || 3001}/chat`, {
+                // Call AI via the consolidated chat route
+                const response = await fetch(`http://localhost:${process.env.PORT || 3000}/ai/dashboard-query`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': socket.handshake.auth.token ? `Bearer ${socket.handshake.auth.token}` : ''
                     },
                     body: JSON.stringify({
-                        message: `${contextStr}User asks: ${data.query}`,
-                        context: { dashboard: dashboard?.title }
+                        query: data.query,
+                        dashboardTitle: dashboard?.title || 'Unknown',
+                        elements: data.context || [] // Use rich context from frontend if available
                     })
                 });
 

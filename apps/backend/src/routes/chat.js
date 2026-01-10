@@ -1433,6 +1433,76 @@ chat.get("/ai/models", async (c) => {
     }
 })
 
+chat.post("/ai/dashboard-query", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const { query, dashboardTitle, elements } = await c.req.json()
+
+        // Resolve real user ID (handle Dev/Prod mismatch)
+        const resolvedId = await upsertUser(payload)
+        let resolvedUserId = userId
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            if (parts.length > 1) resolvedUserId = parts[1]
+            else resolvedUserId = resolvedId
+        }
+
+        const quota = await checkAiQuota(resolvedUserId);
+        if (!quota.allowed) {
+            return c.json(quota, 403);
+        }
+
+        let activeModel = null
+        try {
+            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+            if (user && user[0] && user[0].settings) {
+                activeModel = user[0].settings.activeModel;
+            }
+        } catch (e) { }
+
+        // Construct a summary of the data
+        const dataSummary = (elements || []).map(el => {
+            const resultSummary = Array.isArray(el.results)
+                ? `Array of ${el.results.length} rows. Sample: ${JSON.stringify(el.results.slice(0, 2))}`
+                : JSON.stringify(el.results || el.config || {});
+            return `Element: ${el.title} (Type: ${el.type})\nData: ${resultSummary}`;
+        }).join('\n\n');
+
+        const prompt = `
+You are Pegasus, an AI assistant for the Pegasus Data Platform.
+You are helping the user with their dashboard titled "${dashboardTitle}".
+
+Dashboard Data Content:
+${dataSummary}
+
+User Question: ${query}
+
+Instructions:
+1. Be concise and professional.
+2. Answer based on the provided dashboard data if possible.
+3. If the user asks for something outside the dashboard data, explain you don't have that context but suggest how they could add a connection to get it.
+4. If they ask about platform features, help them.
+`;
+
+        const response = await aiClient.generateText(prompt, activeModel)
+        const analysisText = response.text || response
+        const usage = response.usage
+
+        if (usage) {
+            await logAiUsage(userId, usage.totalTokens || usage.total_tokens, activeModel || 'gemini', 'dashboard_chat', query)
+        }
+
+        return c.json({ response: analysisText })
+    } catch (e) {
+        console.error("[Chat] Dashboard query failed:", e)
+        return c.json({ error: e.message || "Failed to process query" }, 500)
+    }
+})
+
 chat.post("/ai/analyze-dashboard", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)

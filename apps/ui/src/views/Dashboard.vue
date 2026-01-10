@@ -702,7 +702,13 @@ const handleSendMessage = (messageData: any) => {
 
 const handlePegasusQuery = (query: string, messageData: any) => {
   if (currentDashboard.value) {
-    emitPegasusQuery(currentDashboard.value.id, query, messageData.parentId)
+    const elements = currentDashboard.value.data?.elements || []
+    const dataSnapshot = elements.map((el: any) => ({
+      title: el.title,
+      type: el.type,
+      results: el.lastResult || el.config?.data
+    }))
+    emitPegasusQuery(currentDashboard.value.id, query, messageData.parentId, dataSnapshot)
   }
 }
 
