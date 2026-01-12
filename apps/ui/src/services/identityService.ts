@@ -15,6 +15,7 @@ class IdentityService {
     private _isLoading = ref(true)
     private _isOnline = ref(navigator.onLine)
     private _initialized = false
+    private _fetchPromise: Promise<void> | null = null
 
     constructor() {
         if (typeof window !== 'undefined') {
@@ -26,6 +27,41 @@ class IdentityService {
                 console.warn('[IdentityService] pegasus:unauthorized event received')
                 this.purgeState()
             })
+
+            // Support Deep Links for browser-based desktop auth
+            this.setupDeepLinkListener()
+        }
+    }
+
+    private async setupDeepLinkListener() {
+        if (!this.isTauri()) return;
+
+        try {
+            const { listen } = await import('@tauri-apps/api/event');
+            listen<string>('deep-link://new-url', (event) => {
+                console.log('[IdentityService] Deep link received:', event.payload);
+                this.handleDeepLink(event.payload);
+            });
+        } catch (e) {
+            console.error('[IdentityService] Failed to setup deep link listener:', e);
+        }
+    }
+
+    private handleDeepLink(url: string) {
+        try {
+            const urlObj = new URL(url);
+            if (urlObj.protocol === 'pegasus:' && urlObj.host === 'auth') {
+                const token = urlObj.searchParams.get('token');
+                const email = urlObj.searchParams.get('email');
+
+                if (token) {
+                    console.log('[IdentityService] Token captured from deep link for:', email);
+                    localStorage.setItem('auth_token', token);
+                    this.fetchUser();
+                }
+            }
+        } catch (e) {
+            console.error('[IdentityService] Error parsing deep link:', e);
         }
     }
 
@@ -87,38 +123,55 @@ class IdentityService {
     }
 
     async fetchUser() {
-        console.log('[IdentityService] fetchUser() called')
-        this._isLoading.value = true
-
-        if (this.isTauri() && !this._isOnline.value) {
-            console.log('[IdentityService] Tauri offline - skipping fetch')
-            this._isLoading.value = false
-            return
+        if (this._fetchPromise) {
+            return this._fetchPromise
         }
 
-        try {
-            console.log('[IdentityService] Fetching profile via ApiClient...')
-            const data = await api.get<{ user: User; token?: string }>('/auth/me', {
-                skipAuthRedirect: true // Don't redirect if /me fails initial check
-            })
+        this._fetchPromise = (async () => {
+            console.log('[IdentityService] fetchUser() called')
+            this._isLoading.value = true
 
-            if (data.user) {
-                console.log('[IdentityService] Profile loaded:', data.user.email)
-                this._user.value = data.user
-
-                // Refresh token if server provided a new one
-                if (data.token) {
-                    localStorage.setItem('auth_token', data.token)
-                }
-            } else {
-                this._user.value = null
+            if (this.isTauri() && !this._isOnline.value) {
+                console.log('[IdentityService] Tauri offline - skipping fetch')
+                this._isLoading.value = false
+                this._fetchPromise = null
+                return
             }
-        } catch (e) {
-            console.warn('[IdentityService] fetchUser failed or unauthenticated:', (e as Error).message)
-            this._user.value = null
-        } finally {
-            this._isLoading.value = false
-        }
+
+            try {
+                console.log('[IdentityService] Fetching profile via ApiClient...')
+                const data = await api.get<{ user: User; token?: string }>('/auth/me', {
+                    skipAuthRedirect: true // Don't redirect if /me fails initial check
+                })
+
+                if (data.user) {
+                    console.log('[IdentityService] Profile loaded:', data.user.email)
+                    this._user.value = data.user
+
+                    // Refresh token if server provided a new one
+                    if (data.token) {
+                        localStorage.setItem('auth_token', data.token)
+                    }
+                } else {
+                    this._user.value = null
+                }
+            } catch (e) {
+                console.warn('[IdentityService] fetchUser failed or unauthenticated:', (e as Error).message)
+                this._user.value = null
+
+                // Clear any stale token that may be causing repeated 401s
+                const errorMessage = (e as Error).message
+                if (errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
+                    console.log('[IdentityService] Clearing stale auth token')
+                    localStorage.removeItem('auth_token')
+                }
+            } finally {
+                this._isLoading.value = false
+                this._fetchPromise = null
+            }
+        })()
+
+        return this._fetchPromise
     }
 
     async login() {
@@ -144,7 +197,7 @@ class IdentityService {
             }
         }
 
-        const returnTo = window.location.origin
+        const returnTo = window.location.href
         window.location.href = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
     }
 

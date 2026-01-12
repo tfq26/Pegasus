@@ -39,6 +39,11 @@ export type SQLiteConfig = {
   tables?: string[]
 }
 
+export type FileConfig = {
+  path: string
+  type?: 'csv' | 'json' | 'xlsx'
+}
+
 export type SurrealConfig = {
   uploadId?: string
   host?: string
@@ -61,6 +66,7 @@ export type ConnectionEntry = {
   mongodb?: MongoConfig
   kusto?: KustoConfig
   sqlite?: SQLiteConfig
+  file?: FileConfig
   surrealdb?: SurrealConfig
   isLocked?: boolean
 }
@@ -103,6 +109,9 @@ export const buildConnectionPayload = (
   entry: ConnectionEntry,
   overrides: ConnectionOverrides = {},
 ) => {
+  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.surrealdb || entry.kusto;
+  if (!isRawEntry) return { ...entry, ...overrides };
+
   let basePayload: any = {}
   switch (entry.provider) {
     case 'mysql':

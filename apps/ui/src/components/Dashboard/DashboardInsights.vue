@@ -1,7 +1,7 @@
 <template>
   <div v-if="analysisResult && !isDismissed" class="p-6 bg-primary/5 border border-primary/20 rounded-lg mb-6 relative overflow-hidden group transition-all duration-300 shadow-sm hover:shadow-md">
     <div class="absolute -top-6 -right-6 p-4 opacity-[0.03] group-hover:opacity-[0.07] transition-all duration-500 transform group-hover:rotate-6 pointer-events-none">
-       <img src="/pegasus-purple.svg" class="w-48 h-48" />
+       <img src="/logo_new_purple.svg" class="w-48 h-48" />
     </div>
     
     <div class="flex items-start gap-4 relative z-10">

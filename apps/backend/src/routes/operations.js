@@ -48,6 +48,35 @@ operations.post('/', async (c) => {
     }
 })
 
+// Log a batch of operations
+operations.post('/batch', async (c) => {
+    const userId = await getUserId(c)
+    if (!userId) return c.json({ error: 'Unauthorized' }, 401)
+
+    try {
+        const { operations: ops } = await c.req.json()
+        if (!Array.isArray(ops)) return c.json({ error: 'Invalid batch format' }, 400)
+
+        // Process batch (sequentially for simplicity, or parallel)
+        let count = 0;
+        for (const op of ops) {
+            try {
+                await logOperation({
+                    ...op,
+                    user_id: String(userId)
+                })
+                count++
+            } catch (err) {
+                console.warn('Failed to log operation in batch:', err)
+            }
+        }
+        return c.json({ success: true, count })
+    } catch (error) {
+        console.error('Error logging batch:', error)
+        return c.json({ error: 'Failed to log batch' }, 500)
+    }
+})
+
 // Get user operation history
 operations.get('/history', async (c) => {
     const userId = await getUserId(c)

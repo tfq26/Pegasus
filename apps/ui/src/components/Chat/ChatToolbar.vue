@@ -26,6 +26,10 @@ const props = defineProps<{
   canRedo?: boolean
   queryHistory?: any[]
   isSyncing?: boolean
+  versions?: any[]
+  currentVersion?: number
+  textWrap?: boolean
+  showGridlines?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +63,10 @@ const emit = defineEmits<{
   'load-query': [query: string]
   'export-chat': []
   'save': []
+  'toggle-wrangler': []
+  'version-change': [version: number]
+  'update:text-wrap': [value: boolean]
+  'update:show-gridlines': [value: boolean]
 }>()
 
 const expanded = ref(false)
@@ -93,6 +101,7 @@ const models = computed(() => {
           @run="emit('run')"
           @clear="emit('clear')"
           @export-chat="emit('export-chat')"
+          @toggle-wrangler="emit('toggle-wrangler')"
         />
 
         <!-- Query Mode -->
@@ -123,6 +132,10 @@ const models = computed(() => {
           :can-undo="canUndo"
           :can-redo="canRedo"
           :is-syncing="isSyncing"
+          :versions="versions"
+          :current-version="currentVersion"
+          :text-wrap="textWrap"
+          :show-gridlines="showGridlines"
           @toggle-ai-mode="emit('toggle-ai-mode')"
           @format="(t, v) => emit('format', t, v)"
           @visualize="emit('visualize')"
@@ -136,6 +149,10 @@ const models = computed(() => {
           @undo="emit('undo')"
           @redo="emit('redo')"
           @toggle-find="emit('toggle-find')"
+          @commit="emit('save')"
+          @version-change="(v) => emit('version-change', v)"
+          @update:text-wrap="(v) => emit('update:text-wrap', v)"
+          @update:show-gridlines="(v) => emit('update:show-gridlines', v)"
         />
 
       </div>

@@ -8,7 +8,6 @@ export class WorkspaceService {
      */
     static async getWorkspace(userId, connectionId) {
         try {
-            // Check for existing workspace
             console.log(`[WorkspaceService] Fetching workspace for user: ${userId}, connection: ${connectionId}`);
 
             const [result] = await db.query(`
@@ -21,18 +20,6 @@ export class WorkspaceService {
             if (result && result.length > 0) {
                 const workspace = result[0];
                 console.log(`[WorkspaceService] Found workspace for user ${userId}`);
-
-                // Check expiration for temp workspaces
-                if (connectionId === 'temp' && workspace.expires_at) {
-                    const now = new Date();
-                    const expires = new Date(workspace.expires_at);
-                    if (now > expires) {
-                        console.log(`[WorkspaceService] Temp workspace expired for user ${userId}`);
-                        await this.deleteWorkspace(userId, 'temp');
-                        return null;
-                    }
-                }
-
                 return workspace.workspace_data || {};
             }
 
@@ -52,49 +39,51 @@ export class WorkspaceService {
      */
     static async saveWorkspace(userId, connectionId, workspaceData) {
         try {
-            const isTemp = connectionId === 'temp';
-            let expiresAt = null;
-
-            // Set 48h expiration for temp workspace
-            if (isTemp) {
-                const date = new Date();
-                date.setHours(date.getHours() + 48);
-                expiresAt = date.toISOString();
-            }
-
-            // Upsert logic using SurrealDB
+            // Check for existing record
             const [existing] = await db.query(`
                 SELECT id FROM connection_workspace 
                 WHERE user = type::thing('user', $userId) 
                 AND connection_id = $connectionId
             `, { userId, connectionId });
 
+            const saveData = {
+                workspace_data: workspaceData,
+                updated_at: new Date()
+            };
+
             if (existing && existing.length > 0) {
                 const id = existing[0].id;
-                await db.query(`
-                    UPDATE ${id} SET 
-                        workspace_data = $data, 
-                        updated_at = time::now(),
-                        expires_at = $expiresAt;
-                `, {
-                    data: workspaceData,
-                    expiresAt: expiresAt ? new Date(expiresAt) : null
-                });
+                try {
+                    await db.merge(id, saveData);
+                } catch (mergeErr) {
+                    // Auto-migrate bad records (legacy expires_at issue)
+                    if (mergeErr.message && mergeErr.message.includes('expires_at')) {
+                        console.log('[WorkspaceService] Auto-migrating bad record:', id);
+                        await db.delete(id);
+                        // Use query with type::thing for proper record reference
+                        await db.query(`
+                            CREATE connection_workspace CONTENT {
+                                user: type::thing('user', $userId),
+                                connection_id: $connectionId,
+                                workspace_data: $data,
+                                updated_at: time::now()
+                            };
+                        `, { userId, connectionId, data: workspaceData });
+                        console.log('[WorkspaceService] Migration successful');
+                    } else {
+                        throw mergeErr;
+                    }
+                }
             } else {
+                // Use query with type::thing for proper record reference
                 await db.query(`
                     CREATE connection_workspace CONTENT {
                         user: type::thing('user', $userId),
                         connection_id: $connectionId,
                         workspace_data: $data,
-                        updated_at: time::now(),
-                        expires_at: $expiresAt
+                        updated_at: time::now()
                     };
-                `, {
-                    userId,
-                    connectionId,
-                    data: workspaceData,
-                    expiresAt: expiresAt ? new Date(expiresAt) : null
-                });
+                `, { userId, connectionId, data: workspaceData });
             }
 
             return { success: true };
@@ -130,18 +119,12 @@ export class WorkspaceService {
      */
     static async migrateUnsaved(userId, targetConnectionId) {
         try {
-            // 1. Get temp workspace
             const tempData = await this.getWorkspace(userId, 'temp');
             if (!tempData) {
                 return { success: false, message: "No unsaved data to migrate" };
             }
 
-            // 2. Save it to target connection
-            // We overwrite target connection workspace or merge? 
-            // Implementation: Overwrite for now as 'migration' usually implies moving state.
             await this.saveWorkspace(userId, targetConnectionId, tempData);
-
-            // 3. Delete temp
             await this.deleteWorkspace(userId, 'temp');
 
             return { success: true };

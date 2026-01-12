@@ -6,6 +6,9 @@ import type { ConnectionSchemaState } from '@/composables/useExplorerSchema'
 import TableList from './TableList.vue'
 import TabList from './TabList.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { checkHealthProfile } from '@/lib/api'
+import { toast } from '@/composables/useNotifications'
+import { Activity } from 'lucide-vue-next'
 
 const workspaceStore = useWorkspaceStore()
 const tabs = computed(() => {
@@ -21,6 +24,28 @@ const activeTabId = computed(() => {
   return ws?.activeTabId || null
 })
 const viewMode = ref<'tables' | 'tabs'>('tables')
+const isCheckingHealth = ref(false)
+
+const handleHealthCheck = async () => {
+  isCheckingHealth.value = true
+  try {
+    toast.info('Analyzing database health...', { id: 'health-check' })
+    const res = await checkHealthProfile(props.connection.id)
+    toast.dismiss('health-check')
+    
+    if (res.status) {
+      const type = res.status === 'healthy' ? 'success' : (res.status === 'critical' ? 'error' : 'warning')
+      toast[type](`Health: ${res.status.toUpperCase()}`, {
+        description: `${res.summary}\n${res.recommendations?.join('\n') || ''}`,
+        duration: 8000
+      })
+    }
+  } catch (e: any) {
+    toast.error('Health Check Failed', { description: e.message })
+  } finally {
+    isCheckingHealth.value = false
+  }
+}
 
 const props = defineProps<{
   connection: ConnectionEntry
@@ -37,6 +62,8 @@ const emit = defineEmits<{
   'rename-table': [connection: ConnectionEntry, table: string]
   'delete-table': [connection: ConnectionEntry, table: string]
   'add-table': [connection: ConnectionEntry]
+  'explain-table': [connection: ConnectionEntry, table: string]
+  'generate-data': [connection: ConnectionEntry, table: string]
 }>()
 
 function statusDotClasses(status?: ConnectionSchemaState['status']) {
@@ -117,6 +144,15 @@ function statusLabel(state?: ConnectionSchemaState) {
           >
             <Plus class="w-3.5 h-3.5" />
           </button>
+
+          <button 
+            @click.stop="handleHealthCheck"
+            class="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-500 transition-all"
+            :class="{ 'opacity-100 animate-pulse text-emerald-500': isCheckingHealth }"
+            title="Health Check"
+          >
+            <Activity class="w-3.5 h-3.5" />
+          </button>
           
           <button 
             @click.stop="emit('delete', connection)"
@@ -158,6 +194,8 @@ function statusLabel(state?: ConnectionSchemaState) {
         @edit="(c, t) => emit('edit-table', c, t)"
         @rename="(c, t) => emit('rename-table', c, t)"
         @delete="(c, t) => emit('delete-table', c, t)"
+        @explain="(c, t) => emit('explain-table', c, t)"
+        @generate-data="(c, t) => emit('generate-data', c, t)"
       />
 
       <TabList

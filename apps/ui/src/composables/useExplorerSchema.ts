@@ -20,6 +20,16 @@ export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
             connectionSchemas.value[connection.id] = { status: 'idle', tables: [] }
         }
 
+        // Local File Mode: Bypass backend
+        if (connection.provider === 'file') {
+            connectionSchemas.value[connection.id] = {
+                status: 'success',
+                tables: [(connection as any).nickname || 'content'],
+                tableMetadata: {}
+            }
+            return
+        }
+
         const entry = connectionSchemas.value[connection.id]
         if (entry) entry.status = 'loading'
 

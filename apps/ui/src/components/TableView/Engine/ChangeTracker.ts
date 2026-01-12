@@ -6,8 +6,8 @@ import { posToKey } from './types';
  */
 export type Operation =
     | { type: 'create'; data: Record<string, any> }
-    | { type: 'update'; id: number; changes: Record<string, any> }
-    | { type: 'delete'; id: number }
+    | { type: 'update'; id: any; changes: Record<string, any> }
+    | { type: 'delete'; id: any }
     | { type: 'add_column'; column: string }
     | { type: 'drop_column'; column: string }
     | { type: 'full_replacement'; rows: Record<string, any>[] };
@@ -33,7 +33,7 @@ export interface IEngineReadable {
  */
 export class ChangeTracker {
     private modifiedCells: Set<string> = new Set();
-    private deletedRows: Set<number> = new Set();
+    private deletedRows: Set<any> = new Set();
     private deletedColumns: Set<string> = new Set();
     private addedColumns: string[] = [];
     private rowIdMap: Map<number, any> = new Map();
@@ -63,7 +63,7 @@ export class ChangeTracker {
     /**
      * Mark a row as deleted by its ID
      */
-    markRowDeleted(rowId: number): void {
+    markRowDeleted(rowId: any): void {
         this.deletedRows.add(rowId);
     }
 
@@ -110,7 +110,7 @@ export class ChangeTracker {
     /**
      * Get list of deleted row IDs
      */
-    getDeletedRows(): number[] {
+    getDeletedRows(): any[] {
         return Array.from(this.deletedRows);
     }
 

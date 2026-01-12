@@ -231,7 +231,7 @@ const renderMarkdown = (content: string) => {
 
 const pegasusLogo = computed(() => {
   const isDark = mode.value === 'dark' || (mode.value === 'auto' && preferredDark.value)
-  return isDark ? '/pegasus-white.svg' : '/pegasus.svg'
+  return isDark ? '/logo_new_white.svg' : '/logo_new.svg'
 })
 
 const getUserLabel = () => {

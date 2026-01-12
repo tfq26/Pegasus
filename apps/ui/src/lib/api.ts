@@ -1,6 +1,7 @@
 import { buildConnectionPayload } from './db-connections'
 import type { ConnectionEntry, Provider } from './db-connections'
 import { api, QUERY_API_URL, getAuthHeaders } from './apiClient'
+import { sendDesktopNotification } from './desktop'
 
 // Re-export for backwards compatibility
 export { api, QUERY_API_URL, getAuthHeaders }
@@ -169,15 +170,45 @@ export async function translateQuery(query: string, targetDialect: string, conne
 }
 
 export async function explainQuery(query: string, connectionId: string) {
-  // Use analyzeResults to get a natural language explanation
-  return analyzeResults(`Explain this SQL query in plain English and provide any performance optimization tips:`, [], query)
+  return api.post<any>('/ai/explain-query', { query, connectionId })
 }
 
+export async function optimizeQuery(query: string, connectionId: string) {
+  return api.post<any>('/ai/optimize-query', { query, connectionId })
+}
+
+
+
+export async function checkHealthProfile(connectionId: string) {
+  return api.post<any>('/ai/health-profile', { connectionId })
+}
+
+export async function explainTable(connectionId: string, tableName: string) {
+  return api.post<any>('/ai/explain-table', { connectionId, tableName })
+}
 
 
 export async function sanitizeTable(table: string) {
   return api.post<any>(`/api/table/${table}/sanitize`)
 }
+
+export async function generateTestData(connectionId: string, tableName: string, count: number, hint?: string, model?: string) {
+  return api.post<{ sql: string }>('/ai/generate-data', {
+    connectionId,
+    tableName,
+    count,
+    hint,
+    model
+  })
+}
+
+export async function wrangleData(prompt: string, model?: string) {
+  return api.post<{ code: string }>('/ai/data-wrangler', {
+    prompt,
+    model
+  })
+}
+
 
 
 export async function executeQuery({ connectionId, query, source = 'user' }: { connectionId: string, query: string, source?: string }) {
@@ -475,8 +506,36 @@ export function getFileDownloadUrl(fileId: string) {
   return `${QUERY_API_URL}/files/${fileId}`
 }
 
+
+const logBuffer: any[] = []
+let flushTimer: any = null
+
+const flushLogs = async () => {
+  if (logBuffer.length === 0) return
+  const batch = [...logBuffer]
+  logBuffer.length = 0 // clear buffer
+
+  try {
+    await api.post('/operations/batch', { operations: batch })
+  } catch (err) {
+    console.warn('[API] Failed to flush logs', err)
+    // Optionally re-queue failed logs? For lightweight audit, maybe drop them to avoid deadlock logic.
+  }
+}
+
 export async function logOperationToBackend(data: any) {
-  return api.post('/operations', data)
+  logBuffer.push({ ...data, timestamp: Date.now() })
+
+  if (!flushTimer) {
+    flushTimer = setInterval(() => {
+      if (logBuffer.length > 0) flushLogs()
+    }, 5000) // Flush every 5 seconds
+  }
+
+  // Also flush immediately if buffer gets too big
+  if (logBuffer.length >= 20) {
+    flushLogs()
+  }
 }
 
 export async function fetchOperationHistory(limit = 50) {
@@ -517,9 +576,52 @@ export async function fetchDatabaseTables(connection: ConnectionEntry, dbName: s
 
 export async function runQuery(connection: ConnectionEntry, query: string) {
   const payload = buildConnectionPayload(connection)
-  return api.post<any>('/query', {
-    provider: connection.provider,
+  const start = Date.now()
+
+  try {
+    const res = await api.post<any>('/query', {
+      provider: connection.provider,
+      connection: payload,
+      query,
+    })
+
+    const duration = Date.now() - start
+    // Notify if > 10s and backgrounded
+    if (duration > 10000 && typeof document !== 'undefined' && document.hidden) {
+      sendDesktopNotification('Query Completed', `Query took ${(duration / 1000).toFixed(1)}s`)
+    }
+    return res
+  } catch (e) {
+    throw e
+  }
+}
+
+export async function fetchTableQuery(connection: any, tableName: string, limit = 100, offset = 0) {
+  const payload = buildConnectionPayload(connection)
+  return api.post(`/api/table/${tableName}/query`, {
     connection: payload,
-    query,
+    provider: connection.provider,
+    limit,
+    offset
+  })
+}
+
+export async function fetchTableSchema(connection: any, tableName: string) {
+  const payload = buildConnectionPayload(connection)
+  return api.post(`/api/table/${tableName}/schema`, {
+    connection: payload,
+    provider: connection.provider
+  })
+}
+
+export async function saveTableData(tableName: string, updates: any[], deletedRowIds: any[], deletedColumns: any[], connection: any) {
+  const payload = buildConnectionPayload(connection)
+  return api.post('/api/save-table-data', {
+    tableName,
+    updates,
+    deletedRowIds,
+    deletedColumns,
+    connection: payload,
+    provider: connection.provider
   })
 }

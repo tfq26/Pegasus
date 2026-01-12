@@ -6,7 +6,7 @@
       <!-- Left: Logo -->
       <RouterLink to="/" class="flex items-center gap-3 group">
         <img
-          src="/pegasus-purple.svg"
+          src="/logo_new_purple.svg"
           alt="Pegasus Logo"
           class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
         />
@@ -179,7 +179,7 @@
           <!-- Header -->
           <div class="flex items-center justify-between mb-6">
             <RouterLink to="/" class="flex items-center gap-2" @click="mobileOpen = false">
-              <img src="/pegasus-purple.svg" class="h-7 w-7" />
+              <img src="/logo_new_purple.svg" class="h-7 w-7" />
               <span class="text-sm font-bold tracking-tight text-foreground">Pegasus</span>
             </RouterLink>
 

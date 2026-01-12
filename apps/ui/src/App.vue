@@ -82,13 +82,16 @@ onMounted(async () => {
     
     if (identityService.isAuthenticated) {
         entitlementService.fetch()
+        // Only load connections if we have a valid authenticated session
+        connectionStore.loadConnections()
+    } else {
+        console.log('[App] Not authenticated, skipping connection load')
     }
   } else {
     console.log('[App] Running in Tauri offline - skipping Identity service init')
+    // In offline mode, try to load connections anyway (might have local/cached data)
+    connectionStore.loadConnections()
   }
-
-  // Initialize connections globally - only after potential tokens are captured
-  connectionStore.loadConnections()
 
   // Setup Global Listeners
   window.addEventListener('unhandledrejection', handleUnhandledRejection)
@@ -133,7 +136,10 @@ onUnmounted(() => {
 
     <!-- Main layout: Adjust padding for navbar height -->
     <div class="flex flex-1 overflow-hidden" :class="isDesktop ? 'pt-12' : 'pt-16'">
-      <main class="flex-1 bg-background overflow-y-auto w-full relative">
+      <main 
+        class="flex-1 bg-background overflow-y-auto w-full relative"
+        :class="{ 'is-desktop': isTauri }"
+      >
         <ErrorPage 
             v-if="capturedError" 
             :code="capturedError.code"

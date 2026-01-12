@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, toRefs } from 'vue'
 import { toast } from '@/composables/useNotifications'
-import { Database, Plus, Trash, Search, Sparkles } from 'lucide-vue-next'
+import { Database, Plus, Trash, Search, Sparkles, FolderOpen } from 'lucide-vue-next'
 import { useStorage } from '@vueuse/core'
+import { isTauri } from '@/composables/usePlatform'
 
 // UI Components
 import AddConnectionModal from '@/components/AddConnectionModal.vue'
@@ -12,6 +13,10 @@ import ChatHistoryList from './Explorer/ChatHistoryList.vue'
 import QueryLogList from './Explorer/QueryLogList.vue'
 import DataViewerModal from './Explorer/DataViewerModal.vue'
 import RenameTableDialog from './Explorer/RenameTableDialog.vue'
+import AIReportDialog from './Explorer/AIReportDialog.vue'
+import GenerateTestDataDialog from '@/components/GenerateTestDataDialog.vue' // Import Dialog
+import { explainTable } from '@/lib/api'
+import { useLocalFile } from '@/composables/useLocalFile'
 
 // UI Parts
 import {
@@ -127,6 +132,31 @@ const confirmRename = async (newName: string) => {
   }
 }
 
+// --- Explain Table Logic ---
+const aiReportOpen = ref(false)
+const aiReportLoading = ref(false)
+const aiReportTitle = ref('')
+const aiReportContent = ref('')
+
+const handleExplainTable = async (conn: ConnectionEntry, table: string) => {
+  aiReportOpen.value = true
+  aiReportLoading.value = true
+  aiReportTitle.value = `Analysis: ${table}`
+  aiReportContent.value = ''
+  
+  try {
+    const res = await explainTable(conn.id, table)
+    if (res.error) throw new Error(res.error)
+    
+    aiReportContent.value = res.explanation
+  } catch (err: any) {
+    toast.error('Failed to analyze table', { description: err.message })
+    aiReportContent.value = `Error generating report: ${err.message}`
+  } finally {
+    aiReportLoading.value = false
+  }
+}
+
 // --- Delete Table Logic ---
 const deleteDialogOpen = ref(false)
 const tableToDelete = ref<{ conn: ConnectionEntry; table: string } | null>(null)
@@ -158,6 +188,8 @@ const handleDeleteConnection = (conn: ConnectionEntry) => {
   deleteConfirmationText.value = ''
   deleteConnectionDialogOpen.value = true
 }
+
+const { openLocalFile, processing: openingFile } = useLocalFile()
 
 const confirmDeleteConnection = async () => {
   if (!connectionToDelete.value) return
@@ -255,6 +287,24 @@ const confirmClearQueries = async () => {
     toast.error('Failed to clear queries', { description: err.message })
   }
 }
+// --- Generate Test Data ---
+const generateDataDialogOpen = ref(false)
+const generateDataConnectionId = ref('')
+const generateDataTableName = ref('')
+
+const handleGenerateData = (conn: ConnectionEntry, table: string) => {
+    generateDataConnectionId.value = conn.id
+    generateDataTableName.value = table
+    generateDataDialogOpen.value = true
+}
+
+const onTestDataGenerated = (sql: string) => {
+    // Open new query with SQL
+    emit('load-query', sql)
+    toast.success('SQL generated in Query Editor')
+}
+
+// ... rest of script ...
 </script>
 
 <template>
@@ -289,13 +339,24 @@ const confirmClearQueries = async () => {
       <section v-if="activeTab === 'data'" class="space-y-4">
         <div class="flex items-center justify-between px-1 mb-2">
           <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Connections</h3>
+        
+        <div class="flex items-center gap-1">
+          <button 
+            v-if="isTauri"
+            @click="openLocalFile"
+            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            title="Open Local File"
+          >
+            <FolderOpen class="w-4 h-4" />
+          </button>
           <button 
             @click="addConnectionModalOpen = true"
-            class="p-1.5 rounded-lg bg-muted border border-border text-muted-foreground hover:text-purple-500 hover:bg-muted/80 transition-all group"
-            title="Add Database"
+            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            title="Add Connection"
           >
-            <Plus class="w-3.5 h-3.5" />
+            <Plus class="w-4 h-4" />
           </button>
+        </div>
         </div>
 
         <div v-if="!connections.length" class="py-12 text-center space-y-4">
@@ -323,6 +384,8 @@ const confirmClearQueries = async () => {
             @rename-table="startRenameTable"
             @delete-table="handleDeleteTable"
             @add-table="handleAddTable"
+            @explain-table="handleExplainTable"
+            @generate-data="handleGenerateData"
           />
         </div>
       </section>
@@ -376,11 +439,27 @@ const confirmClearQueries = async () => {
         @confirm="confirmRename"
       />
 
+      <AIReportDialog 
+        :open="aiReportOpen"
+        :title="aiReportTitle"
+        :content="aiReportContent"
+        :loading="aiReportLoading"
+        @update:open="(v) => aiReportOpen = v"
+      />
+
       <AddTableToConnectionModal
         :open="addTableModalOpen"
         :connection="connectionForAddTable"
         @update:open="(v) => addTableModalOpen = v"
         @table-added="onTableAdded"
+      />
+
+      <GenerateTestDataDialog
+        :open="generateDataDialogOpen"
+        :connection-id="generateDataConnectionId"
+        :table-name="generateDataTableName"
+        @update:open="(v) => generateDataDialogOpen = v"
+        @generated="onTestDataGenerated"
       />
 
       <!-- Delete Table Confirmation -->

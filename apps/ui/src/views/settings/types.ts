@@ -54,6 +54,7 @@ export type SettingsModel = {
   azureConnected: boolean
   enabledModels?: string[]
   activeModel?: string
+  localModel?: string
   temperature?: number
   maxTokens?: number
   customInstructions?: string

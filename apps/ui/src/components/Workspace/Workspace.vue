@@ -10,6 +10,8 @@ import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
+import { fetchTableSchema, fetchTableQuery, saveTableData } from '@/lib/api';
+import { buildConnectionPayload } from '@/lib/db-connections';
 
 // Interface for version history
 interface TableVersion {
@@ -38,6 +40,8 @@ const emit = defineEmits<{
   (e: 'save-status', status: 'saved' | 'saving' | 'error'): void;
   (e: 'create-chat'): void;
   (e: 'add-to-dashboard', config: any): void;
+  (e: 'explain-query', query: string): void;
+  (e: 'optimize-query', query: string): void;
 }>();
 
 // --- Pinia Store ---
@@ -61,12 +65,29 @@ watch(() => props.chatHistory, (newHistory) => {
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
 const privateEngines = new Map<string, Engine>(); // Cache for private branches
-const loadingTabIds = ref(new Set<string>(
-    (tabs.value as unknown as Tab[])
-        .filter(t => t.type === 'table' || t.type === 'spreadsheet')
-        .map(t => t.id)
-));
+const loadingTabIds = ref(new Set<string>());
 const isDataLoading = computed(() => loadingTabIds.value.size > 0);
+
+// Queue for background preloading to prevent UI from freezing when many tabs exist
+const preloadQueue = ref<string[]>([]);
+let isPreloadingBackground = false;
+
+const processPreloadQueue = async () => {
+    if (isPreloadingBackground || preloadQueue.value.length === 0) return;
+    isPreloadingBackground = true;
+    
+    while (preloadQueue.value.length > 0) {
+        const nextTabId = preloadQueue.value.shift();
+        if (nextTabId && !engineCache.has(nextTabId)) {
+            console.log(`[Workspace] Background preloading tab: ${nextTabId} (${preloadQueue.value.length} left)`);
+            getEngineForTab(nextTabId);
+            // Wait a bit between tabs to let the UI breathe
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
+    
+    isPreloadingBackground = false;
+};
 
 // Helper to fetch schema + data
 const fetchTableData = async (tableName: string, connection: any, provider: string) => {
@@ -77,7 +98,11 @@ const fetchTableData = async (tableName: string, connection: any, provider: stri
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              credentials: 'include',
-             body: JSON.stringify({ connection, provider, limit: 2000 })
+             body: JSON.stringify({ 
+                 connection: buildConnectionPayload(connection), 
+                 provider, 
+                 limit: 2000 
+             })
     });
 
     const body = await res.json();
@@ -107,8 +132,8 @@ const refreshTableData = async (engine: Engine) => {
     const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider);
     
     // Clear existing data first to prevent duplication
-    // Clear values but keep styles during a data-only refresh
-    engine.clear({ keepStyles: true }); 
+    // Clear values but keep styles during a data-only refresh. Use silent mode to prevent triggering save/sync.
+    engine.clear({ keepStyles: true, silent: true }); 
     
     // Reload into Engine with silent mode to prevent modification tracking
     engine.beginBatch();
@@ -135,7 +160,7 @@ const refreshTableData = async (engine: Engine) => {
     // Reload headers (if not already in data)
     if (injectHeaders) {
         headers.forEach((header: any, colIndex: any) => {
-          engine.setValue({ row: 0, col: colIndex }, header, true);
+          engine.setValue({ row: 0, col: colIndex }, header, true, 'remote');
         });
     }
     
@@ -143,7 +168,7 @@ const refreshTableData = async (engine: Engine) => {
     rows.forEach((row: any, rowIndex: number) => {
       headers.forEach((header: any, colIndex: any) => {
         const value = row[header];
-        engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
+        engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true, 'remote');
       });
     });
     
@@ -190,9 +215,10 @@ const saveChanges = async (engine: Engine) => {
       // Refresh data to ensure UI is in sync with server-calculated results (e.g. sequence IDs, defaults)
       // Only refresh if we have a source to refresh from
       if (engine.sourceTable) {
-        // Debounced refresh or just skip if it's already in sync
-        // For now, let's skip full refresh unless explicitly needed, 
-        // as Engine.commit() already cleared modification tracking locally.
+        // Refresh data to ensure UI is in sync with server-calculated results (e.g. rowIDs)
+        // This is critical for data persistence and subsequent delta updates
+        console.log('[Save] Refreshing table data to ensure sync...');
+        await refreshTableData(engine);
       }
     } catch (e: any) {
       console.error('[Save] Failed:', e);
@@ -203,11 +229,16 @@ const saveChanges = async (engine: Engine) => {
 };
 
 const getEngineForTab = (tabId: string) => {
-  if (!engineCache.has(tabId)) {
-    const engine = new Engine(
-      { rowCount: 1000, colCount: 26 },
-      `spreadsheet-tab-${tabId}`
-    );
+  const isCreation = !engineCache.has(tabId);
+  if (!isCreation) return engineCache.get(tabId)!;
+
+  const engine = new Engine(
+    { rowCount: 1000, colCount: 26 },
+    `spreadsheet-tab-${tabId}`
+  );
+
+  // Set in cache immediately to prevent re-entrant calls
+  engineCache.set(tabId, engine);
     
     // Restore metadata from tab if available
     const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
@@ -226,10 +257,8 @@ const getEngineForTab = (tabId: string) => {
             tab.data.provider
         );
         
-        // Ensure we only have one active load per tab ID at a time, 
-        // but always allow the first load if the engine was just created
-        const needsInitialLoad = !engineCache.has(tabId);
-        if (loadingTabIds.value.has(tabId) && !needsInitialLoad) {
+        // Initial load logic
+        if (loadingTabIds.value.has(tabId)) {
             console.log('[Workspace] Already loading data for tab:', tabId);
         } else {
             loadingTabIds.value.add(tabId);
@@ -239,8 +268,8 @@ const getEngineForTab = (tabId: string) => {
                      console.log(`[Workspace] Loaded ${rows.length} rows for tab ${tabId}`);
                      
                      engine.beginBatch();
-                     // Preserving styles during reload
-                     engine.clear({ keepStyles: true });
+                     // Preserving styles during reload. Use silent mode to avoid redundant sync during initial load.
+                     engine.clear({ keepStyles: true, silent: true });
                      
                      const headers = tab?.data?.headers || [];
                      let dataStartsAtRow = 1;
@@ -300,8 +329,16 @@ const getEngineForTab = (tabId: string) => {
         // Update dirty state in workspace store
         workspaceStore.setTabDirty(tabId, engine.hasPendingModifications());
 
-        // CRITICAL SYNC: Update engineState in Pinia store for cross-device sync
-        workspaceStore.updateTabData(tabId, { engineState: engine.getState() });
+        // Debounce Pinia sync to prevent UI hangs with large datasets
+        const syncToPinia = () => {
+             workspaceStore.updateTabData(tabId, { engineState: engine.getState() });
+        };
+        
+        // Use a separate timeout for Pinia sync, or just rely on the save one
+        // For now, let's just make it slightly more efficient
+        if (!(window as any).syncTimeouts) (window as any).syncTimeouts = {};
+        if ((window as any).syncTimeouts[tabId]) clearTimeout((window as any).syncTimeouts[tabId]);
+        (window as any).syncTimeouts[tabId] = setTimeout(syncToPinia, 1000);
         
         // Calculate time since last save
         const now = Date.now();
@@ -334,10 +371,6 @@ const getEngineForTab = (tabId: string) => {
     })
     
     updateUndoRedoState()
-    
-    engineCache.set(tabId, engine);
-  }
-  
   // If in private mode and we have a private branch for this tab, return it
   if (props.privateMode && privateEngines.has(tabId)) {
       return privateEngines.get(tabId)!;
@@ -416,9 +449,14 @@ watch(() => workspaceStore.activeTabId?.value, (newActiveTabId, oldActiveTabId) 
 // Format table names to hide internal UUIDs
 // Converts "data_60643368_3269_4be6_921e_dff7c585cd3c_Sheet1" to "Sheet1"
 const formatTableName = (tableName: string): string => {
-  // UUID format: 8-4-4-4-12 hex digits with underscores replacing hyphens
-  const match = tableName.match(/^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/i);
-  return match && match[1] ? match[1] : tableName;
+  // Pattern 1: data_UUID_actualName (no dashes in hex)
+  const pattern1 = /^data_[a-f0-9]{32}_(.+)$/
+  const match1 = tableName.match(pattern1)
+  if (match1 && match1[1]) return match1[1]
+
+  // Pattern 2: data_UUID_with_dashes_actualName
+  const match2 = tableName.match(/^data_[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}_(.+)$/i);
+  return match2 && match2[1] ? match2[1] : tableName;
 };
 
 // Method to load table data into a new spreadsheet tab (Legacy)
@@ -497,28 +535,16 @@ const openTable = async (tableName: string, connection: any, provider: string) =
 
         // 1. Fetch Schema and Data in parallel (OPTIMIZATION)
         console.log('[Workspace] Fetching schema and data in parallel...');
-        const [schemaRes, queryRes] = await Promise.all([
-            fetch(`${baseUrl}/api/table/${tableName}/schema`, { 
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ connection, provider })
-            }),
-            fetch(`${baseUrl}/api/table/${tableName}/query`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ connection, provider, limit: 2000 })
-            })
-        ]);
-
+        
+        // Use API client to ensure correct headers and auth
         const [schemaBody, queryBody] = await Promise.all([
-            schemaRes.json(),
-            queryRes.json()
+             fetchTableSchema(connection, tableName) as Promise<any>,
+             fetchTableQuery(connection, tableName, 2000) as Promise<any>
         ]);
 
-        if (!schemaRes.ok) throw new Error(schemaBody.error || 'Failed to load schema');
-        if (!queryRes.ok) throw new Error(queryBody.error || 'Failed to load data');
+        // Helpers will throw if error, or return body
+        if (schemaBody.error) throw new Error(schemaBody.error);
+        if (queryBody.error) throw new Error(queryBody.error);
 
         const rows = queryBody.rows || [];
         
@@ -540,11 +566,11 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         
         console.log('[Workspace] Loaded', rows.length, 'rows with', headers.length, 'columns');
 
-        // 2. Detect schema mode
-        const isColumnLetters = headers.every((name: string, index: number) => {
-            const expectedLetter = labelToColIndex(name) === index;
-            return expectedLetter || name.match(/^[A-Z]+$/);
-        });
+        // 2. Clear toast
+        toast.dismiss(loadingId);
+        
+        // Check for specific columns
+        const isColumnLetters = headers.every((h: string) => /^[A-Z]+$/.test(h));
         
         const schemaMode = isColumnLetters ? 'column-letters' : 'named-headers';
         console.log('[Workspace] Schema mode:', schemaMode);
@@ -581,7 +607,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
             .catch(e => console.warn('[Workspace] Version history fetch failed:', e));
 
         // Prepare label
-        const sheetLabel = `${tableName} (Sheet)`
+        const sheetLabel = formatTableName(tableName)
 
         // Use store action to create tab
         const createdTab = workspaceStore.createTab('table', { 
@@ -914,6 +940,35 @@ const updateUndoRedoState = () => {
   canRedo.value = activeEngine.value.undoManager.canRedo()
 }
 
+// spreadsheet state proxies
+const activeTabVersions = computed(() => (activeTab.value as any)?.data?.versions || []);
+const activeTabVersion = computed(() => (activeTab.value as any)?.data?.currentVersion);
+const activeTabTextWrap = computed(() => {
+    const grid = gridRefs.value.get((activeTabId as any).value);
+    return grid?.textWrap ?? false;
+});
+const activeTabShowGridlines = computed(() => {
+    const grid = gridRefs.value.get((activeTabId as any).value);
+    return grid?.showGridlines ?? true;
+});
+
+const handleFormat = (type: string, value?: any) => {
+    const grid = gridRefs.value.get((activeTabId as any).value);
+    if (grid?.handleFormat) {
+        grid.handleFormat(type, value);
+    }
+};
+
+const toggleTextWrap = (val: boolean) => {
+    const grid = gridRefs.value.get((activeTabId as any).value);
+    if (grid) grid.textWrap = val;
+};
+
+const toggleGridlines = (val: boolean) => {
+    const grid = gridRefs.value.get((activeTabId as any).value);
+    if (grid) grid.showGridlines = val;
+};
+
 const handleUndo = () => {
   if (activeEngine.value?.undoManager.undo()) {
     activeEngine.value.notifyChange() // Ensure UI updates
@@ -982,24 +1037,65 @@ const preloadAllTabs = async () => {
     const tableTabs = (tabs.value as unknown as Tab[]).filter(t => t.type === 'table' || t.type === 'spreadsheet');
     if (tableTabs.length === 0) return;
     
-    console.log(`[Workspace] Preloading data for ${tableTabs.length} tabs...`);
-    // getEngineForTab triggers the fetchTableData logic
-    tableTabs.forEach(tab => getEngineForTab(tab.id));
+    // Clear existing queue to prioritize new connection's tabs
+    preloadQueue.value = [];
+    
+    const activeId = activeTabId.value as unknown as string;
+    
+    // 1. Immediately prioritize and load the active tab
+    if (activeId) {
+        const isActiveTable = tableTabs.some(t => t.id === activeId);
+        if (isActiveTable) {
+            console.log(`[Workspace] Prioritizing active tab load: ${activeId}`);
+            getEngineForTab(activeId);
+        }
+    }
+    
+    // 2. Queue the rest for background loading
+    const otherTabs = tableTabs.filter(t => t.id !== activeId && !engineCache.has(t.id));
+    if (otherTabs.length > 0) {
+        console.log(`[Workspace] Queuing ${otherTabs.length} background tabs for lazy load...`);
+        preloadQueue.value.push(...otherTabs.map(t => t.id));
+        processPreloadQueue();
+    }
 };
 
 onMounted(() => {
     preloadAllTabs();
 });
 
-// Watch for tabs changes to preload any new ones
-watch(() => tabs.value, (newTabs) => {
-    const tableTabs = (newTabs as unknown as Tab[]).filter(t => t.type === 'table' || t.type === 'spreadsheet');
-    tableTabs.forEach(tab => {
-        if (!engineCache.has(tab.id)) {
-            getEngineForTab(tab.id);
+// Watch for new tabs to ensure engines are created.
+watch(() => (tabs.value as unknown as Tab[]).map((t: Tab) => t.id).join(','), () => {
+    preloadAllTabs(); // Re-use the prioritized loading logic
+});
+
+// Also prioritize load when switching active tab
+watch(() => activeTabId.value, (newId) => {
+    if (newId) {
+        const tabId = newId as unknown as string;
+        const tab = (tabs.value as unknown as Tab[]).find(t => t.id === tabId);
+        if (tab && (tab.type === 'table' || tab.type === 'spreadsheet')) {
+            if (!engineCache.has(tabId)) {
+                getEngineForTab(tabId);
+            }
         }
-    });
-}, { deep: true });
+    }
+});
+
+// Save functionality exposed to parent
+const saveCurrentTab = async () => {
+  const tabId = activeTabId.value;
+  if (!tabId) return;
+  
+  const engine = engineCache.get(tabId as any);
+  if (engine) {
+    if (engine.hasPendingModifications()) {
+      await saveChanges(engine);
+    } else {
+      toast.info('No changes to save');
+    }
+  }
+};
 
 // Expose methods to parent
 defineExpose({
@@ -1014,7 +1110,21 @@ defineExpose({
   exportCurrentTable,
   getEngineForTab,
   getActiveTable,
-  handleAIResponse
+  handleAIResponse,
+  saveCurrentTab,
+  handleFormat,
+  handleUndo,
+  handleRedo,
+  activeTabVersions,
+  activeTabVersion,
+  activeTabTextWrap,
+  activeTabShowGridlines,
+  toggleTextWrap,
+  toggleGridlines,
+  canUndo,
+  canRedo,
+  activeTabId,
+  handleVersionChange
 });
 
 
@@ -1075,6 +1185,8 @@ defineExpose({
             @update:model-value="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
             @submit="emit('submit')"
             @save="() => { /* handled by auto-save */ }"
+            @explain-query="(q) => emit('explain-query', q)"
+            @optimize-query="(q) => emit('optimize-query', q)"
           />
         </div>
       </template>

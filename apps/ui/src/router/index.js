@@ -53,8 +53,9 @@ const router = createRouter({
     // { path: '/stocks', component: () => import('../views/StockDashboard.vue') },
     { path: '/stocks', redirect: '/dashboard' },
     { path: '/error', component: () => import('../views/ErrorPage.vue') },
-    { path: '/wrangler', component: () => import('../views/WranglerView.vue') },
+    // { path: '/wrangler', component: () => import('../views/WranglerView.vue') },
     { path: '/pricing', component: () => import('../views/Pricing.vue') },
+    { path: '/auth/callback', component: () => import('../views/AuthCallback.vue') },
   ],
 })
 
@@ -67,7 +68,7 @@ router.beforeEach(async (to, from) => {
   const isProtectedPath = protectedPaths.some(path => to.path.startsWith(path))
 
   // Public paths that should skip auth checks entirely
-  const publicPaths = ['/login', '/signin', '/local-auth', '/auth/device', '/pricing', '/docs', '/releases', '/error', '/shared']
+  const publicPaths = ['/login', '/signin', '/local-auth', '/auth/device', '/pricing', '/docs', '/releases', '/error', '/shared', '/auth/callback']
   const isPublicPath = publicPaths.some(path => to.path.startsWith(path))
 
   // Skip guard for public paths
@@ -110,7 +111,7 @@ router.beforeEach(async (to, from) => {
     console.log('[Router] Refreshing user state after login/OAuth redirect')
     await fetchUser()
 
-    if (hasAuthParams) {
+    if (hasAuthParams && to.path !== '/auth/device') {
       const cleanQuery = { ...to.query }
       delete cleanQuery.code
       delete cleanQuery.state

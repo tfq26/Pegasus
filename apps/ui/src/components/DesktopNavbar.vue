@@ -144,9 +144,10 @@ const links = computed(() => {
   
   // Only show Wrangler (Local AI) if running in Tauri
   const isTauri = '__TAURI_INTERNALS__' in window
-  if (isTauri) {
-    baseAuth.push({ to: '/wrangler', label: 'Wrangler', icon: Wand2 })
-  }
+  // Deprecated: Wrangler is now integrated into Query page
+  // if (isTauri) {
+  //   baseAuth.push({ to: '/wrangler', label: 'Wrangler', icon: Wand2 })
+  // }
   
   return baseAuth
 })
@@ -165,17 +166,7 @@ const isLinkActive = (path: string) => {
 
 // Handle navigation with smart dashboard redirect
 const handleNavClick = (link: { to: string }) => {
-  if (link.to === '/dashboard') {
-    // Check for last viewed dashboard
-    const lastDashboard = localStorage.getItem('pegasus-last-dashboard')
-    if (lastDashboard) {
-      router.push(`/dashboard/${lastDashboard}`)
-    } else {
-      router.push('/dashboard')
-    }
-  } else {
-    router.push(link.to)
-  }
+  router.push(link.to)
 }
 
 const toggleDropdown = () => {

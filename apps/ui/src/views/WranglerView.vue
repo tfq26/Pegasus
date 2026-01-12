@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { localAI } from '@/services/LocalAIService'
-import { Loader2, Wand2, ArrowRight, Check, Copy, AlertCircle } from 'lucide-vue-next'
+import { getAIModels, wrangleData } from '@/lib/api'
+import { Loader2, Wand2, ArrowRight, Check, Copy, AlertCircle, Server, Cloud } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const router = useRouter()
 const inputData = ref('ID: 101 - Product A (Active)\nID: 102 - Product B (Inactive)\nID: 103 - Product C (Active)')
@@ -12,9 +20,22 @@ const exampleOutput = ref('{"id": 101, "name": "Product A", "status": "Active"}'
 const isProcessing = ref(false)
 const generatedCode = ref('')
 const results = ref<string[]>([])
-const availableModels = ref<string[]>([])
+
+const aiProvider = ref<'local' | 'cloud'>('local')
+const localModels = ref<string[]>([])
+const cloudModels = ref<any[]>([])
 const currentModel = ref('')
 const aiReady = ref(false)
+
+const availableModels = computed(() => {
+  return aiProvider.value === 'local' ? localModels.value : cloudModels.value.map(m => m.id)
+})
+
+import { useSettingsStore } from '@/stores/settings'
+import { storeToRefs } from 'pinia'
+
+const settingsStore = useSettingsStore()
+const { settings } = storeToRefs(settingsStore)
 
 onMounted(async () => {
   // Only allow on desktop
@@ -23,12 +44,40 @@ onMounted(async () => {
     return
   }
   
-  // Check Ollama status and get available models
-  const status = await localAI.getStatus()
-  if (status.is_running && status.models.length > 0) {
-    availableModels.value = status.models
-    currentModel.value = status.models[0] // Use first available model
-    aiReady.value = true
+  // 1. Check Local AI
+  localAI.getStatus().then(status => {
+    if (status.is_running && status.models.length > 0) {
+      localModels.value = status.models
+      if (aiProvider.value === 'local' && !currentModel.value) {
+        // Preferred: User's default local model
+        if (settings.value.localModel && status.models.includes(settings.value.localModel)) {
+          currentModel.value = settings.value.localModel
+        } else {
+          // Fallback: First available
+          currentModel.value = status.models[0] || ''
+        }
+      }
+      aiReady.value = true
+    }
+  })
+
+  // 2. Load Cloud Models
+  try {
+    const models = await getAIModels()
+    cloudModels.value = models
+  } catch (e) {
+    console.error('Failed to load cloud models', e)
+  }
+})
+
+// Watch provider change to set default model
+watch(aiProvider, (newProvider: 'local' | 'cloud') => {
+  if (newProvider === 'local') {
+    currentModel.value = localModels.value[0] || ''
+  } else {
+    // Default to a smart model
+    const smart = cloudModels.value.find(m => m.id.includes('gpt-4') || m.id.includes('claude-3-opus'))
+    currentModel.value = smart ? smart.id : (cloudModels.value[0]?.id || '')
   }
 })
 
@@ -58,14 +107,21 @@ const transformData = async () => {
     Do NOT explain. Return ONLY the code for the arrow function. Use Regex if needed.
     `
 
-    // 2. Call Local AI
-    const response = await localAI.chat(currentModel.value, [
-      { role: 'system', content: 'You are a code generator. Output only valid JavaScript code.' },
-      { role: 'user', content: prompt }
-    ])
+    // 2. Execution
+    let code = ''
     
-    const data = await response.json()
-    let code = data.message?.content || ''
+    if (aiProvider.value === 'cloud') {
+       const res = await wrangleData(prompt, currentModel.value)
+       code = res.code || ''
+    } else {
+      // Local AI
+      const response = await localAI.chat(currentModel.value, [
+        { role: 'system', content: 'You are a code generator. Output only valid JavaScript code.' },
+        { role: 'user', content: prompt }
+      ])
+      const data = await response.json()
+      code = data.message?.content || ''
+    }
     
     // Clean up code (strip markdown code blocks if present)
     code = code.replace(/```javascript/g, '').replace(/```/g, '').trim()
@@ -92,9 +148,10 @@ const transformData = async () => {
       }
     })
 
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
-    results.value = ['Error generating transformation. Ensure Local AI is running.']
+    const errorMsg = e.message || 'Error generating transformation.'
+    results.value = [`Error: ${errorMsg}`]
   } finally {
     isProcessing.value = false
   }
@@ -116,9 +173,36 @@ const copyToClipboard = () => {
         <p class="text-muted-foreground mt-1">Transform messy data instantly by providing a single example.</p>
       </div>
       <div>
-        <div class="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-full text-xs font-mono text-muted-foreground border border-border">
-          <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          Powered by Local AI
+        <div class="flex items-center gap-3">
+          <!-- Provider Selector -->
+          <div class="flex items-center bg-muted p-1 rounded-lg">
+             <button 
+              @click="aiProvider = 'local'"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-2"
+              :class="aiProvider === 'local' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'"
+             >
+                <Server class="w-3 h-3" /> Local
+             </button>
+             <button 
+              @click="aiProvider = 'cloud'"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-2"
+              :class="aiProvider === 'cloud' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'"
+             >
+                <Cloud class="w-3 h-3" /> Cloud
+             </button>
+          </div>
+
+          <!-- Model Selector -->
+           <Select v-model="currentModel">
+            <SelectTrigger class="w-[180px] h-8 text-xs">
+              <SelectValue placeholder="Select Model" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="m in availableModels" :key="m" :value="m">
+                {{ m }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>

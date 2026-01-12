@@ -138,6 +138,13 @@ onMounted(async () => {
     if (settings.value.enabledModels === undefined) {
       settings.value.enabledModels = []
     }
+    
+    // Auto-set local model if not set
+    if (localStatus.value.is_running && localStatus.value.models.length > 0) {
+      if (!settings.value.localModel || !localStatus.value.models.includes(settings.value.localModel)) {
+        settings.value.localModel = localStatus.value.models[0]
+      }
+    }
   } catch (e) {
     error.value = 'Failed to load models'
   } finally {
@@ -253,6 +260,21 @@ const temperatureValue = computed({
              Stopped
            </span>
         </div>
+         </div>
+      </div>
+
+      <!-- Local Model Selector -->
+      <div v-if="localStatus.is_running && localStatus.models.length > 0" class="mb-4 bg-background border border-border rounded-lg p-3 flex items-center justify-between">
+         <div class="text-sm">
+           <p class="font-medium text-foreground">Default Local Model</p>
+           <p class="text-xs text-muted-foreground">Used for offline tasks across the app</p>
+         </div>
+         <select 
+           v-model="settings.localModel"
+           class="px-2 py-1 text-sm bg-muted border border-border rounded-md text-foreground focus:outline-none focus:border-primary min-w-[150px]"
+         >
+            <option v-for="m in localStatus.models" :key="m" :value="m">{{ m }}</option>
+         </select>
       </div>
 
       <div v-if="!localStatus.is_running" class="flex items-center justify-between bg-background border border-border rounded-lg p-3">
@@ -278,7 +300,6 @@ const temperatureValue = computed({
               <p class="font-bold">No models found</p>
               <p class="opacity-80 mt-1">You need to pull a model to use local AI. Open your terminal and run <code>ollama pull llama3</code> or download one from the library.</p>
             </div>
-         </div>
       </div>
     </div>
 

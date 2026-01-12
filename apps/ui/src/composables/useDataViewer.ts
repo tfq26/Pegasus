@@ -3,6 +3,7 @@ import { toast } from '@/composables/useNotifications'
 import { fetchTableEntries, runQuery } from '@/lib/api'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { useSettingsStore } from '@/stores/settings'
+import { readTextFile } from '@tauri-apps/plugin-fs'
 
 export interface ViewerState {
     open: boolean
@@ -57,11 +58,46 @@ export function useDataViewer() {
         searchQuery.value = ''
         sortColumn.value = null
 
+        searchQuery.value = ''
+        sortColumn.value = null
+
         try {
-            const response = await fetchTableEntries({ entry: connection, table, page: 1, limit })
-            viewer.value.entries = response.rows
-            viewer.value.total = (response as any).total || 0
-            viewer.value.hasMore = response.hasNext
+            // Local File Mode
+            if (connection.provider === 'file') {
+                const filePath = (connection as any).file?.path
+                if (!filePath) throw new Error('No file path provided')
+
+                const content = await readTextFile(filePath)
+                const ext = filePath.split('.').pop()?.toLowerCase()
+
+                let rows: any[] = []
+                if (ext === 'json') {
+                    rows = JSON.parse(content)
+                    if (!Array.isArray(rows)) rows = [rows]
+                } else {
+                    // Basic CSV
+                    const lines = content.split('\n').filter((l: string) => l.trim())
+                    if (lines.length > 0) {
+                        const headers = lines[0].split(',')
+                        rows = lines.slice(1).map((line: string) => {
+                            const values = line.split(',')
+                            return headers.reduce((acc: any, header: string, i: number) => {
+                                if (header) acc[header.trim()] = values[i]?.trim()
+                                return acc
+                            }, {})
+                        })
+                    }
+                }
+
+                viewer.value.entries = rows
+                viewer.value.total = rows.length
+                viewer.value.hasMore = false
+            } else {
+                const response = await fetchTableEntries({ entry: connection, table, page: 1, limit })
+                viewer.value.entries = response.rows
+                viewer.value.total = (response as any).total || 0
+                viewer.value.hasMore = response.hasNext
+            }
         } catch (err: any) {
             viewer.value.error = err instanceof Error ? err.message : String(err)
             toast.error('Failed to load table data')

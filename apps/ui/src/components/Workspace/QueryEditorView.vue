@@ -12,7 +12,7 @@ const props = defineProps<{
   isThinking?: boolean
 }>()
 
-const emit = defineEmits(['update:modelValue', 'submit', 'save'])
+const emit = defineEmits(['update:modelValue', 'submit', 'save', 'explain-query', 'optimize-query'])
 
 const localValue = ref(props.modelValue)
 
@@ -59,6 +59,11 @@ const handleRun = () => {
   if (!localValue.value.trim() || props.isThinking) return
   emit('submit')
 }
+
+const handleAction = (payload: { type: string, query: string }) => {
+  if (payload.type === 'explain') emit('explain-query', payload.query)
+  if (payload.type === 'optimize') emit('optimize-query', payload.query)
+}
 </script>
 
 <template>
@@ -75,6 +80,7 @@ const handleRun = () => {
           v-model="localValue"
           :language="editorLanguage"
           class="w-full h-full"
+          @action="handleAction"
         />
       </div>
 

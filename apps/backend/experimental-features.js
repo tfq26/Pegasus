@@ -2,20 +2,6 @@
 // This module handles experimental feature flags and access control
 
 export const EXPERIMENTAL_FEATURES = {
-    MANUAL_EXCEL_FORMULAS: {
-        id: 'manual-excel-formulas',
-        name: 'Manual Excel Formulas',
-        description: 'Enable Excel-style formula bar with autocomplete, point mode, and advanced formula features',
-        category: 'spreadsheet',
-        defaultEnabled: false
-    },
-    QUERY_PERFORMANCE_INSIGHTS: {
-        id: 'query-performance-insights',
-        name: 'Query Performance Insights',
-        description: 'Detailed query execution plans and performance metrics',
-        category: 'query',
-        defaultEnabled: false
-    },
     RAG_PIPELINE: {
         id: 'rag-pipeline',
         name: 'RAG Pipeline (Knowledge Base)',

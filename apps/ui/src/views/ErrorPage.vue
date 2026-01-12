@@ -25,7 +25,7 @@
       <!-- Pegasus Brand Icon -->
       <div class="absolute top-8 left-1/2 -translate-x-1/2 opacity-50">
         <img 
-          :src="isDark ? '/pegasus-white.svg' : '/pegasus.svg'" 
+          :src="isDark ? '/logo_new_white.svg' : '/logo_new.svg'" 
           alt="Pegasus Logo" 
           class="w-16 h-16 transition-all duration-500"
           :class="isDark ? 'drop-shadow-[0_0_15px_rgba(168,85,247,0.5)]' : 'drop-shadow-[0_0_15px_rgba(168,85,247,0.2)]'"

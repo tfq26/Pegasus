@@ -179,8 +179,8 @@ async function main() {
     const desktopDir = join(rootDir, "apps", "desktop");
 
     // Start backend in background using Node (for Socket.io support)
-    // Note: No --hot flag for node unless we use nodemon, but for now simple node execution is safer for sockets
-    runCommand("node", ["--env-file=.env", "index.js"], backendDir, "Backend")
+    // Using --watch to auto-restart on file changes
+    runCommand("node", ["--watch", "--env-file=.env", "index.js"], backendDir, "Backend")
         .catch((err) => console.error("Backend error:", err));
 
     // Give backend a moment to connect to DB

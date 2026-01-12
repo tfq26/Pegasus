@@ -1,6 +1,6 @@
 import { Surreal } from 'surrealdb';
 
-const db = new Surreal();
+const rawDb = new Surreal();
 
 const rawUrl = (process.env.SURREAL_URL || 'ws://127.0.0.1:8000').trim();
 
@@ -76,6 +76,37 @@ export async function ensureConnection() {
     }
 }
 
+// Proxy wrapper to handle token expiration automatically
+const db = new Proxy(rawDb, {
+    get(target, prop) {
+        const value = Reflect.get(target, prop);
+        if (typeof value === 'function' && ['query', 'select', 'create', 'update', 'delete', 'patch', 'merge'].includes(prop)) {
+            return async (...args) => {
+                try {
+                    return await value.apply(target, args);
+                } catch (e) {
+                    // Catch SurrealDB token expiration error
+                    if (e.message && e.message.includes('token has expired')) {
+                        console.warn(`[SurrealDB] Token expired during ${prop}. Attempting automatic re-signin...`);
+                        try {
+                            await target.signin({ username: user, password: pass });
+                            await target.use({ namespace: ns, database: dbName });
+                            console.log(`[SurrealDB] Re-signin successful. Retrying ${prop}...`);
+                            // Retry the original operation once
+                            return await target[prop](...args);
+                        } catch (reauthErr) {
+                            console.error('[SurrealDB] Automatic re-signin failed:', reauthErr.message);
+                            throw e; // Throw the original expiry error if re-signin fails
+                        }
+                    }
+                    throw e;
+                }
+            };
+        }
+        return value;
+    }
+});
+
 // Function to try connecting with a specific URL
 async function tryConnect(targetUrl) {
     console.log(`[SurrealDB] Attempting connection to: ${targetUrl}`);
@@ -130,10 +161,10 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
                 // Copy connection state to global 'db' instance
                 // In Surreal 1.x, we can't easily "swap" the internal socket, 
                 // but we can re-connect the global one once we know which URL works.
-                if (db !== resultDb) {
-                    await db.connect(candidate);
-                    await db.signin({ username: user, password: pass });
-                    await db.use({ namespace: ns, database: dbName });
+                if (rawDb !== resultDb) {
+                    await rawDb.connect(candidate);
+                    await rawDb.signin({ username: user, password: pass });
+                    await rawDb.use({ namespace: ns, database: dbName });
                 }
 
                 isConnected = true;
@@ -242,7 +273,7 @@ const initSchema = async () => {
             DEFINE FIELD upload_id ON sanitization_metadata TYPE string;
             DEFINE INDEX idx_original_table ON sanitization_metadata COLUMNS original_table UNIQUE;
 
-            -- Connection Workspaces
+            -- Connection Workspaces (simplified - no expiration needed)
             DEFINE TABLE connection_workspace SCHEMALESS
                 PERMISSIONS
                     FOR select, update, delete WHERE user = $auth.id
@@ -250,7 +281,6 @@ const initSchema = async () => {
             DEFINE FIELD connection_id ON TABLE connection_workspace TYPE string;
             DEFINE FIELD user ON TABLE connection_workspace TYPE record<user>;
             DEFINE FIELD workspace_data ON TABLE connection_workspace TYPE object;
-            DEFINE FIELD expires_at ON TABLE connection_workspace TYPE datetime;
             DEFINE INDEX idx_workspace_conn ON TABLE connection_workspace COLUMNS connection_id, user UNIQUE;
 
             -- Knowledge Base (Vector Store)

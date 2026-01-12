@@ -22,6 +22,8 @@ const emit = defineEmits<{
   'edit': [connection: ConnectionEntry, table: string]
   'rename': [connection: ConnectionEntry, table: string]
   'delete': [connection: ConnectionEntry, table: string]
+  'explain': [connection: ConnectionEntry, table: string]
+  'generate-data': [connection: ConnectionEntry, table: string]
 }>()
 
 // --- Performance & UX for large schemas ---
@@ -135,6 +137,15 @@ function formatTableName(tableName: string): string {
              <ContextMenuItem @select="emit('rename', props.connection, table)">
                 Rename Table...
              </ContextMenuItem>
+             <ContextMenuItem @select="emit('explain', props.connection, table)">
+                <Sparkles class="w-3.5 h-3.5 mr-2 text-purple-500" />
+                Explain Table (AI)
+             </ContextMenuItem>
+             <ContextMenuItem @select="emit('generate-data', props.connection, table)">
+                <Sparkles class="w-3.5 h-3.5 mr-2 text-indigo-500" />
+                Generate Test Data (AI)
+             </ContextMenuItem>
+             <ContextMenuSeparator class="bg-border my-1" />
              <ContextMenuItem @select="emit('delete', props.connection, table)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
                 Delete Table
              </ContextMenuItem>

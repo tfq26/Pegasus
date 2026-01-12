@@ -43,6 +43,104 @@ const finalizeLogin = async (c, { token, user, traceId, returnTo }) => {
     return c.redirect(finalRedirect.toString())
 }
 
+/**
+ * [AUTH_TRACE] Renders a nice HTML page that launches the desktop app via custom protocol
+ */
+const renderLaunchPage = (c, { token, email, deviceCode, traceId }) => {
+    const scheme = 'pegasus'
+    const redirectUrl = `${scheme}://auth?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`
+    const apiUrl = ConfigService.getBackendUrl()
+
+    console.log(`[AUTH_TRACE] [${traceId}] Rendering launch page for: ${redirectUrl} (Sync: ${deviceCode || 'none'})`)
+
+    return c.html(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Success | Pegasus</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                    background: #050505; 
+                    color: #fff; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    height: 100vh; 
+                    margin: 0; 
+                    overflow: hidden;
+                }
+                .container { 
+                    text-align: center; 
+                    max-width: 400px; 
+                    padding: 40px;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.1);
+                    border-radius: 32px;
+                    backdrop-filter: blur(20px);
+                    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                }
+                .logo { font-size: 48px; margin-bottom: 24px; }
+                h1 { font-size: 24px; margin-bottom: 12px; font-weight: 700; background: linear-gradient(to bottom, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                p { color: #888; margin-bottom: 32px; line-height: 1.5; font-size: 14px; }
+                .btn { 
+                    display: inline-block; 
+                    padding: 14px 32px; 
+                    background: #fff; 
+                    color: #000; 
+                    text-decoration: none; 
+                    border-radius: 14px; 
+                    font-weight: 700; 
+                    transition: all 0.2s;
+                    box-shadow: 0 0 20px rgba(255,255,255,0.1);
+                }
+                .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 25px rgba(255,255,255,0.2); }
+                .loading { margin-top: 24px; font-size: 12px; color: #444; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+                @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+                .pulse { animation: pulse 2s infinite; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="logo">🚀</div>
+                <h1>Success!</h1>
+                <p>You've successfully authenticated. We're launching Pegasus to sign you in.</p>
+                <a href="${redirectUrl}" class="btn">Launch Pegasus</a>
+                <div class="loading pulse">Opening App...</div>
+            </div>
+            <script>
+                // 1. Try to authorize the background session immediately (Silent Fallback)
+                const deviceCode = "${deviceCode}";
+                if (deviceCode && deviceCode !== "undefined" && deviceCode !== "null") {
+                    fetch("${apiUrl}/auth/device/authorize", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            device_code: deviceCode,
+                            token: "${token}",
+                            user: { email: "${email}" }
+                        })
+                    }).then(res => res.json()).then(data => {
+                        console.log("Device session authorized:", data);
+                    }).catch(err => {
+                        console.error("Failed to authorize device session", err);
+                    });
+                }
+
+                // 2. Try to launch the app via custom protocol (Instant Track)
+                window.location.href = "${redirectUrl}";
+                
+                // 3. Update UI if auto-launch likely failed
+                setTimeout(() => {
+                    document.querySelector('.loading').innerText = "Didn't open? Click the button above.";
+                }, 3000);
+            </script>
+        </body>
+        </html>
+    `)
+}
+
 // Helper to ensure user exists in DB
 const upsertUser = async (payload, traceId = 'system') => {
     try {
@@ -56,11 +154,11 @@ const upsertUser = async (payload, traceId = 'system') => {
         const pic = payload.profilePictureUrl || payload.profile_picture_url || null
 
         // Check if user exists
-        const [existing] = await db.query(`SELECT id FROM ${userRecordId}`)
+        const [existing] = await db.query(`SELECT id FROM \`${userRecordId}\``)
 
         if (existing && existing.length > 0) {
             await db.query(`
-                UPDATE ${userRecordId} SET 
+                UPDATE \`${userRecordId}\` SET 
                     email = $email,
                     first_name = $firstName,
                     last_name = $lastName,
@@ -70,7 +168,7 @@ const upsertUser = async (payload, traceId = 'system') => {
             console.log(`[AUTH_TRACE] [${traceId}] Record updated.`)
         } else {
             await db.query(`
-                CREATE ${userRecordId} CONTENT {
+                CREATE \`${userRecordId}\` CONTENT {
                     email: $email,
                     first_name: $firstName,
                     last_name: $lastName,
@@ -149,7 +247,7 @@ auth.get("/callback", async (c) => {
         if (existingUserRs[0] && existingUserRs[0].length > 0) {
             const existingId = existingUserRs[0][0].id
             console.log(`[AUTH_TRACE] [${traceId}] Conflict resolution: Removing stale record ${existingId}`)
-            await db.query(`DELETE ${existingId}`)
+            await db.query(`DELETE \`${existingId}\``)
         }
 
         await upsertUser(user, traceId)
@@ -165,6 +263,16 @@ auth.get("/callback", async (c) => {
         }
 
         const token = await sign(payload, jwtSecret)
+
+        const state = c.req.query("state")
+        if (state && (state === 'desktop' || state.length > 20)) {
+            return renderLaunchPage(c, {
+                token,
+                email: user.email,
+                deviceCode: state === 'desktop' ? null : state,
+                traceId
+            })
+        }
 
         const returnTo = getCookie(c, "auth_return_to")
         if (returnTo) {
@@ -301,32 +409,170 @@ auth.get("/me", async (c) => {
         return c.json({ error: "Invalid token" }, 401)
     }
 })
+// ============================================
+// DESKTOP IN-APP OAUTH (Epic Games style)
+// ============================================
+
+/**
+ * Desktop login initiator - returns auth URL for WebView
+ */
+auth.get('/desktop/login', (c) => {
+    const traceId = Math.random().toString(36).substring(7)
+    const apiUrl = ConfigService.getBackendUrl()
+    const provider = c.req.query('provider') || 'authkit'
+
+    console.log(`[AUTH_TRACE] [${traceId}] Desktop login initiated for provider: ${provider}, state: ${c.req.query('state') || 'none'}`)
+
+    // Use dedicated desktop callback
+    const desktopRedirectUri = `${apiUrl}/auth/callback`
+    const state = c.req.query('state') || 'desktop'
+
+    const authorizationUrl = workos.userManagement.getAuthorizationUrl({
+        provider: provider === 'authkit' ? 'authkit' : undefined,
+        connectionId: provider !== 'authkit' ? provider : undefined,
+        clientId,
+        redirectUri: desktopRedirectUri,
+        state
+    })
+
+    return c.json({
+        url: authorizationUrl,
+        traceId
+    })
+})
+
+/**
+ * Desktop callback - returns HTML that posts token to parent window
+ */
+auth.get('/desktop/callback', async (c) => {
+    const code = c.req.query('code')
+    const traceId = Math.random().toString(36).substring(7)
+    const apiUrl = ConfigService.getBackendUrl()
+
+    console.log(`[AUTH_TRACE] [${traceId}] Desktop callback received`)
+
+    if (!code) {
+        return c.html(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Login Failed</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0a0a0a; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                    .container { text-align: center; }
+                    .error { color: #ef4444; font-size: 24px; margin-bottom: 16px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="error">❌ Login Failed</div>
+                    <p>No authorization code received.</p>
+                    <p>You can close this window.</p>
+                </div>
+            </body>
+            </html>
+        `)
+    }
+
+    try {
+        const desktopRedirectUri = `${apiUrl}/auth/callback`
+
+        const { user } = await workos.userManagement.authenticateWithCode({
+            code,
+            clientId,
+            redirectUri: desktopRedirectUri,
+        })
+
+        console.log(`[AUTH_TRACE] [${traceId}] Desktop auth success: ${user.email}`)
+
+        // Upsert user in database
+        await upsertUser(user, traceId)
+
+        // Create JWT
+        const payload = {
+            sub: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null,
+            organizationName: user.organizationName || user.organization?.name || null,
+            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 Days
+        }
+
+        const token = await sign(payload, jwtSecret)
+
+        const state = c.req.query("state")
+        return renderLaunchPage(c, {
+            token,
+            email: user.email,
+            deviceCode: state && state !== 'desktop' ? state : null,
+            traceId
+        })
+
+    } catch (error) {
+        console.error(`[AUTH_TRACE] [${traceId}] Desktop auth failure:`, error.message)
+
+        return c.html(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Login Failed</title>
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0a0a0a; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                    .container { text-align: center; max-width: 400px; }
+                    .error { color: #ef4444; font-size: 48px; margin-bottom: 16px; }
+                    .message { color: #888; font-size: 14px; margin-top: 16px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="error">✕</div>
+                    <h2>Login Failed</h2>
+                    <p>${error.message}</p>
+                    <p class="message">Please close this window and try again.</p>
+                </div>
+            </body>
+            </html>
+        `)
+    }
+})
 
 // ============================================
 // DEVICE AUTHORIZATION FLOW (for Desktop Apps)
 // ============================================
 
-const deviceCodes = new Map()
+
+// ============================================
+// DEVICE AUTHORIZATION FLOW (for Desktop Apps)
+// ============================================
 
 auth.post('/device/code', async (c) => {
-    const code = crypto.randomUUID().slice(0, 8).toUpperCase()
+    const userCode = crypto.randomUUID().slice(0, 8).toUpperCase()
     const deviceCode = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + (10 * 60 * 1000)).toISOString()
 
-    deviceCodes.set(deviceCode, {
-        userCode: code,
-        status: 'pending',
-        token: null,
-        user: null,
-        createdAt: Date.now(),
-        expiresAt: Date.now() + (10 * 60 * 1000)
-    })
+    try {
+        await db.query(`
+            CREATE type::thing('device_code', $deviceCode) CONTENT {
+                user_code: $userCode,
+                status: 'pending',
+                access_token: null,
+                user: null,
+                created_at: time::now(),
+                expires_at: $expiresAt
+            };
+        `, { deviceCode, userCode, expiresAt })
 
-    return c.json({
-        device_code: deviceCode,
-        user_code: code,
-        verification_url: `${ConfigService.getFrontendUrl()}/auth/device`,
-        expires_in: 600
-    })
+        return c.json({
+            device_code: deviceCode,
+            user_code: userCode,
+            verification_url: `${ConfigService.getFrontendUrl()}/auth/device`,
+            expires_in: 600
+        })
+    } catch (e) {
+        console.error('[DeviceAuth] Failed to create device code:', e)
+        return c.json({ error: 'server_error' }, 500)
+    }
 })
 
 auth.get('/device/token', async (c) => {
@@ -336,74 +582,105 @@ auth.get('/device/token', async (c) => {
         return c.json({ error: 'device_code required' }, 400)
     }
 
-    const session = deviceCodes.get(deviceCode)
+    try {
+        // console.log(`[DeviceAuth] Polling token for: ${deviceCode}`)
+        const [result] = await db.query(`SELECT * FROM type::thing('device_code', $deviceCode)`, { deviceCode })
+        const session = result && result[0]
 
-    if (!session) {
-        return c.json({ error: 'expired_token', error_description: 'Device code not found or expired' }, 400)
-    }
+        if (!session) {
+            // console.log(`[DeviceAuth] Session not found`)
+            return c.json({ error: 'expired_token', error_description: 'Device code not found or expired' }, 400)
+        }
 
-    if (Date.now() > session.expiresAt) {
-        deviceCodes.delete(deviceCode)
-        return c.json({ error: 'expired_token', error_description: 'Device code expired' }, 400)
-    }
+        if (new Date() > new Date(session.expires_at)) {
+            console.log(`[DeviceAuth] Session expired`)
+            await db.query(`DELETE $id`, { id: session.id })
+            return c.json({ error: 'expired_token', error_description: 'Device code expired' }, 400)
+        }
 
-    if (session.status === 'pending') {
+        if (session.status === 'pending') {
+            // console.log(`[DeviceAuth] Pending`)
+            return c.json({ error: 'authorization_pending' }, 400)
+        }
+
+        if (session.status === 'authorized' && session.access_token) {
+            console.log(`[DeviceAuth] Token retrieved`)
+            await db.query(`DELETE $id`, { id: session.id })
+            return c.json({
+                access_token: session.access_token,
+                token_type: 'Bearer',
+                user: session.user
+            })
+        }
+
+        console.log(`[DeviceAuth] Invalid state for authorized session:`, JSON.stringify(session))
         return c.json({ error: 'authorization_pending' }, 400)
+    } catch (e) {
+        console.error('[DeviceAuth] Check token failed:', e)
+        return c.json({ error: 'server_error' }, 500)
     }
-
-    if (session.status === 'authorized' && session.token) {
-        deviceCodes.delete(deviceCode)
-        return c.json({
-            access_token: session.token,
-            token_type: 'Bearer',
-            user: session.user
-        })
-    }
-
-    return c.json({ error: 'authorization_pending' }, 400)
 })
 
 auth.post('/device/authorize', async (c) => {
-    const { user_code, token, user } = await c.req.json()
+    const { device_code, token, user } = await c.req.json()
 
-    if (!user_code || !token) {
-        return c.json({ error: 'user_code and token required' }, 400)
+    console.log(`[DeviceAuth] Authorize request for device_code: ${device_code}`)
+
+    if (!device_code || !token) {
+        console.log('[DeviceAuth] Missing device_code or token')
+        return c.json({ error: 'device_code and token required' }, 400)
     }
 
-    let foundDeviceCode = null
-    for (const [deviceCode, session] of deviceCodes.entries()) {
-        if (session.userCode === user_code.toUpperCase() && session.status === 'pending') {
-            foundDeviceCode = deviceCode
-            break
+    try {
+        // Find session by device code (the record ID)
+        console.log(`[DeviceAuth] Looking up record for code: ${device_code}`)
+
+        const [result] = await db.query(`SELECT * FROM type::thing('device_code', $deviceCode)`, { deviceCode: device_code })
+        console.log(`[DeviceAuth] Query result:`, JSON.stringify(result))
+
+        const session = result && result[0]
+
+        if (!session) {
+            console.log('[DeviceAuth] Session not found')
+            return c.json({ error: 'Invalid or expired code' }, 400)
         }
+
+        if (session.status !== 'pending') {
+            console.log(`[DeviceAuth] Session status is '${session.status}', expected 'pending'`)
+            return c.json({ error: 'Code already used or expired' }, 400)
+        }
+
+        // Update session
+        console.log(`[DeviceAuth] Authorizing session: ${session.id}`)
+        await db.query(`UPDATE $id SET status = 'authorized', access_token = $accessToken, user = $user`, {
+            id: session.id,
+            accessToken: token,
+            user
+        })
+
+        console.log('[DeviceAuth] Session authorized successfully')
+        return c.json({ success: true, message: 'Device authorized! You can close this window.' })
+    } catch (e) {
+        console.error('[DeviceAuth] Authorize failed:', e)
+        return c.json({ error: 'server_error' }, 500)
     }
-
-    if (!foundDeviceCode) {
-        return c.json({ error: 'Invalid or expired code' }, 400)
-    }
-
-    const session = deviceCodes.get(foundDeviceCode)
-    session.status = 'authorized'
-    session.token = token
-    session.user = user
-    deviceCodes.set(foundDeviceCode, session)
-
-    return c.json({ success: true, message: 'Device authorized! You can close this window.' })
 })
 
 auth.get('/device/verify', async (c) => {
     const code = c.req.query('code')
 
     if (code) {
-        let found = false
-        for (const session of deviceCodes.values()) {
-            if (session.userCode === code.toUpperCase() && session.status === 'pending') {
-                found = true
-                break
-            }
-        }
+        try {
+            const [result] = await db.query(`SELECT * FROM device_code WHERE user_code = $code AND status = 'pending'`, {
+                code: code.toUpperCase()
+            })
 
-        return c.json({ valid: found, code: code.toUpperCase() })
+            if (result && result.length > 0) {
+                return c.json({ valid: true, code: code.toUpperCase() })
+            }
+        } catch (e) {
+            console.error('[DeviceAuth] Verify failed:', e)
+        }
     }
 
     return c.json({ valid: false })

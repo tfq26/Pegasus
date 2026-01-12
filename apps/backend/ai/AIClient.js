@@ -79,6 +79,16 @@ export class AIClient {
             }
         }
 
+        // Check explicit local prefix
+        if (modelId.startsWith('local:')) {
+            const provider = this.providers.get('local')
+            const realModelId = modelId.replace('local:', '')
+            if (provider) {
+                provider.config.model = realModelId
+                return provider
+            }
+        }
+
         // Fallback or check local provider
         // Any model could potentially be in Ollama
         const localProvider = this.providers.get('local')

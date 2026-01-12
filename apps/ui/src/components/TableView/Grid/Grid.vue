@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef } from 'vue';
 import { Engine } from '../Engine/Engine';
+import { CanvasRenderer } from '../Engine/CanvasRenderer';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
 import { useGridScroll } from '../../../composables/grid/useGridScroll';
 import { useGridSelection } from '../../../composables/grid/useGridSelection';
@@ -17,6 +18,7 @@ import ChangeReviewDialog from './ChangeReviewDialog.vue';
 import type { RowDiff } from '../Engine/types';
 import { SearchEngine } from '../Engine/SearchEngine';
 import ProviderBadge from '../ProviderBadge.vue';
+import { ColorPicker } from '@/components/ColorPicker';
 import { 
   ChevronDown, 
   Sparkles, 
@@ -96,6 +98,9 @@ const {
   textWrap
 } = useGridScroll(props.engine);
 
+
+const showGridlines = ref(true);
+
 // Force re-render trigger
 const renderKey = ref(0);
 
@@ -119,6 +124,57 @@ const {
   isRowSelected,
   focusGrid
 } = useGridSelection(props.engine, gridContainer, rowCount, colCount, renderKey);
+
+// --- Canvas Rendering ---
+const useCanvas = ref(true);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+let canvasRenderer: CanvasRenderer | null = null;
+
+onMounted(() => {
+  if (canvasRef.value && useCanvas.value) {
+    canvasRenderer = new CanvasRenderer(props.engine, canvasRef.value);
+    // Initial draw
+    updateCanvas();
+  }
+});
+
+const updateCanvas = () => {
+   if (!canvasRenderer || !useCanvas.value || !gridContainer.value) return;
+   
+   const { startRow, endRow, startCol, endCol, startColLeft, scrollTop, scrollLeft } = virtualState.value;
+   const width = gridContainer.value.clientWidth;
+   const height = gridContainer.value.clientHeight;
+   
+   // Resize if needed (debounced ideally, but check dimensions)
+   canvasRenderer.resize(width, height);
+   
+   // Prepare selection param
+   let selectionParam = null;
+   if (rangeSelection.value) {
+       selectionParam = rangeSelection.value;
+   } else if (selection.value) {
+       selectionParam = { start: selection.value, end: selection.value };
+   }
+   
+   canvasRenderer.draw({
+     startRow,
+     endRow,
+     startCol,
+     endCol,
+     scrollTop,
+     scrollLeft,
+     startColLeft,
+     rowHeight,
+     getColWidth,
+     selection: selectionParam
+   });
+};
+
+watch([virtualState, selection, rangeSelection, useCanvas], () => {
+  if (useCanvas.value) {
+     requestAnimationFrame(updateCanvas);
+  }
+}, { deep: true });
 
 
 // --- Realtime & Follow Me (useRealtimeCursor) ---
@@ -615,6 +671,35 @@ const getDisplayValue = (row: number, col: number) => {
 // --- Helpers ---
 const getCellFromEvent = (e: MouseEvent): CellPosition | null => {
   const target = e.target as HTMLElement;
+
+  // Canvas Support
+  if (useCanvas.value && canvasRef.value && (target === canvasRef.value || target.classList.contains('sticky-canvas'))) {
+      const rect = (canvasRef.value as HTMLElement).getBoundingClientRect();
+      const x = e.clientX - rect.left; 
+      const y = e.clientY - rect.top;
+      
+      // Map to World Coordinates: Canvas is translated by scroll keys
+      const worldX = x + virtualState.value.scrollLeft;
+      const worldY = y + virtualState.value.scrollTop;
+      
+      const row = Math.floor(worldY / rowHeight);
+      
+      // Col Search
+      let cx = 0;
+      let col = -1;
+      for (let c = 0; c < colCount; c++) {
+          const w = getColWidth(c);
+          if (worldX >= cx && worldX < cx + w) {
+              col = c;
+              break;
+          }
+          cx += w;
+      }
+      
+      if (row >= 0 && row < rowCount && col >= 0) return { row, col };
+      return null;
+  }
+
   const cell = target.closest('td');
   if (!cell) return null;
   
@@ -720,6 +805,20 @@ const onMouseDown = (row: number, col: number, e: MouseEvent) => {
 
   document.addEventListener('mousemove', onGlobalMouseMove);
   document.addEventListener('mouseup', onGlobalMouseUp);
+};
+
+const handleCanvasMouseDown = (e: MouseEvent) => {
+    const pos = getCellFromEvent(e);
+    if (pos) {
+        onMouseDown(pos.row, pos.col, e);
+    }
+};
+
+const handleCanvasDblClick = (e: MouseEvent) => {
+    const pos = getCellFromEvent(e);
+    if (pos) {
+        handleCellDblClick(pos.row, pos.col, e);
+    }
 };
 
 const onGlobalMouseMove = (e: MouseEvent) => {
@@ -833,13 +932,14 @@ const adjustFormulaReferences = (formula: string, rowOffset: number, colOffset: 
 };
 
 // --- Styling ---
-const getCellStyle = (row: number, col: number) => {
+const getCellStyle = (row: number, col: number): any => {
     const cell = props.engine.getCell({ row, col });
-    if (!cell?.style) return {};
+    if (!cell || !cell.style) return {};
     return {
         fontWeight: cell.style.bold ? 'bold' : 'normal',
         fontStyle: cell.style.italic ? 'italic' : 'normal',
         textDecoration: cell.style.underline ? 'underline' : 'none',
+        textAlign: cell.style.align || 'left',
         color: cell.style.color || 'inherit',
         backgroundColor: cell.style.background || 'inherit',
     };
@@ -1888,9 +1988,10 @@ const executeForecastRequest = async (column: number, algorithm: string, periods
   const n = values.length;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   for (let i = 0; i < n; i++) {
+    const val = values[i] ?? 0;
     sumX += i;
-    sumY += values[i];
-    sumXY += i * values[i];
+    sumY += val;
+    sumXY += i * val;
     sumX2 += i * i;
   }
   
@@ -2011,6 +2112,27 @@ const commitChanges = async () => {
     committing.value = false;
   }
 };
+
+const handleUndo = () => {
+    if (props.engine.undoManager.undo()) {
+        props.engine.notifyChange();
+    }
+};
+
+const handleRedo = () => {
+    if (props.engine.undoManager.redo()) {
+        props.engine.notifyChange();
+    }
+};
+
+defineExpose({
+    handleFormat: toggleStyle,
+    textWrap,
+    showGridlines,
+    autoFitAllColumns,
+    handleUndo,
+    handleRedo
+});
 </script>
 
 <template>
@@ -2118,61 +2240,6 @@ const commitChanges = async () => {
       </div>
     </div>
     
-    <!-- Toolbar -->
-    <div class="flex items-center gap-1 px-3 py-1 border-b border-border bg-muted/30">
-        <!-- Version Dropdown -->
-        <div v-if="props.versions && props.versions.length > 0" class="flex items-center gap-2 mr-4 border-r pr-4 border-border/50">
-            <span class="text-xs text-muted-foreground font-medium">Version:</span>
-            <select 
-                :value="props.currentVersion" 
-                @change="(e) => emit('version-change', Number((e.target as HTMLSelectElement).value))"
-                class="h-7 text-xs bg-background border border-border rounded px-2 min-w-[100px] outline-none focus:ring-1 focus:ring-primary"
-            >
-                <!-- Original is implicit if not in versions array, but we assume versions array contains all selectable options or we handle it -->
-                <option v-for="v in props.versions" :key="v.version" :value="v.version">
-                    v{{ v.version }} ({{ new Date(v.created_at).toLocaleDateString() }})
-                </option>
-            </select>
-             <span v-if="props.currentVersion" class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                Active
-            </span>
-        </div>
-
-        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent font-bold text-foreground" @click="toggleStyle('bold')" title="Bold">B</button>
-        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent italic text-foreground" @click="toggleStyle('italic')" title="Italic">I</button>
-        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent underline text-foreground" @click="toggleStyle('underline')" title="Underline">U</button>
-        <div class="w-px h-4 bg-border mx-2"></div>
-        <div class="flex items-center gap-1" title="Text Color">
-            <span class="text-xs text-muted-foreground">A</span>
-            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('color', (e.target as HTMLInputElement).value)" />
-        </div>
-        <div class="flex items-center gap-1" title="Background Color">
-            <span class="text-xs text-muted-foreground bg-accent px-1 rounded">Bg</span>
-            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('background', (e.target as HTMLInputElement).value)" />
-        </div>
-        <div class="w-px h-4 bg-border mx-2"></div>
-        <!-- Text Wrap Toggle -->
-        <button 
-          class="w-8 h-8 flex items-center justify-center rounded transition-colors"
-          :class="textWrap ? 'bg-primary/20 text-primary' : 'hover:bg-accent text-foreground'"
-          @click="textWrap = !textWrap"
-          title="Toggle text wrapping"
-        >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 6h18M3 12h15a3 3 0 110 6h-4l2-2m0 4l-2-2M3 18h7"/>
-          </svg>
-        </button>
-        <!-- Auto-fit Columns -->
-        <button 
-          class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent text-foreground"
-          @click="autoFitAllColumns"
-          title="Auto-fit all column widths"
-        >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M8 3v18M16 3v18M3 12h18M3 6h4M17 6h4M3 18h4M17 18h4"/>
-          </svg>
-        </button>
-    </div>
 
     <!-- Grid Body with Sticky Header -->
     <div 
@@ -2220,6 +2287,18 @@ const commitChanges = async () => {
 
       <!-- Phantom spacer to set scroll height (adjusted for header) -->
       <div :style="{ height: `${rowCount * rowHeight}px`, width: `${totalWidth}px` }"></div>
+
+      <!-- Canvas Layer -->
+      <canvas 
+        v-if="useCanvas"
+        ref="canvasRef"
+        class="absolute top-0 left-0 z-10 sticky-canvas outline-none"
+        :style="{ 
+            transform: `translate(${virtualState.scrollLeft}px, ${virtualState.scrollTop}px)`
+        }"
+        @mousedown="handleCanvasMouseDown"
+        @dblclick="handleCanvasDblClick"
+      ></canvas>
       
       <!-- Live Cursors Overlay -->
       <PresenceOverlay 
@@ -2242,8 +2321,9 @@ const commitChanges = async () => {
         <X class="w-4 h-4 ml-1" />
       </div>
 
-      <!-- Virtualized Table Body -->
+      <!-- Virtualized Table Body (DOM Fallback) -->
       <table 
+        v-show="!useCanvas"
         class="border-collapse table-fixed bg-background absolute left-0"
         :style="{ top: '24px', transform: `translateY(${virtualState.startRow * rowHeight}px)` }"
       >
@@ -2273,8 +2353,9 @@ const commitChanges = async () => {
             <td
               v-for="col in colCount"
               :key="col"
-              class="border-r border-b border-border px-1 text-xs relative cursor-cell overflow-hidden"
+              class="px-1 text-xs relative cursor-cell overflow-hidden"
               :class="[
+                showGridlines ? 'border-r border-b border-border' : 'border-none',
                 textWrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
                 {
                   'bg-blue-50/50 dark:bg-blue-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
@@ -2578,64 +2659,101 @@ const commitChanges = async () => {
             @delete="(id) => engine.deleteNote(activeNoteKey!, id)"
             @close="closeNotePopover"
         />
-
-        <CommitBar
-          :modified-count="modifiedRows.size"
-          :deleted-count="deletedRows.size"
-          :added-count="addedRows.size"
-          @discard="discardAllChanges"
-          @review="openReviewDialog"
-          @commit="commitChanges"
-        />
-
-        <ChangeReviewDialog
-          v-model:open="showReviewDialog"
-          :diffs="pendingDiffs"
-          :loading="committing"
-          @commit="commitChanges"
-        />
     </div>
+
+    <!-- Commit Bar & Review Dialog (Now always visible if there are changes) -->
+    <CommitBar
+      :modified-count="modifiedRows.size"
+      :deleted-count="deletedRows.size"
+      :added-count="addedRows.size"
+      @discard="discardAllChanges"
+      @review="openReviewDialog"
+      @commit="commitChanges"
+    />
+
+    <ChangeReviewDialog
+      v-model:open="showReviewDialog"
+      :diffs="pendingDiffs"
+      :loading="committing"
+      @commit="commitChanges"
+    />
 </template>
 
 <style scoped>
-@reference "../../../styles.css";
-
 .row-modified {
-  @apply bg-violet-50/30 dark:bg-violet-900/10;
+  background-color: color-mix(in srgb, var(--color-violet-500) 30%, transparent);
+}
+
+.dark .row-modified {
+  background-color: color-mix(in srgb, var(--color-violet-900) 10%, transparent);
 }
 
 .row-modified td:first-child {
-  @apply border-l-2 border-l-violet-500 shadow-[inset_4px_0_0_-2px_rgba(139,92,246,0.3)];
+  border-left-width: 2px;
+  border-left-color: var(--color-violet-500);
+  box-shadow: inset 4px 0 0 -2px rgba(139, 92, 246, 0.3);
 }
 
 .row-deleted {
-  @apply bg-destructive/10 dark:bg-destructive/20 opacity-70 grayscale-[0.5];
+  background-color: color-mix(in srgb, var(--destructive) 10%, transparent);
+  opacity: 0.7;
+  filter: grayscale(0.5);
+}
+
+.dark .row-deleted {
+  background-color: color-mix(in srgb, var(--destructive) 20%, transparent);
 }
 
 .row-deleted td {
-  @apply line-through text-muted-foreground transition-all duration-300;
+  text-decoration-line: line-through;
+  color: var(--muted-foreground);
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
 }
 
 .cell-dirty {
-  @apply relative;
+  position: relative;
 }
 
 /* Red dot for deleted rows in header */
 .row-deleted td:first-child {
-  @apply relative;
+  position: relative;
 }
 .row-deleted td:first-child::after {
   content: '';
-  @apply absolute top-1 left-1 w-1.5 h-1.5 bg-destructive rounded-full;
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  background-color: var(--destructive);
+  border-radius: 9999px;
 }
 
 /* Blue dot for modified rows in header */
 .row-modified:not(.row-deleted) td:first-child {
-  @apply relative;
+  position: relative;
 }
 .row-modified:not(.row-deleted) td:first-child::after {
   content: '';
-  @apply absolute top-1 left-1 w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse;
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  background-color: var(--color-violet-500);
+  border-radius: 9999px;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
 }
 </style>
 ```

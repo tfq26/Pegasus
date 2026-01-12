@@ -10,7 +10,7 @@ const props = defineProps<{
   placeholder?: string
 }>()
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'action'])
 const modelValue = ref(props.modelValue)
 const colorMode = useColorMode({
   emitAuto: true,
@@ -66,6 +66,33 @@ const handleEditorMount = (editor: any) => {
       modelValue.value = value
     }
   })
+
+  // Add Context Menu Actions
+  editor.addAction({
+    id: 'pegasus.explain-query',
+    label: 'AI Explain Query',
+    contextMenuGroupId: 'navigation',
+    contextMenuOrder: 1,
+    run: (ed: any) => {
+      const selection = ed.getModel().getValueInRange(ed.getSelection());
+      const query = selection && selection.trim() ? selection : ed.getValue();
+      console.log('CodeEditor: Trigger Explain', query);
+      emit('action', { type: 'explain', query });
+    }
+  });
+
+  editor.addAction({
+    id: 'pegasus.optimize-query',
+    label: 'AI Optimize Query',
+    contextMenuGroupId: 'navigation',
+    contextMenuOrder: 2,
+    run: (ed: any) => {
+      const selection = ed.getModel().getValueInRange(ed.getSelection());
+      const query = selection && selection.trim() ? selection : ed.getValue();
+      console.log('CodeEditor: Trigger Optimize', query);
+      emit('action', { type: 'optimize', query });
+    }
+  });
 }
 
 // Watch for prop changes and update editor directly

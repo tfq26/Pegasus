@@ -235,8 +235,9 @@ export class SurrealAdapter extends DatabaseAdapter {
 
             let tables = Object.keys(info.tables || {});
 
-            // Filter out 'uploads:' records (these are metadata, not data tables)
-            tables = tables.filter(t => !t.startsWith('uploads:'));
+            // Filter out record-style IDs (table:uuid format) - these are not actual tables
+            // Also filter out 'uploads:' records (these are metadata, not data tables)
+            tables = tables.filter(t => !t.includes(':'));
             // console.log('[SurrealDB] Found tables:', tables.length, 'tables');
 
             // Filter logic similar to SQLite/Uploads
@@ -264,7 +265,8 @@ export class SurrealAdapter extends DatabaseAdapter {
 
     async sampleCollection(name, limit = 5) {
         try {
-            const result = await this.db.query(`SELECT * FROM ${name} LIMIT ${limit}`);
+            // Use backticks around table name to handle UUIDs with dashes safely
+            const result = await this.db.query(`SELECT * FROM \`${name}\` LIMIT ${limit}`);
 
             // Helper to clean internal fields
             const cleanRecord = (record) => {

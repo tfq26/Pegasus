@@ -2,6 +2,12 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { MessageSquare, Table, Database, X, Plus } from 'lucide-vue-next';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export interface Tab {
   id: string;
@@ -64,48 +70,26 @@ const addTab = (type: Tab['type']) => {
   isDropdownOpen.value = false;
 };
 
+const getTabTooltip = (tab: Tab) => {
+  if (tab.type === 'chat') return 'AI Chat Instance';
+  if (tab.type === 'query') return 'Formula / SQL Playground';
+  
+  const data = tab.data;
+  if (!data) return tab.label;
+
+  const connection = data.connection;
+  const connectionName = connection?.nickname || connection?.host || connection?.database || connection?.provider || 'Local Data';
+  const tableName = data.tableName || tab.label;
+  
+  return `${tableName} @ ${connectionName}`;
+};
+
 </script>
 
 <template>
   <div class="flex items-center h-10 border-b border-border bg-muted/40 px-2 overflow-x-auto">
-    <!-- Tab List -->
-    <div class="flex items-center gap-1 flex-1">
-      <div 
-        v-for="tab in tabs" 
-        :key="tab.id"
-        class="flex items-center gap-2 px-3 py-1.5 text-xs rounded-t-md cursor-pointer select-none border border-transparent transition-colors group relative max-w-[150px]"
-        :class="{
-          'bg-background border-border border-b-background shadow-sm text-foreground': tab.id === activeTabId,
-          'hover:bg-muted/80 text-muted-foreground hover:text-foreground': tab.id !== activeTabId
-        }"
-        @click="emit('update:activeTabId', tab.id)"
-      >
-        <!-- Icon based on type -->
-        <MessageSquare v-if="tab.type === 'chat'" class="w-3 h-3 opacity-70" />
-        <Table v-else-if="tab.type === 'table'" class="w-3 h-3 opacity-70" />
-        <Database v-else-if="tab.type === 'query'" class="w-3 h-3 opacity-70" />
-        
-        <span class="truncate font-medium">{{ tab.label }}</span>
-        
-        <!-- Minimal dirty indicator (small dot) -->
-        <span 
-          v-if="tab.isDirty" 
-          class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
-          title="Unsaved changes"
-        ></span>
-        
-        <!-- Close Button (visible on hover or active) -->
-        <button 
-          class="ml-auto w-4 h-4 rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/20"
-          :class="{ 'opacity-100': tab.id === activeTabId }"
-          @click.stop="emit('close', tab.id)"
-        >
-          <X class="w-3 h-3" />
-        </button>
-      </div>
-
-      <!-- Add New Tab Dropdown Trigger -->
-      <div class="relative">
+    <!-- Add New Tab Dropdown Trigger -->
+    <div class="relative mr-2">
         <button 
           ref="plusButtonRef"
           class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" 
@@ -114,8 +98,51 @@ const addTab = (type: Tab['type']) => {
         >
            <Plus class="w-4 h-4" />
         </button>
-      </div>
     </div>
+
+    <!-- Tab List -->
+    <TooltipProvider :delay-duration="100">
+      <div class="flex items-center gap-1 flex-1">
+        <Tooltip v-for="tab in tabs" :key="tab.id">
+          <TooltipTrigger as-child>
+            <div 
+              class="flex items-center gap-2 px-3 py-1.5 text-xs rounded-t-md cursor-pointer select-none border border-transparent transition-colors group relative max-w-[150px]"
+              :class="{
+                'bg-background border-border border-b-background shadow-sm text-foreground': tab.id === activeTabId,
+                'hover:bg-muted/80 text-muted-foreground hover:text-foreground': tab.id !== activeTabId
+              }"
+              @click="emit('update:activeTabId', tab.id)"
+            >
+              <!-- Icon based on type -->
+              <MessageSquare v-if="tab.type === 'chat'" class="w-3 h-3 opacity-70" />
+              <Table v-else-if="tab.type === 'table'" class="w-3 h-3 opacity-70" />
+              <Database v-else-if="tab.type === 'query'" class="w-3 h-3 opacity-70" />
+              
+              <span class="truncate font-medium">{{ tab.label }}</span>
+              
+              <!-- Minimal dirty indicator (small dot) -->
+              <span 
+                v-if="tab.isDirty" 
+                class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
+              ></span>
+              
+              <!-- Close Button (visible on hover or active) -->
+              <button 
+                class="ml-auto w-4 h-4 rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/20"
+                :class="{ 'opacity-100': tab.id === activeTabId }"
+                @click.stop="emit('close', tab.id)"
+              >
+                <X class="w-3 h-3" />
+              </button>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" class="text-[10px] px-2 py-1 bg-popover/95 backdrop-blur-sm border shadow-lg font-medium animate-in fade-in zoom-in-95 duration-100">
+            {{ getTabTooltip(tab) }}
+          </TooltipContent>
+        </Tooltip>
+        </div>
+      </TooltipProvider>
+
     
     <!-- Teleport dropdown to body to escape stacking context -->
     <Teleport to="body">

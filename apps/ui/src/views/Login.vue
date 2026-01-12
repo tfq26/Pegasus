@@ -4,7 +4,7 @@
       <!-- Logo/Branding -->
       <div class="text-center mb-10">
         <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/5 mb-4 shadow-sm border border-primary/10 overflow-hidden">
-           <img src="/pegasus-purple.svg" alt="Pegasus Logo" class="w-12 h-12 object-contain" />
+           <img src="/logo_new_purple.svg" alt="Pegasus Logo" class="w-12 h-12 object-contain" />
         </div>
         <h1 class="text-4xl font-extrabold tracking-tight mb-2 bg-gradient-to-br from-primary to-primary/60 bg-clip-text text-transparent">Pegasus</h1>
         <p class="text-muted-foreground font-medium">You're a step away from flying with your data</p>
@@ -71,16 +71,14 @@ const router = useRouter()
 const { user, isLoading, isOnline, fetchUser, login, isTauri } = useAuth()
 
 onMounted(() => {
-  // Redirect to local auth only if Tauri AND offline
-  if (isTauri() && !isOnline.value) {
-    router.replace('/local-auth')
-    return
-  }
-  // Redirect to device auth flow for desktop (Tauri online)
-  if (isTauri() && isOnline.value) {
+  // Redirect all Tauri (desktop) apps to the unified sign-in page
+  // SignIn.vue now handles both online (SSO) and offline (local) cases
+  if (isTauri()) {
     router.replace('/signin')
     return
   }
+  
+  // Web: Check if already authenticated
   fetchUser().then(() => {
     if (user.value) {
       const params = new URLSearchParams(window.location.search)

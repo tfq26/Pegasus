@@ -4,6 +4,7 @@ import {
   Zap,
   Eraser,
   Download,
+  Wand2,
 } from 'lucide-vue-next'
 import {
   Select,
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   'run': []
   'clear': []
   'export-chat': []
+  'toggle-wrangler': []
 }>()
 
 const defaultModels = [
@@ -132,6 +134,21 @@ const contextUsage = 45
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Clear Chat</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <!-- Data Wrangler -->
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button
+              @click="emit('toggle-wrangler')"
+              class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-violet-500 transition-colors"
+            >
+              <Wand2 class="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Data Wrangler</TooltipContent>
         </Tooltip>
       </TooltipProvider>
 

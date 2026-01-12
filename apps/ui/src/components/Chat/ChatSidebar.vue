@@ -40,6 +40,15 @@
   </transition>
 </template>
 
+<style scoped>
+/* Desktop-specific Glassmorphism Override */
+:global(.is-desktop) aside {
+  background: rgba(var(--background-rgb), 0.6) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+</style>
+
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import Explorer from '../Explorer.vue'

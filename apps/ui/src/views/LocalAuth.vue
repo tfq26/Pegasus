@@ -3,7 +3,7 @@
     <div class="w-full max-w-md space-y-8">
       <!-- Logo & Title -->
       <div class="text-center">
-        <img src="/pegasus.svg" alt="Pegasus" class="w-16 h-16 mx-auto mb-4" />
+        <img src="/logo_new.svg" alt="Pegasus" class="w-16 h-16 mx-auto mb-4" />
         <h1 class="text-2xl font-bold text-foreground">Welcome to Pegasus</h1>
         <p class="text-muted-foreground text-sm mt-2">
           {{ isLoginMode ? 'Sign in to your local account' : 'Create a local account to get started' }}

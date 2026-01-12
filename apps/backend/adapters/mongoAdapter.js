@@ -33,6 +33,132 @@ export class MongoAdapter extends DatabaseAdapter {
     }
   }
 
+  // Recursive helper to flatten nested objects for tabular view
+  _flatten(doc, parentKey = '', result = {}) {
+    if (!doc) return result;
+    for (const [key, value] of Object.entries(doc)) {
+      const fullKey = parentKey ? `${parentKey}.${key}` : key;
+
+      // Don't flatten ObjectIds or Dates (treat as primitives for display)
+      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) && value?._bsontype !== 'ObjectId') {
+        this._flatten(value, fullKey, result);
+      } else {
+        result[fullKey] = value;
+      }
+    }
+    return result;
+  }
+
+  // Restore nested structure from flat dot-notation keys
+  _unflatten(flatDoc) {
+    const result = {};
+    for (const [key, value] of Object.entries(flatDoc)) {
+      const parts = key.split('.');
+      let current = result;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (i === parts.length - 1) {
+          current[part] = value;
+        } else {
+          current[part] = current[part] || {};
+          current = current[part];
+        }
+      }
+    }
+    return result;
+  }
+
+  async applyOperations(tableName, operations) {
+    if (!this.db) throw new Error('No database selected.');
+    const target = this.db.collection(tableName);
+    const { ObjectId } = await import('mongodb');
+
+    for (const op of operations) {
+      switch (op.type) {
+        case 'full_replacement':
+          // For MongoDB, full replacement means delete all and insert all
+          await target.deleteMany({});
+          if (op.rows && op.rows.length > 0) {
+            const unflattenedRows = op.rows.map(r => {
+              const cleaned = this._unflatten(r);
+              delete cleaned._id;
+              return cleaned;
+            });
+            await target.insertMany(unflattenedRows);
+          }
+          break;
+
+        case 'create':
+          if (op.data) {
+            const newDoc = this._unflatten(op.data);
+            delete newDoc._id;
+            await target.insertOne(newDoc);
+          }
+          break;
+
+        case 'update':
+          if (op.id && op.changes) {
+            const mongoId = typeof op.id === 'string' && op.id.length === 24 ? new ObjectId(op.id) : op.id;
+            // Use dot notation for updates to match flattened grid view
+            const updateData = {};
+            for (const [key, value] of Object.entries(op.changes)) {
+              if (key === '_id') continue;
+              updateData[key] = value;
+            }
+            if (Object.keys(updateData).length > 0) {
+              await target.updateOne({ _id: mongoId }, { $set: updateData });
+            }
+          }
+          break;
+
+        case 'delete':
+          if (op.id) {
+            const mongoId = typeof op.id === 'string' && op.id.length === 24 ? new ObjectId(op.id) : op.id;
+            await target.deleteOne({ _id: mongoId });
+          }
+          break;
+
+        case 'drop_column':
+          if (op.column) {
+            await target.updateMany({}, { $unset: { [op.column]: "" } });
+          }
+          break;
+
+        case 'add_column':
+          // MongoDB is schemaless, no-op for adding a column
+          break;
+      }
+    }
+  }
+
+  async saveData(tableName, updates, deletedRowIds, deletedColumns) {
+    if (!this.db) throw new Error('No database selected.');
+    const target = this.db.collection(tableName);
+    const { ObjectId } = await import('mongodb');
+
+    // Convert updates/deletes to operations format and use applyOperations for consistency
+    const ops = [];
+    if (deletedRowIds) {
+      deletedRowIds.forEach(id => ops.push({ type: 'delete', id }));
+    }
+    if (deletedColumns) {
+      deletedColumns.forEach(column => ops.push({ type: 'drop_column', column }));
+    }
+    if (updates) {
+      updates.forEach(update => {
+        const id = update.data?._id || update.original?._id;
+        if (id) {
+          ops.push({ type: 'update', id, changes: update.data });
+        } else {
+          ops.push({ type: 'create', data: update.data });
+        }
+      });
+    }
+
+    await this.applyOperations(tableName, ops);
+    return { success: true };
+  }
+
   async query(query) {
     let payload = query
 
@@ -48,14 +174,11 @@ export class MongoAdapter extends DatabaseAdapter {
           const potentialJson = query.substring(jsonStart, jsonEnd + 1)
           try {
             payload = JSON.parse(potentialJson)
-            console.log('[Mongo] Extracted JSON from query with explanatory text')
           } catch (innerError) {
-            console.error("Failed to parse MongoDB query:", query)
-            throw new Error(`MongoDB query must be a valid JSON payload. Could not extract valid JSON. Received: ${query.substring(0, 100)}...`)
+            throw new Error(`MongoDB query must be a valid JSON payload. Could not extract valid JSON.`)
           }
         } else {
-          console.error("Failed to parse MongoDB query:", query)
-          throw new Error(`MongoDB query must be a valid JSON payload. No JSON object found. Received: ${query.substring(0, 100)}...`)
+          throw new Error(`MongoDB query must be a valid JSON payload.`)
         }
       }
     }
@@ -66,32 +189,34 @@ export class MongoAdapter extends DatabaseAdapter {
       limit = 1000,
       collection: overrideCollection,
       pipeline,
+      flatten = true // Enable flattening by default for spreadsheet view
     } = payload ?? {}
 
     // Determine target collection
     let targetCollection
     if (overrideCollection) {
-      if (!this.db) {
-        throw new Error('No database selected. Please specify a database in your connection settings.')
-      }
+      if (!this.db) throw new Error('No database selected.')
       targetCollection = this.db.collection(overrideCollection)
     } else if (this.collection) {
       targetCollection = this.collection
     } else {
-      throw new Error('No collection specified. MongoDB queries must include a "collection" field.')
+      throw new Error('No collection specified.')
     }
 
     // Handle aggregation pipeline
+    let results
     if (pipeline && Array.isArray(pipeline)) {
-      return targetCollection.aggregate(pipeline).toArray()
+      results = await targetCollection.aggregate(pipeline).toArray()
+    } else {
+      // Handle regular find query
+      results = await targetCollection
+        .find(filter)
+        .skip(Math.max(0, Number(skip)))
+        .limit(Math.max(1, Number(limit)))
+        .toArray()
     }
 
-    // Handle regular find query
-    return targetCollection
-      .find(filter)
-      .skip(Math.max(0, Number(skip)))
-      .limit(Math.max(1, Number(limit)))
-      .toArray()
+    return flatten ? results.map(doc => this._flatten(doc)) : results;
   }
 
   async disconnect() {
@@ -99,30 +224,21 @@ export class MongoAdapter extends DatabaseAdapter {
   }
 
   async listCollections() {
-    // If a database was explicitly set, list collections from that DB
     if (this.db) {
       const collections = await this.db.listCollections().toArray()
       return collections.map((collection) => collection.name)
     }
 
-    // No specific DB provided: enumerate databases and return collections as `db.collection`
     const admin = this.client.db().admin()
     let dbs
     try {
       dbs = await admin.listDatabases()
     } catch (err) {
-      // If the driver returns an authorization/permission error when listing databases,
-      // surface a structured error so the gateway can return a helpful code to the UI.
-      const msg = (err && err.message) ? String(err.message) : 'Failed to list databases'
-      const e = new Error('Insufficient privileges to list databases: ' + msg)
-      // common MongoDB server-side authorization error code is 13, but drivers expose different shapes.
-      e.code = (err && (err.code || err.name)) || 'LIST_DATABASES_DENIED'
-      // Normalize to a known code string for the UI
-      if (e.code === 13 || String(e.code).toLowerCase().includes('authorization') || String(e.code).toLowerCase().includes('auth')) {
-        e.code = 'LIST_DATABASES_DENIED'
-      }
+      const e = new Error('Insufficient privileges to list databases')
+      e.code = 'LIST_DATABASES_DENIED'
       throw e
     }
+
     const all = []
     for (const dbInfo of dbs.databases || []) {
       try {
@@ -131,9 +247,7 @@ export class MongoAdapter extends DatabaseAdapter {
         for (const c of cols) {
           all.push(`${dbInfo.name}.${c.name}`)
         }
-      } catch (err) {
-        // ignore DBs we can't access
-      }
+      } catch (err) { }
     }
     return all
   }
@@ -142,31 +256,28 @@ export class MongoAdapter extends DatabaseAdapter {
     if (!name) return []
     const safeLimit = Math.max(1, Number(limit) || 5)
 
-    // Support names like 'db.collection' when listing across DBs without a set database
+    let target
     if (name.includes('.')) {
       const [dbName, collName] = name.split('.', 2)
-      const target = this.client.db(dbName).collection(collName)
-      return target.find({}).limit(safeLimit).toArray()
+      target = this.client.db(dbName).collection(collName)
+    } else {
+      target = this.db.collection(name)
     }
 
-    const target = this.db.collection(name)
-    return target.find({}).limit(safeLimit).toArray()
+    const samples = await target.find({}).limit(safeLimit).toArray()
+    return samples.map(doc => this._flatten(doc));
   }
 
   async getSchema() {
     try {
       const collections = await this.listCollections()
       const schema = {}
-
-      // Limit to first 20 collections to avoid timeout
       const collectionsToScan = collections.slice(0, 20)
 
       for (const collName of collectionsToScan) {
-        const samples = await this.sampleCollection(collName, 5)
+        const samples = await this.sampleCollection(collName, 10) // More samples for better inference
         if (samples.length > 0) {
           const fields = {}
-
-          // Infer schema from samples
           samples.forEach(doc => {
             Object.entries(doc).forEach(([key, value]) => {
               if (!fields[key]) {
@@ -180,13 +291,11 @@ export class MongoAdapter extends DatabaseAdapter {
               }
             })
           })
-
           schema[collName] = Object.values(fields)
         } else {
           schema[collName] = []
         }
       }
-
       return schema
     } catch (e) {
       console.error('[Mongo] Error fetching schema:', e)

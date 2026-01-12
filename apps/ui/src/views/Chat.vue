@@ -57,6 +57,10 @@
           :can-redo="canRedo"
           :query-history="queryHistory"
           :is-syncing="workspaceRef?.isDataLoading"
+          :versions="workspaceRef?.activeTabVersions"
+          :current-version="workspaceRef?.activeTabVersion"
+          :text-wrap="workspaceRef?.activeTabTextWrap"
+          :show-gridlines="workspaceRef?.activeTabShowGridlines"
           @update:mode="mode = $event"
           @update:selected-connection-id="handleSelectConnection"
           @update:ai-options="aiOptions = $event"
@@ -84,7 +88,11 @@
           @explain-query="handleExplainQuery"
           @load-query="handleLoadQuery"
           @export-chat="handleExportChat"
-          @save="handleSaveCurrentQuery"
+          @save="handleToolbarSave"
+          @toggle-wrangler="toggleWrangler"
+          @version-change="(v) => workspaceRef?.handleVersionChange(workspaceRef?.activeTabId as string, v)"
+          @update:text-wrap="(v) => workspaceRef?.toggleTextWrap(v)"
+          @update:show-gridlines="(v) => workspaceRef?.toggleGridlines(v)"
         />
 
         <!-- Editor -->
@@ -105,6 +113,8 @@
           @save-status="saveStatus = $event"
           @create-chat="handleCreateChat"
           @add-to-dashboard="handleAddChartToDashboard"
+          @explain-query="handleExplainQuery"
+          @optimize-query="handleOptimizeQuery"
         />
       </section>
 
@@ -184,8 +194,11 @@
         @discard="handleDiscard"
       />
 
-      <!-- Share Dialog -->
-      <ShareDialog
+      <!-- Global Modals -->
+    <WranglerDialog :open="wranglerOpen" @update:open="wranglerOpen = $event" />
+
+    <!-- Share Dialog -->
+    <ShareDialog
         v-model:open="shareDialogOpen"
         :dashboard-id="(mode as any) === 'dashboard' ? workspaceRef?.activeDashboardId : undefined"
         :spreadsheet-id="(mode as any) !== 'dashboard' ? activeTableName : undefined"
@@ -315,6 +328,13 @@ const writeInput = ref('')
 const workspaceRef = ref<any>(null)
 const resultsPanelVisible = ref(false)
 const resultsPanelPosition = ref<'bottom' | 'right'>('bottom')
+
+// Wrangler State
+const wranglerOpen = ref(false)
+const toggleWrangler = () => {
+    wranglerOpen.value = !wranglerOpen.value
+}
+
 // Flags
 const aiMode = ref(false)
 const autoExecute = ref(false)
@@ -371,7 +391,8 @@ const {
     handleRedo,
     handleFormatSql,
     handleTranslate: translateAction,
-    handleExplain: explainAction
+    handleExplain: explainAction,
+    handleOptimize: optimizeAction
 } = useChatToolbar(workspaceRef, selectedConnection)
 
 const onExportSelected = (format: 'csv' | 'xlsx' | 'pdf') => {
@@ -466,9 +487,15 @@ const handleTranslate = async () => {
     }
 }
 
-const handleExplainQuery = async () => {
-    const query = mode.value === 'write' ? writeInput.value : lastQuery.value
+const handleExplainQuery = async (q?: string) => {
+    // If q is passed (from context menu), use it. Else use input.
+    const query = typeof q === 'string' ? q : (mode.value === 'write' ? writeInput.value : lastQuery.value)
     await explainAction(query)
+}
+
+const handleOptimizeQuery = async (q?: string) => {
+    const query = typeof q === 'string' ? q : (mode.value === 'write' ? writeInput.value : lastQuery.value)
+    await optimizeAction(query)
 }
 
 const handleExportChat = () => {
@@ -623,6 +650,15 @@ const handleApplyMutation = async (mutation: any) => {
         isExecuting.value = false
     }
 }
+
+const handleToolbarSave = () => {
+    if (mode.value === 'write') {
+        handleSaveCurrentQuery()
+    } else if (mode.value === 'spreadsheet') {
+        workspaceRef.value?.saveCurrentTab?.()
+    }
+}
+
 const handleUpdateInput = (val: string) => {
     if (mode.value === 'chat') chatInput.value = val
     else writeInput.value = val

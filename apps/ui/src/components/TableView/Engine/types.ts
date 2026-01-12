@@ -42,6 +42,7 @@ export interface CellStyle {
     bold?: boolean;
     italic?: boolean;
     underline?: boolean;
+    align?: 'left' | 'center' | 'right';
     color?: string;
     background?: string;
 }

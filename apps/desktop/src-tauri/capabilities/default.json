@@ -10,7 +10,10 @@
     "opener:default",
     "shell:allow-open",
     "fs:default",
+    "notification:default",
     "dialog:default",
-    "store:default"
+    "store:default",
+    "deep-link:default",
+    "core:webview:allow-create-webview-window"
   ]
 }

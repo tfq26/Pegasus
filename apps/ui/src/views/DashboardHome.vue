@@ -9,12 +9,13 @@
 
     <template v-else>
       <!-- Top Bar -->
-    <header class="flex items-center justify-between px-6 py-3 border-b border-border bg-background z-10">
+    <header class="flex items-center justify-between px-6 py-3 border-b border-border bg-background z-10 transition-colors duration-300" :class="{ 'pt-6 bg-transparent border-transparent': isTauri }">
       <div class="flex items-center gap-4">
-        <div class="p-2 bg-primary/10 rounded-lg">
+        <div v-if="!isTauri" class="p-2 bg-primary/10 rounded-lg">
           <LayoutDashboard class="w-6 h-6 text-primary" />
         </div>
-        <h1 class="text-xl font-semibold">Dashboards</h1>
+        
+        <h1 v-if="!isTauri" class="text-xl font-semibold">Dashboards</h1>
       </div>
       
       <div class="flex-1 max-w-2xl mx-8">
@@ -176,6 +177,10 @@
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem v-if="isTauri" @click="handleOpenWindow(dashboard)">
+                        <ExternalLink class="w-4 h-4 mr-2" />
+                        Open in New Window
+                      </DropdownMenuItem>
                       <DropdownMenuItem @click="handleRename(dashboard)">
                         <Pencil class="w-4 h-4 mr-2" />
                         Rename
@@ -534,7 +539,8 @@ import {
   Globe,
   X,
   Upload,
-  Users
+  Users,
+  ExternalLink
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -555,8 +561,10 @@ import UpgradeModal from '@/components/UpgradeModal.vue'
 import { toast } from '@/composables/useNotifications'
 import { useEntitlements } from '@/composables/useEntitlements'
 import { useAuth } from '@/composables/useAuth'
+import { usePlatform } from '@/composables/usePlatform'
 import { stockImages, getStockImageGradient } from '@/lib/stock-images'
 
+const { isTauri } = usePlatform()
 const { user } = useAuth()
 const router = useRouter()
 const store = useDashboardStore()
@@ -785,6 +793,34 @@ const confirmCreateDashboard = async () => {
 
 const openDashboard = (id: string) => {
   router.push(`/dashboard/${id}`)
+}
+
+const handleOpenWindow = async (dashboard: any) => {
+    try {
+        // Dynamically import WebviewWindow to avoid issues on web
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+        const label = `dashboard-${dashboard.id}`
+        // Check if window exists (optional, but Tauri handles duplicate labels by throwing or focusing)
+        // Just try creation, catch error if label exists
+        const webview = new WebviewWindow(label, {
+            url: `/dashboard/${dashboard.id}`,
+            title: dashboard.title || 'Pegasus Dashboard',
+            width: 1200,
+            height: 800,
+            decorations: true,
+            focus: true,
+            center: true
+        })
+        
+        webview.once('tauri://error', function (e) {
+             // If error is related to existing label, we might want to focus it, but WebviewWindow constructor usually throws.
+             // Actually currently constructor just creates handle.
+             console.error('Window creation error', e)
+        })
+    } catch (e) {
+        console.error('Failed to open new window', e)
+        toast.error('Feature not available', { description: 'Cannot open new window in this environment' })
+    }
 }
 
 const handleRename = (dashboard: any) => {

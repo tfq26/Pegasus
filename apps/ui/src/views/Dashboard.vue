@@ -18,11 +18,9 @@
         >
           <ArrowLeft class="w-5 h-5" />
         </button>
-        <h1 class="text-lg font-bold text-primary">{{ currentDashboard?.title || 'Dashboard' }}</h1>
         <span v-if="isShared" class="px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-500 text-xs font-medium border border-amber-500/20">
           Read Only Preview
         </span>
-        <span v-if="currentDashboard" class="text-muted-foreground">/</span>
         <!-- Dashboard Selector -->
         <Select v-if="!isLoading" :model-value="currentDashboard?.id" @update:model-value="handleDashboardChange">
           <SelectTrigger class="w-[200px] h-8">
@@ -61,7 +59,7 @@
       <div class="flex items-center gap-2" v-if="!isShared">
         <!-- Add Element Button -->
         <button
-          v-if="currentDashboard"
+          v-if="currentDashboard && showFullToolbar"
           @click="showAddElementDialog = true"
           class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
           title="Add Element"
@@ -70,41 +68,43 @@
           <span class="hidden sm:inline">Add Element</span>
         </button>
 
-        <TooltipProvider :delay-duration="0">
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button
-                ref="chatToggleRef"
-                @click="showChat = !showChat"
-                class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
-                :class="{ 'bg-muted text-foreground': showChat }"
-              >
-                <MessageSquare class="w-4 h-4" />
-                <span class="hidden sm:inline">Chat</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Dashboard Assistant
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <div v-if="showFullToolbar" class="flex items-center gap-2">
+          <TooltipProvider :delay-duration="0">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  ref="chatToggleRef"
+                  @click="showChat = !showChat"
+                  class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
+                  :class="{ 'bg-muted text-foreground': showChat }"
+                >
+                  <MessageSquare class="w-4 h-4" />
+                  <span class="hidden sm:inline">Chat</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Dashboard Assistant
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-        <button
-          v-if="currentDashboard && layout.length > 0"
-          @click="generateDashboardSummary"
-          :disabled="isAnalyzing"
-          class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2 text-primary"
-          title="Generate AI Insights"
-        >
-          <BrainCircuit v-if="!isAnalyzing" class="w-4 h-4" />
-          <Loader2 v-else class="w-4 h-4 animate-spin" />
-          <span class="hidden lg:inline">{{ isAnalyzing ? 'Analyzing...' : 'Generate Insights' }}</span>
-        </button>
+          <button
+            v-if="currentDashboard && layout.length > 0"
+            @click="generateDashboardSummary"
+            :disabled="isAnalyzing"
+            class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition inline-flex items-center gap-2 text-primary"
+            title="Generate AI Insights"
+          >
+            <BrainCircuit v-if="!isAnalyzing" class="w-4 h-4" />
+            <Loader2 v-else class="w-4 h-4 animate-spin" />
+            <span class="hidden lg:inline">{{ isAnalyzing ? 'Analyzing...' : 'Generate Insights' }}</span>
+          </button>
+        </div>
         
         <CollaboratorAvatars :collaborators="collaborators" class="mr-2 hidden sm:flex" />
         
         <button
-          v-if="currentDashboard"
+          v-if="currentDashboard && showFullToolbar"
           @click="handleSave"
           class="p-2 sm:px-3 sm:py-1.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition flex items-center gap-2 shadow-sm"
           title="Save"
@@ -125,6 +125,49 @@
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" class="w-56">
+            <!-- Mobile Actions -->
+            <template v-if="!showFullToolbar && currentDashboard">
+                <div class="px-2 py-1.5 text-sm font-semibold">Actions</div>
+                
+                <DropdownMenuItem @click="showAddElementDialog = true">
+                  <Plus class="w-4 h-4 mr-2" />
+                  Add Element
+                </DropdownMenuItem>
+
+                <DropdownMenuItem @click="showChat = !showChat">
+                  <MessageSquare class="w-4 h-4 mr-2" />
+                  Toggle Chat
+                </DropdownMenuItem>
+
+                <DropdownMenuItem 
+                  v-if="layout.length > 0"
+                  @click="generateDashboardSummary"
+                  :disabled="isAnalyzing"
+                >
+                  <template v-if="!isAnalyzing">
+                    <BrainCircuit class="w-4 h-4 mr-2 text-primary" />
+                    Generate Insights
+                  </template>
+                  <template v-else>
+                    <Loader2 class="w-4 h-4 mr-2 animate-spin" />
+                    Analyzing...
+                  </template>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem @click="handleSave">
+                  <template v-if="!store.isSaving">
+                    <Save class="w-4 h-4 mr-2" />
+                    Save Dashboard
+                  </template>
+                  <template v-else>
+                    <Loader2 class="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </template>
+                </DropdownMenuItem>
+                
+                <DropdownMenuSeparator />
+            </template>
+
             <!-- View Options -->
             <div class="px-2 py-1.5 text-sm font-semibold">View Options</div>
             <DropdownMenuSeparator />
@@ -496,7 +539,7 @@ import DashboardInsights from '@/components/Dashboard/DashboardInsights.vue'
 import DashboardFilters from '@/components/Dashboard/DashboardFilters.vue'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
-import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy, api } from '@/lib/api'
+import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy, trackDashboardAccess, api } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 import {
   ContextMenu,
@@ -548,11 +591,13 @@ const isLoading = computed(() => store.isLoading)
 const isInitializing = ref(true)
 
 import Navbar from '@/components/Navbar.vue'
-import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke } from '@vueuse/core'
+import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke, useBreakpoints, breakpointsTailwind } from '@vueuse/core'
 import { usePlatform } from '@/composables/usePlatform'
 
 const { isPhone, isTablet } = usePlatform()
 const isDesktop = useMediaQuery('(min-width: 640px)')
+const breakpoints = useBreakpoints(breakpointsTailwind)
+const showFullToolbar = breakpoints.greaterOrEqual('md')
 
 const { 
   joinDashboard, 
@@ -625,6 +670,7 @@ watch(() => currentDashboard.value?.id, (newId, oldId) => {
   if (oldId) leaveDashboard(oldId)
   if (newId) {
     joinDashboard(newId)
+    trackDashboardAccess(newId).catch(console.error)
     // Save as last viewed dashboard for navbar navigation
     // localStorage.setItem('pegasus-last-dashboard', newId)
   }

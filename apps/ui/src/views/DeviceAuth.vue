@@ -3,7 +3,7 @@
     <div class="max-w-md w-full space-y-8">
       <!-- Logo -->
       <div class="text-center">
-        <img src="/pegasus.svg" alt="Pegasus" class="w-16 h-16 mx-auto mb-4" />
+        <img src="/logo_new.svg" alt="Pegasus" class="w-16 h-16 mx-auto mb-4" />
         <h1 class="text-2xl font-bold text-stone-100">Link Your Device</h1>
         <p class="text-stone-400 mt-2">
           {{ hasValidCode ? 'Click below to authorize your desktop app' : 'Enter the code shown in your desktop app' }}

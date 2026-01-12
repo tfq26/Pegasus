@@ -509,12 +509,17 @@ table.post("/save-table-data", async (c) => {
 
         try {
             await adapter.connect()
+
+            // If adapter supports native saving (e.g., MongoDB, SurrealDB), use it
+            if (typeof adapter.saveData === 'function') {
+                const result = await adapter.saveData(tableName, updates, deletedRowIds, deletedColumns)
+                return c.json({ ok: true, saved: updates?.length || 0 })
+            }
+
             let successCount = 0
             const queries = []
 
-            // Process deletions first
-            const deletedRowIdSet = new Set(deletedRowIds)
-
+            // ... (rest of the SQL logic remains as fallback)
             for (const rowid of deletedRowIds) {
                 if (rowid !== null && rowid !== undefined && rowid !== '') {
                     const sql = `DELETE FROM "${tableName}" WHERE rowid = ${Number(rowid)}`
@@ -522,7 +527,6 @@ table.post("/save-table-data", async (c) => {
                 }
             }
 
-            // Process column deletions
             for (const columnName of deletedColumns) {
                 if (columnName && columnName !== '_rowid_') {
                     const sql = `ALTER TABLE "${tableName}" DROP COLUMN "${columnName}"`
@@ -686,7 +690,12 @@ table.post("/table/:tableName/query", async (c) => {
 
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
-        try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+        try {
+            await verify(token, jwtSecret)
+        } catch (e) {
+            return c.json({ error: "Unauthorized" }, 401)
+        }
 
         const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
         if (!Adapter) {
@@ -701,23 +710,25 @@ table.post("/table/:tableName/query", async (c) => {
             await adapter.connect()
             // console.log(`[Query] Connected successfully`);
 
-            // Generate provider-specific SQL
-            let sql
+            // Generate provider-specific query
+            let query
             if (provider === 'surrealdb') {
-                // SurrealDB: no quotes, uses START instead of OFFSET, id is implicit
-                // Order by _row_order to preserve original row order
-                sql = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+                query = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+            } else if (provider === 'mongodb') {
+                // MongoDB uses structured objects
+                query = {
+                    collection: tableName,
+                    limit: Number(limit),
+                    skip: Number(offset)
+                }
             } else if (provider === 'postgres' || provider === 'mysql') {
-                // PostgreSQL and MySQL use standard SQL
                 const quote = provider === 'mysql' ? '`' : '"'
-                sql = `SELECT * FROM ${quote}${tableName}${quote} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                query = `SELECT * FROM ${quote}${tableName}${quote} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             } else {
-                // SQLite and others
-                sql = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                query = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             }
 
-            // console.log(`[Query] Executing: ${sql}`);
-            const rows = await adapter.query(sql)
+            const rows = await adapter.query(query)
             // console.log(`[Query] Returned ${rows?.length || 0} rows`);
             await adapter.disconnect()
 
@@ -805,6 +816,14 @@ table.post("/table/:tableName/operations", async (c) => {
 
         try {
             await adapter.connect()
+
+            // If adapter supports native operations, use them
+            if (typeof adapter.applyOperations === 'function') {
+                await adapter.applyOperations(tableName, operations)
+                await adapter.disconnect()
+                return c.json({ ok: true })
+            }
+
             const queries = []
 
             if (provider === 'surrealdb') {
@@ -1349,6 +1368,12 @@ table.post("/table/:tableName/load", async (c) => {
                     let sql
                     if (provider === 'surrealdb') {
                         sql = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+                    } else if (provider === 'mongodb') {
+                        sql = {
+                            collection: tableName,
+                            limit: Number(limit),
+                            skip: Number(offset)
+                        }
                     } else if (provider === 'postgres' || provider === 'mysql') {
                         const quote = provider === 'mysql' ? '`' : '"'
                         sql = `SELECT * FROM ${quote}${tableName}${quote} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`

@@ -1,6 +1,6 @@
 import { type Ref } from 'vue'
 import { toast } from '@/composables/useNotifications'
-import { translateQuery, explainQuery } from '@/lib/api'
+import { translateQuery, explainQuery, optimizeQuery } from '@/lib/api'
 
 export function useChatToolbar(workspaceRef: Ref<any>, selectedConnection?: Ref<any>) {
 
@@ -66,17 +66,39 @@ export function useChatToolbar(workspaceRef: Ref<any>, selectedConnection?: Ref<
         if (!query.trim()) return;
 
         try {
-            toast.info("Analyzing query...");
-            const explanation = await explainQuery(query, selectedConnection.value.id);
-            if (explanation) {
-                // Show in a toast for now, or we could return it for a dialog
-                toast.success("Query Explained", {
-                    description: explanation,
-                    duration: 10000
-                });
+            toast.info("Analyzing query...", { id: 'explain-toast' });
+            const result = await explainQuery(query, selectedConnection.value.id);
+            toast.dismiss('explain-toast');
+
+            if (result && result.explanation) {
+                // Return result so caller can display it (dialog/chat)
+                // For now, we'll keep the toast but return logic allows specialized UI
+                toast.success("Query Explained", { duration: 3000 });
+                return result;
             }
         } catch (e: any) {
             toast.error("Explanation failed", { description: e.message });
+        }
+    }
+
+    const handleOptimize = async (query: string) => {
+        if (!selectedConnection?.value) {
+            toast.error("Select a connection first");
+            return;
+        }
+        if (!query.trim()) return;
+
+        try {
+            toast.info("Optimizing query...", { id: 'optimize-toast' });
+            const result = await optimizeQuery(query, selectedConnection.value.id);
+            toast.dismiss('optimize-toast');
+
+            if (result && result.optimizedQuery) {
+                toast.success("Optimization generated", { duration: 3000 });
+                return result;
+            }
+        } catch (e: any) {
+            toast.error("Optimization failed", { description: e.message });
         }
     }
 
@@ -103,6 +125,7 @@ export function useChatToolbar(workspaceRef: Ref<any>, selectedConnection?: Ref<
         handleRedo,
         handleFormatSql,
         handleTranslate,
-        handleExplain
+        handleExplain,
+        handleOptimize
     }
 }

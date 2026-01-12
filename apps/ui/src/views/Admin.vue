@@ -4,7 +4,7 @@
       <!-- Header -->
       <div class="mb-8">
         <h1 class="text-3xl font-bold text-foreground">Admin Panel</h1>
-        <p class="text-muted-foreground mt-2">Manage experimental access requests</p>
+        <p class="text-muted-foreground mt-2">Manage experimental access and system audit logs</p>
       </div>
 
       <!-- Not Admin Message -->
@@ -45,9 +45,78 @@
             <p class="text-2xl font-bold text-primary">Admin</p>
           </div>
         </div>
+        
+        <!-- Tabs -->
+        <div class="flex items-center gap-2 border-b border-border mb-6">
+            <button 
+                @click="activeTab = 'requests'"
+                class="px-4 py-2 text-sm font-medium border-b-2 transition-colors hover:text-foreground"
+                :class="activeTab === 'requests' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'"
+            >
+                Access Requests
+            </button>
+            <button 
+                @click="activeTab = 'audit'"
+                class="px-4 py-2 text-sm font-medium border-b-2 transition-colors hover:text-foreground"
+                :class="activeTab === 'audit' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground'"
+            >
+                Audit Logs
+            </button>
+        </div>
+
+        <!-- Audit Logs Section -->
+        <div v-if="activeTab === 'audit'" class="space-y-4">
+             <div class="flex items-center justify-between">
+                 <h2 class="text-lg font-semibold">System Audit Logs</h2>
+                 <button 
+                    @click="exportLogs"
+                    class="px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 text-sm font-medium transition-colors border border-border flex items-center gap-2"
+                 >
+                    <Download class="w-4 h-4" />
+                    Export CSV
+                 </button>
+             </div>
+             
+             <div class="rounded-xl border border-border bg-card overflow-hidden">
+                 <div class="max-h-[600px] overflow-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-muted/30 text-muted-foreground sticky top-0 backdrop-blur-sm">
+                            <tr>
+                                <th class="p-3 font-medium">Time</th>
+                                <th class="p-3 font-medium">User</th>
+                                <th class="p-3 font-medium">Action</th>
+                                <th class="p-3 font-medium">Resource</th>
+                                <th class="p-3 font-medium">Details</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <tr v-if="auditLoading" class="animate-pulse">
+                                <td colspan="5" class="p-4 text-center text-muted-foreground">Loading logs...</td>
+                            </tr>
+                            <tr v-else-if="auditLogs.length === 0">
+                                <td colspan="5" class="p-8 text-center text-muted-foreground">No logs found</td>
+                            </tr>
+                            <tr v-for="log in auditLogs" :key="log.id" class="hover:bg-muted/10 transition-colors bg-card">
+                                <td class="p-3 whitespace-nowrap text-muted-foreground/80">{{ new Date(log.created_at).toLocaleString() }}</td>
+                                <td class="p-3 font-mono text-xs">{{ log.user_id?.split(':').pop() }}</td>
+                                <td class="p-3">
+                                    <span class="px-2 py-0.5 rounded text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-medium">
+                                        {{ log.action }}
+                                    </span>
+                                </td>
+                                <td class="p-3 text-muted-foreground">{{ log.resource_type }}</td>
+                                <td class="p-3 text-muted-foreground truncate max-w-[200px]" :title="JSON.stringify(log.details)">
+                                    {{ log.details ? JSON.stringify(log.details) : '-' }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                 </div>
+             </div>
+        </div>
 
         <!-- Requests Section -->
-        <div class="rounded-xl border border-border bg-card overflow-hidden">
+        <div v-else class="rounded-xl border border-border bg-card overflow-hidden">
           <div class="p-4 border-b border-border bg-muted/30">
             <h2 class="text-lg font-semibold">Pending Experimental Access Requests</h2>
           </div>
@@ -126,9 +195,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { toast } from '@/composables/useNotifications'
+import { fetchOperationHistory } from '@/lib/api'
+import { Download } from 'lucide-vue-next'
 
 const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
 
@@ -143,6 +214,12 @@ interface ExperimentalRequest {
 
 const isAdmin = ref(false)
 const loading = ref(true)
+const activeTab = ref<'requests' | 'audit'>('requests')
+
+// Audit
+const auditLogs = ref<any[]>([])
+const auditLoading = ref(false)
+
 const requests = ref<ExperimentalRequest[]>([])
 const processingId = ref<string | null>(null)
 
@@ -249,7 +326,50 @@ onMounted(async () => {
   await checkAdmin()
   if (isAdmin.value) {
     await loadRequests()
+    loadAuditLogs()
   }
   loading.value = false
 })
+
+const loadAuditLogs = async () => {
+    auditLoading.value = true
+    try {
+        const logs = await fetchOperationHistory(100)
+        auditLogs.value = logs as any[]
+    } catch (e) {
+        console.error("Failed to load audit logs", e)
+    } finally {
+        auditLoading.value = false
+    }
+}
+
+watch(activeTab, (val) => {
+    if (val === 'audit' && auditLogs.value.length === 0) {
+        loadAuditLogs()
+    }
+})
+
+const exportLogs = () => {
+    if (!auditLogs.value.length) return
+    
+    const headers = ['Timestamp', 'User', 'Action', 'Resource', 'Details']
+    const csvContent = [
+        headers.join(','),
+        ...auditLogs.value.map(log => {
+            return [
+                `"${new Date(log.created_at).toISOString()}"`,
+                `"${log.user_id}"`,
+                `"${log.action}"`,
+                `"${log.resource_type}"`,
+                `"${(JSON.stringify(log.details || {})).replace(/"/g, '""')}"` // Escape quotes
+            ].join(',')
+        })
+    ].join('\n')
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `audit-logs-${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+}
 </script>

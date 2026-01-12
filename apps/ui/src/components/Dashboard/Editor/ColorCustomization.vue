@@ -39,18 +39,22 @@
         <div class="space-y-2 flex-1">
           <label class="text-sm font-medium">Base Color</label>
           <div class="flex gap-2">
-            <input 
-              type="color" 
-              v-model="baseColor"
-              @input="generatePalette"
-              class="h-9 w-12 p-1 rounded-md border border-input cursor-pointer"
-            />
-            <input 
-              type="text" 
-              v-model="baseColor"
-              @change="generatePalette"
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors uppercase font-mono"
-            />
+            <ColorPicker
+              :value="baseColor"
+              @value-change="(v) => { baseColor = v.hex; generatePalette(); }"
+            >
+              <button
+                type="button"
+                class="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <div 
+                  class="h-4 w-4 rounded border border-border"
+                  :style="{ backgroundColor: baseColor }"
+                />
+                <span class="uppercase font-mono">{{ baseColor }}</span>
+                <ChevronDown class="ml-auto size-3 opacity-50" />
+              </button>
+            </ColorPicker>
           </div>
         </div>
 
@@ -133,6 +137,9 @@ import {
   COLOR_THEMES 
 } from '@/utils/colorPalette'
 import { toast } from '@/composables/useNotifications'
+import { ColorPicker } from '@/components/ColorPicker'
+import type { ColorPickerValue } from '@/components/ColorPicker'
+import { ChevronDown } from 'lucide-vue-next'
 
 interface DashboardElement {
   id: string
@@ -156,7 +163,7 @@ const emit = defineEmits<{
 }>()
 
 // State
-const baseColor = ref('#3b82f6')
+const baseColor = ref<`#${string}`>('#3b82f6')
 const selectedMode = ref('monochromatic')
 const shadeCount = ref(5)
 const generatedPalette = ref<string[]>([])
@@ -173,7 +180,7 @@ const paletteModes = [
 onMounted(() => {
   const existingPalette = props.modelValue.customization?.colorPalette
   if (existingPalette) {
-    if (existingPalette.baseColor) baseColor.value = existingPalette.baseColor
+    if (existingPalette.baseColor) baseColor.value = existingPalette.baseColor as `#${string}`
     if (existingPalette.mode && existingPalette.mode !== 'theme') selectedMode.value = existingPalette.mode
     if (existingPalette.shades) {
       shadeCount.value = existingPalette.shades.length

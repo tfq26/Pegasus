@@ -18,8 +18,14 @@ import {
   Search,
   RefreshCw,
   Share2,
-  FileText
+  FileText,
+  MoreHorizontal,
+  GitCommit,
+  WrapText,
+  Rows,
+  ChevronDown
 } from 'lucide-vue-next'
+import { ColorPicker } from '@/components/ColorPicker'
 import { Switch } from '@/components/ui/switch'
 import {
   Tooltip,
@@ -32,17 +38,22 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
 
 const props = defineProps<{
   aiMode: boolean
   privateMode: boolean
-  liveMode: boolean  // NEW: Collaboration enabled
-  collaboratorCount?: number  // NEW: Number of active collaborators
+  liveMode: boolean
+  collaboratorCount?: number
   saveStatus?: 'saved' | 'saving' | 'error'
   canUndo?: boolean
   canRedo?: boolean
   isSyncing?: boolean
+  versions?: Array<{ version: number; table: string; created_at: string }>
+  currentVersion?: number
+  textWrap?: boolean
+  showGridlines?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +70,10 @@ const emit = defineEmits<{
   'undo': []
   'redo': []
   'toggle-find': []
+  'commit': []
+  'version-change': [version: number]
+  'update:text-wrap': [value: boolean]
+  'update:show-gridlines': [value: boolean]
 }>()
 </script>
 
@@ -161,6 +176,90 @@ const emit = defineEmits<{
           <TooltipContent side="bottom">Underline (Ctrl+U)</TooltipContent>
         </Tooltip>
       </TooltipProvider>
+
+      <!-- Color Pickers -->
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <div class="flex items-center gap-1.5 ml-1">
+              <ColorPicker @value-change="(v) => emit('format', 'color', v.hex)">
+                <button class="p-1 rounded hover:bg-muted group relative flex flex-col items-center">
+                  <span class="text-[10px] font-bold leading-none">A</span>
+                  <div class="w-3 h-0.5 mt-0.5 bg-foreground" />
+                </button>
+              </ColorPicker>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Text Color</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <div class="flex items-center gap-1.5">
+              <ColorPicker @value-change="(v) => emit('format', 'background', v.hex)">
+                <button class="p-1 rounded hover:bg-muted group relative flex flex-col items-center">
+                  <span class="text-[8px] font-bold leading-none opacity-50">Bg</span>
+                  <div class="w-3.5 h-2.5 mt-0.5 border border-border shadow-sm bg-background" />
+                </button>
+              </ColorPicker>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Fill Color</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+
+    <!-- View Options -->
+    <div class="flex items-center gap-0.5 border-r border-border pr-3 mr-1">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button 
+              class="p-1.5 rounded transition-colors"
+                :class="props.textWrap ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'"
+              @click="emit('update:text-wrap', !props.textWrap)"
+            >
+              <WrapText class="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Text Wrapping</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button 
+              class="p-1.5 rounded transition-colors"
+               :class="props.showGridlines ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'"
+              @click="emit('update:show-gridlines', !props.showGridlines)"
+            >
+              <Rows class="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Show Gridlines</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+
+    <!-- Version Selection -->
+    <div v-if="props.versions && props.versions.length > 0" class="flex items-center gap-2 border-r border-border pr-3 mr-1">
+        <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground hidden lg:inline">Version</span>
+        <div class="relative group">
+            <select 
+                title="Select Table Version"
+                :value="props.currentVersion" 
+                @change="(e) => emit('version-change', Number((e.target as HTMLSelectElement).value))"
+                class="h-7 text-xs bg-muted/50 border border-transparent hover:border-border rounded pl-2 pr-6 appearance-none transition-all cursor-pointer outline-none focus:ring-1 focus:ring-primary min-w-[120px]"
+            >
+                <option v-for="v in props.versions" :key="v.version" :value="v.version">
+                    v{{ v.version }} ({{ new Date(v.created_at).toLocaleDateString() }})
+                </option>
+            </select>
+            <ChevronDown class="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity" />
+        </div>
     </div>
 
     <div class="flex items-center gap-0.5 border-r border-border pr-3 mr-1">
@@ -205,131 +304,21 @@ const emit = defineEmits<{
       </TooltipProvider>
     </div>
     
-    <!-- Find & Replace Toggle -->
-    <div class="flex items-center gap-0.5 border-r border-border pr-3 mr-1">
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger as-child>
-                    <button 
-                        class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                        @click="emit('toggle-find')"
-                    >
-                        <Search class="w-3.5 h-3.5" />
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Find & Replace</TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-    </div>
 
-    <!-- Data Actions -->
-    <div class="flex items-center gap-2">
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger as-child>
-                    <button
-                        @click="emit('sanitize')"
-                        class="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 transition-all shadow-sm"
-                    >
-                        <Sparkles class="w-3.5 h-3.5" />
-                        <span class="hidden md:inline">Sanitize</span>
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Sanitize Data</TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-    </div>
 
+    <!-- Spacer -->
     <div class="flex-1"></div>
 
-    <!-- Live/Private Mode Toggle -->
-    <div class="flex items-center gap-1 border-r border-border pr-3 mr-2">
-        <div class="flex items-center gap-2">
-            <Switch
-                :checked="liveMode"
-                @update:checked="emit('update:live-mode', $event)"
-                id="live-mode-toggle"
-                class="data-[state=checked]:bg-green-500"
-            />
-            <label 
-                for="live-mode-toggle" 
-                class="flex items-center gap-1.5 text-xs font-medium cursor-pointer select-none"
-                :class="liveMode ? 'text-green-600' : 'text-muted-foreground'"
-            >
-                <Users v-if="liveMode" class="w-3.5 h-3.5" />
-                <Lock v-else class="w-3.5 h-3.5" />
-                <span class="hidden md:inline">{{ liveMode ? 'Live' : 'Private' }}</span>
-                <span v-if="liveMode && collaboratorCount" class="px-1.5 py-0.5 bg-green-500/20 text-green-600 rounded-full text-[10px] font-bold">
-                  {{ collaboratorCount }}
-                </span>
-            </label>
-        </div>
-    </div>
+      <!-- COMMIT BUTTON (Primary Action) -->
+      <button 
+        @click="emit('commit')"
+        class="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-md bg-stone-900 text-stone-50 hover:bg-stone-800 transition-colors shadow-sm text-xs font-bold uppercase tracking-wide border border-stone-800 disabled:opacity-50"
+        :disabled="saveStatus === 'saving'"
+      >
+        <GitCommit class="w-3.5 h-3.5" />
+        <span class="hidden md:inline">Commit</span>
+      </button>
 
-    <!-- Share Button -->
-    <div class="flex items-center gap-1 border-r border-border pr-3 mr-2">
-        <TooltipProvider>
-            <Tooltip>
-                <TooltipTrigger as-child>
-                    <button 
-                        class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1"
-                        @click="emit('share')"
-                    >
-                        <Share2 class="w-3.5 h-3.5" />
-                        <span class="hidden md:inline text-xs">Share</span>
-                    </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Share Spreadsheet</TooltipContent>
-            </Tooltip>
-        </TooltipProvider>
-    </div>
-
-    <!-- Merge Button (Private Mode Only) - For version control, currently disabled
-        <div v-if="privateMode" class="flex items-center gap-1 border-r border-border pr-3 mr-2">
-            <button
-            class="h-7 px-3 rounded flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white shadow-sm transition-colors text-xs font-semibold"
-            @click="emit('merge')"
-            title="Merge changes to live dashboard"
-            >
-            <GitMerge class="w-3.5 h-3.5" />
-            <span class="hidden md:inline">Merge</span>
-            </button>
-    </div>
-    -->
-
-    <!-- Export Menu -->
-    <div class="flex items-center gap-1 border-r border-border pr-3 mr-2">
-        <DropdownMenu>
-            <DropdownMenuTrigger class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground">
-                <Download class="w-3.5 h-3.5" />
-            </DropdownMenuTrigger>
-            
-            <DropdownMenuContent align="end" class="w-48 bg-background border-border">
-                <DropdownMenuItem @select="$emit('export', 'csv')" class="flex items-center gap-2 cursor-pointer">
-                    <FileText class="w-3.5 h-3.5 text-blue-500" />
-                    <div class="flex flex-col">
-                        <span class="text-xs font-bold uppercase tracking-wider">Comma Separated</span>
-                        <span class="text-[9px] text-muted-foreground">Standard CSV format</span>
-                    </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem @select="$emit('export', 'xlsx')" class="flex items-center gap-2 cursor-pointer">
-                    <FileText class="w-3.5 h-3.5 text-green-500" />
-                    <div class="flex flex-col">
-                        <span class="text-xs font-bold uppercase tracking-wider">Excel Workbook</span>
-                        <span class="text-[9px] text-muted-foreground">Native .xlsx format</span>
-                    </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem @select="$emit('export', 'pdf')" class="flex items-center gap-2 cursor-pointer">
-                    <FileText class="w-3.5 h-3.5 text-rose-500" />
-                    <div class="flex flex-col">
-                        <span class="text-xs font-bold uppercase tracking-wider">PDF Document</span>
-                        <span class="text-[9px] text-muted-foreground">Non-editable snapshot</span>
-                    </div>
-                </DropdownMenuItem>
-            </DropdownMenuContent>
-        </DropdownMenu>
-    </div>
-    
       <!-- Sync/Save Status Indicator -->
       <TooltipProvider>
         <Tooltip>
@@ -368,6 +357,66 @@ const emit = defineEmits<{
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
+
+      <!-- MORE OPTIONS DROPDOWN -->
+      <div class="flex items-center gap-1 ml-2">
+         <DropdownMenu>
+            <DropdownMenuTrigger class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground">
+                <MoreHorizontal class="w-3.5 h-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-56">
+                
+                <div class="px-2 py-1.5 text-xs text-muted-foreground font-normal uppercase tracking-wider">Data Actions</div>
+                
+                <!-- Sanitize -->
+                <DropdownMenuItem @select="emit('sanitize')" class="flex items-center gap-2 cursor-pointer">
+                    <Sparkles class="w-3.5 h-3.5 text-amber-500" />
+                    <span>Sanitize Data</span>
+                </DropdownMenuItem>
+                
+                <!-- Share -->
+                <DropdownMenuItem @select="emit('share')" class="flex items-center gap-2 cursor-pointer">
+                    <Share2 class="w-3.5 h-3.5 text-blue-500" />
+                    <span>Share Spreadsheet</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+                <div class="px-2 py-1.5 text-xs text-muted-foreground font-normal uppercase tracking-wider">Collaboration</div>
+
+                <!-- Private/Live Mode Toggle (Inside Menu) -->
+                <div class="px-2 py-1.5 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <Users v-if="liveMode" class="w-3.5 h-3.5 text-green-500" />
+                        <Lock v-else class="w-3.5 h-3.5 text-muted-foreground" />
+                        <span class="text-sm">{{ liveMode ? 'Live Mode' : 'Private Mode' }}</span>
+                    </div>
+                    <Switch
+                        :checked="liveMode"
+                        @update:checked="emit('update:live-mode', $event)"
+                        class="scale-75"
+                    />
+                </div>
+
+                <DropdownMenuSeparator />
+                <div class="px-2 py-1.5 text-xs text-muted-foreground font-normal uppercase tracking-wider">Export</div>
+
+                <!-- Export Options -->
+                <DropdownMenuItem @select="$emit('export', 'csv')" class="flex items-center gap-2 cursor-pointer">
+                    <FileText class="w-3.5 h-3.5 text-slate-500" />
+                    <span>Export as CSV</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="$emit('export', 'xlsx')" class="flex items-center gap-2 cursor-pointer">
+                    <FileText class="w-3.5 h-3.5 text-green-500" />
+                    <span>Export as Excel</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem @select="$emit('export', 'pdf')" class="flex items-center gap-2 cursor-pointer">
+                    <FileText class="w-3.5 h-3.5 text-rose-500" />
+                    <span>Export as PDF</span>
+                </DropdownMenuItem>
+
+            </DropdownMenuContent>
+         </DropdownMenu>
+      </div>
 
   </div>
 </template>

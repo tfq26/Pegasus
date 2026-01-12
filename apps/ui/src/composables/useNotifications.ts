@@ -1,6 +1,8 @@
 import { ref, computed, unref } from 'vue'
 import { useStorage } from '@vueuse/core'
 import { toast as sonnerToast } from 'vue-sonner'
+import { isTauri } from './usePlatform'
+import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification'
 
 export interface Notification {
     id: string

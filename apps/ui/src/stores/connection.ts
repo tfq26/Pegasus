@@ -116,6 +116,15 @@ export const useConnectionStore = defineStore('connection', () => {
         }
     }
 
+    function addEphemeralConnection(connection: ConnectionEntry) {
+        // Prevent duplicates
+        const index = connections.value.findIndex(c => c.id === connection.id)
+        if (index === -1) {
+            connections.value.push(connection)
+            console.log('[ConnectionStore] Added ephemeral connection:', connection.id)
+        }
+    }
+
     function selectConnection(connectionId: string) {
         selectedConnectionId.value = connectionId
         if (connectionId) {
@@ -141,6 +150,7 @@ export const useConnectionStore = defineStore('connection', () => {
         saveConnection,
         updateConnection,
         deleteConnection,
+        addEphemeralConnection,
         selectConnection
     }
 })
