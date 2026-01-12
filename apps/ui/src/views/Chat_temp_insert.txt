@@ -1,0 +1,9 @@
+
+// Generic Save Handler
+const handleToolbarSave = () => {
+    if (mode.value === 'write') {
+        handleSaveCurrentQuery()
+    } else if (mode.value === 'spreadsheet') {
+        workspaceRef.value?.saveCurrentTab?.()
+    }
+}
