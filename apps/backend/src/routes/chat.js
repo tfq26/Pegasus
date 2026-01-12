@@ -743,11 +743,6 @@ chat.post("/ai/generate", async (c) => {
         }
 
         const adapter = new Adapter(adapterConfig)
-        let schemaInfo = {}
-
-        // (Note: Simplified schema fetch logic here for brevity, assuming standard fetch)
-        // For robust refactor, we should extract schema fetching to a Service. 
-        // Implementing inline similar to original for now.
 
         let semanticContext = null;
 
@@ -1044,332 +1039,447 @@ IMPORTANT:
             await logAiUsage(userId, usage.totalTokens || usage.total_tokens, aiSettings.modelId, 'ai_generation', prompt, connectionId)
         }
 
-        // Clean markdown code blocks
-        // Clean markdown code blocks - Robust extraction (even with surrounding text)
-        const codeBlockMatch = generatedQuery.match(/```(?:surrealql|sql|json|javascript)?\s*([\s\S]*?)\s*```/i);
-        if (codeBlockMatch) {
-            generatedQuery = codeBlockMatch[1].trim();
-        } else {
-            generatedQuery = generatedQuery.trim();
-        }
 
-        // Clean leading label if present (e.g. "surrealql\nSELECT...")
-        if (generatedQuery.toLowerCase().startsWith('surrealql')) {
-            generatedQuery = generatedQuery.substring(9).trim()
-        }
+        chat.post("/ai/generate", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
 
+            try {
+                const payload = await verify(token, jwtSecret)
+                let userId = payload.sub
 
-
-
-
-        // Handle Multi-Step Queries (JSON format)
-        let multiStepResult = null;
-        try {
-            console.log('[Chat] Raw AI response (first 500 chars):', generatedQuery.substring(0, 500));
-            console.log('[Chat] Raw AI response (last 500 chars):', generatedQuery.substring(Math.max(0, generatedQuery.length - 500)));
-
-            const jsonStart = generatedQuery.indexOf('{');
-            const jsonEnd = generatedQuery.lastIndexOf('}');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-                const potentialJson = generatedQuery.substring(jsonStart, jsonEnd + 1);
-                console.log('[Chat] Extracted JSON (length:', potentialJson.length, ')');
-                const parsed = JSON.parse(potentialJson);
-
-                console.log('[Chat] Parsed potential JSON from AI:', JSON.stringify(parsed, null, 2));
-
-                if (parsed.action === 'edit') {
-                    console.log('[Chat] Detected edit action');
-                    return c.json({
-                        action: 'edit',
-                        method: parsed.method,
-                        reasoning: parsed.reasoning,
-                        confirmation: parsed.confirmation,
-                        example_formula: parsed.example_formula,
-                        query: parsed.query,
-                        usage
-                    });
+                // Resolve real user ID
+                const resolvedId = await upsertUser(payload)
+                if (resolvedId) {
+                    const parts = resolvedId.toString().split(':')
+                    if (parts.length > 1) userId = parts[1]
+                    else userId = resolvedId
                 }
 
-                // Normalize 'steps' or 'queries'
-                const steps = parsed.steps || parsed.queries || [];
+                const quota = await checkAiQuota(userId);
+                if (!quota.allowed) {
+                    return c.json(quota, 403);
+                }
 
-                // Relaxed check: Accept if 'multi_step' is true OR if 'steps' array is present
-                if ((parsed.multi_step || steps.length > 0) && Array.isArray(steps)) {
-                    multiStepResult = [];
-                    let previousStepResults = {}; // Store results from previous steps
+                const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = await c.req.json()
+                let connectionId = rawConnId || '';
+                if (connectionId && !connectionId.includes(':')) connectionId = `connection:${connectionId}`
 
-                    for (let i = 0; i < steps.length; i++) {
-                        const step = steps[i];
-                        // Support both { query: "..." } and string "..." steps
-                        let stepQuery = (typeof step === 'string' ? step : step.query) || '';
-                        stepQuery = stepQuery.replace(/;\s*$/, ''); // Remove semi-colon
-                        // stepQuery = stepQuery.replace(/[")}\]]+$/, ''); // Remove trailing junk - DISABLED: was removing valid SQL parens
-                        stepQuery = stepQuery.trim();
+                // Connection Handling
+                let connRow = null
+                if (connectionId === 'connection:local') {
+                    // Ad-hoc local connection
+                    connRow = { type: 'local', provider: 'local', config: {}, is_virtual: true }
+                } else {
+                    // DB Lookup
+                    const rs = await db.query(
+                        "SELECT * FROM connection WHERE id = $id",
+                        { id: connectionId }
+                    )
+                    connRow = rs && rs[0] && rs[0][0] ? rs[0][0] : null
+                }
 
-                        console.log(`[Chat] Step ${i + 1} cleaned query:`, stepQuery);
+                if (!connRow) return c.json({ error: "Connection not found" }, 404)
 
-                        if (!stepQuery) continue;
+                // Config & Provider
+                const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config || {}
+                let provider = connRow.type || connRow.provider
+                if (!provider && config) {
+                    const keys = Object.keys(config).filter(k => ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'surrealdb'].includes(k.toLowerCase()))
+                    if (keys.length > 0) provider = keys[0]
+                }
 
-                        // Replace placeholders with actual values from previous steps
-                        // Look for patterns like [AVERAGE_SALARY_FROM_PREVIOUS_STEP], [RESULT_FROM_STEP_1], etc.
-                        stepQuery = stepQuery.replace(/\[([^\]]+)\]/g, (match, placeholder) => {
-                            // Try to find the value from previous step
-                            if (i > 0 && multiStepResult[i - 1]?.result) {
-                                const prevResult = multiStepResult[i - 1].result;
+                const adapterConfig = config[provider] || config[provider?.toLowerCase()]
+                let schemaInfo = {}
+                let adapter = null
 
-                                // If previous result is a scalar (number)
-                                if (typeof prevResult === 'number') {
-                                    return prevResult;
-                                }
+                // Adapter & Schema
+                if (provider === 'local' && connRow.is_virtual) {
+                    if (adHocSchema) {
+                        schemaInfo = { tables: [activeTable], detailedSchema: { [activeTable]: adHocSchema } };
+                    } else {
+                        // Fallback empty schema
+                        schemaInfo = { tables: [], detailedSchema: {} }
+                    }
+                } else {
+                    const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+                    if (!Adapter) return c.json({ error: `Provider not supported: ${provider}` }, 400)
 
-                                // If previous result has a 'rows' property (from RETURN statement)
-                                if (prevResult.rows !== undefined) {
-                                    return prevResult.rows;
-                                }
+                    adapter = new Adapter(adapterConfig)
+                    await adapter.connect()
 
-                                // If previous result is an array with one item
-                                if (Array.isArray(prevResult) && prevResult.length === 1) {
-                                    return prevResult[0];
+                    const allTables = await adapter.listCollections()
+                    schemaInfo = { tables: allTables.slice(0, 50), detailedSchema: {} }
+
+                    if (activeTable) {
+                        try {
+                            const cols = await adapter.getColumns ? await adapter.getColumns(activeTable) : []
+                            schemaInfo.detailedSchema[activeTable] = cols
+                        } catch (e) {
+                            console.warn('[Chat] Failed to fetch schema', e)
+                        }
+                    }
+                }
+
+                // System Prompt
+                const systemPrompt = `You are an expert SQL/SurrealQL assistant.
+Your task is to generate valid queries for the "${provider}" database.
+
+Schema Information:
+${JSON.stringify(schemaInfo.detailedSchema && Object.keys(schemaInfo.detailedSchema).length > 0 ? schemaInfo.detailedSchema : schemaInfo.tables, null, 2)}
+
+User Request: "${prompt}"
+
+CRITICAL INSTRUCTIONS:
+1. Always use backticks for table and column names that contain spaces or special characters (e.g., \`Fund Name\`). This is MANDATORY.
+2. Return ONLY the raw SQL/SurrealQL query. Do not wrap in markdown.
+3. If multiple steps are needed, return JSON with "steps".
+`
+                // Call AI
+                // Resolve Settings/Tenancy (Optional, defaulting for restoration speed)
+                const aiResponse = await aiClient.generateContent([
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: prompt }
+                ], {
+                    model: 'gemini-2.0-flash-exp', // Or fetch from user settings if critical
+                    temperature: temperature || 0,
+                    maxTokens: maxTokens || 1000
+                })
+
+                let generatedQuery = aiResponse.text
+                const usage = aiResponse.usage
+
+                // Log usage
+                if (usage) {
+                    await logAiUsage(userId, usage.totalTokens || usage.total_tokens, 'gemini-2.0-flash-exp', 'ai_generation', prompt, connectionId)
+                }
+
+                // Clean markdown code blocks
+                // Clean markdown code blocks - Robust extraction (even with surrounding text)
+                const codeBlockMatch = generatedQuery.match(/```(?:surrealql|sql|json|javascript)?\s*([\s\S]*?)\s*```/i);
+                if (codeBlockMatch) {
+                    generatedQuery = codeBlockMatch[1].trim();
+                } else {
+                    generatedQuery = generatedQuery.trim();
+                }
+
+                // Clean leading label if present (e.g. "surrealql\nSELECT...")
+                if (generatedQuery.toLowerCase().startsWith('surrealql')) {
+                    generatedQuery = generatedQuery.substring(9).trim()
+                }
+
+
+
+
+
+                // Handle Multi-Step Queries (JSON format)
+                let multiStepResult = null;
+                try {
+                    console.log('[Chat] Raw AI response (first 500 chars):', generatedQuery.substring(0, 500));
+                    console.log('[Chat] Raw AI response (last 500 chars):', generatedQuery.substring(Math.max(0, generatedQuery.length - 500)));
+
+                    const jsonStart = generatedQuery.indexOf('{');
+                    const jsonEnd = generatedQuery.lastIndexOf('}');
+                    if (jsonStart !== -1 && jsonEnd !== -1) {
+                        const potentialJson = generatedQuery.substring(jsonStart, jsonEnd + 1);
+                        console.log('[Chat] Extracted JSON (length:', potentialJson.length, ')');
+                        const parsed = JSON.parse(potentialJson);
+
+                        console.log('[Chat] Parsed potential JSON from AI:', JSON.stringify(parsed, null, 2));
+
+                        if (parsed.action === 'edit') {
+                            console.log('[Chat] Detected edit action');
+                            return c.json({
+                                action: 'edit',
+                                method: parsed.method,
+                                reasoning: parsed.reasoning,
+                                confirmation: parsed.confirmation,
+                                example_formula: parsed.example_formula,
+                                query: parsed.query,
+                                usage
+                            });
+                        }
+
+                        // Normalize 'steps' or 'queries'
+                        const steps = parsed.steps || parsed.queries || [];
+
+                        // Relaxed check: Accept if 'multi_step' is true OR if 'steps' array is present
+                        if ((parsed.multi_step || steps.length > 0) && Array.isArray(steps)) {
+                            multiStepResult = [];
+                            let previousStepResults = {}; // Store results from previous steps
+
+                            for (let i = 0; i < steps.length; i++) {
+                                const step = steps[i];
+                                // Support both { query: "..." } and string "..." steps
+                                let stepQuery = (typeof step === 'string' ? step : step.query) || '';
+                                stepQuery = stepQuery.replace(/;\s*$/, ''); // Remove semi-colon
+                                // stepQuery = stepQuery.replace(/[")}\]]+$/, ''); // Remove trailing junk - DISABLED: was removing valid SQL parens
+                                stepQuery = stepQuery.trim();
+
+                                console.log(`[Chat] Step ${i + 1} cleaned query:`, stepQuery);
+
+                                if (!stepQuery) continue;
+
+                                // Replace placeholders with actual values from previous steps
+                                // Look for patterns like [AVERAGE_SALARY_FROM_PREVIOUS_STEP], [RESULT_FROM_STEP_1], etc.
+                                stepQuery = stepQuery.replace(/\[([^\]]+)\]/g, (match, placeholder) => {
+                                    // Try to find the value from previous step
+                                    if (i > 0 && multiStepResult[i - 1]?.result) {
+                                        const prevResult = multiStepResult[i - 1].result;
+
+                                        // If previous result is a scalar (number)
+                                        if (typeof prevResult === 'number') {
+                                            return prevResult;
+                                        }
+
+                                        // If previous result has a 'rows' property (from RETURN statement)
+                                        if (prevResult.rows !== undefined) {
+                                            return prevResult.rows;
+                                        }
+
+                                        // If previous result is an array with one item
+                                        if (Array.isArray(prevResult) && prevResult.length === 1) {
+                                            return prevResult[0];
+                                        }
+                                    }
+
+                                    // If no substitution found, log warning and keep placeholder
+                                    console.warn(`[Chat] Could not substitute placeholder: ${match}`);
+                                    return match;
+                                });
+
+                                try {
+                                    // Execute each step
+                                    console.log(`[Chat] Executing step ${i + 1}: ${stepQuery}`);
+                                    const stepRes = await adapter.query(stepQuery);
+                                    multiStepResult.push({
+                                        explanation: step.explanation,
+                                        query: stepQuery,
+                                        result: stepRes,
+                                        visualizable: step.visualizable || false,
+                                        chart_type: step.chart_type || null
+                                    });
+                                } catch (err) {
+                                    console.error(`[Chat] Step ${i + 1} execution failed: ${err.message}`);
+                                    multiStepResult.push({
+                                        explanation: step.explanation,
+                                        error: err.message
+                                    });
                                 }
                             }
 
-                            // If no substitution found, log warning and keep placeholder
-                            console.warn(`[Chat] Could not substitute placeholder: ${match}`);
-                            return match;
-                        });
-
-                        try {
-                            // Execute each step
-                            console.log(`[Chat] Executing step ${i + 1}: ${stepQuery}`);
-                            const stepRes = await adapter.query(stepQuery);
-                            multiStepResult.push({
-                                explanation: step.explanation,
-                                query: stepQuery,
-                                result: stepRes,
-                                visualizable: step.visualizable || false,
-                                chart_type: step.chart_type || null
-                            });
-                        } catch (err) {
-                            console.error(`[Chat] Step ${i + 1} execution failed: ${err.message}`);
-                            multiStepResult.push({
-                                explanation: step.explanation,
-                                error: err.message
+                            // Return aggregated results
+                            return c.json({
+                                multi_step: true,
+                                steps: multiStepResult,
+                                usage
                             });
                         }
                     }
-
-                    // Return aggregated results
-                    return c.json({
-                        multi_step: true,
-                        steps: multiStepResult,
-                        usage
-                    });
-                }
-            }
-        } catch (e) {
-            console.log('[Chat] JSON parse attempt failed:', e.message);
-            // Not valid JSON, continue as single query
-        }
-
-        // Safety Check: If we are here, we are treating it as a single SQL query.
-        // If the query still looks like a JSON object (starts with {), it's likely a failed parse or unhandled JSON.
-        // We should try to extract SQL from it or fail gracefully rather than sending JSON to DB.
-        if (generatedQuery.trim().startsWith('{') && generatedQuery.trim().endsWith('}')) {
-            console.warn('[Chat] AI returned JSON but not handled as multi-step. Raw:', generatedQuery);
-            try {
-                const p = JSON.parse(generatedQuery);
-                if (p.query) {
-                    generatedQuery = p.query;
-                } else if (p.ambiguous) {
-                    // Return the ambiguity object directly to the frontend for handling
-                    return c.json(p);
-                } else if (p.choices) {
-                    // Fallback if ambiguous flag is missing but structure looks like one
-                    return c.json({ ambiguous: true, ...p });
-                } else if (provider === 'mongodb' && (p.collection || p.filter || p.pipeline)) {
-                    // MongoDB query - the entire JSON IS the query
-                    // Return it directly - frontend will pass this to /query endpoint
-                    console.log('[Chat] Detected MongoDB query structure, returning as-is');
-                    return c.json({
-                        query: JSON.stringify(p),
-                        usage,
-                        reasoning: p.reasoning || null
-                    });
-                }
-            } catch (e) { }
-        }
-
-
-        // Standard Single Query Logic...
-        // Extract only the SQL statement if AI added explanatory text
-        // Look for SELECT, INSERT, UPDATE, DELETE, CREATE statements
-        // Improvement: Stop at the first "Results:", "Explanation:" or similar headers if they appear at start of a line
-        // FIX: strict CTE check for 'WITH' to avoid matching English sentences starting with 'With'
-        const sqlStartMatch = generatedQuery.match(/(?:^|\n)\s*(?:(SELECT|INSERT|UPDATE|DELETE|CREATE|RELATE|RETURN)|(WITH\s+[a-zA-Z0-9_]+\s+AS))\s+/i)
-
-
-        if (sqlStartMatch) {
-            const startIndex = sqlStartMatch.index
-            let possibleQuery = generatedQuery.substring(startIndex)
-
-            // Cut off at "Results:" or "Output:" if present on a new line
-            const cutoffMatch = possibleQuery.match(/\n\s*(Results|Output|Explanation|Analysis|Row \d):/i)
-            if (cutoffMatch) {
-                possibleQuery = possibleQuery.substring(0, cutoffMatch.index)
-            }
-
-            generatedQuery = possibleQuery.trim()
-        } else if (provider && ['surrealdb', 'mysql', 'postgres', 'sqlite'].includes(provider.toLowerCase())) {
-            const trimmed = generatedQuery.trim();
-            let isSafe = false;
-
-            if (trimmed.startsWith('{')) {
-                // Check if it's valid JSON (SurrealDB accepts objects)
-                try {
-                    JSON.parse(trimmed);
-                    isSafe = true;
                 } catch (e) {
-                    console.warn('[Chat] Malformed JSON detected, commenting out.');
+                    console.log('[Chat] JSON parse attempt failed:', e.message);
+                    // Not valid JSON, continue as single query
                 }
+
+                // Safety Check: If we are here, we are treating it as a single SQL query.
+                // If the query still looks like a JSON object (starts with {), it's likely a failed parse or unhandled JSON.
+                // We should try to extract SQL from it or fail gracefully rather than sending JSON to DB.
+                if (generatedQuery.trim().startsWith('{') && generatedQuery.trim().endsWith('}')) {
+                    console.warn('[Chat] AI returned JSON but not handled as multi-step. Raw:', generatedQuery);
+                    try {
+                        const p = JSON.parse(generatedQuery);
+                        if (p.query) {
+                            generatedQuery = p.query;
+                        } else if (p.ambiguous) {
+                            // Return the ambiguity object directly to the frontend for handling
+                            return c.json(p);
+                        } else if (p.choices) {
+                            // Fallback if ambiguous flag is missing but structure looks like one
+                            return c.json({ ambiguous: true, ...p });
+                        } else if (provider === 'mongodb' && (p.collection || p.filter || p.pipeline)) {
+                            // MongoDB query - the entire JSON IS the query
+                            // Return it directly - frontend will pass this to /query endpoint
+                            console.log('[Chat] Detected MongoDB query structure, returning as-is');
+                            return c.json({
+                                query: JSON.stringify(p),
+                                usage,
+                                reasoning: p.reasoning || null
+                            });
+                        }
+                    } catch (e) { }
+                }
+
+
+                // Standard Single Query Logic...
+                // Extract only the SQL statement if AI added explanatory text
+                // Look for SELECT, INSERT, UPDATE, DELETE, CREATE statements
+                // Improvement: Stop at the first "Results:", "Explanation:" or similar headers if they appear at start of a line
+                // FIX: strict CTE check for 'WITH' to avoid matching English sentences starting with 'With'
+                const sqlStartMatch = generatedQuery.match(/(?:^|\n)\s*(?:(SELECT|INSERT|UPDATE|DELETE|CREATE|RELATE|RETURN)|(WITH\s+[a-zA-Z0-9_]+\s+AS))\s+/i)
+
+
+                if (sqlStartMatch) {
+                    const startIndex = sqlStartMatch.index
+                    let possibleQuery = generatedQuery.substring(startIndex)
+
+                    // Cut off at "Results:" or "Output:" if present on a new line
+                    const cutoffMatch = possibleQuery.match(/\n\s*(Results|Output|Explanation|Analysis|Row \d):/i)
+                    if (cutoffMatch) {
+                        possibleQuery = possibleQuery.substring(0, cutoffMatch.index)
+                    }
+
+                    generatedQuery = possibleQuery.trim()
+                } else if (provider && ['surrealdb', 'mysql', 'postgres', 'sqlite'].includes(provider.toLowerCase())) {
+                    const trimmed = generatedQuery.trim();
+                    let isSafe = false;
+
+                    if (trimmed.startsWith('{')) {
+                        // Check if it's valid JSON (SurrealDB accepts objects)
+                        try {
+                            JSON.parse(trimmed);
+                            isSafe = true;
+                        } catch (e) {
+                            console.warn('[Chat] Malformed JSON detected, commenting out.');
+                        }
+                    }
+
+                    if (!isSafe) {
+                        // Safety: If no SQL start detected and not valid JSON, it's likely text or malformed.
+                        console.warn('[Chat] No executable SQL/JSON detected in response, commenting out to prevent crash.');
+                        generatedQuery = "/* AI Response (Not executable): " + generatedQuery.replace(/\*\//g, '* /') + " */";
+                    }
+                }
+
+
+                // Remove trailing semicolon if present (SurrealDB doesn't require it in queries)
+                generatedQuery = generatedQuery.replace(/;\s*$/, '').trim()
+
+                return c.json({ query: generatedQuery, usage })
+            } catch (error) {
+                console.error("AI Generation Error:", error)
+                return c.json({ error: error.message }, 500)
             }
-
-            if (!isSafe) {
-                // Safety: If no SQL start detected and not valid JSON, it's likely text or malformed.
-                console.warn('[Chat] No executable SQL/JSON detected in response, commenting out to prevent crash.');
-                generatedQuery = "/* AI Response (Not executable): " + generatedQuery.replace(/\*\//g, '* /') + " */";
-            }
-        }
-
-
-        // Remove trailing semicolon if present (SurrealDB doesn't require it in queries)
-        generatedQuery = generatedQuery.replace(/;\s*$/, '').trim()
-
-        return c.json({ query: generatedQuery, usage })
-    } catch (error) {
-        console.error("AI Generation Error:", error)
-        return c.json({ error: error.message }, 500)
-    }
-})
-
-chat.post("/ai/recommend-visualization", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-    try {
-        const { query, results, previousConfig, suggestedChartType } = await c.req.json()
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-
-        // Get Model
-        let activeModel = null
-        try {
-            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
-            if (user && user[0] && user[0].settings) {
-                activeModel = user[0].settings.activeModel;
-            }
-        } catch (e) { }
-
-        const recommendation = await aiClient.recommendVisualization(query, results, previousConfig, activeModel, suggestedChartType)
-        return c.json(recommendation)
-    } catch (e) {
-        return c.json({ error: e.message }, 500)
-    }
-})
-
-chat.post("/ai/analyze", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-    try {
-        const { question, results, query } = await c.req.json()
-        console.log('[AI Analyze] Request received:', {
-            question,
-            resultsCount: Array.isArray(results) ? results.length : 'not array',
-            queryLength: query?.length
         })
 
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+        chat.post("/ai/recommend-visualization", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+            try {
+                const { query, results, previousConfig, suggestedChartType } = await c.req.json()
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
 
-        let activeModel = null
-        try {
-            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
-            if (user && user[0] && user[0].settings) {
-                activeModel = user[0].settings.activeModel;
+                // Get Model
+                let activeModel = null
+                try {
+                    const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+                    if (user && user[0] && user[0].settings) {
+                        activeModel = user[0].settings.activeModel;
+                    }
+                } catch (e) { }
+
+                const recommendation = await aiClient.recommendVisualization(query, results, previousConfig, activeModel, suggestedChartType)
+                return c.json(recommendation)
+            } catch (e) {
+                return c.json({ error: e.message }, 500)
             }
-        } catch (e) { }
+        })
 
-        console.log('[AI Analyze] Calling aiClient.analyzeResults...')
-        const analysisResult = await aiClient.analyzeResults(question, results, query, activeModel)
-        // Check if analysisResult is object with text/usage or string (backwards compat)
-        const analysis = typeof analysisResult === 'object' && analysisResult.text ? analysisResult.text : analysisResult
-        const usage = typeof analysisResult === 'object' ? analysisResult.usage : null
+        chat.post("/ai/analyze", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+            try {
+                const { question, results, query } = await c.req.json()
+                console.log('[AI Analyze] Request received:', {
+                    question,
+                    resultsCount: Array.isArray(results) ? results.length : 'not array',
+                    queryLength: query?.length
+                })
 
-        if (usage) {
-            await logAiUsage(userId, usage.totalTokens || usage.total_tokens, activeModel, 'ai_analyze', question)
-        }
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
 
-        console.log('[AI Analyze] Analysis received (type:', typeof analysis, ', length:', analysis?.length, ')')
+                let activeModel = null
+                try {
+                    const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+                    if (user && user[0] && user[0].settings) {
+                        activeModel = user[0].settings.activeModel;
+                    }
+                } catch (e) { }
 
-        // Parse the AI response - it might be JSON with a "summary" field
-        let summaryText = analysis
-        try {
-            const parsed = JSON.parse(analysis)
+                console.log('[AI Analyze] Calling aiClient.analyzeResults...')
+                const analysisResult = await aiClient.analyzeResults(question, results, query, activeModel)
+                // Check if analysisResult is object with text/usage or string (backwards compat)
+                const analysis = typeof analysisResult === 'object' && analysisResult.text ? analysisResult.text : analysisResult
+                const usage = typeof analysisResult === 'object' ? analysisResult.usage : null
 
-            // Check if it's a chart configuration
-            if (parsed.chart_type) {
-                // Inject metadata for dashboard usage
-                parsed.query = query
-                parsed.description = question
-                if (!parsed.title) {
-                    parsed.title = question.length > 50 ? question.substring(0, 47) + '...' : question
+                if (usage) {
+                    await logAiUsage(userId, usage.totalTokens || usage.total_tokens, activeModel, 'ai_analyze', question)
                 }
-                // Return stringified JSON with injected metadata
-                summaryText = JSON.stringify(parsed)
-                console.log('[AI Analyze] Detected chart response, injected metadata')
-            }
-            // Check for enhanced content (answer + prediction/action)
-            else if (parsed.answer && (parsed.prediction || parsed.action)) {
-                summaryText = JSON.stringify(parsed)
-                console.log('[AI Analyze] Preserving structured response (contains prediction or action)')
-            }
-            // Check for simple field extraction
-            else if (parsed.answer) {
-                summaryText = parsed.answer
-                console.log('[AI Analyze] Extracted answer from JSON response')
-            } else if (parsed.summary) {
-                summaryText = parsed.summary
-                console.log('[AI Analyze] Extracted summary from JSON response')
-            }
-        } catch (e) {
-            // Not JSON, use as-is
-            console.log('[AI Analyze] Using response as plain text')
-        }
 
-        console.log('[AI Analyze] Final summary:', summaryText?.substring ? summaryText.substring(0, 200) : summaryText)
-        return c.json({ analysis: summaryText })
-    } catch (e) {
-        console.error('[AI Analyze] Error:', e)
-        return c.json({ error: e.message }, 500)
-    }
-})
+                console.log('[AI Analyze] Analysis received (type:', typeof analysis, ', length:', analysis?.length, ')')
 
-chat.post("/ai/spreadsheet-command", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-    try {
-        const { command, data } = await c.req.json()
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+                // Parse the AI response - it might be JSON with a "summary" field
+                let summaryText = analysis
+                try {
+                    const parsed = JSON.parse(analysis)
 
-        let activeModel = null
-        try {
-            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
-            if (user && user[0] && user[0].settings) {
-                activeModel = user[0].settings.activeModel;
+                    // Check if it's a chart configuration
+                    if (parsed.chart_type) {
+                        // Inject metadata for dashboard usage
+                        parsed.query = query
+                        parsed.description = question
+                        if (!parsed.title) {
+                            parsed.title = question.length > 50 ? question.substring(0, 47) + '...' : question
+                        }
+                        // Return stringified JSON with injected metadata
+                        summaryText = JSON.stringify(parsed)
+                        console.log('[AI Analyze] Detected chart response, injected metadata')
+                    }
+                    // Check for enhanced content (answer + prediction/action)
+                    else if (parsed.answer && (parsed.prediction || parsed.action)) {
+                        summaryText = JSON.stringify(parsed)
+                        console.log('[AI Analyze] Preserving structured response (contains prediction or action)')
+                    }
+                    // Check for simple field extraction
+                    else if (parsed.answer) {
+                        summaryText = parsed.answer
+                        console.log('[AI Analyze] Extracted answer from JSON response')
+                    } else if (parsed.summary) {
+                        summaryText = parsed.summary
+                        console.log('[AI Analyze] Extracted summary from JSON response')
+                    }
+                } catch (e) {
+                    // Not JSON, use as-is
+                    console.log('[AI Analyze] Using response as plain text')
+                }
+
+                console.log('[AI Analyze] Final summary:', summaryText?.substring ? summaryText.substring(0, 200) : summaryText)
+                return c.json({ analysis: summaryText })
+            } catch (e) {
+                console.error('[AI Analyze] Error:', e)
+                return c.json({ error: e.message }, 500)
             }
-        } catch (e) { }
+        })
 
-        const headers = data.length > 0 ? Object.keys(data[0]) : []
-        const prompt = `
+        chat.post("/ai/spreadsheet-command", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+            try {
+                const { command, data } = await c.req.json()
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
+
+                let activeModel = null
+                try {
+                    const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+                    if (user && user[0] && user[0].settings) {
+                        activeModel = user[0].settings.activeModel;
+                    }
+                } catch (e) { }
+
+                const headers = data.length > 0 ? Object.keys(data[0]) : []
+                const prompt = `
 Context: Spreadsheet Data
 Headers: ${JSON.stringify(headers)}
 Sample Data (first 5 rows): ${JSON.stringify(data.slice(0, 5), null, 2)}
@@ -1384,95 +1494,95 @@ Return ONLY a valid JSON object:
   ]
 }
 `;
-        const response = await aiClient.chat(prompt, [], activeModel)
-        let modifications = []
-        try {
-            const jsonMatch = response.match(/\{[\s\S]*\}/)
-            if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0])
-                modifications = parsed.modifications || []
+                const response = await aiClient.chat(prompt, [], activeModel)
+                let modifications = []
+                try {
+                    const jsonMatch = response.match(/\{[\s\S]*\}/)
+                    if (jsonMatch) {
+                        const parsed = JSON.parse(jsonMatch[0])
+                        modifications = parsed.modifications || []
+                    }
+                } catch (e) {
+                    return c.json({ error: "AI returned invalid response" }, 500)
+                }
+                return c.json({ modifications })
+            } catch (e) {
+                return c.json({ error: e.message }, 500)
             }
-        } catch (e) {
-            return c.json({ error: "AI returned invalid response" }, 500)
-        }
-        return c.json({ modifications })
-    } catch (e) {
-        return c.json({ error: e.message }, 500)
-    }
-})
+        })
 
-chat.post("/ai/sanitize/analyze", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-    try {
-        const { tableName, schema } = await c.req.json()
-        const result = await analyzeForSanitization(tableName, schema)
-        return c.json(result)
-    } catch (e) {
-        return c.json({ error: e.message || "Failed to analyze table" }, 500)
-    }
-})
-
-chat.get("/ai/models", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-    try {
-        const payload = await verify(token, jwtSecret)
-
-        // Get user's subscription tier
-        const [userData] = await db.query(`SELECT subscription_tier FROM type::thing('user', $userId)`, { userId: payload.sub })
-        const tier = userData?.[0]?.subscription_tier || 'free'
-
-        // Get all models and filter by tier
-        const allModels = await aiClient.listModels()
-        const filteredModels = filterModelsByTier(allModels, tier)
-
-        return c.json({ models: filteredModels, tier })
-    } catch (e) {
-        return c.json({ error: "Failed to list models" }, 500)
-    }
-})
-
-chat.post("/ai/dashboard-query", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        const { query, dashboardTitle, elements } = await c.req.json()
-
-        // Resolve real user ID (handle Dev/Prod mismatch)
-        const resolvedId = await upsertUser(payload)
-        let resolvedUserId = userId
-        if (resolvedId) {
-            const parts = resolvedId.toString().split(':')
-            if (parts.length > 1) resolvedUserId = parts[1]
-            else resolvedUserId = resolvedId
-        }
-
-        const quota = await checkAiQuota(resolvedUserId);
-        if (!quota.allowed) {
-            return c.json(quota, 403);
-        }
-
-        let activeModel = null
-        try {
-            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
-            if (user && user[0] && user[0].settings) {
-                activeModel = user[0].settings.activeModel;
+        chat.post("/ai/sanitize/analyze", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+            try {
+                const { tableName, schema } = await c.req.json()
+                const result = await analyzeForSanitization(tableName, schema)
+                return c.json(result)
+            } catch (e) {
+                return c.json({ error: e.message || "Failed to analyze table" }, 500)
             }
-        } catch (e) { }
+        })
 
-        // Construct a summary of the data
-        const dataSummary = (elements || []).map(el => {
-            const resultSummary = Array.isArray(el.results)
-                ? `Array of ${el.results.length} rows. Sample: ${JSON.stringify(el.results.slice(0, 2))}`
-                : JSON.stringify(el.results || el.config || {});
-            return `Element: ${el.title} (Type: ${el.type})\nData: ${resultSummary}`;
-        }).join('\n\n');
+        chat.get("/ai/models", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+            try {
+                const payload = await verify(token, jwtSecret)
 
-        const prompt = `
+                // Get user's subscription tier
+                const [userData] = await db.query(`SELECT subscription_tier FROM type::thing('user', $userId)`, { userId: payload.sub })
+                const tier = userData?.[0]?.subscription_tier || 'free'
+
+                // Get all models and filter by tier
+                const allModels = await aiClient.listModels()
+                const filteredModels = filterModelsByTier(allModels, tier)
+
+                return c.json({ models: filteredModels, tier })
+            } catch (e) {
+                return c.json({ error: "Failed to list models" }, 500)
+            }
+        })
+
+        chat.post("/ai/dashboard-query", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+            try {
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
+                const { query, dashboardTitle, elements } = await c.req.json()
+
+                // Resolve real user ID (handle Dev/Prod mismatch)
+                const resolvedId = await upsertUser(payload)
+                let resolvedUserId = userId
+                if (resolvedId) {
+                    const parts = resolvedId.toString().split(':')
+                    if (parts.length > 1) resolvedUserId = parts[1]
+                    else resolvedUserId = resolvedId
+                }
+
+                const quota = await checkAiQuota(resolvedUserId);
+                if (!quota.allowed) {
+                    return c.json(quota, 403);
+                }
+
+                let activeModel = null
+                try {
+                    const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+                    if (user && user[0] && user[0].settings) {
+                        activeModel = user[0].settings.activeModel;
+                    }
+                } catch (e) { }
+
+                // Construct a summary of the data
+                const dataSummary = (elements || []).map(el => {
+                    const resultSummary = Array.isArray(el.results)
+                        ? `Array of ${el.results.length} rows. Sample: ${JSON.stringify(el.results.slice(0, 2))}`
+                        : JSON.stringify(el.results || el.config || {});
+                    return `Element: ${el.title} (Type: ${el.type})\nData: ${resultSummary}`;
+                }).join('\n\n');
+
+                const prompt = `
 You are Pegasus, an AI assistant for the Pegasus Data Platform.
 You are helping the user with their dashboard titled "${dashboardTitle}".
 
@@ -1488,47 +1598,47 @@ Instructions:
 4. If they ask about platform features, help them.
 `;
 
-        const response = await aiClient.generateText(prompt, activeModel)
-        const analysisText = response.text || response
-        const usage = response.usage
+                const response = await aiClient.generateText(prompt, activeModel)
+                const analysisText = response.text || response
+                const usage = response.usage
 
-        if (usage) {
-            await logAiUsage(userId, usage.totalTokens || usage.total_tokens, activeModel || 'gemini', 'dashboard_chat', query)
-        }
+                if (usage) {
+                    await logAiUsage(userId, usage.totalTokens || usage.total_tokens, activeModel || 'gemini', 'dashboard_chat', query)
+                }
 
-        return c.json({ response: analysisText })
-    } catch (e) {
-        console.error("[Chat] Dashboard query failed:", e)
-        return c.json({ error: e.message || "Failed to process query" }, 500)
-    }
-})
-
-chat.post("/ai/analyze-dashboard", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        const { dashboardTitle, elements } = await c.req.json()
-
-        let activeModel = null
-        try {
-            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
-            if (user && user[0] && user[0].settings) {
-                activeModel = user[0].settings.activeModel;
+                return c.json({ response: analysisText })
+            } catch (e) {
+                console.error("[Chat] Dashboard query failed:", e)
+                return c.json({ error: e.message || "Failed to process query" }, 500)
             }
-        } catch (e) { }
+        })
 
-        // Construct a summary of the data
-        const dataSummary = elements.map(el => {
-            const resultSummary = Array.isArray(el.results)
-                ? `Array of ${el.results.length} rows. Sample: ${JSON.stringify(el.results.slice(0, 2))}`
-                : JSON.stringify(el.results);
-            return `Element: ${el.title} (Type: ${el.type})\nData: ${resultSummary}`;
-        }).join('\n\n');
+        chat.post("/ai/analyze-dashboard", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
 
-        const prompt = `
+            try {
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
+                const { dashboardTitle, elements } = await c.req.json()
+
+                let activeModel = null
+                try {
+                    const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+                    if (user && user[0] && user[0].settings) {
+                        activeModel = user[0].settings.activeModel;
+                    }
+                } catch (e) { }
+
+                // Construct a summary of the data
+                const dataSummary = elements.map(el => {
+                    const resultSummary = Array.isArray(el.results)
+                        ? `Array of ${el.results.length} rows. Sample: ${JSON.stringify(el.results.slice(0, 2))}`
+                        : JSON.stringify(el.results);
+                    return `Element: ${el.title} (Type: ${el.type})\nData: ${resultSummary}`;
+                }).join('\n\n');
+
+                const prompt = `
 You are a senior data analyst. You are analyzing a dashboard titled "${dashboardTitle}".
 Below is a summary of the data from various dashboard elements:
 
@@ -1539,43 +1649,43 @@ Focus on crossing references between different elements if applicable.
 Keep the tone professional and helpful.
 `;
 
-        const response = await aiClient.generateText(prompt, activeModel)
-        // With AIClient update, response is now { text, usage }
-        const analysisText = response.text || response
-        const usage = response.usage
+                const response = await aiClient.generateText(prompt, activeModel)
+                // With AIClient update, response is now { text, usage }
+                const analysisText = response.text || response
+                const usage = response.usage
 
-        if (usage) {
-            await logAiUsage(payload.sub, usage.totalTokens || usage.total_tokens, activeModel || 'openai', 'ai_dashboard_summary', dashboardTitle)
-        }
+                if (usage) {
+                    await logAiUsage(payload.sub, usage.totalTokens || usage.total_tokens, activeModel || 'openai', 'ai_dashboard_summary', dashboardTitle)
+                }
 
-        return c.json({ analysis: analysisText })
-    } catch (e) {
-        console.error("[Chat] Analyze dashboard failed:", e)
-        return c.json({ error: e.message || "Failed to analyze dashboard" }, 500)
-    }
-})
-
-chat.post("/ai/search", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-    try {
-        const { query } = await c.req.json()
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-
-        let activeModel = null
-        try {
-            const [user] = await db.query(`SELECT settings FROM user:${userId}`);
-            if (user && user[0] && user[0].settings) {
-                activeModel = user[0].settings.activeModel;
+                return c.json({ analysis: analysisText })
+            } catch (e) {
+                console.error("[Chat] Analyze dashboard failed:", e)
+                return c.json({ error: e.message || "Failed to analyze dashboard" }, 500)
             }
-        } catch (e) { }
+        })
 
-        const response = await aiClient.generateText(query, activeModel)
-        return c.json({ result: response })
-    } catch (e) {
-        return c.json({ error: e.message }, 500)
-    }
-})
+        chat.post("/ai/search", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+            try {
+                const { query } = await c.req.json()
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
 
-export { chat as chatRoutes }
+                let activeModel = null
+                try {
+                    const [user] = await db.query(`SELECT settings FROM user:${userId}`);
+                    if (user && user[0] && user[0].settings) {
+                        activeModel = user[0].settings.activeModel;
+                    }
+                } catch (e) { }
+
+                const response = await aiClient.generateText(query, activeModel)
+                return c.json({ result: response })
+            } catch (e) {
+                return c.json({ error: e.message }, 500)
+            }
+        })
+
+        export { chat as chatRoutes }

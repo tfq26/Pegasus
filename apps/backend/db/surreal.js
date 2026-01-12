@@ -10,6 +10,71 @@ const ns = process.env.SURREAL_NS || 'test';
 const dbName = process.env.SURREAL_DB || 'test';
 
 export let isConnected = false;
+let lastConnectionCheck = 0;
+let activeUrl = null; // Track the URL that worked
+
+// Check if an error is related to token expiration
+function isTokenExpiredError(error) {
+    const message = error?.message?.toLowerCase() || '';
+    return message.includes('token has expired') ||
+        message.includes('token expired') ||
+        message.includes('authentication failed') ||
+        message.includes('invalid token');
+}
+
+// Re-authenticate with the database (for when token expires)
+async function reauthenticate() {
+    console.log('[SurrealDB] Re-authenticating due to expired token...');
+    try {
+        await db.signin({ username: user, password: pass });
+        await db.use({ namespace: ns, database: dbName });
+        console.log('[SurrealDB] Re-authentication successful');
+        lastConnectionCheck = Date.now();
+        return true;
+    } catch (e) {
+        console.error('[SurrealDB] Re-authentication failed:', e.message);
+        isConnected = false;
+        throw e;
+    }
+}
+
+// Ensure database connection is valid and authenticated
+export async function ensureConnection() {
+    const now = Date.now();
+    const checkInterval = process.env.VERCEL === '1' ? 30000 : 60000; // 30s on Vercel, 60s elsewhere
+
+    // If we recently checked and connection was valid, skip check
+    if (isConnected && (now - lastConnectionCheck) < checkInterval) {
+        return db;
+    }
+
+    // Try a lightweight health check
+    try {
+        await db.query('SELECT 1');
+        isConnected = true;
+        lastConnectionCheck = now;
+        return db;
+    } catch (e) {
+        // Check if it's a token expiration error
+        if (isTokenExpiredError(e)) {
+            console.log('[SurrealDB] Token expired, attempting re-authentication...');
+            try {
+                await reauthenticate();
+                return db;
+            } catch (reauthError) {
+                // Re-auth failed, need full reconnection
+                console.log('[SurrealDB] Re-authentication failed, attempting full reconnection...');
+                isConnected = false;
+            }
+        } else {
+            console.error('[SurrealDB] Health check failed:', e.message);
+            isConnected = false;
+        }
+
+        // If we get here, we need to reconnect
+        return await connectDB();
+    }
+}
 
 // Function to try connecting with a specific URL
 async function tryConnect(targetUrl) {
@@ -72,6 +137,8 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
                 }
 
                 isConnected = true;
+                activeUrl = candidate; // Track successful URL
+                lastConnectionCheck = Date.now();
                 console.log('[SurrealDB] Connected successfully');
                 await initSchema();
                 return db;

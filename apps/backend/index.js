@@ -9,7 +9,7 @@ import { initSocketServer } from "./src/socket.js"
 import { ConfigService } from "./src/services/ConfigService.js"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
-import { db, connectDB } from "./db/surreal.js"
+import { db, connectDB, ensureConnection } from "./db/surreal.js"
 import { stockService } from "./src/services/StockService.js"
 import { weatherService } from "./src/routes/weather.js"
 import { dashboardRoutes } from "./src/routes/dashboard.js"
@@ -125,9 +125,10 @@ const isVercel = process.env.VERCEL === '1';
 if (isVercel) {
   app.use('*', async (c, next) => {
     try {
-      await connectDB();
+      await ensureConnection(); // This handles token refresh automatically
     } catch (e) {
       console.error('[Vercel] Database connection failed:', e.message);
+      // Don't block the request, let it proceed (some endpoints don't need DB)
     }
     return next();
   });
