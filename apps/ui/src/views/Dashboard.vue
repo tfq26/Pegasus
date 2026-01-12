@@ -325,6 +325,7 @@
             :isAIThinking="isAIThinking"
             :typingUsers="typingUsers"
             :isDetached="isChatDetached"
+            :collaborators="store.authorizedUsers"
             @close="showChat = false"
             @send="handleSendMessage"
             @pegasus-query="handlePegasusQuery"

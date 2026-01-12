@@ -80,7 +80,7 @@
                 msg.isAIResponse
                   ? 'bg-violet-500/10 border border-violet-500/20 text-foreground'
                   : isCurrentUser(msg.user.id) 
-                    ? 'bg-violet-700 text-white shadow-sm hover:bg-violet-800 dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90' 
+                    ? 'bg-violet-700 text-white shadow-sm hover:bg-violet-800 dark:bg-violet-900 dark:text-white dark:hover:bg-violet-950' 
                     : 'bg-muted text-foreground hover:bg-muted/80'
               ]"
             >

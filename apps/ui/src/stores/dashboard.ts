@@ -9,6 +9,8 @@ import {
     shareDashboard,
     fetchRecentDashboards,
     trackDashboardAccess,
+    markDashboardRead,
+    fetchDashboardPermissions,
     QUERY_API_URL,
     api
 } from '@/lib/api'
@@ -62,6 +64,37 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const parameters = ref<Record<string, any>>({})
     const isLoading = ref(false)
     const error = ref<string | null>(null)
+
+    // Permissions & Access
+    const dashboardPermissions = ref<any[]>([])
+    const dashboardOwner = ref<any>(null)
+    const currentUserRole = ref<string | null>(null)
+
+    const authorizedUsers = computed(() => {
+        const users = [...dashboardPermissions.value]
+
+        // Add owner if not already in list (check by ID or email)
+        if (dashboardOwner.value) {
+            const ownerId = dashboardOwner.value.id
+            if (!users.some(u => u.user_id === ownerId || u.id === ownerId)) {
+                users.unshift({
+                    ...dashboardOwner.value,
+                    user_id: ownerId,
+                    access_level: 'owner'
+                })
+            }
+        }
+
+        // Normalize for mentions
+        return users.map(u => ({
+            id: u.user_id || u.id,
+            firstName: u.first_name,
+            lastName: u.last_name,
+            email: u.email,
+            profilePictureUrl: u.profile_picture_url,
+            role: u.access_level
+        }))
+    })
 
     const isSaving = ref(false)
     const isAnalyzing = ref(false)
@@ -138,9 +171,25 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    const loadPermissions = async (id: string) => {
+        try {
+            const data = await fetchDashboardPermissions(id)
+            dashboardPermissions.value = data.permissions || []
+            dashboardOwner.value = data.owner || null
+            currentUserRole.value = data.currentUserRole || null
+        } catch (e: any) {
+            console.error('Failed to load permissions:', e)
+            // Non-critical, so don't block
+        }
+    }
+
     const selectDashboard = async (id: string, forceRefresh = false) => {
         // Track access in backend (fire and forget)
         trackDashboardAccess(id).catch(err => console.error('Failed to track access:', err))
+        markDashboardRead(id).catch(err => console.error('Failed to mark read:', err))
+
+        // Load permissions in background
+        loadPermissions(id)
 
         // If we already have the dashboard and not forcing refresh, just set it
         const existing = dashboards.value.find(d => d.id === id)
@@ -670,6 +719,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         importDashboard,
         addPage,
         removePage,
-        renamePage
+        renamePage,
+        authorizedUsers,
+        loadPermissions
     }
 })

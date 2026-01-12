@@ -102,8 +102,8 @@ const getInitials = (item: Mentionable) => {
 
 <template>
   <div 
-    class="absolute z-50 w-64 bg-popover border border-border rounded-lg shadow-xl overflow-hidden"
-    :style="{ top: `${position.top}px`, left: `${position.left}px` }"
+    class="absolute z-50 w-64 bg-popover border border-border rounded-lg shadow-xl overflow-hidden mb-2"
+    :style="{ bottom: '100%', left: `${position.left}px` }"
   >
     <div class="p-2 border-b border-border bg-muted/50">
       <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">

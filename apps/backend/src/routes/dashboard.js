@@ -257,7 +257,35 @@ dashboard.get("/dashboards", async (c) => {
             WHERE owner = type::thing('user', $userId)
             ORDER BY updated_at DESC;
         `, { userId });
-        return c.json({ dashboards })
+
+        // Fetch unread notifications counts
+        const [unreadCounts] = await db.query(`
+            SELECT dashboard, count() as count 
+            FROM notification 
+            WHERE user = type::thing('user', $userId) 
+                AND is_read = false 
+            GROUP BY dashboard;
+        `, { userId });
+
+        // Map counts
+        const countMap = new Map();
+        if (unreadCounts) {
+            unreadCounts.forEach(c => {
+                // c.dashboard might be "dashboard:abc".
+                const dashId = c.dashboard.toString().split(':').pop();
+                countMap.set(dashId, c.count);
+            });
+        }
+
+        const dashboardsWithCounts = dashboards.map(d => {
+            const cleanId = d.id.toString().split(':').pop();
+            return {
+                ...d,
+                unread_count: countMap.get(cleanId) || 0
+            }
+        });
+
+        return c.json({ dashboards: dashboardsWithCounts })
     } catch (e) {
         return c.json({ error: "Failed to fetch dashboards" }, 500)
     }
@@ -324,6 +352,23 @@ dashboard.get("/dashboards/shared", async (c) => {
             ORDER BY created_at DESC;
         `, { user: userId });
 
+        // Fetch unread notifications counts
+        const [unreadCounts] = await db.query(`
+            SELECT dashboard, count() as count 
+            FROM notification 
+            WHERE user = type::thing('user', $userId) 
+                AND is_read = false 
+            GROUP BY dashboard;
+        `, { userId });
+
+        const countMap = new Map();
+        if (unreadCounts) {
+            unreadCounts.forEach(c => {
+                const dashId = c.dashboard.toString().split(':').pop();
+                countMap.set(dashId, c.count);
+            });
+        }
+
         const sharedDashboards = results.map(item => ({
             id: item.id,
             title: item.title,
@@ -337,7 +382,8 @@ dashboard.get("/dashboards/shared", async (c) => {
                 last_name: item.owner_last_name,
                 email: item.owner_email
             },
-            is_shared: true
+            is_shared: true,
+            unread_count: countMap.get(item.id.toString().split(':').pop()) || 0
         }));
         return c.json({ dashboards: sharedDashboards })
     } catch (e) {
@@ -419,6 +465,28 @@ dashboard.post("/dashboards/:id/access", async (c) => {
         return c.json({ ok: true })
     } catch (e) {
         return c.json({ error: "Failed to track access" }, 500)
+    }
+})
+
+dashboard.post("/dashboards/:id/read", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let id = c.req.param("id")
+        if (!id.includes(':')) id = `dashboard:${id}`
+
+        await db.query(`
+            UPDATE notification 
+            SET is_read = true 
+            WHERE user = type::thing('user', $userId) 
+            AND dashboard = type::thing('dashboard', $dashId);
+        `, { userId, dashId: id.split(':')[1] });
+
+        return c.json({ ok: true })
+    } catch (e) {
+        return c.json({ error: "Failed to mark as read" }, 500)
     }
 })
 

@@ -383,6 +383,10 @@ export async function trackDashboardAccess(id: string) {
   return api.post(`/dashboards/${id}/access`)
 }
 
+export async function markDashboardRead(id: string) {
+  return api.post(`/dashboards/${id}/read`)
+}
+
 export async function searchUsers(query: string) {
   const body = await api.get<{ users: any[] }>(`/api/users/search?q=${encodeURIComponent(query)}`)
   return body.users || []

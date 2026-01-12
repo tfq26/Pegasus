@@ -148,6 +148,10 @@
 
                 <!-- Role Badges -->
                 <div class="absolute top-2 left-2 flex gap-1 z-10">
+                  <span v-if="dashboard.unread_count > 0" class="bg-red-500 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold shadow-sm backdrop-blur-sm flex items-center gap-1 animate-pulse">
+                     <Bell class="w-3 h-3" />
+                     {{ dashboard.unread_count }} New
+                  </span>
                   <span v-if="dashboard.access_role === 'owner'" class="bg-primary/90 text-primary-foreground px-2 py-0.5 rounded-lg text-[10px] font-medium shadow-sm backdrop-blur-sm">
                     Owner
                   </span>
@@ -540,7 +544,8 @@ import {
   X,
   Upload,
   Users,
-  ExternalLink
+  ExternalLink,
+  Bell
 } from 'lucide-vue-next'
 import {
   DropdownMenu,

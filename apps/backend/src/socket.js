@@ -235,11 +235,46 @@ export function initSocketServer(server, allowedOrigins) {
                 }
             }
 
-            // Handle @user mentions - notify mentioned users
+            // Handle @user mentions - notify and persist
             if (data.mentions?.length) {
+                // Fetch dashboard title for notification context
+                let dashboardTitle = 'Dashboard';
+                try {
+                    const [d] = await db.query(`SELECT title FROM ${dashId}`);
+                    if (d && d[0]) dashboardTitle = d[0].title;
+                } catch (e) {
+                    // Ignore title fetch error
+                }
+
                 for (const mention of data.mentions) {
                     if (mention.type === 'user' && mention.id) {
-                        // Find the mentioned user's socket
+                        const targetUserId = mention.id;
+
+                        try {
+                            // Persist notification
+                            await db.query(`
+                                CREATE notification CONTENT {
+                                    user: type::thing('user', $userId),
+                                    type: 'mention',
+                                    dashboard: type::thing('dashboard', $dashId),
+                                    dashboard_title: $title,
+                                    message: $preview,
+                                    sender: $senderName,
+                                    is_read: false,
+                                    created_at: time::now()
+                                };
+                            `, {
+                                userId: targetUserId,
+                                dashId: data.dashboardId,
+                                title: dashboardTitle,
+                                preview: data.content.substring(0, 100),
+                                senderName: socket.user.firstName || 'Someone'
+                            });
+                        } catch (err) {
+                            console.error(`[Socket.io] Failed to create notification for ${targetUserId}:`, err);
+                        }
+
+                        // Real-time delivery
                         const allSockets = await io.fetchSockets();
                         const targetSocket = allSockets.find(s =>
                             s.user?.id === mention.id || s.user?.email === mention.email
@@ -248,9 +283,16 @@ export function initSocketServer(server, allowedOrigins) {
                         if (targetSocket) {
                             targetSocket.emit("user_mentioned", {
                                 dashboardId: data.dashboardId,
+                                dashboardTitle,
                                 senderName: socket.user.firstName || socket.user.email?.split('@')[0],
                                 preview: data.content.substring(0, 100),
                                 timestamp: message.timestamp
+                            });
+
+                            // Also emit general notification event for counters
+                            targetSocket.emit("notification_new", {
+                                type: 'mention',
+                                dashboardId: data.dashboardId
                             });
                         }
                     }
