@@ -111,6 +111,18 @@ const db = new Proxy(rawDb, {
 // Function to try connecting with a specific URL
 async function tryConnect(targetUrl) {
     console.log(`[SurrealDB] Attempting connection to: ${targetUrl}`);
+
+    // Debug: Try a raw fetch to see if the server responds at all
+    if (targetUrl.startsWith('http')) {
+        try {
+            const rootUrl = targetUrl.replace('/rpc', '');
+            const resp = await fetch(rootUrl);
+            console.log(`[SurrealDB Debug] GET ${rootUrl} status: ${resp.status}`);
+        } catch (fetchErr) {
+            console.log(`[SurrealDB Debug] GET ${targetUrl} failed: ${fetchErr.message}`);
+        }
+    }
+
     // Create a new instance for each attempt to avoid sticky failed states
     const connectionDb = new Surreal();
     await connectionDb.connect(targetUrl);
