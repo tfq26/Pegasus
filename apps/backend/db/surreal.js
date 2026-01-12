@@ -133,20 +133,29 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
 
     // Prepare candidate URLs
     let base = rawUrl;
+    // Strip trailing slash and /rpc if present to rebuild clean candidates
     if (base.endsWith('/rpc')) base = base.slice(0, -4);
     if (base.endsWith('/')) base = base.slice(0, -1);
 
-    // Protocol variants
-    const protocols = base.startsWith('ws') ? ['http', 'ws'] : ['http', 'ws'];
-    const prefix = base.includes('://') ? base.split('://')[1] : base;
+    // Determines protocol
     const isSecure = base.startsWith('wss') || base.startsWith('https');
+    const prefix = base.includes('://') ? base.split('://')[1] : base;
 
     const candidates = [];
-    protocols.forEach(p => {
-        const proto = isSecure ? (p === 'http' ? 'https' : 'wss') : p;
-        candidates.push(`${proto}://${prefix}`);
-        candidates.push(`${proto}://${prefix}/rpc`);
-    });
+
+    // Priority 1: WebSocket RPC (The standard for SurrealDB.js)
+    // We prioritize /rpc path as it's the dedicated endpoint
+    const wsProto = isSecure ? 'wss' : 'ws';
+    candidates.push(`${wsProto}://${prefix}/rpc`);
+    candidates.push(`${wsProto}://${prefix}`);
+
+    // Priority 2: HTTP RPC (Fallback for non-WS environments)
+    // const httpProto = isSecure ? 'https' : 'http';
+    // candidates.push(`${httpProto}://${prefix}/rpc`);
+    // candidates.push(`${httpProto}://${prefix}`);
+
+    // We strictly stick to WS for now as HTTP connection in v1.x can be flaky with version checks
+    // and we need live query support anyway.
 
     // Remove duplicates
     const uniqueCandidates = [...new Set(candidates)];
