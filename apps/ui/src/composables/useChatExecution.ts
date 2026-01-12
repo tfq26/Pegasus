@@ -262,7 +262,6 @@ export function useChatExecution(
 
         const userPrompt = chatInput.value.trim()
         chatInput.value = ''
-        resultsPanelVisible.value = true
         isExecuting.value = true
 
         const gid = `chat-${Date.now()}`
@@ -325,7 +324,27 @@ export function useChatExecution(
             if (tabValue?.type === 'table') activeTable = tabValue.data?.tableName
             else if (tabValue?.type === 'spreadsheet') activeTable = tabValue.data?.tableName
 
-            const aiResponse = await generateAIQuery(userPrompt, selectedConnection.value.id, history, activeTable)
+            // Validate connection ID before making request
+            const connectionId = selectedConnection.value?.id
+            console.log('[Chat] AI Request:', {
+                connectionId,
+                provider: selectedConnection.value?.provider,
+                name: selectedConnection.value?.name || selectedConnection.value?.label,
+                activeTable,
+                activeTabType: tabValue?.type,
+                activeTabData: tabValue?.data
+            })
+
+            if (!connectionId) {
+                console.error('[Chat] No valid connection ID found:', selectedConnection.value)
+                toast.error('Connection error', {
+                    description: 'Please select a valid database connection before using AI.'
+                })
+                isExecuting.value = false
+                return
+            }
+
+            const aiResponse = await generateAIQuery(userPrompt, connectionId, history, activeTable)
 
             // Handle generated table tool response
             if ((aiResponse as any).type === 'generated_table' && options.onAIResponse) {

@@ -12,6 +12,7 @@ import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
 import { fetchTableSchema, fetchTableQuery, saveTableData } from '@/lib/api';
 import { buildConnectionPayload } from '@/lib/db-connections';
+import { Plus, MessageSquare, Layout, Sparkles, Database, FileCode } from 'lucide-vue-next';
 
 // Interface for version history
 interface TableVersion {
@@ -42,6 +43,7 @@ const emit = defineEmits<{
   (e: 'add-to-dashboard', config: any): void;
   (e: 'explain-query', query: string): void;
   (e: 'optimize-query', query: string): void;
+  (e: 'show-results'): void;
 }>();
 
 // --- Pinia Store ---
@@ -1143,7 +1145,61 @@ defineExpose({
     
 
     <!-- Editor Content Area -->
-    <div class="flex-1 overflow-hidden">
+    <div class="flex-1 overflow-hidden relative">
+      <!-- Empty State (Minimal Version) -->
+      <div 
+        v-if="(tabs as any).length === 0" 
+        class="absolute inset-0 flex flex-col items-center justify-center p-6 animate-in fade-in duration-700"
+      >
+        <div class="max-w-sm w-full text-center space-y-6">
+          <!-- Subtle Brand Identity -->
+          <div class="relative inline-flex items-center justify-center mb-2">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500/5 to-blue-500/5 border border-border flex items-center justify-center group-hover:border-purple-500/20 transition-colors">
+              <Layout class="w-8 h-8 text-muted-foreground/40" />
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <h2 class="text-xl font-medium tracking-tight text-foreground">Let's get started</h2>
+            <p class="text-sm text-muted-foreground">
+              Create a new tab to begin.
+            </p>
+          </div>
+
+          <!-- Minimal Actions Row -->
+          <div class="flex items-center justify-center gap-3 pt-2">
+            <button 
+              @click="onAddTab('chat')"
+              class="flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted hover:border-purple-500/30 transition-all text-xs font-semibold text-foreground shadow-sm"
+            >
+              <MessageSquare class="w-3.5 h-3.5 text-purple-500" />
+              AI Chat
+            </button>
+
+            <button 
+              @click="onAddTab('query')"
+              class="flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted hover:border-blue-500/30 transition-all text-xs font-semibold text-foreground shadow-sm"
+            >
+              <FileCode class="w-3.5 h-3.5 text-blue-500" />
+              SQL
+            </button>
+
+            <button 
+              @click="onAddTab('table')"
+              class="flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted hover:border-emerald-500/30 transition-all text-xs font-semibold text-foreground shadow-sm"
+            >
+              <Plus class="w-3.5 h-3.5 text-emerald-500" />
+              Sheet
+            </button>
+          </div>
+
+          <!-- Discrete Hint -->
+          <div class="text-[10px] text-muted-foreground/30 font-medium uppercase tracking-[0.2em] pt-8">
+            Drop CSV to import
+          </div>
+        </div>
+      </div>
+
       <template v-for="tab in (tabs as any)" :key="tab.id">
         <div 
           v-if="tab.id === activeTabId"
@@ -1173,6 +1229,7 @@ defineExpose({
             :is-thinking="props.isThinking"
             @update:input="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
             @submit="emit('submit')"
+            @show-results="emit('show-results')"
             @add-to-dashboard="(config) => emit('add-to-dashboard', config)"
           />
 

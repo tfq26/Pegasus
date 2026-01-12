@@ -11,6 +11,7 @@ import { usePrefetch } from '@/composables/usePrefetch'
 import { useConnectionStore } from '@/stores/connection'
 import { useDesktopMenu } from '@/composables/useDesktopMenu'
 import { usePlatform } from '@/composables/usePlatform'
+import { useColorMode } from '@vueuse/core'
 import ErrorPage from '@/views/ErrorPage.vue'
 import 'vue-sonner/style.css'
 
@@ -101,6 +102,27 @@ onMounted(async () => {
   isDesktop.value = isTauri.value
 })
 
+/**
+ * THEME MANAGEMENT (Centralized)
+ * This ensures the theme class on <html> is maintained regardless of which navbar is mounted.
+ */
+const themeMode = useColorMode({
+  emitAuto: true,
+  selector: 'html',
+  attribute: 'class',
+  storageKey: 'pegasus-theme',
+})
+
+const toggleTheme = () => {
+  if (themeMode.value === 'auto') {
+    themeMode.value = 'light'
+  } else if (themeMode.value === 'light') {
+    themeMode.value = 'dark'
+  } else {
+    themeMode.value = 'auto'
+  }
+}
+
 onUnmounted(() => {
     window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     window.removeEventListener('error', handleWindowError)
@@ -128,8 +150,8 @@ onUnmounted(() => {
   <!-- Full App Layout (Phone, Tablet & Desktop) -->
   <div v-else class="h-full w-full flex flex-col bg-background text-foreground transition-colors duration-300">
     <!-- Navbar: Desktop version for Tauri, regular for web -->
-    <DesktopNavbar v-if="isDesktop" />
-    <Navbar v-else />
+    <DesktopNavbar v-if="isDesktop" :theme-mode="themeMode" :toggle-theme="toggleTheme" />
+    <Navbar v-else :theme-mode="themeMode" :toggle-theme="toggleTheme" />
 
     <!-- Sonner Toasts -->
     <Toaster position="top-right" richColors />

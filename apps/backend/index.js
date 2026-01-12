@@ -45,7 +45,7 @@ import {
 import { notifyExperimentalRequest } from "./src/services/emailService.js"
 import { RAGService } from "./src/services/ragService.js"
 import { EntitlementService } from "./src/services/EntitlementService.js"
-import { getUserUsageSummary } from "./lib/tierLimits.js"
+import { getUserUsageSummary, calculateUserLimits } from "./lib/tierLimits.js"
 import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -2119,45 +2119,13 @@ app.get("/usage", async (c) => {
     const userId = payload.sub
 
 
-    // Get User Subscription Tier
-    const [userRecord] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM user:${userId}`);
-    const tier = userRecord[0]?.subscription_tier || 'free';
-
-    // Calculate purchased tokens and storage from payment history
-    const rawId = userId.replace('user:', '')
-    const [tokenPayments] = await db.query(`
-      SELECT math::sum(tokens) as total_tokens FROM user_payment
-      WHERE user = type::thing('user', $rawId)
-      AND tokens > 0
-      GROUP ALL
-    `, { rawId });
-
-    const [storagePayments] = await db.query(`
-      SELECT math::sum(storage_bytes) as total_storage FROM user_payment
-      WHERE user = type::thing('user', $rawId)
-      AND storage_bytes > 0
-      GROUP ALL
-    `, { rawId });
-
-    const purchasedTokens = Number(tokenPayments[0]?.total_tokens || 0);
-    const purchasedStorage = Number(storagePayments[0]?.total_storage || 0);
-
-
-
-    // AI Token Limits
-    let baseLimit = 60000;
-    if (tier === 'pro_plus') baseLimit = 600000;
-    else if (tier === 'pro') baseLimit = 200000;
-
-    const limit = baseLimit + purchasedTokens;
-
-    // Storage Limits (in bytes)
-    // Free: 100MB, Pro: 500MB, Pro+: 10GB
-    let baseStorageLimit = 100 * 1024 * 1024;
-    if (tier === 'pro_plus') baseStorageLimit = 10 * 1024 * 1024 * 1024;
-    else if (tier === 'pro') baseStorageLimit = 500 * 1024 * 1024;
-
-    const storageLimit = baseStorageLimit + purchasedStorage;
+    const {
+      tier,
+      tokenLimit: limit,
+      storageLimit,
+      purchasedTokens,
+      purchasedStorage
+    } = await calculateUserLimits(db, `user:${userId}`);
 
     // Calculate start of current month
     const startOfMonth = new Date();

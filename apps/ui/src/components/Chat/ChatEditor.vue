@@ -114,6 +114,17 @@
                 <span>{{ copied === msg.content ? 'Copied' : 'Copy' }}</span>
               </button>
 
+              <!-- Show in Results (Assistant only) -->
+              <button 
+                v-if="msg.role === 'assistant'"
+                @click="$emit('show-results')" 
+                class="flex items-center space-x-2 px-2 py-1 rounded bg-violet-500/10 border border-violet-500/20 text-[10px] text-violet-400 hover:bg-violet-500/20 transition-all"
+                title="Open results in data panel"
+              >
+                <Maximize2 class="w-3 h-3" />
+                <span>Inspect Data</span>
+              </button>
+
               <!-- Retry Button (User messages only) -->
                <button 
                 v-if="msg.role === 'user'"
@@ -131,8 +142,8 @@
       <!-- Minimal Thinking State -->
       <div v-if="props.isThinking" class="pl-9 animate-in fade-in duration-500">
          <div class="flex items-center gap-3 text-violet-400">
-            <Loader2 class="w-4 h-4 animate-spin" />
-            <span class="text-[11px] font-bold uppercase tracking-[0.2em] animate-pulse">Synthesizing data...</span>
+            <!-- Handled by Halo Search ring now, but we can keep a small subtle indicator if desired -->
+            <span class="text-[11px] font-bold uppercase tracking-[0.2em] animate-pulse">Pegasus is analyzing...</span>
          </div>
       </div>
     </div>
@@ -140,51 +151,13 @@
 
     <!-- Input Laboratory Container -->
     <div 
-      class="flex-shrink-0 relative z-20 pb-2 px-6 sm:px-8"
+      class="flex-shrink-0 relative z-20 pb-4 px-6 sm:px-8 max-w-4xl mx-auto w-full"
     >
-      <div 
-        class="max-w-4xl mx-auto rounded-lg overflow-hidden transition-all duration-500 border relative group/input shadow-xl dark:shadow-2xl shadow-stone-200/50 dark:shadow-black"
-        :class="[
-          isInputFocused ? 'border-violet-500/40 bg-background' : 'border-border bg-muted/40'
-        ]"
-      >
-        <!-- Thinking Progress Bar -->
-        <div v-if="props.isThinking" class="absolute top-0 left-0 right-0 h-[2px] bg-muted overflow-hidden">
-           <div class="h-full bg-violet-500 animate-[progress_1.5s_infinite_linear] shadow-[0_0_8px_theme(colors.violet.500)]" style="width: 30%"></div>
-        </div>
-
-        <div class="relative">
-          <textarea
-            v-model="localInput"
-            rows="1"
-            placeholder="Type a message..."
-            class="w-full min-h-[44px] max-h-[300px] bg-transparent text-foreground p-3 pr-[140px] resize-none focus:outline-none font-sans text-[14px] placeholder:text-muted-foreground/50 leading-normal scrollbar-none transition-all duration-300"
-            @focus="isInputFocused = true"
-            @blur="isInputFocused = false"
-            @keydown.enter.exact.prevent="$emit('submit')"
-            @input="adjustTextareaHeight"
-            ref="textareaRef"
-          ></textarea>
-          
-          <!-- Input Footer -->
-          <div class="absolute bottom-1.5 right-1.5 flex items-center justify-end">
-            <button 
-              @click="$emit('submit')"
-              :disabled="!localInput.trim() || props.isThinking"
-              class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all font-bold uppercase tracking-[0.1em] text-[10px]"
-              :class="[
-                localInput.trim() && !props.isThinking 
-                  ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-lg' 
-                  : 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed'
-              ]"
-            >
-              <Zap v-if="!props.isThinking" class="w-3.5 h-3.5" />
-              <Loader2 v-else class="w-3.5 h-3.5 animate-spin" />
-              <span>{{ props.isThinking ? 'Running' : 'Run Query' }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <HaloSearch 
+        v-model="localInput"
+        :is-thinking="props.isThinking"
+        @submit="$emit('submit')"
+      />
     </div>
   </div>
 </template>
@@ -207,14 +180,22 @@ import {
   Zap,
   RefreshCw,
   LayoutDashboard,
-  ChevronDown
+  ChevronDown,
+  ExternalLink,
+  Maximize2
 } from 'lucide-vue-next'
+import HaloSearch from '@/components/halo-search/Halo-Search.vue'
 import MarkdownIt from 'markdown-it'
 import { useAuth } from '@/composables/useAuth'
 import { useColorMode, usePreferredDark } from '@vueuse/core'
 
 const { user } = useAuth()
-const mode = useColorMode()
+const mode = useColorMode({
+  emitAuto: true,
+  selector: 'html',
+  attribute: 'class',
+  storageKey: 'pegasus-theme',
+})
 const preferredDark = usePreferredDark()
 
 const md = new MarkdownIt({ 
@@ -249,7 +230,7 @@ const props = defineProps<{
   isThinking?: boolean
 }>()
 
-const emit = defineEmits(['update:input', 'submit', 'add-to-dashboard'])
+const emit = defineEmits(['update:input', 'submit', 'add-to-dashboard', 'show-results'])
 
 const localInput = ref(props.input)
 const isInputFocused = ref(false)

@@ -135,7 +135,7 @@
                 <Sun v-if="currentIcon === 'sun'" class="w-4 h-4" />
                 <Moon v-else-if="currentIcon === 'moon'" class="w-4 h-4" />
                 <Monitor v-else class="w-4 h-4" />
-                <span>Theme: {{ mode }}</span>
+                <span>Theme: {{ props.themeMode }}</span>
               </button>
               <div class="h-px bg-border my-1"></div>
               <button
@@ -319,6 +319,11 @@ import {
 
 defineOptions({ name: 'AppNavbar' })
 
+const props = defineProps<{
+  themeMode: any
+  toggleTheme: () => void
+}>()
+
 const route = useRoute()
 const { isPhone } = usePlatform()
 const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
@@ -376,27 +381,10 @@ const handleLogout = () => {
   logout()
 }
 
-// Theme toggle
-const mode = useColorMode({
-  emitAuto: true,
-  selector: 'html',
-  attribute: 'class',
-  storageKey: 'pegasus-theme',
-})
-
-const toggleTheme = () => {
-  if (mode.value === 'auto') {
-    mode.value = 'light'
-  } else if (mode.value === 'light') {
-    mode.value = 'dark'
-  } else {
-    mode.value = 'auto'
-  }
-}
-
+// Theme icons based on prop
 const currentIcon = computed(() => {
-  if (mode.value === 'auto') return 'monitor'
-  if (mode.value === 'dark') return 'moon'
+  if (props.themeMode === 'auto') return 'monitor'
+  if (props.themeMode === 'dark') return 'moon'
   return 'sun'
 })
 

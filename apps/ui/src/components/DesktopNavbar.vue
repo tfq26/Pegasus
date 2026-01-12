@@ -98,6 +98,16 @@
                 <LogOut class="w-4 h-4" />
                 Logout
               </button>
+              <div class="h-px bg-border my-1" />
+              <button
+                @click="toggleTheme"
+                class="flex items-center gap-2 w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
+              >
+                <Sun v-if="currentIcon === 'sun'" class="w-4 h-4" />
+                <Moon v-else-if="currentIcon === 'moon'" class="w-4 h-4" />
+                <Monitor v-else class="w-4 h-4" />
+                <span>Theme: {{ themeMode }}</span>
+              </button>
             </div>
           </transition>
         </div>
@@ -122,10 +132,18 @@ import {
   LogIn,
   ChevronDown,
   BookOpen,
-  Wand2
+  Wand2,
+  Sun,
+  Moon,
+  Monitor
 } from 'lucide-vue-next'
 
 defineOptions({ name: 'DesktopNavbar' })
+
+const props = defineProps<{
+  themeMode: any
+  toggleTheme: () => void
+}>()
 
 const route = useRoute()
 const router = useRouter()
@@ -134,6 +152,13 @@ const { user, logout, login } = useAuth()
 const isOnline = ref(navigator.onLine)
 const showDropdown = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+
+// Theme icons based on prop
+const currentIcon = computed(() => {
+  if (props.themeMode === 'auto') return 'monitor'
+  if (props.themeMode === 'dark') return 'moon'
+  return 'sun'
+})
 
 // Navigation links for desktop
 const links = computed(() => {

@@ -207,3 +207,63 @@ export async function getUserUsageSummary(db, userId, tier = 'free') {
         }
     }
 }
+
+/**
+ * Calculate total user limits (tokens & storage) including purchased add-ons
+ * @param {Object} db - Database instance
+ * @param {String} userId - User ID (e.g. "user:123")
+ */
+export async function calculateUserLimits(db, userId) {
+    // 1. Get User Subscription Tier
+    const [userRecord] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM ${userId}`);
+    const tier = userRecord[0]?.subscription_tier || 'free';
+
+    // 2. Calculate purchased tokens and storage from payment history (Source of Truth)
+    // We rely on user_payment table sums rather than user record cache if possible, or support both strategies.
+    // The /usage endpoint sums user_payment. Let's replicate that for consistency.
+    const rawId = userId.replace('user:', '');
+
+    // Summing might be heavy for every chat message. 
+    // Optimization: Check userRecord.purchased_tokens first. 
+    // IF userRecord.purchased_tokens is 0 but we suspect issues, we could fallback.
+    // However, for correctness matching the profile page, we MUST use the same method.
+    // The profile page uses the sum. Let's use the sum.
+
+    const [tokenPayments] = await db.query(`
+      SELECT math::sum(tokens) as total_tokens FROM user_payment
+      WHERE user = type::thing('user', $rawId)
+      AND tokens > 0
+      GROUP ALL
+    `, { rawId });
+
+    const [storagePayments] = await db.query(`
+      SELECT math::sum(storage_bytes) as total_storage FROM user_payment
+      WHERE user = type::thing('user', $rawId)
+      AND storage_bytes > 0
+      GROUP ALL
+    `, { rawId });
+
+    const purchasedTokens = Number(tokenPayments[0]?.total_tokens || 0);
+    const purchasedStorage = Number(storagePayments[0]?.total_storage || 0);
+
+    // 3. Determine Base Limits
+    const limits = getTierLimits(tier);
+
+    // TIER_LIMITS in this file already has correct base values for free, pro, pro_plus
+    const baseTokenLimit = limits.tokens;
+    const baseStorageLimit = limits.storage;
+
+    // 4. Calculate Totals
+    const tokenLimit = baseTokenLimit + purchasedTokens;
+    const storageLimit = baseStorageLimit + purchasedStorage;
+
+    return {
+        tier,
+        tokenLimit,
+        storageLimit,
+        purchasedTokens,
+        purchasedStorage,
+        baseTokenLimit,
+        baseStorageLimit
+    };
+}

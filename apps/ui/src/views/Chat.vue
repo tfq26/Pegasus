@@ -40,6 +40,7 @@
       <section class="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <!-- Toolbar -->
         <ChatToolbar 
+          v-if="(workspaceTabs as any).length > 0"
           :mode="mode"
           :connections="connections"
           :selected-connection-id="selectedConnectionId"
@@ -109,6 +110,7 @@
           @update:mode="mode = $event"
           @update:input="handleUpdateInput"
           @submit="run"
+          @show-results="resultsPanelVisible = !resultsPanelVisible"
           @save-query="handleSaveFormulaQuery"
           @save-status="saveStatus = $event"
           @create-chat="handleCreateChat"

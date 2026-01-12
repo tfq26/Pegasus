@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { storeToRefs } from 'pinia'
 
 const props = defineProps<{
-  isDark: boolean
+  themeMode: any
   toggleTheme: () => void
 }>()
 
@@ -29,9 +29,11 @@ const settings = computed(() => unref(settingsStore.settings))
         </div>
         <button
           @click="props.toggleTheme"
-          class="px-4 py-2 rounded-md bg-stone-800 hover:bg-stone-700 text-stone-200 transition"
+          class="px-4 py-2 rounded-lg bg-muted border border-border hover:bg-muted/80 text-foreground transition-all font-bold uppercase tracking-widest text-[10px] flex items-center gap-2"
         >
-          {{ props.isDark ? 'Switch to Light Mode ☀️' : 'Switch to Dark Mode 🌙' }}
+          <span v-if="props.themeMode === 'dark'">Mode: Dark 🌙</span>
+          <span v-else-if="props.themeMode === 'light'">Mode: Light ☀️</span>
+          <span v-else>Mode: System 🖥️</span>
         </button>
       </div>
 

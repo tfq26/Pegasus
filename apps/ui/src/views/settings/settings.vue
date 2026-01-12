@@ -32,7 +32,11 @@
     <main class="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
       <div class="flex-1 overflow-y-auto p-10 pb-24">
         <section v-if="activeTab === 'general'" class="fade-section">
-          <GeneralTab :settings="settings" :is-dark="isDark" :toggle-theme="toggleTheme" />
+          <GeneralTab 
+            :settings="settings" 
+            :theme-mode="mode" 
+            :toggle-theme="toggleTheme" 
+          />
           
           <!-- Debug Area -->
           <div class="mt-8 pt-8 border-t border-border">
@@ -170,7 +174,13 @@ const mode = useColorMode({
 const isDark = computed(() => mode.value === 'dark')
 
 const toggleTheme = () => {
-  mode.value = mode.value === 'dark' ? 'light' : 'dark'
+  if (mode.value === 'auto') {
+    mode.value = 'light'
+  } else if (mode.value === 'light') {
+    mode.value = 'dark'
+  } else {
+    mode.value = 'auto'
+  }
 }
 
 // --- Settings model ---
