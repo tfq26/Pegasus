@@ -149,13 +149,12 @@ export const connectDB = async (retries = process.env.VERCEL === '1' ? 1 : 5, de
     candidates.push(`${wsProto}://${prefix}/rpc`);
     candidates.push(`${wsProto}://${prefix}`);
 
-    // Priority 2: HTTP RPC (Fallback for non-WS environments)
-    // const httpProto = isSecure ? 'https' : 'http';
-    // candidates.push(`${httpProto}://${prefix}/rpc`);
-    // candidates.push(`${httpProto}://${prefix}`);
+    // Priority 2: HTTP RPC (Fallback for non-WS environments or proxy issues)
+    const httpProto = isSecure ? 'https' : 'http';
+    candidates.push(`${httpProto}://${prefix}/rpc`);
+    candidates.push(`${httpProto}://${prefix}`);
 
-    // We strictly stick to WS for now as HTTP connection in v1.x can be flaky with version checks
-    // and we need live query support anyway.
+    // HTTP is less ideal for live queries but better than no connection.
 
     // Remove duplicates
     const uniqueCandidates = [...new Set(candidates)];
