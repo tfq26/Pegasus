@@ -61,15 +61,20 @@
       <!-- Actions Menu - Right Side -->
       <div class="flex items-center gap-2" v-if="!isShared">
         <!-- Add Element Button -->
-        <button
-          v-if="currentDashboard && showFullToolbar"
-          @click="showAddElementDialog = true"
-          class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
-          title="Add Element"
-        >
-          <Plus class="w-4 h-4" />
-          <span class="hidden sm:inline">Add Element</span>
-        </button>
+        <TooltipProvider :delay-duration="0">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button
+                v-if="currentDashboard && showFullToolbar"
+                @click="showAddElementDialog = true"
+                class="p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center justify-center shrink-0"
+              >
+                <Plus class="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Add Element</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         <div v-if="showFullToolbar" class="flex items-center gap-2">
           <TooltipProvider :delay-duration="0">
@@ -78,11 +83,11 @@
                 <button
                   ref="chatToggleRef"
                   @click="showChat = !showChat"
-                  class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center gap-2"
+                  class="relative p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center justify-center shrink-0"
                   :class="{ 'bg-muted text-foreground': showChat }"
                 >
                   <MessageSquare class="w-4 h-4" />
-                  <span class="hidden sm:inline">Chat</span>
+                  <span v-if="hasUnreadMessages" class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse border border-background"></span>
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -91,31 +96,44 @@
             </Tooltip>
           </TooltipProvider>
 
-          <button
-            v-if="currentDashboard && activeLayout.length > 0"
-            @click="generateDashboardSummary"
-            :disabled="isAnalyzing"
-            class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition inline-flex items-center gap-2 text-primary"
-            title="Generate AI Insights"
-          >
-            <BrainCircuit v-if="!isAnalyzing" class="w-4 h-4" />
-            <Loader2 v-else class="w-4 h-4 animate-spin" />
-            <span class="hidden lg:inline">{{ isAnalyzing ? 'Analyzing...' : 'Generate Insights' }}</span>
-          </button>
+          <TooltipProvider :delay-duration="0">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  v-if="currentDashboard && activeLayout.length > 0"
+                  @click="generateDashboardSummary"
+                  :disabled="isAnalyzing"
+                  class="p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition inline-flex items-center justify-center shrink-0 text-primary"
+                >
+                  <BrainCircuit v-if="!isAnalyzing" class="w-4 h-4" />
+                  <Loader2 v-else class="w-4 h-4 animate-spin" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Generate AI Insights</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         
         <CollaboratorAvatars :collaborators="collaborators" class="mr-2 hidden sm:flex" />
         
-        <button
-          v-if="currentDashboard && showFullToolbar"
-          @click="handleSave"
-          class="p-2 sm:px-3 sm:py-1.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition flex items-center gap-2 shadow-sm"
-          title="Save"
-        >
-          <Loader2 v-if="store.isSaving" class="w-4 h-4 animate-spin" />
-          <Save v-else class="w-4 h-4" />
-          <span class="hidden sm:inline">{{ store.isSaving ? 'Saving...' : 'Save' }}</span>
-        </button>
+        <TooltipProvider :delay-duration="0">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button
+                v-if="currentDashboard && showFullToolbar"
+                @click="handleSave"
+                class="p-2 text-sm font-medium rounded-md transition flex items-center justify-center shrink-0 shadow-sm border backdrop-blur-md"
+                :class="store.isSaving 
+                  ? 'bg-muted text-muted-foreground border-border' 
+                  : 'bg-primary/10 hover:bg-primary/20 text-primary border-primary/20'"
+              >
+                <Loader2 v-if="store.isSaving" class="w-4 h-4 animate-spin" />
+                <Save v-else class="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{{ store.isSaving ? 'Saving...' : 'Save Dashboard' }}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         
         <!-- Three Dots Menu -->
         <DropdownMenu>
