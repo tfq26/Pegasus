@@ -1069,20 +1069,16 @@ const downloadFile = (element: any) => {
 }
 
 // Layout State
-const settingsStore = useSettingsStore()
-// Use computed unref to avoid double-ref issues with Pinia setup store
 import { unref } from 'vue'
+import { useStorage } from '@vueuse/core'
+
+const settingsStore = useSettingsStore()
 const settings = computed(() => unref(settingsStore.settings))
 
-const isCompact = computed({
-  get: () => settings.value.compactMode,
-  set: (val) => settings.value.compactMode = val
-})
-const isLocked = ref(false)
-const showGrid = computed({
-  get: () => settings.value.showDashboardGrid,
-  set: (val) => settings.value.showDashboardGrid = val
-})
+// Persist view options to local storage
+const isCompact = useStorage('pegasus-dashboard-compact', false)
+const isLocked = useStorage('pegasus-dashboard-locked', false)
+const showGrid = useStorage('pegasus-dashboard-grid', true)
 
 const isShared = computed(() => route.path.includes('/shared/'))
 
