@@ -72,7 +72,7 @@
                 <Plus class="w-4 h-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>Add Element</TooltipContent>
+            <TooltipContent side="bottom">Add Element</TooltipContent>
           </Tooltip>
         </TooltipProvider>
 
@@ -109,7 +109,7 @@
                   <Loader2 v-else class="w-4 h-4 animate-spin" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Generate AI Insights</TooltipContent>
+              <TooltipContent side="bottom">Generate AI Insights</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </div>
@@ -131,7 +131,7 @@
                 <Save v-else class="w-4 h-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{{ store.isSaving ? 'Saving...' : 'Save Dashboard' }}</TooltipContent>
+            <TooltipContent side="bottom">{{ store.isSaving ? 'Saving...' : 'Save Dashboard' }}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         
