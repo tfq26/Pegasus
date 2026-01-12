@@ -137,9 +137,10 @@
                   Add Element
                 </DropdownMenuItem>
 
-                <DropdownMenuItem @click="showChat = !showChat">
+                <DropdownMenuItem @click="showChat = !showChat" class="relative">
                   <MessageSquare class="w-4 h-4 mr-2" />
                   Toggle Chat
+                  <span v-if="hasUnreadMessages" class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 </DropdownMenuItem>
 
                 <DropdownMenuItem 
@@ -834,17 +835,38 @@ const {
   deleteChatMessage,
   typingUsers,
   emitTypingStart,
-  emitTypingEnd
+  emitTypingEnd,
+  socket // Assuming socket is exposed by useCollaboration
 } = useCollaboration()
 
 const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
 
+const hasUnreadMessages = ref(false)
 const showChat = ref(false)
 const chatSidebarRef = ref<HTMLElement | null>(null)
 const chatToggleRef = ref<HTMLElement | null>(null)
 const dashboardContainer = ref<HTMLElement | null>(null)
 const dashboardChatRef = ref<any>(null)
 const isChatDetached = ref(false)
+
+// Watch chat state to clear unread
+watch(showChat, (val) => {
+  if (val) {
+    hasUnreadMessages.value = false
+  }
+})
+
+// Listen for new messages to toggle unread
+watch(() => socket.value, (s) => {
+  if (s) {
+    s.on('new_message', () => {
+      if (!showChat.value) {
+        hasUnreadMessages.value = true
+        // Also play sound?
+      }
+    })
+  }
+}, { immediate: true })
 
 const chatDragHandle = computed(() => dashboardChatRef.value?.headerRef)
 
