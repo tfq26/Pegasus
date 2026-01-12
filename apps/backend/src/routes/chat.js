@@ -199,6 +199,31 @@ const captureQueryPlan = async (adapter, query, provider) => {
     }
 }
 
+
+// Helper to capture execution plan
+const captureQueryPlan = async (adapter, query, provider) => {
+    try {
+        let planQuery = '';
+        const p = provider ? provider.toLowerCase() : '';
+
+        if (p.includes('postgres')) {
+            planQuery = `EXPLAIN (FORMAT JSON) ${query}`;
+        } else if (p.includes('mysql')) {
+            planQuery = `EXPLAIN FORMAT=JSON ${query}`;
+        } else if (p.includes('sqlite')) {
+            planQuery = `EXPLAIN QUERY PLAN ${query}`;
+        } else {
+            return `Execution plan not supported for provider: ${provider}`;
+        }
+
+        const plan = await adapter.query(planQuery);
+        return JSON.stringify(plan, null, 2);
+    } catch (e) {
+        console.warn('[Chat] Failed to capture query plan:', e.message);
+        return `Could not capture execution plan: ${e.message}`;
+    }
+}
+
 // Chat Routes
 chat.get("/chats", async (c) => {
     const token = getAuthToken(c)
@@ -830,6 +855,190 @@ Format: Markdown (using bullet points and bold text). Keep it professional and c
     }
 })
 
+chat.post("/ai/health-profile", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const quota = await checkAiQuota(payload.sub);
+        if (!quota.allowed) return c.json(quota, 403);
+
+        const { connectionId: rawConnId, model } = await c.req.json()
+        let connectionId = rawConnId;
+        if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
+
+        // Connection Setup
+        const [rs] = await db.query("SELECT * FROM connection WHERE id = $id", { id: connectionId })
+        const connRow = rs && rs[0] ? rs[0] : null
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        let provider = connRow.type || connRow.provider
+
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+        const adapterConfig = config[provider] || config[provider?.toLowerCase()]
+        const adapter = new Adapter(adapterConfig)
+        await adapter.connect()
+
+        // Gather Schema Stats
+        const tables = await adapter.listCollections();
+        const stats = {
+            totalTables: tables.length,
+            tables: []
+        };
+
+        // Sample up to 10 tables for quick stats
+        const sampleTables = tables.slice(0, 10);
+        for (const table of sampleTables) {
+            try {
+                // Quick count if possible, or select count
+                let count = 0;
+                if (adapter.query) {
+                    const countQ = provider === 'mongodb' ? null : `SELECT COUNT(*) as c FROM ${table} LIMIT 1`; // Just check existence? No, user wants rows.
+                    // Actually, COUNT(*) can be slow. Let's use COUNT(*) but maybe with timeout?
+                    // For now simple COUNT(*)
+                    const fullCountQ = provider === 'mongodb' ? null : `SELECT COUNT(*) as c FROM ${table}`;
+                    if (fullCountQ) {
+                        const res = await adapter.query(fullCountQ);
+                        count = Number(res[0]?.c || res[0]?.count || res[0]?.COUNT || 0);
+                    }
+                }
+                stats.tables.push({ name: table, rowCount: count });
+            } catch (e) {
+                stats.tables.push({ name: table, error: 'Could not count' });
+            }
+        }
+
+        const statsContext = `
+Database Provider: ${provider}
+Total Tables: ${stats.totalTables}
+Sample Tables Stats:
+${stats.tables.map(t => `- ${t.name}: ${t.rowCount !== undefined ? t.rowCount + ' rows' : t.error}`).join('\n')}
+${stats.totalTables > 10 ? `(...and ${stats.totalTables - 10} more)` : ''}
+        `;
+
+        const prompt = `You are a Database Health Specialist.
+Analyze this database profile:
+${statsContext}
+
+Generate a concise Health Report JSON:
+{
+  "status": "healthy" | "needs_attention" | "critical",
+  "summary": "One sentence summary.",
+  "recommendations": ["Tip 1", "Tip 2"]
+}
+
+Rules:
+- If tables have 0 rows, suggest checking data ingestion.
+- If too many tables (>50), suggest organizing.
+- If everything looks normal, status is "healthy".`;
+
+        const response = await aiClient.generateContent([
+            { role: 'user', content: prompt }
+        ], { model, json: true })
+
+        const usage = response.usage
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'health_profile', 'Health Check')
+
+        let result = {};
+        try {
+            let jsonText = response.text;
+            const match = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (match) jsonText = match[1];
+            result = JSON.parse(jsonText);
+        } catch (e) {
+            result = { status: 'unknown', summary: response.text, recommendations: [] };
+        }
+
+        return c.json(result)
+
+    } catch (e) {
+        console.error("Health Profile Error:", e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+
+
+chat.post("/ai/explain-table", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const quota = await checkAiQuota(payload.sub);
+        if (!quota.allowed) return c.json(quota, 403);
+
+        const { connectionId: rawConnId, tableName, model } = await c.req.json()
+
+        let connectionId = rawConnId;
+        if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
+
+        // Connection Setup
+        const [rs] = await db.query("SELECT * FROM connection WHERE id = $id", { id: connectionId })
+        const connRow = rs && rs[0] ? rs[0] : null
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        let provider = connRow.type || connRow.provider
+
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+        const adapterConfig = config[provider] || config[provider?.toLowerCase()]
+        const adapter = new Adapter(adapterConfig)
+        await adapter.connect()
+
+        // Get Schema Info (Columns)
+        let schemaInfo = '';
+        try {
+            const sampleQ = provider === 'mongodb' ? null : `SELECT * FROM ${tableName} LIMIT 3`;
+            let columns = [];
+            let sampleRows = [];
+
+            if (sampleQ && adapter.query) {
+                const res = await adapter.query(sampleQ);
+                sampleRows = res;
+                if (res.length > 0) {
+                    columns = Object.keys(res[0]);
+                }
+            }
+
+            schemaInfo = `
+Table: ${tableName}
+Columns: ${columns.join(', ')}
+Sample Data (3 rows):
+${JSON.stringify(sampleRows, null, 2)}
+            `;
+        } catch (e) {
+            schemaInfo = `Could not fetch sample data: ${e.message}`;
+        }
+
+        const prompt = `You are a Database Architect.
+Analyze this table schema and data:
+${schemaInfo}
+
+Task: Explain the purpose of this table, its likely relationships (foreign keys inferred from names), and the data it holds.
+Format: Markdown (using bullet points and bold text). Keep it professional and concise.`;
+
+        const response = await aiClient.generateContent([
+            { role: 'user', content: prompt }
+        ], { model })
+
+        const usage = response.usage
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'explain_table', 'Schema Explanation')
+
+        return c.json({ explanation: response.text })
+
+    } catch (e) {
+        console.error("Explain Table Error:", e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
 chat.post("/ai/analyze-formula-error", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -1042,6 +1251,177 @@ chat.post("/ai/data-wrangler", async (c) => {
     }
 })
 
+chat.post("/ai/explain-query", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const quota = await checkAiQuota(payload.sub);
+        if (!quota.allowed) return c.json(quota, 403);
+
+        const { query, connectionId: rawConnId, model } = await c.req.json()
+        let connectionId = rawConnId;
+        if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
+
+        // Get Provider & Adapter logic (reused from generate)
+        // Note: Ideally extract this connection setup to a reusable service method
+        const [rs] = await db.query("SELECT * FROM connection WHERE id = $id", { id: connectionId })
+        const connRow = rs && rs[0] ? rs[0] : null
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        let provider = connRow.type || connRow.provider
+        // ... (Provider derivation logic if needed, omitted for brevity as mainly covered)
+
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+        const adapterConfig = config[provider] || config[provider?.toLowerCase()]
+        const adapter = new Adapter(adapterConfig)
+        await adapter.connect()
+
+        // 1. Capture Plan
+        const executionPlan = await captureQueryPlan(adapter, query, provider);
+
+        // 2. AI Analysis
+        const prompt = `You are a Database Performance Expert. 
+Query: 
+\`\`\`sql
+${query}
+\`\`\`
+
+Execution Plan:
+\`\`\`json
+${executionPlan}
+\`\`\`
+
+Task: Explain this query in plain language and analyze its performance based on the plan.
+- What does it do?
+- Are there any potential bottlenecks (e.g., full table scans, missing indexes)?
+- Is it efficient?
+
+Keep it concise and actionable for a developer.`;
+
+        const response = await aiClient.generateContent([
+            { role: 'user', content: prompt }
+        ], { model })
+
+        const usage = response.usage
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'query_explain', 'Explain Query')
+
+        return c.json({
+            explanation: response.text,
+            plan: executionPlan
+        })
+
+    } catch (e) {
+        console.error("Explain Query User Error:", e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+chat.post("/ai/optimize-query", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const quota = await checkAiQuota(payload.sub);
+        if (!quota.allowed) return c.json(quota, 403);
+
+        const { query, connectionId: rawConnId, model } = await c.req.json()
+        let connectionId = rawConnId;
+        if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
+
+        // Connection Setup (Consolidate this in future)
+        const [rs] = await db.query("SELECT * FROM connection WHERE id = $id", { id: connectionId })
+        const connRow = rs && rs[0] ? rs[0] : null
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        let provider = connRow.type || connRow.provider
+
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
+
+        const adapterConfig = config[provider] || config[provider?.toLowerCase()]
+        const adapter = new Adapter(adapterConfig)
+        await adapter.connect()
+
+        const executionPlan = await captureQueryPlan(adapter, query, provider);
+
+        const prompt = `You are a SQL Optimization Expert.
+Original Query:
+\`\`\`sql
+${query}
+\`\`\`
+
+Execution Plan:
+\`\`\`json
+${executionPlan}
+\`\`\`
+
+Task: Optimize this query for better performance.
+- Rewrite the query if possible (e.g., using joins effectively, avoiding subqueries if needed).
+- Suggest indexes if applicable.
+- Explain WHY your version is better.
+
+Return JSON format:
+{
+  "optimizedQuery": "SELECT ...",
+  "explanation": "Markdown explanation..."
+}`;
+
+        const response = await aiClient.generateContent([
+            { role: 'user', content: prompt }
+        ], { model, json: true })
+
+        const usage = response.usage
+        await logAiUsage(payload.sub, usage?.totalTokens || usage?.total_tokens, model, 'query_optimize', 'Optimize Query')
+
+        // Parse JSON safely
+        let result = {};
+        try {
+            let jsonText = response.text;
+            const match = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (match) jsonText = match[1];
+            result = JSON.parse(jsonText);
+        } catch (e) {
+            result = { optimizedQuery: query, explanation: response.text }; // Fallback
+        }
+
+        return c.json(result)
+
+    } catch (e) {
+        console.error("Optimize Query Error:", e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+chat.post("/ai/data-wrangler", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const { prompt, model } = await c.req.json()
+
+        const response = await aiClient.generateContent([
+            { role: 'system', content: 'You are a code generator. Output only valid JavaScript code. Do not include markdown code blocks.' },
+            { role: 'user', content: prompt }
+        ], { model })
+
+        const usage = response.usage
+        await logAiUsage(userId, usage?.totalTokens || usage?.total_tokens, model, 'ai_wrangler', 'Data Transfromation')
+
+        return c.json({ code: response.text })
+    } catch (e) {
+        console.error("[Wrangler] Error:", e)
+        return c.json({ error: "Failed to generate transformation" }, 500)
+    }
+})
+
 chat.post("/ai/generate", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -1064,6 +1444,7 @@ chat.post("/ai/generate", async (c) => {
         }
 
         const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = await c.req.json()
+        const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = await c.req.json()
         let connectionId = rawConnId;
         if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
 
@@ -1079,7 +1460,21 @@ chat.post("/ai/generate", async (c) => {
         const rs = await db.query(
             "SELECT * FROM connection WHERE id = $id; SELECT settings FROM user WHERE id = $uid",
             { id: connectionId, uid: `user:${userId}` }
+        // 1. Fetch connection details and User Settings
+        // We fetch user settings here to respect global model preference
+        const rs = await db.query(
+            "SELECT * FROM connection WHERE id = $id; SELECT settings FROM user WHERE id = $uid",
+            { id: connectionId, uid: `user:${userId}` }
         )
+        const connRow = rs && rs[0] && rs[0][0] ? rs[0][0] : null
+
+        // Resolve active model from request OR user settings
+        let userSettings = null
+        let activeModel = null
+        if (rs && rs[1] && rs[1][0] && rs[1][0].settings) {
+            userSettings = rs[1][0].settings
+            activeModel = userSettings.activeModel
+        }
         const connRow = rs && rs[0] && rs[0][0] ? rs[0][0] : null
 
         // Resolve active model from request OR user settings
@@ -1106,21 +1501,32 @@ chat.post("/ai/generate", async (c) => {
                 config: {},
                 is_virtual: true
             };
+        } else if (connectionId === 'connection:local' && activeTable) {
+            // Allow ad-hoc local connection IF activeTable is provided
+            connRow = {
+                type: 'local',
+                provider: 'local',
+                config: {},
+                is_virtual: true
+            };
         } else {
             return c.json({ error: "Connection not found" }, 404)
         }
 
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config || {}
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config || {}
 
         // Debug: Show connection structure
         console.log('[Chat] Connection type:', connRow.type, '| provider:', connRow.provider)
 
         // Get provider
+        // Get provider
         let provider = connRow.type || connRow.provider
         if (!provider && config) {
             const configKeys = Object.keys(config).filter(k =>
                 ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'surrealdb'].includes(k.toLowerCase())
             )
+            if (configKeys.length > 0) provider = configKeys[0]
             if (configKeys.length > 0) provider = configKeys[0]
         }
 
@@ -1146,11 +1552,38 @@ chat.post("/ai/generate", async (c) => {
                 console.error(`[Chat] Provider not supported: "${provider}"`)
                 return c.json({ error: `Provider not supported: ${provider}` }, 400)
             }
+        let schemaInfo = {}
+        let adapter = null
+
+        if (provider === 'local' && connRow.is_virtual) {
+            console.log('[Chat] Using Ad-Hoc Local Schema');
+            if (adHocSchema) {
+                schemaInfo = { tables: [activeTable], detailedSchema: { [activeTable]: adHocSchema } };
+            } else {
+                console.warn('[Chat] Local connection requested but no adHocSchema provided');
+                // Try to fallback? Or fail?
+                // Proceed with empty schema, maybe AI can infer from prompts?
+            }
+        } else {
+            // 2. Fetch Schema
+            const providerLower = provider?.toLowerCase()
+            const Adapter = adapters[provider] || adapters[providerLower]
+            if (!Adapter) {
+                console.error(`[Chat] Provider not supported: "${provider}"`)
+                return c.json({ error: `Provider not supported: ${provider}` }, 400)
+            }
 
         const adapter = new Adapter(adapterConfig)
 
             let semanticContext = null;
+            let semanticContext = null;
 
+            try {
+                await adapter.connect()
+                const allTables = await adapter.listCollections()
+                // ... (Schema filtering logic would go here)
+                // For now, take top 50
+                schemaInfo = { tables: allTables.slice(0, 50), detailedSchema: {} }
             try {
                 await adapter.connect()
                 const allTables = await adapter.listCollections()
@@ -1165,7 +1598,21 @@ chat.post("/ai/generate", async (c) => {
                     // If there are very few tables, just fetch them all
                     schemaInfo.detailedSchema = await adapter.getSchema()
                 }
+                // LAZY LOADING: Only fetch schema for the active table immediately
+                if (activeTable && typeof adapter.getOneTableSchema === 'function') {
+                    schemaInfo.detailedSchema[activeTable] = await adapter.getOneTableSchema(activeTable)
+                } else if (allTables.length <= 3 && typeof adapter.getSchema === 'function') {
+                    // If there are very few tables, just fetch them all
+                    schemaInfo.detailedSchema = await adapter.getSchema()
+                }
 
+                // Fetch sample values for the active table (CRITICAL for accurate queries)
+                if (activeTable) {
+                    try {
+                        const sampleRows = await adapter.query(`SELECT * FROM ${activeTable} LIMIT 10`)
+                        if (sampleRows && sampleRows.length > 0) {
+                            const sampleValues = {}
+                            sampleValues[activeTable] = {}
                 // Fetch sample values for the active table (CRITICAL for accurate queries)
                 if (activeTable) {
                     try {
@@ -1182,6 +1629,14 @@ chat.post("/ai/generate", async (c) => {
                                     sampleValues[activeTable][col] = uniqueVals.slice(0, 5)
                                 }
                             })
+                            // Extract unique values for each column (up to 5 per column)
+                            const columns = Object.keys(sampleRows[0])
+                            columns.forEach(col => {
+                                const uniqueVals = [...new Set(sampleRows.map(r => r[col]).filter(v => v != null))]
+                                if (uniqueVals.length > 0 && uniqueVals.length <= 10) {
+                                    sampleValues[activeTable][col] = uniqueVals.slice(0, 5)
+                                }
+                            })
 
                             schemaInfo.sampleValues = sampleValues
                             console.log('[Chat] Fetched sample values:', JSON.stringify(sampleValues))
@@ -1190,7 +1645,18 @@ chat.post("/ai/generate", async (c) => {
                         console.warn('[Chat] Failed to fetch sample values:', e.message)
                     }
                 }
+                            schemaInfo.sampleValues = sampleValues
+                            console.log('[Chat] Fetched sample values:', JSON.stringify(sampleValues))
+                        }
+                    } catch (e) {
+                        console.warn('[Chat] Failed to fetch sample values:', e.message)
+                    }
+                }
 
+                // Debug: Log activeTable and schema info
+                console.log(`[Chat] DEBUG - activeTable: "${activeTable}"`);
+                console.log(`[Chat] DEBUG - schemaInfo.tables:`, schemaInfo.tables);
+                console.log(`[Chat] DEBUG - includes check: ${schemaInfo.tables && schemaInfo.tables.includes(activeTable)}`);
                 // Debug: Log activeTable and schema info
                 console.log(`[Chat] DEBUG - activeTable: "${activeTable}"`);
                 console.log(`[Chat] DEBUG - schemaInfo.tables:`, schemaInfo.tables);
@@ -1205,11 +1671,25 @@ chat.post("/ai/generate", async (c) => {
                             `SELECT * FROM sanitization_metadata WHERE original_table = $t OR original_table = $orig LIMIT 1`,
                             { t: activeTable, orig: `${activeTable}_original` }
                         );
+                // On-the-fly Interpretation for Raw Tables (while adapter is still connected)
+                if (activeTable && schemaInfo.tables && schemaInfo.tables.includes(activeTable)) {
+                    console.log(`[Chat] Checking for semantic metadata for ${activeTable}...`);
+                    try {
+                        // Try to find metadata for this table
+                        const [metaResult] = await db.query(
+                            `SELECT * FROM sanitization_metadata WHERE original_table = $t OR original_table = $orig LIMIT 1`,
+                            { t: activeTable, orig: `${activeTable}_original` }
+                        );
 
                         if (metaResult && metaResult[0]) {
                             const meta = metaResult[0];
                             console.log(`[Chat] Found semantic metadata for ${activeTable}`);
+                        if (metaResult && metaResult[0]) {
+                            const meta = metaResult[0];
+                            console.log(`[Chat] Found semantic metadata for ${activeTable}`);
 
+                            // Find the version object for the active table
+                            let versionObj = (meta.versions || []).find(v => v.table === activeTable);
                             // Find the version object for the active table
                             let versionObj = (meta.versions || []).find(v => v.table === activeTable);
 
@@ -1217,7 +1697,17 @@ chat.post("/ai/generate", async (c) => {
                             if (!versionObj && meta.versions && meta.versions.length > 0) {
                                 versionObj = meta.versions[meta.versions.length - 1];
                             }
+                            // Fallback to latest version if not found specific match
+                            if (!versionObj && meta.versions && meta.versions.length > 0) {
+                                versionObj = meta.versions[meta.versions.length - 1];
+                            }
 
+                            if (versionObj && versionObj.semantic_context) {
+                                semanticContext = versionObj.semantic_context;
+                            }
+                        } else {
+                            // No metadata found - do on-the-fly interpretation using RAW FILE
+                            console.log(`[Chat] No metadata found for ${activeTable}, attempting raw file interpretation...`);
                             if (versionObj && versionObj.semantic_context) {
                                 semanticContext = versionObj.semantic_context;
                             }
@@ -1230,7 +1720,16 @@ chat.post("/ai/generate", async (c) => {
                             if (uuidMatch) {
                                 const uploadId = `uploads:${uuidMatch[1]}`;
                                 console.log(`[Chat] Fetching raw file from ${uploadId}...`);
+                            // Extract upload ID from table name (format: data_{uuid}_{name})
+                            const uuidMatch = activeTable.match(/^data_([a-f0-9-]+)_/);
+                            if (uuidMatch) {
+                                const uploadId = `uploads:${uuidMatch[1]}`;
+                                console.log(`[Chat] Fetching raw file from ${uploadId}...`);
 
+                                try {
+                                    // Fetch the upload record with raw file data
+                                    const [uploadResult] = await db.query(`SELECT file_data, filename, format FROM ${uploadId}`);
+                                    const upload = uploadResult && uploadResult[0];
                                 try {
                                     // Fetch the upload record with raw file data
                                     const [uploadResult] = await db.query(`SELECT file_data, filename, format FROM ${uploadId}`);
@@ -1238,17 +1737,34 @@ chat.post("/ai/generate", async (c) => {
 
                                     if (upload && upload.file_data) {
                                         console.log(`[Chat] Found raw file: ${upload.filename} (${upload.format})`);
+                                    if (upload && upload.file_data) {
+                                        console.log(`[Chat] Found raw file: ${upload.filename} (${upload.format})`);
 
+                                        // Decode base64 file data
+                                        const fileBuffer = Buffer.from(upload.file_data, 'base64');
                                         // Decode base64 file data
                                         const fileBuffer = Buffer.from(upload.file_data, 'base64');
 
                                         // Parse the file to get original structure
                                         const { parseFile } = await import('../../utils/fileParser.js');
                                         const parsedData = await parseFile(fileBuffer, upload.filename);
+                                        // Parse the file to get original structure
+                                        const { parseFile } = await import('../../utils/fileParser.js');
+                                        const parsedData = await parseFile(fileBuffer, upload.filename);
 
                                         if (parsedData && parsedData.length > 0) {
                                             console.log(`[Chat] Parsed ${parsedData.length} rows from raw file`);
+                                        if (parsedData && parsedData.length > 0) {
+                                            console.log(`[Chat] Parsed ${parsedData.length} rows from raw file`);
 
+                                            // Interpret the raw data
+                                            const interpretation = await interpretDataset(activeTable, parsedData.slice(0, 20));
+                                            if (interpretation && interpretation.domain) {
+                                                semanticContext = {
+                                                    domain: interpretation.domain,
+                                                    columns: interpretation.columns
+                                                };
+                                                console.log(`[Chat] Raw file interpretation successful: ${interpretation.domain.domain}`);
                                             // Interpret the raw data
                                             const interpretation = await interpretDataset(activeTable, parsedData.slice(0, 20));
                                             if (interpretation && interpretation.domain) {
@@ -1295,12 +1811,72 @@ chat.post("/ai/generate", async (c) => {
                         console.warn(`[Chat] Semantic context fetch/interpretation failed:`, e);
                     }
                 }
+                                                // Async: Persist this metadata for future use
+                                                (async () => {
+                                                    try {
+                                                        const [exists] = await db.query(`SELECT id FROM sanitization_metadata WHERE original_table = $t LIMIT 1`, { t: activeTable });
+                                                        if (!exists || exists.length === 0) {
+                                                            await db.create('sanitization_metadata', {
+                                                                original_table: activeTable,
+                                                                logical_name: activeTable.replace(/^data_[^_]+_/, ''),
+                                                                current_version: 0,
+                                                                versions: [{
+                                                                    version: 0,
+                                                                    table: activeTable,
+                                                                    created_at: new Date(),
+                                                                    reason: 'On-the-fly Raw File Interpretation',
+                                                                    semantic_context: semanticContext
+                                                                }]
+                                                            });
+                                                            console.log(`[Chat] Persisted raw file metadata for ${activeTable}`);
+                                                        }
+                                                    } catch (err) {
+                                                        console.warn(`[Chat] Failed to persist metadata:`, err);
+                                                    }
+                                                })();
+                                            }
+                                        }
+                                    } else {
+                                        console.warn(`[Chat] No raw file data found in ${uploadId}`);
+                                    }
+                                } catch (err) {
+                                    console.warn(`[Chat] Raw file interpretation failed:`, err);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`[Chat] Semantic context fetch/interpretation failed:`, e);
+                    }
+                }
 
                 // Perform RAG Search (Semantic Retrieval) - Only if experimental feature is enabled
                 try {
                     const userFlags = await getUserFeatureFlags(db, userId);
                     const ragEnabled = userFlags.includes('rag-pipeline');
+                // Perform RAG Search (Semantic Retrieval) - Only if experimental feature is enabled
+                try {
+                    const userFlags = await getUserFeatureFlags(db, userId);
+                    const ragEnabled = userFlags.includes('rag-pipeline');
 
+                    if (ragEnabled) {
+                        // Note: aiSettings not yet available here, use latest model for RAG
+                        const ragResults = await RAGService.hybridSearch(prompt, userId, 5, 'gemini-3-flash-preview');
+                        if (ragResults && ragResults.length > 0) {
+                            semanticContext = semanticContext || {};
+                            semanticContext.knowledgeBase = ragResults.map(r => ({
+                                content: r.content,
+                                source: r.metadata.source,
+                                type: r.metadata.type,
+                                tableName: r.metadata.table_name
+                            }));
+                            console.log(`[Chat] RAG found ${ragResults.length} relevant chunks`);
+                        }
+                    } else {
+                        console.log(`[Chat] RAG skipped - experimental feature not enabled for user`);
+                    }
+                } catch (ragError) {
+                    console.warn("[Chat] RAG Search failed:", ragError.message);
+                }
                     if (ragEnabled) {
                         // Note: aiSettings not yet available here, use latest model for RAG
                         const ragResults = await RAGService.hybridSearch(prompt, userId, 5, 'gemini-3-flash-preview');
@@ -1326,8 +1902,20 @@ chat.post("/ai/generate", async (c) => {
             } finally {
                 try { await adapter.disconnect() } catch (e) { }
             }
+            } catch (e) {
+                console.warn("Schema fetch failed", e)
+            } finally {
+                try { await adapter.disconnect() } catch (e) { }
+            }
 
 
+            const aiContext = {
+                dialect: provider,
+                schema: schemaInfo,
+                previousContext: context,
+                semanticContext,
+                adapter
+            }
             const aiContext = {
                 dialect: provider,
                 schema: schemaInfo,
@@ -1343,10 +1931,22 @@ chat.post("/ai/generate", async (c) => {
                 aiSettings.modelId = userSettings.activeModel
                 aiSettings.temperature = userSettings.temperature
             }
+            // Fetch user settings
+            let aiSettings = { modelId: null, temperature: 0.7 }
+
+            if (userSettings) {
+                aiSettings.modelId = userSettings.activeModel
+                aiSettings.temperature = userSettings.temperature
+            }
 
             // Inject activeTable into settings for PromptBuilder
             aiSettings.activeTable = activeTable;
+            // Inject activeTable into settings for PromptBuilder
+            aiSettings.activeTable = activeTable;
 
+            // Override with request-specific settings if provided (takes precedence over DB/default)
+            if (temperature !== undefined && temperature !== null) aiSettings.temperature = Number(temperature);
+            if (maxTokens !== undefined && maxTokens !== null) aiSettings.maxTokens = Number(maxTokens);
             // Override with request-specific settings if provided (takes precedence over DB/default)
             if (temperature !== undefined && temperature !== null) aiSettings.temperature = Number(temperature);
             if (maxTokens !== undefined && maxTokens !== null) aiSettings.maxTokens = Number(maxTokens);
@@ -1354,9 +1954,16 @@ chat.post("/ai/generate", async (c) => {
             // ENABLE TOOLS (Lazy Load)
             const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
             aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
+            // ENABLE TOOLS (Lazy Load)
+            const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+            aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
 
             const result = await aiClient.generateQuery(prompt, aiContext, aiSettings)
+            const result = await aiClient.generateQuery(prompt, aiContext, aiSettings)
 
+            let generatedQuery = typeof result === 'string' ? result : result.text
+            const usage = typeof result === 'string' ? null : result.usage
+            const toolCalls = typeof result === 'string' ? null : result.toolCalls
             let generatedQuery = typeof result === 'string' ? result : result.text
             const usage = typeof result === 'string' ? null : result.usage
             const toolCalls = typeof result === 'string' ? null : result.toolCalls
@@ -1368,7 +1975,16 @@ chat.post("/ai/generate", async (c) => {
                     console.log('[Chat] Detected generate_table tool usage');
                     try {
                         const args = typeof tableCall.function.arguments === 'string' ? JSON.parse(tableCall.function.arguments) : tableCall.function.arguments;
+            // Handle Tool Calls (e.g. generate_table)
+            if (toolCalls && toolCalls.length > 0) {
+                const tableCall = toolCalls.find(tc => tc.function.name === 'generate_table')
+                if (tableCall) {
+                    console.log('[Chat] Detected generate_table tool usage');
+                    try {
+                        const args = typeof tableCall.function.arguments === 'string' ? JSON.parse(tableCall.function.arguments) : tableCall.function.arguments;
 
+                        // Generate actual data using AI
+                        const generatePrompt = `You are a data generation assistant. Create a table of data based on the following request:
                         // Generate actual data using AI
                         const generatePrompt = `You are a data generation assistant. Create a table of data based on the following request:
 
@@ -1401,7 +2017,28 @@ IMPORTANT:
                             model: aiSettings.modelId,
                             json: true
                         });
+                        console.log('[Chat] Generating table data...');
+                        const dataResponse = await aiClient.generateContent([
+                            { role: 'user', content: generatePrompt }
+                        ], {
+                            model: aiSettings.modelId,
+                            json: true
+                        });
 
+                        let finalData;
+                        try {
+                            const cleaned = typeof dataResponse === 'string' ? dataResponse : (dataResponse.text || JSON.stringify(dataResponse));
+                            finalData = JSON.parse(cleaned.replace(/```json|```/g, '').trim());
+                        } catch (e) {
+                            console.warn('[Chat] Failed to parse generated table data, attempting to use raw text if JSON-like', e);
+                            // Try regex extraction if JSON parse failed
+                            const jsonMatch = (typeof dataResponse === 'string' ? dataResponse : dataResponse.text).match(/\{[\s\S]*\}/);
+                            if (jsonMatch) {
+                                finalData = JSON.parse(jsonMatch[0]);
+                            } else {
+                                throw e;
+                            }
+                        }
                         let finalData;
                         try {
                             const cleaned = typeof dataResponse === 'string' ? dataResponse : (dataResponse.text || JSON.stringify(dataResponse));
@@ -1427,7 +2064,23 @@ IMPORTANT:
                             openInNewTab: args.openInNewTab !== false,
                             usage: dataResponse.usage || usage
                         })
+                        // Return immediately as a generated table response
+                        return c.json({
+                            type: 'generated_table',
+                            tableName: finalData.tableName || args.tableName,
+                            headers: finalData.headers,
+                            rows: finalData.rows,
+                            description: finalData.description,
+                            openInNewTab: args.openInNewTab !== false,
+                            usage: dataResponse.usage || usage
+                        })
 
+                    } catch (e) {
+                        console.error('[Chat] Failed to execute generate_table tool:', e);
+                        // Fallback to text if tool fails
+                    }
+                }
+            }
                     } catch (e) {
                         console.error('[Chat] Failed to execute generate_table tool:', e);
                         // Fallback to text if tool fails

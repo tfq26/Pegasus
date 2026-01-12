@@ -107,6 +107,37 @@ const db = new Proxy(rawDb, {
     }
 });
 
+// Proxy wrapper to handle token expiration automatically
+const db = new Proxy(rawDb, {
+    get(target, prop) {
+        const value = Reflect.get(target, prop);
+        if (typeof value === 'function' && ['query', 'select', 'create', 'update', 'delete', 'patch', 'merge'].includes(prop)) {
+            return async (...args) => {
+                try {
+                    return await value.apply(target, args);
+                } catch (e) {
+                    // Catch SurrealDB token expiration error
+                    if (e.message && e.message.includes('token has expired')) {
+                        console.warn(`[SurrealDB] Token expired during ${prop}. Attempting automatic re-signin...`);
+                        try {
+                            await target.signin({ username: user, password: pass });
+                            await target.use({ namespace: ns, database: dbName });
+                            console.log(`[SurrealDB] Re-signin successful. Retrying ${prop}...`);
+                            // Retry the original operation once
+                            return await target[prop](...args);
+                        } catch (reauthErr) {
+                            console.error('[SurrealDB] Automatic re-signin failed:', reauthErr.message);
+                            throw e; // Throw the original expiry error if re-signin fails
+                        }
+                    }
+                    throw e;
+                }
+            };
+        }
+        return value;
+    }
+});
+
 // Function to try connecting with a specific URL
 async function tryConnect(targetUrl) {
     console.log(`[SurrealDB] Attempting connection to: ${targetUrl}`);
