@@ -215,6 +215,11 @@ export function useCollaboration() {
         socket.value.emit('typing_end', dashboardId);
     };
 
+    const emitDashboardUpdate = (dashboardId: string, updateData: any) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('dashboard_update', { dashboardId, ...updateData });
+    };
+
     return {
         isConnected,
         isAIThinking,
@@ -233,6 +238,7 @@ export function useCollaboration() {
         deleteChatMessage,
         emitTypingStart,
         emitTypingEnd,
+        emitDashboardUpdate,
         socket
     };
 }

@@ -854,6 +854,7 @@ const {
   typingUsers,
   emitTypingStart,
   emitTypingEnd,
+  emitDashboardUpdate,
   socket // Assuming socket is exposed by useCollaboration
 } = useCollaboration()
 
@@ -881,6 +882,14 @@ watch(() => socket.value, (s) => {
       if (!showChat.value) {
         hasUnreadMessages.value = true
         // Also play sound?
+      }
+    })
+
+    s.on('dashboard_updated', async (data: any) => {
+      if (data.dashboardId === currentDashboard.value?.id) {
+        // Refresh dashboard data to reflect live changes
+        // Using store action to re-fetch
+        await store.selectDashboard(currentDashboard.value.id)
       }
     })
   }
@@ -1189,6 +1198,9 @@ const handleCreateDashboard = async () => {
 const handleSave = async () => {
   try {
     await store.saveCurrentDashboard()
+    if (currentDashboard.value) {
+      emitDashboardUpdate(currentDashboard.value.id, { type: 'refresh' })
+    }
     toast.success('Dashboard saved')
   } catch (e) {
     toast.error('Failed to save dashboard')

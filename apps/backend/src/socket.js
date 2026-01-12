@@ -451,6 +451,16 @@ export function initSocketServer(server, allowedOrigins) {
             }
         });
 
+        // Live Dashboard Updates
+        socket.on("dashboard_update", (data) => {
+            const room = getRoom(data.dashboardId);
+            if (!room) return;
+
+            // Broadcast the update to everyone else in the room
+            // data structure: { dashboardId, type: 'element_update'|'element_delete'|'settings', payload: ... }
+            socket.to(room).emit("dashboard_updated", data);
+        });
+
         // Handle disconnect
         socket.on("disconnecting", () => {
             // socket.rooms is a Set containing the socket ID and the rooms
