@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import {
     fetchDashboards,
     createDashboard,
@@ -27,12 +27,25 @@ export interface DashboardElement {
     created_by_name?: string
 }
 
+export interface DashboardPage {
+    id: string
+    title: string
+    order: number
+    layout: any[]
+    elements: DashboardElement[]
+}
+
 export interface Dashboard {
     id: string
     title: string
     data: {
-        layout: any[]
-        elements: DashboardElement[]
+        // Legacy root fields (kept for backward compat or migrated)
+        layout?: any[]
+        elements?: DashboardElement[]
+
+        // New Pages
+        pages?: DashboardPage[]
+
         parameters?: Record<string, any>
     }
     is_public: boolean
@@ -45,6 +58,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const dashboards = ref<Dashboard[]>([])
     const recentDashboards = ref<Dashboard[]>([])
     const currentDashboard = ref<Dashboard | null>(null)
+    const activePageId = ref<string | null>(null)
     const parameters = ref<Record<string, any>>({})
     const isLoading = ref(false)
     const error = ref<string | null>(null)
@@ -52,6 +66,57 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const isSaving = ref(false)
     const isAnalyzing = ref(false)
     const analysisResult = ref<string | null>(null)
+
+    // Helper: Migrate legacy dashboard to have pages
+    const migrateDashboard = (dashboard: Dashboard) => {
+        if (!dashboard.data) {
+            dashboard.data = { layout: [], elements: [], pages: [], parameters: {} }
+        }
+
+        // If no pages exist but we have root layout/elements, move them to Page 1
+        if ((!dashboard.data.pages || dashboard.data.pages.length === 0) &&
+            (dashboard.data.layout?.length || dashboard.data.elements?.length)) {
+
+            const pageId = crypto.randomUUID()
+            dashboard.data.pages = [{
+                id: pageId,
+                title: 'Overview', // Default title
+                order: 0,
+                layout: dashboard.data.layout || [],
+                elements: dashboard.data.elements || []
+            }]
+
+            // Clear root fields to avoid confusion/duplication effectively
+            // But we might want to keep them 'in sync' for a while if older clients use them
+            // For now, the source of truth becomes 'pages'
+            dashboard.data.layout = []
+            dashboard.data.elements = []
+
+            return pageId
+        } else if (dashboard.data.pages && dashboard.data.pages.length > 0) {
+            // Already has pages
+            // Ensure they are sorted
+            dashboard.data.pages.sort((a, b) => a.order - b.order)
+            return dashboard.data.pages[0].id
+        } else {
+            // Empty dashboard, create first page
+            const pageId = crypto.randomUUID()
+            dashboard.data.pages = [{
+                id: pageId,
+                title: 'Overview',
+                order: 0,
+                layout: [],
+                elements: []
+            }]
+            return pageId
+        }
+    }
+
+    // Get current active page object
+    const activePage = computed(() => {
+        if (!currentDashboard.value?.data?.pages) return null
+        return currentDashboard.value.data.pages.find(p => p.id === activePageId.value)
+    })
 
     const loadDashboards = async () => {
         isLoading.value = true
@@ -80,9 +145,15 @@ export const useDashboardStore = defineStore('dashboard', () => {
         // If we already have the dashboard and not forcing refresh, just set it
         const existing = dashboards.value.find(d => d.id === id)
         if (existing && !forceRefresh) {
-            currentDashboard.value = existing
+            currentDashboard.value = JSON.parse(JSON.stringify(existing)) // Deep copy to avoid reference issues
             // Initialize parameters from dashboard data
             parameters.value = existing.data?.parameters || {}
+
+            // Migrate if needed and set active page
+            const pageId = migrateDashboard(currentDashboard.value!)
+            if (!activePageId.value || !currentDashboard.value!.data.pages?.find(p => p.id === activePageId.value)) {
+                activePageId.value = pageId
+            }
         }
 
         // Always fetch fresh data in background if we strictly want consistency, 
@@ -97,6 +168,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
             const dashboard = await fetchDashboard(id)
             currentDashboard.value = dashboard
             parameters.value = dashboard.data?.parameters || {}
+
+            // Migrate and set active page
+            const pageId = migrateDashboard(currentDashboard.value!)
+            // Reset active page to first page on fresh load
+            activePageId.value = pageId
 
             // Update list item if needed
             const index = dashboards.value.findIndex(d => d.id === id)
@@ -117,7 +193,10 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
         // If we have a current dashboard, we should ideally sync parameters back to its data
         if (currentDashboard.value) {
-            if (!currentDashboard.value.data) currentDashboard.value.data = { layout: [], elements: [], parameters: {} }
+            if (!currentDashboard.value.data) {
+                // Should be covered by migrate, but safe guard
+                currentDashboard.value.data = { messages: [], layout: [], elements: [], pages: [], parameters: {} } as any
+            }
             currentDashboard.value.data.parameters = { ...parameters.value }
         }
     }
@@ -126,7 +205,22 @@ export const useDashboardStore = defineStore('dashboard', () => {
         isLoading.value = true
         error.value = null
         try {
-            const { id } = await createDashboard(title, { layout: [], elements: [], parameters: {} })
+            // Create with initial page structure
+            const pageId = crypto.randomUUID()
+            const initialData = {
+                layout: [],
+                elements: [],
+                pages: [{
+                    id: pageId,
+                    title: 'Overview',
+                    order: 0,
+                    layout: [],
+                    elements: []
+                }],
+                parameters: {}
+            }
+
+            const { id } = await createDashboard(title, initialData)
             await loadDashboards()
             // We can just fetch the single new dashboard instead of reloading all, but loadDashboards is fine for now
             await selectDashboard(id, true)
@@ -139,6 +233,54 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    // New Page Actions
+    const addPage = async (title: string = 'New Page') => {
+        if (!currentDashboard.value?.data?.pages) return
+
+        // Calculate new order
+        const maxOrder = Math.max(...currentDashboard.value.data.pages.map(p => p.order), -1)
+
+        const newPage: DashboardPage = {
+            id: crypto.randomUUID(),
+            title,
+            order: maxOrder + 1,
+            layout: [],
+            elements: []
+        }
+
+        currentDashboard.value.data.pages.push(newPage)
+        activePageId.value = newPage.id
+        await saveCurrentDashboard()
+    }
+
+    const removePage = async (pageId: string) => {
+        if (!currentDashboard.value?.data?.pages) return
+        if (currentDashboard.value.data.pages.length <= 1) {
+            throw new Error("Cannot delete the last page")
+        }
+
+        const index = currentDashboard.value.data.pages.findIndex(p => p.id === pageId)
+        if (index === -1) return
+
+        currentDashboard.value.data.pages.splice(index, 1)
+
+        // If we deleted the active page, switch to the first available
+        if (activePageId.value === pageId) {
+            activePageId.value = currentDashboard.value.data.pages[0].id
+        }
+
+        await saveCurrentDashboard()
+    }
+
+    const renamePage = async (pageId: string, newTitle: string) => {
+        if (!currentDashboard.value?.data?.pages) return
+        const page = currentDashboard.value.data.pages.find(p => p.id === pageId)
+        if (page) {
+            page.title = newTitle
+            await saveCurrentDashboard()
+        }
+    }
+
     const saveCurrentDashboard = async () => {
         if (!currentDashboard.value) return
         // Use isSaving instead of isLoading to prevent UI blocking
@@ -146,6 +288,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
         console.log('[DashboardStore] saveCurrentDashboard called (background)')
 
+        // Ensure we save the full structure including pages
         const payload = {
             title: currentDashboard.value.title,
             data: {
@@ -213,12 +356,22 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
             if (!dashboard) throw new Error('Dashboard not found')
 
-            // Ensure data exists
-            const currentData = dashboard.data || { layout: [], elements: [], parameters: {} }
+            // Ensure data exists and is migrated
+            if (!dashboard.data) dashboard.data = { layout: [], elements: [], pages: [], parameters: {} } as any
+
+            // Ensure we target the ACTIVE PAGE (or the first page if not active)
+            let targetPage = dashboard.data.pages?.find(p => p.id === activePageId.value)
+            if (!targetPage) {
+                // Fallback to migration logic if pages missing
+                const pid = migrateDashboard(dashboard)
+                targetPage = dashboard.data.pages!.find(p => p.id === pid)!
+                activePageId.value = pid
+            }
+
             const newId = crypto.randomUUID()
 
             // Calculate next position
-            const currentLayout = currentData.layout || []
+            const currentLayout = targetPage.layout || []
             let y = 0
             if (currentLayout.length > 0) {
                 y = Math.max(...currentLayout.map((item: any) => (item.y || 0) + (item.h || 0)))
@@ -237,41 +390,20 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 ? `${identityService.user.firstName || ''} ${identityService.user.lastName || ''}`.trim() || identityService.user.email
                 : 'Unknown'
 
-            const updatedData = {
-                ...currentData,
-                layout: [...currentLayout, newLayoutItem],
-                elements: [...(currentData.elements || []), {
-                    ...element,
-                    id: newId,
-                    created_by_name: userName
-                }]
-            }
-
-            // apply optimistic update to currentDashboard
-            if (currentDashboard.value?.id === dashboardId) {
-                currentDashboard.value = {
-                    ...currentDashboard.value,
-                    data: updatedData
-                }
-            }
-
-            // apply optimistic update to list
-            const index = dashboards.value.findIndex(d => d.id === dashboardId)
-            if (index !== -1) {
-                const existing = dashboards.value[index]
-                if (existing) {
-                    dashboards.value[index] = {
-                        ...existing,
-                        data: updatedData
-                    }
-                }
-            }
+            // Add only to the specific page
+            targetPage.layout.push(newLayoutItem)
+            targetPage.elements.push({
+                ...element,
+                id: newId,
+                created_by_name: userName
+            })
 
             console.log('[DashboardStore] Optimistic update applied. Syncing to backend...')
 
             // Sync to backend
+            // We send the whole data object which now contains the updated page
             await updateDashboard(dashboardId, {
-                data: updatedData
+                data: dashboard.data
             })
             console.log('[DashboardStore] Backend sync completed')
 
@@ -291,7 +423,20 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const executeElementQuery = async (elementId: string, forceRefresh = false) => {
         if (!currentDashboard.value) return
 
-        const element = currentDashboard.value.data.elements.find(el => el.id === elementId)
+        // Find element across all pages
+        let foundElement: DashboardElement | undefined
+        let foundPage: DashboardPage | undefined
+
+        for (const page of currentDashboard.value.data.pages || []) {
+            const el = page.elements.find(e => e.id === elementId)
+            if (el) {
+                foundElement = el
+                foundPage = page
+                break
+            }
+        }
+
+        const element = foundElement
         if (!element || !element.query || !element.connectionId) return
 
         // Check cache
@@ -314,59 +459,61 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 query: query
             })
 
-            // Update element data in current dashboard
-            const elementIndex = currentDashboard.value.data.elements.findIndex(el => el.id === elementId)
-            if (elementIndex !== -1) {
-                const updatedElement = { ...currentDashboard.value.data.elements[elementIndex] } as DashboardElement
-                updatedElement.lastResult = body.result
+            // Update element data in current dashboard (in the correct page)
+            if (foundPage) {
+                const elementIndex = foundPage.elements.findIndex(el => el.id === elementId)
+                if (elementIndex !== -1) {
+                    const updatedElement = { ...foundPage.elements[elementIndex] } as DashboardElement
+                    updatedElement.lastResult = body.result
 
-                // Cache logic: Default to 5 minutes if not specified, 0 means no cache
-                const freq = updatedElement.refreshFrequency !== undefined ? updatedElement.refreshFrequency : 5
-                if (freq > 0) {
-                    updatedElement.cacheUntil = now + (freq * 60 * 1000)
-                }
-
-                if (updatedElement.type === 'stat') {
-                    const firstRow = body.result?.[0]
-                    if (firstRow) {
-                        const keys = Object.keys(firstRow)
-
-                        // 1. Identify Numeric and Categorical Columns
-                        const numericKeys = keys.filter(k => typeof firstRow[k] === 'number')
-                        const categoricalKeys = keys.filter(k => typeof firstRow[k] === 'string')
-
-                        // 2. Select Value Key (Numeric prefered)
-                        const preferredValueNames = ['value', 'stat', 'total', 'count', 'amount', 'salary', 'price', 'cost']
-                        let valueKey = numericKeys.find(k => preferredValueNames.includes(k.toLowerCase())) || numericKeys[0] || keys[0]
-
-                        // 3. Select Label Key (Categorical prefered)
-                        const preferredLabelNames = ['name', 'label', 'title', 'category', 'type', 'group']
-                        let labelKey = categoricalKeys.find(k => preferredLabelNames.includes(k.toLowerCase())) || categoricalKeys[0]
-
-                        // Update config
-                        if (valueKey !== undefined) {
-                            updatedElement.config.value = firstRow[valueKey]
-                        }
-                        if (labelKey !== undefined) {
-                            updatedElement.config.label = firstRow[labelKey]
-                        }
+                    // Cache logic: Default to 5 minutes if not specified, 0 means no cache
+                    const freq = updatedElement.refreshFrequency !== undefined ? updatedElement.refreshFrequency : 5
+                    if (freq > 0) {
+                        updatedElement.cacheUntil = now + (freq * 60 * 1000)
                     }
-                } else if (body.result && Array.isArray(body.result)) {
-                    // Transform raw result to chart config using local generator
-                    const { generateChartConfig } = await import('@/lib/chartGenerator')
-                    const newConfig = generateChartConfig(body.result, element.query)
 
-                    if (newConfig && newConfig.config && newConfig.config.data) {
-                        updatedElement.config.data = newConfig.config.data
+                    if (updatedElement.type === 'stat') {
+                        const firstRow = body.result?.[0]
+                        if (firstRow) {
+                            const keys = Object.keys(firstRow)
+
+                            // 1. Identify Numeric and Categorical Columns
+                            const numericKeys = keys.filter(k => typeof firstRow[k] === 'number')
+                            const categoricalKeys = keys.filter(k => typeof firstRow[k] === 'string')
+
+                            // 2. Select Value Key (Numeric prefered)
+                            const preferredValueNames = ['value', 'stat', 'total', 'count', 'amount', 'salary', 'price', 'cost']
+                            let valueKey = numericKeys.find(k => preferredValueNames.includes(k.toLowerCase())) || numericKeys[0] || keys[0]
+
+                            // 3. Select Label Key (Categorical prefered)
+                            const preferredLabelNames = ['name', 'label', 'title', 'category', 'type', 'group']
+                            let labelKey = categoricalKeys.find(k => preferredLabelNames.includes(k.toLowerCase())) || categoricalKeys[0]
+
+                            // Update config
+                            if (valueKey !== undefined) {
+                                updatedElement.config.value = firstRow[valueKey]
+                            }
+                            if (labelKey !== undefined) {
+                                updatedElement.config.label = firstRow[labelKey]
+                            }
+                        }
+                    } else if (body.result && Array.isArray(body.result)) {
+                        // Transform raw result to chart config using local generator
+                        const { generateChartConfig } = await import('@/lib/chartGenerator')
+                        const newConfig = generateChartConfig(body.result, element.query)
+
+                        if (newConfig && newConfig.config && newConfig.config.data) {
+                            updatedElement.config.data = newConfig.config.data
+                        } else {
+                            // Fallback just in case generator fails
+                            updatedElement.config.data = body.result
+                        }
                     } else {
-                        // Fallback just in case generator fails
                         updatedElement.config.data = body.result
                     }
-                } else {
-                    updatedElement.config.data = body.result
-                }
 
-                currentDashboard.value.data.elements[elementIndex] = updatedElement
+                    foundPage.elements[elementIndex] = updatedElement
+                }
             }
 
             return body.result
@@ -400,36 +547,66 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 title = `${baseTitle} (${counter})`
             }
             // Create a new dashboard with the shared data
-            // We need to regenerate IDs for elements to avoid conflicts if we ever merge or just to be clean
-            const elements = dashboardData.data.elements.map((el: any): DashboardElement => ({
-                id: crypto.randomUUID(),
-                type: el.type || 'chart',
-                title: el.title || 'Untitled',
-                config: el.config || {},
-                query: el.query,
-                connectionId: el.connectionId,
-                lastResult: el.lastResult,
-                cacheUntil: el.cacheUntil,
-                refreshFrequency: el.refreshFrequency
-            }))
+            // We need to regenerate IDs for elements to avoid conflicts
+            // Supports pages if present
+            const newData = { ...dashboardData.data, layout: [], elements: [] } // Clear legacy root
 
-            // We also need to update the layout to reference the new element IDs
-            // This is tricky because layout items map to element IDs via 'i' property
-            // Let's create a map of old ID -> new ID
-            const idMap = new Map()
-            dashboardData.data.elements.forEach((el: any, index: number) => {
-                idMap.set(el.id, elements[index].id)
-            })
+            if (dashboardData.data.pages && dashboardData.data.pages.length > 0) {
+                newData.pages = dashboardData.data.pages.map((page: any) => {
+                    const pageElements = page.elements.map((el: any) => ({
+                        ...el,
+                        id: crypto.randomUUID(),
+                        connectionId: el.connectionId // retain connection ID?? might be invalid if connections differ
+                    }))
 
-            const layout = dashboardData.data.layout.map((item: any) => ({
-                ...item,
-                i: idMap.get(item.i) || item.i // Fallback to old ID if not found (shouldn't happen)
-            }))
+                    // Remap layout
+                    const idMap = new Map()
+                    page.elements.forEach((el: any, i: number) => idMap.set(el.id, pageElements[i].id))
 
-            const newData = {
-                layout,
-                elements,
-                parameters: dashboardData.data.parameters || {}
+                    const pageLayout = page.layout.map((item: any) => ({
+                        ...item,
+                        i: idMap.get(item.i) || item.i
+                    }))
+
+                    return {
+                        ...page,
+                        id: crypto.randomUUID(),
+                        elements: pageElements,
+                        layout: pageLayout
+                    }
+                })
+            } else {
+                // Legacy import
+                const elements = dashboardData.data.elements.map((el: any): DashboardElement => ({
+                    id: crypto.randomUUID(),
+                    type: el.type || 'chart',
+                    title: el.title || 'Untitled',
+                    config: el.config || {},
+                    query: el.query,
+                    connectionId: el.connectionId,
+                    lastResult: el.lastResult,
+                    cacheUntil: el.cacheUntil,
+                    refreshFrequency: el.refreshFrequency
+                }))
+
+                const idMap = new Map()
+                dashboardData.data.elements.forEach((el: any, index: number) => {
+                    idMap.set(el.id, elements[index].id)
+                })
+
+                const layout = dashboardData.data.layout.map((item: any) => ({
+                    ...item,
+                    i: idMap.get(item.i) || item.i
+                }))
+
+                // Convert to page 1
+                newData.pages = [{
+                    id: crypto.randomUUID(),
+                    title: 'Overview',
+                    order: 0,
+                    layout,
+                    elements
+                }]
             }
 
             const { id } = await createDashboard(title, newData)
@@ -447,7 +624,12 @@ export const useDashboardStore = defineStore('dashboard', () => {
         if (!currentDashboard.value) return
 
         console.log(`[DashboardStore] Refreshing all elements (force=${forceRefresh})`)
-        const elements = currentDashboard.value.data.elements
+        const elements = [] as DashboardElement[]
+
+        // Collect all elements from all pages
+        currentDashboard.value.data.pages?.forEach(p => {
+            elements.push(...p.elements)
+        })
 
         // Execute all queries in parallel
         const promises = elements
@@ -466,6 +648,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         dashboards,
         recentDashboards,
         currentDashboard,
+        activePageId,
+        activePage,
         parameters,
         isLoading,
         isSaving,
@@ -483,6 +667,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
         addElementToDashboard,
         executeElementQuery,
         refreshDashboard,
-        importDashboard
+        importDashboard,
+        addPage,
+        removePage,
+        renamePage
     }
 })

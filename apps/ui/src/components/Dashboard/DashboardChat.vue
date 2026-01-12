@@ -1,20 +1,30 @@
 
 <template>
-  <div class="flex flex-col h-full border-l border-border bg-card w-[320px] relative overflow-hidden">
+  <div class="flex flex-col h-full border-l border-border bg-card w-auto relative overflow-hidden">
     <!-- Header -->
-    <div class="p-3 border-b border-border flex items-center justify-between z-10 bg-card">
-      <h3 class="font-semibold text-sm">Chat</h3>
-      <button 
-        @click="$emit('close')" 
-        class="p-2 hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors text-muted-foreground"
-        title="Close Chat"
-      >
-        <X class="w-5 h-5" />
-      </button>
+    <div ref="headerRef" class="chat-drag-handle p-3 border-b border-border flex items-center justify-between z-10 bg-card cursor-move">
+      <h3 class="font-semibold text-sm pointer-events-none">Chat</h3>
+      <div class="flex items-center gap-1">
+        <button 
+          @click="$emit('toggle-detach')" 
+          class="p-2 hover:bg-muted rounded-md transition-colors text-muted-foreground hidden sm:flex"
+          :title="isDetached ? 'Dock to right' : 'Detach to float'"
+        >
+          <Minimize2 v-if="isDetached" class="w-4 h-4" />
+          <Maximize2 v-else class="w-4 h-4" />
+        </button>
+        <button 
+          @click="$emit('close')" 
+          class="p-2 hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors text-muted-foreground"
+          title="Close Chat"
+        >
+          <X class="w-5 h-5" />
+        </button>
+      </div>
     </div>
 
     <!-- Messages List -->
-    <div ref="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
+    <div ref="messagesContainer" class="flex-1 overflow-y-auto pl-2 pr-0 py-2 space-y-4 scroll-smooth">
       <div v-if="messages.length === 0" class="text-center text-muted-foreground text-sm py-8">
         No messages yet. Say hello!
       </div>
@@ -23,7 +33,7 @@
         v-for="msg in messages" 
         :key="msg.id" 
         :id="`msg-${msg.id}`"
-        class="flex flex-col gap-1 group relative transition-all duration-500"
+        class="flex flex-col gap-1 group relative transition-all duration-500 mr-1"
         :class="[
           { 'items-end': isCurrentUser(msg.user.id) },
           { 'pulse-highlight': pulsingMessageId === msg.id }
@@ -70,7 +80,7 @@
                 msg.isAIResponse
                   ? 'bg-violet-500/10 border border-violet-500/20 text-foreground'
                   : isCurrentUser(msg.user.id) 
-                    ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/95' 
+                    ? 'bg-violet-700 text-white shadow-sm hover:bg-violet-800 dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90' 
                     : 'bg-muted text-foreground hover:bg-muted/80'
               ]"
             >
@@ -91,7 +101,10 @@
 
               <!-- Normal Mode -->
               <template v-else>
-                <span v-html="renderContent(msg.content, msg.mentions)"></span>
+                <div 
+                  class="prose prose-sm dark:prose-invert max-w-none prose-p:leading-normal prose-pre:my-1 prose-pre:bg-muted/50 prose-pre:border prose-pre:border-border"
+                  v-html="renderContent(msg.content, msg.mentions)"
+                ></div>
                 
                 <!-- Images -->
                 <div v-if="msg.images?.length" class="mt-2 space-y-2">
@@ -167,6 +180,21 @@
         @close="closeMentionPopup"
       />
       
+      <!-- Typing Indicator -->
+      <div v-if="typingUsers?.length" class="absolute -top-6 left-4 text-[10px] text-muted-foreground bg-card/80 backdrop-blur px-2 py-0.5 rounded-t-md animate-in fade-in slide-in-from-bottom-1 flex items-center gap-1.5 border border-b-0 border-border/50">
+        <div class="flex items-center gap-0.5">
+          <span class="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+          <span class="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+          <span class="w-1 h-1 bg-primary rounded-full animate-bounce"></span>
+        </div>
+        <span>
+          {{ typingUsers.length === 1 
+              ? `${typingUsers[0].firstName || 'Someone'} is typing...` 
+              : `${typingUsers.length} people are typing...` 
+          }}
+        </span>
+      </div>
+
       <form @submit.prevent="sendMessage" class="flex gap-2 items-end">
         <!-- Image Upload Button -->
         <label class="p-2 hover:bg-muted rounded-md cursor-pointer text-muted-foreground hover:text-foreground transition-colors shrink-0 mb-0.5">
@@ -185,9 +213,10 @@
             ref="inputRef"
             v-model="newMessage"
             placeholder="Type @ to mention..."
-            class="w-full bg-muted rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary min-h-[40px] max-h-[120px] resize-none overflow-y-auto pt-[10px]"
+            class="w-full bg-muted rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary h-[60px] resize-none overflow-y-auto pt-[10px]"
             @input="handleInput"
             @keydown="handleKeydown"
+            @paste="handlePaste"
             rows="1"
           ></textarea>
         </div>
@@ -221,11 +250,12 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { 
   X, Send, Sparkles, Paperclip, CornerUpRight, RotateCcw, 
-  Copy, Edit2, Trash2, CornerDownRight 
+  Copy, Edit2, Trash2, CornerDownRight, Maximize2, Minimize2
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { toast } from '@/composables/useNotifications'
 import MentionPopup from './MentionPopup.vue'
+import MarkdownIt from 'markdown-it'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -244,15 +274,25 @@ const props = defineProps<{
   messages: any[]
   collaborators?: any[]
   isAIThinking?: boolean
+  typingUsers?: any[]
+  isDetached?: boolean
 }>()
 
-const emit = defineEmits(['close', 'send', 'pegasus-query', 'edit', 'delete'])
+const emit = defineEmits(['close', 'send', 'pegasus-query', 'edit', 'delete', 'typing-start', 'typing-stop', 'toggle-detach'])
 const { user } = useAuth()
+const md = new MarkdownIt({
+  breaks: true,
+  linkify: true,
+  html: false
+})
 
 const newMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const pendingImages = ref<string[]>([])
+const headerRef = ref<HTMLElement | null>(null)
+
+defineExpose({ headerRef })
 
 // Edit state
 const editingMessageId = ref<string | null>(null)
@@ -347,42 +387,31 @@ const scrollToMessage = (messageId: string) => {
 // Render message content with highlighted mentions
 const renderContent = (content: string, msgMentions?: Mention[]) => {
   if (!content) return ''
-  if (!msgMentions?.length) return escapeHtml(content)
   
-  let result = escapeHtml(content)
-  msgMentions.forEach(m => {
-    const mentionText = `@${m.name}`
-    const highlightClass = m.type === 'pegasus' 
-      ? 'text-violet-400 font-medium' 
-      : 'text-primary font-medium'
-    
-    // Use a regex with word boundaries to avoid partial replacement
-    const regex = new RegExp(`${mentionText}\\b`, 'g')
-    result = result.replace(
-      regex, 
-      `<span class="${highlightClass}">${mentionText}</span>`
-    )
-  })
+  // First render markdown
+  let result = md.render(content)
+  
+  // Then highlight mentions
+  if (msgMentions?.length) {
+    msgMentions.forEach(m => {
+      const mentionText = `@${m.name}`
+      const highlightClass = m.type === 'pegasus' 
+        ? 'text-violet-400 font-medium' 
+        : 'text-primary font-medium'
+      
+      // Use a regex with word boundaries to avoid partial replacement
+      const regex = new RegExp(`${mentionText}\\b`, 'g')
+      result = result.replace(
+        regex, 
+        `<span class="${highlightClass}">${mentionText}</span>`
+      )
+    })
+  }
+
   return result
 }
 
-const escapeHtml = (str: string) => {
-  if (!str) return ''
-  return str.replace(/[&<>"']/g, (m) => {
-    const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
-    return map[m] || m
-  })
-}
-
-// Auto-expand textarea
-watch(newMessage, () => {
-  nextTick(() => {
-    if (inputRef.value) {
-      inputRef.value.style.height = 'auto'
-      inputRef.value.style.height = inputRef.value.scrollHeight + 'px'
-    }
-  })
-})
+/* Auto-expand removed for fixed height scroll */
 
 // Handle @ mention detection
 const handleInput = (e: Event) => {
@@ -411,7 +440,27 @@ const handleInput = (e: Event) => {
     }
   }
   
+  
+  handleTyping()
   closeMentionPopup()
+}
+
+// Typing handling
+const isTyping = ref(false)
+let typingTimeout: NodeJS.Timeout | null = null
+
+const handleTyping = () => {
+  if (!isTyping.value) {
+    isTyping.value = true
+    emit('typing-start')
+  }
+
+  if (typingTimeout) clearTimeout(typingTimeout)
+
+  typingTimeout = setTimeout(() => {
+    isTyping.value = false
+    emit('typing-stop')
+  }, 2000)
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -479,6 +528,32 @@ const handleImageUpload = async (e: Event) => {
 
 const removePendingImage = (idx: number) => {
   pendingImages.value.splice(idx, 1)
+}
+
+const handlePaste = (e: ClipboardEvent) => {
+  const items = e.clipboardData?.items
+  if (!items) return
+
+  Array.from(items).forEach(item => {
+    if (item.type.indexOf('image') !== -1) {
+      const file = item.getAsFile()
+      if (file) {
+        // Limit size to 5MB
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error(`Pasted image is too large (> 5MB)`)
+          return
+        }
+
+        const reader = new FileReader()
+        reader.onload = () => {
+          pendingImages.value.push(reader.result as string)
+        }
+        reader.readAsDataURL(file)
+      }
+      // Prevent pasting the image binary text into textarea
+      e.preventDefault() 
+    }
+  })
 }
 
 const openImagePreview = (url: string) => {

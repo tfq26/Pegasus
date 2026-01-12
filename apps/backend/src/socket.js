@@ -318,6 +318,26 @@ export function initSocketServer(server, allowedOrigins) {
             }
         });
 
+        // Typing Indicators
+        socket.on("typing_start", (dashboardId) => {
+            const room = getRoom(dashboardId);
+            if (!room) return;
+
+            socket.to(room).emit("user_typing_start", {
+                socketId: socket.id,
+                user: socket.user
+            });
+        });
+
+        socket.on("typing_end", (dashboardId) => {
+            const room = getRoom(dashboardId);
+            if (!room) return;
+
+            socket.to(room).emit("user_typing_end", {
+                socketId: socket.id
+            });
+        });
+
         // @Pegasus AI Query
         socket.on("pegasus_query", async (data) => {
             // data: { dashboardId, query, context? }

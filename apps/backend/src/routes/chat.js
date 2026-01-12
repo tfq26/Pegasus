@@ -10,6 +10,7 @@ import { RAGService } from "../services/ragService.js"
 import { getUserFeatureFlags } from "../../experimental-features.js"
 import { filterModelsByTier, calculateUserLimits } from "../../lib/tierLimits.js"
 import { ConfigService } from "../services/ConfigService.js"
+import { SchemaTranslator } from "../services/SchemaTranslator.js"
 
 const chat = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -606,11 +607,25 @@ chat.post("/ai/generate", async (c) => {
                 }
             }
         }
+        // Use SchemaTranslator to normalize column names for AI
+        const translator = new SchemaTranslator()
+        const normalizedSchema = translator.normalizeSchema(schemaInfo)
+
+        if (translator.hasNormalizations()) {
+            console.log(`[AI Generate] Schema normalized. Mappings:`, translator.getMappingSummary())
+        }
+
         const aiSettings = { modelId: activeModel, temperature: Number(temperature || 0.7), maxTokens: Number(maxTokens || 1000), activeTable }
         const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
         aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
-        const result = await aiClient.generateQuery(prompt, { dialect: provider, schema: schemaInfo, previousContext: context }, aiSettings)
+
+        // Send normalized schema to AI
+        const result = await aiClient.generateQuery(prompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
         let generatedQuery = typeof result === 'string' ? result : result.text
+
+        console.log(`[AI Generate] Raw AI response:`, JSON.stringify(result).substring(0, 500))
+        console.log(`[AI Generate] Extracted query:`, generatedQuery?.substring(0, 200))
+
         if (result.toolCalls?.length > 0) {
             const tc = result.toolCalls.find(t => t.function.name === 'generate_table')
             if (tc) {
@@ -623,6 +638,16 @@ chat.post("/ai/generate", async (c) => {
         }
         if (result.usage) await logAiUsage(userId, result.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
         generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
+
+        // Denormalize the query - replace AI's normalized names with original column names
+        if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
+            const originalQuery = generatedQuery
+            generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
+            console.log(`[AI Generate] Denormalized query:`)
+            console.log(`  Before: ${originalQuery}`)
+            console.log(`  After:  ${generatedQuery}`)
+        }
+
         return c.json({ query: generatedQuery, usage: result.usage })
     } catch (e) { return c.json({ error: e.message }, 500) }
 

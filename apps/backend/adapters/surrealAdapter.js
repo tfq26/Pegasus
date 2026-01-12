@@ -106,6 +106,15 @@ export class SurrealAdapter extends DatabaseAdapter {
 
             // For mutations or other responses
             // console.log(`[SurrealDB] Returning metadata response`);
+
+            try {
+                const fs = await import('node:fs');
+                const logEntry = `[${new Date().toISOString()}] QUERY: ${query}\nRESPONSE: ${JSON.stringify(firstRes, null, 2)}\n-------------------\n`;
+                fs.appendFileSync('surreal_debug.log', logEntry);
+            } catch (e) {
+                console.error('[SurrealDB] Failed to write debug log', e);
+            }
+
             return {
                 affectedRows: Array.isArray(firstRes) ? firstRes.length : 1,
                 rows: cleanRecord(firstRes)

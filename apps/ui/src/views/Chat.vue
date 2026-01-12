@@ -836,9 +836,9 @@ const handleResolveAmbiguity = (choice: string) => {
 }
 
 // Watchers
-watch([queryResult, queryError], () => {
-    if (queryResult.value || queryError.value) resultsPanelVisible.value = true
-})
+// watch([queryResult, queryError], () => {
+//    if (queryResult.value || queryError.value) resultsPanelVisible.value = true
+// })
 
 // Force results panel to the right when in spreadsheet mode, bottom for chat
 watch(mode, (newMode) => {

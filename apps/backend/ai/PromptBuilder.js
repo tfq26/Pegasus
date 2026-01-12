@@ -377,8 +377,15 @@ RULES:
 1. Always include LIMIT unless doing aggregation
 2. Use the exact table names from the schema
 3. Match column names exactly (case-sensitive)
-4. For partial text search, use: string::lowercase(col) CONTAINS 'term'
-5. Return ONLY the query - no explanations, no simulated results
+4. **CRITICAL**: Enclose column names with spaces, slashes, or special characters in backticks: \`Fund Name\`, \`Gain/Loss\`, \`1 Year Return (%)\`
+5. For partial text search, use: string::lowercase(col) CONTAINS 'term'
+6. For "top", "best", "worst" items: Use ORDER BY column DESC/ASC LIMIT N
+7. Return ONLY the query - no explanations, no simulated results
+
+CRITICAL EXAMPLE - BACKTICKS FOR SPECIAL COLUMN NAMES:
+If schema shows columns like: "Fund Name", "Ret.(%)", "Gain/Loss", "1 Year Return (%)"
+CORRECT: SELECT \`Fund Name\`, \`Ret.(%)\`, \`Gain/Loss\` FROM table ORDER BY \`Ret.(%)\` DESC LIMIT 5
+WRONG: SELECT Fund Name, Ret.(%) FROM table (WILL FAIL - missing backticks!)
 
 IMPORTANT - SUM BY GROUP:
 SurrealDB cannot do SUM() with GROUP BY. For queries like "total stock by supplier":

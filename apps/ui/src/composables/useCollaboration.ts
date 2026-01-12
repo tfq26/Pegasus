@@ -64,6 +64,7 @@ export function useCollaboration() {
             if (cursors.value[data.socketId]) {
                 delete cursors.value[data.socketId];
             }
+            typingUsers.value = typingUsers.value.filter(u => u.socketId !== data.socketId);
         });
 
         socket.value.on('current_users', (users) => {
@@ -108,6 +109,17 @@ export function useCollaboration() {
         socket.value.on('message_deleted', (data) => {
             // data: { id }
             chatMessages.value = chatMessages.value.filter(m => m.id !== data.id);
+        });
+
+        // Typing Indicators
+        socket.value.on('user_typing_start', (data) => {
+            if (!typingUsers.value.find(u => u.socketId === data.socketId)) {
+                typingUsers.value.push({ ...data.user, socketId: data.socketId });
+            }
+        });
+
+        socket.value.on('user_typing_end', (data) => {
+            typingUsers.value = typingUsers.value.filter(u => u.socketId !== data.socketId);
         });
 
         socket.value.on('pegasus_thinking', (data) => {
@@ -190,12 +202,26 @@ export function useCollaboration() {
         socket.value.emit('delete_message', { dashboardId, messageId });
     };
 
+    const typingUsers = ref<any[]>([]);
+
+
+    const emitTypingStart = (dashboardId: string) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('typing_start', dashboardId);
+    };
+
+    const emitTypingEnd = (dashboardId: string) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('typing_end', dashboardId);
+    };
+
     return {
         isConnected,
         isAIThinking,
         collaborators,
         cursors,
         chatMessages,
+        typingUsers,
         connect,
         disconnect,
         joinDashboard,
@@ -205,6 +231,8 @@ export function useCollaboration() {
         emitPegasusQuery,
         editChatMessage,
         deleteChatMessage,
+        emitTypingStart,
+        emitTypingEnd,
         socket
     };
 }

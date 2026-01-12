@@ -111,8 +111,8 @@ const contextUsage = 45
 
     <!-- Actions -->
     <div class="flex items-center gap-2">
-      <!-- Run Button -->
-      <button
+      <!-- Run Button Removed as requested -->
+      <!-- <button
         @click="emit('run')"
         :disabled="isExecuting"
         class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-wait"
@@ -120,7 +120,7 @@ const contextUsage = 45
         <Zap v-if="!isExecuting" class="w-3.5 h-3.5" />
         <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
         <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
-      </button>
+      </button> -->
       
       <!-- Clear -->
       <TooltipProvider>

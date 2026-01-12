@@ -9,7 +9,10 @@
 
     <template v-else>
       <!-- Header -->
-    <header class="border-b border-border bg-card/80 backdrop-blur-md px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+    <header 
+      class="border-b border-border bg-card/80 backdrop-blur-md px-6 py-3 flex items-center justify-between sticky top-0 z-10 transition-all duration-300"
+      :class="{ 'mr-[350px]': showChat && !isChatDetached }"
+    >
       <div class="flex items-center gap-3">
         <button 
           @click="router.push('/dashboard')"
@@ -89,7 +92,7 @@
           </TooltipProvider>
 
           <button
-            v-if="currentDashboard && layout.length > 0"
+            v-if="currentDashboard && activeLayout.length > 0"
             @click="generateDashboardSummary"
             :disabled="isAnalyzing"
             class="px-2 sm:px-3 py-1.5 text-sm font-medium border border-border hover:bg-muted rounded-md transition inline-flex items-center gap-2 text-primary"
@@ -140,7 +143,7 @@
                 </DropdownMenuItem>
 
                 <DropdownMenuItem 
-                  v-if="layout.length > 0"
+                  v-if="activeLayout.length > 0"
                   @click="generateDashboardSummary"
                   :disabled="isAnalyzing"
                 >
@@ -234,31 +237,105 @@
       </div>
     </header>
 
-    <!-- Global Dashboard Filters -->
-    <DashboardFilters />
+    <!-- Page Tabs & Filters -->
+    <div 
+      class="border-b border-border bg-card/50 flex flex-col transition-all duration-300"
+      :class="{ 'mr-[350px]': showChat && !isChatDetached }"
+    >
+       <!-- Pages Tab Bar -->
+       <div v-if="currentDashboard?.data?.pages && currentDashboard.data.pages.length > 0" class="flex items-center px-4 pt-2 gap-1 overflow-x-auto no-scrollbar">
+          <ContextMenu v-for="page in sortedPages" :key="page.id">
+            <ContextMenuTrigger>
+              <div 
+                @click="switchPage(page.id)"
+                @dblclick="startRenamingPage(page)"
+                class="group relative max-w-[200px] flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-all cursor-pointer hover:bg-muted/50 rounded-t-lg select-none"
+                :class="activePageId === page.id ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:text-foreground'"
+              >
+                <span class="truncate">{{ page.title }}</span>
+
+                <!-- Delete Page Button (hover) -->
+                <button 
+                  v-if="!isShared && currentDashboard.data.pages.length > 1 && activePageId === page.id"
+                  @click.stop="confirmDeletePage(page)"
+                  class="ml-1 p-0.5 rounded-full hover:bg-destructive/10 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Delete Page"
+                >
+                  <X class="w-3 h-3" />
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent v-if="!isShared">
+              <ContextMenuItem @click="startRenamingPage(page)">
+                <Pencil class="w-4 h-4 mr-2" />
+                Rename Page
+              </ContextMenuItem>
+              <ContextMenuItem 
+                v-if="currentDashboard.data.pages.length > 1"
+                @click="confirmDeletePage(page)" 
+                class="text-destructive focus:text-destructive"
+              >
+                <Trash2 class="w-4 h-4 mr-2" />
+                Delete Page
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+
+          <!-- Add Page Button -->
+          <button 
+            v-if="!isShared"
+            @click="handleAddPage"
+            class="ml-2 p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition mb-0.5"
+            title="Add Page"
+          >
+            <Plus class="w-4 h-4" />
+          </button>
+       </div>
+
+      <DashboardFilters />
+    </div>
 
     <!-- Main Content Area with potential Sidebar -->
     <div class="flex-1 overflow-hidden flex relative relative-container">
       
 
       
-      <div 
-        ref="chatSidebarRef"
-        class="border-l border-border z-50 shadow-xl transition-all duration-300 bg-card fixed top-[57px] bottom-0 right-0 w-[320px]"
-        :class="[
-          showChat ? 'translate-x-0' : 'translate-x-full'
-        ]"
+      <Transition
+        enter-active-class="transform transition ease-in-out duration-300"
+        enter-from-class="translate-x-full opacity-0"
+        enter-to-class="translate-x-0 opacity-100"
+        leave-active-class="transform transition ease-in-out duration-300"
+        leave-from-class="translate-x-0 opacity-100"
+        leave-to-class="translate-x-full opacity-0"
       >
-        <DashboardChat 
-          :messages="chatMessages" 
-          :isAIThinking="isAIThinking"
-          @close="showChat = false"
-          @send="handleSendMessage"
-          @pegasus-query="handlePegasusQuery"
-          @edit="handleEditMessage"
-          @delete="handleDeleteMessage"
-        />
-      </div>
+        <div 
+          v-if="showChat"
+          ref="chatSidebarRef"
+          class="border border-border z-50 shadow-2xl bg-card fixed w-[350px] overflow-hidden flex flex-col transition-all duration-300"
+          :class="[
+            isChatDetached 
+              ? 'rounded-2xl' 
+              : 'top-[65px] bottom-0 right-0 border-t-0 border-b-0 border-r-0 rounded-l-xl'
+          ]"
+          :style="isChatDetached ? (style as any) : {}"
+        >
+          <DashboardChat 
+            ref="dashboardChatRef"
+            :messages="chatMessages" 
+            :isAIThinking="isAIThinking"
+            :typingUsers="typingUsers"
+            :isDetached="isChatDetached"
+            @close="showChat = false"
+            @send="handleSendMessage"
+            @pegasus-query="handlePegasusQuery"
+            @edit="handleEditMessage"
+            @delete="handleDeleteMessage"
+            @typing-start="handleTypingStart"
+            @typing-stop="handleTypingStop"
+            @toggle-detach="isChatDetached = !isChatDetached"
+          />
+        </div>
+      </Transition>
       
       <!-- Backdrop for mobile chat -->
       <div 
@@ -269,7 +346,7 @@
 
       <!-- Main Grid Container -->
       <div 
-        class="flex-1 h-full overflow-auto relative transition-colors duration-300 p-4"
+        class="flex-1 h-full overflow-auto relative transition-all duration-300 p-4"
         ref="dashboardContainer"
         :class="{ 'bg-grid-pattern': showGrid }"
         :style="gridStyle"
@@ -277,7 +354,7 @@
         @mouseleave="onMouseLeave"
       >
         <!-- AI Insights -->
-        <DashboardInsights v-if="currentDashboard && layout.length > 0" />
+        <DashboardInsights v-if="currentDashboard && activeLayout.length > 0" />
 
         <!-- Live Cursors Overlay -->
         <LiveCursors :cursors="cursors" />
@@ -286,7 +363,7 @@
 
       <DraggableGrid
         v-if="currentDashboard"
-        v-model:items="layout"
+        v-model:items="activeLayout"
         :cols="12"
         :row-height="30"
         :gap="8"
@@ -316,7 +393,7 @@
 
       <!-- Empty State -->
       <div
-        v-if="!isLoading && (!currentDashboard || !layout.length)"
+        v-if="!isLoading && (!currentDashboard || !activeLayout.length)"
         class="empty-state"
       >
         <div class="empty-state-icon-wrapper">
@@ -441,6 +518,71 @@
       </DialogContent>
     </Dialog>
 
+    <!-- Delete Page Modal -->
+    <Dialog v-model:open="showDeletePageModal">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete Page</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete "{{ pageToDelete?.title }}"? This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex justify-end gap-2 pt-4">
+          <button 
+            @click="showDeletePageModal = false"
+            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
+          >
+            Cancel
+          </button>
+          <button 
+            @click="processDeletePage"
+            class="px-3 py-2 text-sm font-medium bg-destructive text-white hover:bg-destructive/90 rounded-md"
+          >
+            Delete
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Rename Page Modal -->
+    <Dialog v-model:open="showRenamePageModal">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rename Page</DialogTitle>
+          <DialogDescription>
+            Enter a new name for your page.
+          </DialogDescription>
+        </DialogHeader>
+        <div class="flex flex-col gap-4 py-4">
+          <div class="space-y-2">
+            <label for="page-name" class="text-sm font-medium">Page Name</label>
+            <input
+              id="page-name"
+              v-model="newPageTitle"
+              @keyup.enter="processRenamePage"
+              placeholder="Enter page name"
+              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button 
+            @click="showRenamePageModal = false"
+            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
+          >
+            Cancel
+          </button>
+          <button 
+            @click="processRenamePage"
+            :disabled="!newPageTitle.trim()"
+            class="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md disabled:opacity-50"
+          >
+            Rename
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <!-- Privacy Toggle Dialog -->
     <Dialog v-model:open="showPrivacyDialog">
       <DialogContent class="sm:max-w-md">
@@ -523,7 +665,7 @@ import { ref, onMounted, computed, watch, onBeforeUnmount } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { useDashboardStore } from '@/stores/dashboard'
+import { useDashboardStore, type DashboardPage } from '@/stores/dashboard'
 import { useSettingsStore } from '@/stores/settings'
 import DraggableGrid from '@/components/grid/DraggableGrid.vue'
 import CodeEditor from '@/components/Chat/CodeEditor.vue'
@@ -590,8 +732,86 @@ const currentDashboard = computed((): any => store.currentDashboard as any)
 const isLoading = computed(() => store.isLoading)
 const isInitializing = ref(true)
 
+// Multi-page Support
+// Multi-page Support
+const activePageId = computed({
+  get: () => store.activePageId as unknown as string | null,
+  set: (val) => (store.activePageId as any) = val
+})
+
+// Force cast to avoid Ref<Ref> inference issues
+const activePage = computed(() => store.activePage as any as DashboardPage | undefined)
+
+const sortedPages = computed(() => {
+  if (!currentDashboard.value?.data?.pages) return []
+  return [...currentDashboard.value.data.pages].sort((a, b) => a.order - b.order)
+})
+
+const activeLayout = computed({
+  get: () => activePage.value?.layout || [],
+  set: (newLayout) => {
+    if (activePage.value) {
+      activePage.value.layout = newLayout
+      // Trigger save if needed, though DraggableGrid emits layout-updated
+    }
+  }
+})
+
+// Page Actions
+const handleAddPage = async () => {
+  await store.addPage(`Page ${sortedPages.value.length + 1}`)
+}
+
+const switchPage = (pageId: string) => {
+  activePageId.value = pageId
+}
+
+const confirmDeletePage = (page: any) => {
+  pageToDelete.value = page
+  showDeletePageModal.value = true
+}
+
+const processDeletePage = async () => {
+    if (!pageToDelete.value) return
+    try {
+        await store.removePage(pageToDelete.value.id)
+        toast.success(`Page "${pageToDelete.value.title}" deleted`)
+        showDeletePageModal.value = false
+        pageToDelete.value = null
+    } catch (e: any) {
+        toast.error(e.message || 'Failed to delete page')
+    }
+}
+
+// Renaming State
+const showRenamePageModal = ref(false)
+const pageToRename = ref<any>(null)
+const newPageTitle = ref('')
+
+const startRenamingPage = (page: any) => {
+  if (isShared.value) return
+  pageToRename.value = page
+  newPageTitle.value = page.title
+  showRenamePageModal.value = true
+}
+
+const processRenamePage = async () => {
+  if (!pageToRename.value) return
+  if (newPageTitle.value.trim()) {
+    await store.renamePage(pageToRename.value.id, newPageTitle.value)
+    showRenamePageModal.value = false
+    pageToRename.value = null
+    newPageTitle.value = ''
+  }
+}
+
+// Helper to get element from active page
+const getElement = (id: string) => {
+  return activePage.value?.elements.find((el: any) => el.id === id)
+}
+
 import Navbar from '@/components/Navbar.vue'
-import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke, useBreakpoints, breakpointsTailwind } from '@vueuse/core'
+import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke, useBreakpoints, breakpointsTailwind, useDraggable } from '@vueuse/core'
 import { usePlatform } from '@/composables/usePlatform'
 
 const { isPhone, isTablet } = usePlatform()
@@ -610,7 +830,10 @@ const {
   emitPegasusQuery,
   isAIThinking,
   editChatMessage,
-  deleteChatMessage
+  deleteChatMessage,
+  typingUsers,
+  emitTypingStart,
+  emitTypingEnd
 } = useCollaboration()
 
 const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
@@ -619,13 +842,23 @@ const showChat = ref(false)
 const chatSidebarRef = ref<HTMLElement | null>(null)
 const chatToggleRef = ref<HTMLElement | null>(null)
 const dashboardContainer = ref<HTMLElement | null>(null)
+const dashboardChatRef = ref<any>(null)
+const isChatDetached = ref(false)
+
+const chatDragHandle = computed(() => dashboardChatRef.value?.headerRef)
+
+// Make Chat Draggable
+const { x, y, style } = useDraggable(chatSidebarRef, {
+  initialValue: { x: window.innerWidth - 370, y: 80 },
+  handle: chatDragHandle
+})
 
 // Click outside to close chat
 onClickOutside(chatSidebarRef as any, () => {
   if (showChat.value) {
     showChat.value = false
   }
-}, { ignore: [chatToggleRef as any] })
+}, { ignore: [chatToggleRef as any, '.group'] })
 
 // Keyboard Shortcuts
 onKeyStroke(['s', 'S'], (e) => {
@@ -748,7 +981,7 @@ const handleSendMessage = (messageData: any) => {
 
 const handlePegasusQuery = (query: string, messageData: any) => {
   if (currentDashboard.value) {
-    const elements = currentDashboard.value.data?.elements || []
+    const elements = activePage.value?.elements || []
     const dataSnapshot = elements.map((el: any) => ({
       title: el.title,
       type: el.type,
@@ -767,6 +1000,18 @@ const handleEditMessage = (messageId: string, content: string) => {
 const handleDeleteMessage = (messageId: string) => {
   if (currentDashboard.value) {
     deleteChatMessage(currentDashboard.value.id, messageId)
+  }
+}
+
+const handleTypingStart = () => {
+  if (currentDashboard.value) {
+    emitTypingStart(currentDashboard.value.id)
+  }
+}
+
+const handleTypingStop = () => {
+  if (currentDashboard.value) {
+    emitTypingEnd(currentDashboard.value.id)
   }
 }
 
@@ -831,6 +1076,9 @@ const renameTitle = ref('')
 
 // Delete Modal State
 const showDeleteModal = ref(false)
+// Page Delete Modal State
+const showDeletePageModal = ref(false)
+const pageToDelete = ref<any>(null)
 
 // User Role - determine if user is owner
 const userRole = computed<'owner' | 'editor' | 'viewer' | null>(() => {
@@ -850,29 +1098,6 @@ const gridStyle = computed(() => {
     `,
     backgroundSize: `calc((100% - 8px) / 12) 38px`,
     backgroundPosition: '8px 8px'
-  }
-})
-
-// Elements Map for easy lookup
-const elementsMap = computed(() => {
-  const map = new Map()
-  if (currentDashboard.value?.data?.elements) {
-    currentDashboard.value.data.elements.forEach((el: any) => {
-      map.set(el.id, el)
-    })
-  }
-  return map
-})
-
-const getElement = (id: string) => elementsMap.value.get(id)
-
-// Layout binding
-const layout = computed({
-  get: () => currentDashboard.value?.data?.layout || [],
-  set: (newLayout) => {
-    if (currentDashboard.value) {
-      currentDashboard.value.data.layout = newLayout
-    }
   }
 })
 
@@ -1023,9 +1248,9 @@ const copyShareLink = () => {
 
 // Element Actions
 const removeElement = async (id: string) => {
-  if (!currentDashboard.value) return
-  currentDashboard.value.data.elements = currentDashboard.value.data.elements.filter((el: any) => el.id !== id)
-  currentDashboard.value.data.layout = currentDashboard.value.data.layout.filter((item: any) => item.i !== id)
+  if (!activePage.value) return
+  activePage.value.elements = activePage.value.elements.filter((el: any) => el.id !== id)
+  activePage.value.layout = activePage.value.layout.filter((item: any) => item.i !== id)
   await handleSave()
 }
 
@@ -1048,9 +1273,9 @@ const handleViewQuery = (element: any) => {
 }
 
 const saveQueryChanges = async () => {
-  if (!editingElement.value || !currentDashboard.value) return
+  if (!editingElement.value || !activePage.value) return
   
-  const el = currentDashboard.value.data.elements.find((e: any) => e.id === editingElement.value.id)
+  const el = activePage.value.elements.find((e: any) => e.id === editingElement.value.id)
   if (el) {
     el.query = editingQuery.value
     showQueryModal.value = false
@@ -1161,14 +1386,14 @@ const handleAddFileElement = async (data: { file: File, title: string }) => {
 }
 
 const handleSaveElement = async (updatedElement: any) => {
-  if (!currentDashboard.value) return
+  if (!activePage.value) return
   
-  const elementIndex = currentDashboard.value.data.elements.findIndex(
+  const elementIndex = activePage.value.elements.findIndex(
     (el: any) => el.id === updatedElement.id
   )
   
   if (elementIndex !== -1) {
-    currentDashboard.value.data.elements[elementIndex] = updatedElement
+    activePage.value.elements[elementIndex] = updatedElement
     await handleSave()
     toast.success('Element updated and saved.')
   }
@@ -1354,130 +1579,4 @@ const handleKeyUp = (e: KeyboardEvent) => {
 }
 </style>
 
-<style scoped>
-/* Dashboard Card Styles */
-.dashboard-card {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-  border-radius: 0.25rem;
-  box-shadow: var(--shadow-sm);
-  background-color: var(--card);
-}
 
-.dashboard-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-md);
-}
-
-.card-content {
-  padding: 0.75rem;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.card-title-section {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.card-body {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 0;
-}
-
-/* Grid Layout Customization */
-:deep(.vue-grid-item.vue-grid-placeholder) {
-  background: oklch(var(--color-primary) / 0.15) !important;
-  border: 2px dashed oklch(var(--color-primary) / 0.5) !important;
-  border-radius: 0.25rem;
-  opacity: 1;
-}
-
-:deep(.vue-grid-item.resizing),
-:deep(.vue-grid-item.dragging) {
-  opacity: 0.9;
-  z-index: 100;
-  transition: none;
-}
-
-:deep(.vue-grid-item > .vue-resizable-handle) {
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  width: 20px;
-  height: 20px;
-  bottom: 0;
-  right: 0;
-}
-
-:deep(.vue-grid-item:hover > .vue-resizable-handle) {
-  opacity: 1;
-}
-
-:deep(.vue-resizable-handle::after) {
-  content: '';
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 0 0 12px 12px;
-  border-color: transparent transparent oklch(var(--color-primary) / 0.8) transparent;
-}
-
-/* Empty State */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  text-align: center;
-  padding: 2rem;
-}
-
-.empty-state-icon {
-  font-size: 4rem;
-  margin-bottom: 1rem;
-  opacity: 0.5;
-}
-
-.empty-state-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0 0 0.5rem 0;
-}
-
-.empty-state-text {
-  font-size: 0.875rem;
-  margin: 0 0 1.5rem 0;
-}
-
-/* Grid Pattern */
-.bg-grid-pattern {
-  background-attachment: local;
-}
-@keyframes spin-slow {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
-}
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
-}
-</style>

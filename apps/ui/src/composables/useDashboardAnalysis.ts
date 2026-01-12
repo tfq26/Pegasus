@@ -18,8 +18,14 @@ export function useDashboardAnalysis() {
             ; (store as any).analysisResult = null
 
         try {
-            // Collect data from all elements that have results
-            const elements = ((store as any).currentDashboard?.data?.elements || []) as any[]
+            // Collect data from active page elements
+            let elements = []
+            if ((store as any).activePage?.elements) {
+                elements = (store as any).activePage.elements
+            } else if ((store as any).currentDashboard?.data?.elements) {
+                // Fallback to legacy structure
+                elements = (store as any).currentDashboard.data.elements
+            }
             const dataSnapshot = elements.map(el => {
                 const results = el.lastResult || el.config?.data
                 return {
