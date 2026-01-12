@@ -887,9 +887,13 @@ watch(() => socket.value, (s) => {
 
     s.on('dashboard_updated', async (data: any) => {
       if (data.dashboardId === currentDashboard.value?.id) {
-        // Refresh dashboard data to reflect live changes
-        // Using store action to re-fetch
-        await store.selectDashboard(currentDashboard.value.id)
+        if (data.type === 'layout' && data.layout) {
+          // Live optimistic layout update
+          activeLayout.value = data.layout
+        } else {
+          // Full refresh for content changes
+          await store.selectDashboard(currentDashboard.value.id)
+        }
       }
     })
   }
@@ -1174,6 +1178,14 @@ const gridStyle = computed(() => {
 })
 
 const onLayoutUpdated = () => {
+  // Emit live layout update for collaboration
+  if (currentDashboard.value) {
+      emitDashboardUpdate(currentDashboard.value.id, { 
+          type: 'layout', 
+          layout: activeLayout.value 
+      })
+  }
+
   // Trigger debounced save - will save 2 seconds after last change
   debouncedSave()
 }
