@@ -49,6 +49,7 @@ export type SettingsModel = {
   cloudRegion: string
   showDashboardGrid: boolean
   compactMode: boolean
+  dashboardLocked: boolean
   githubConnected: boolean
   slackConnected: boolean
   azureConnected: boolean

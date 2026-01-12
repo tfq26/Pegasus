@@ -18,6 +18,7 @@ export const useSettingsStore = defineStore('settings', () => {
         cloudRegion: 'eastus2',
         showDashboardGrid: true,
         compactMode: false,
+        dashboardLocked: false,
         githubConnected: false,
         slackConnected: false,
         azureConnected: true,

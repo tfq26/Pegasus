@@ -1070,17 +1070,43 @@ const downloadFile = (element: any) => {
 
 // Layout State
 import { unref } from 'vue'
-import { useStorage } from '@vueuse/core'
 
 const settingsStore = useSettingsStore()
 const settings = computed(() => unref(settingsStore.settings))
-
-// Persist view options to local storage
-const isCompact = useStorage('pegasus-dashboard-compact', false)
-const isLocked = useStorage('pegasus-dashboard-locked', false)
-const showGrid = useStorage('pegasus-dashboard-grid', true)
-
 const isShared = computed(() => route.path.includes('/shared/'))
+
+const isCompact = computed({
+  get: () => currentDashboard.value?.data?.settings?.compactMode ?? false,
+  set: (val) => {
+    if (isShared.value || !currentDashboard.value) return
+    if (!currentDashboard.value.data) currentDashboard.value.data = { pages: [] }
+    if (!currentDashboard.value.data.settings) currentDashboard.value.data.settings = {}
+    currentDashboard.value.data.settings.compactMode = val
+    handleSave()
+  }
+})
+
+const showGrid = computed({
+  get: () => currentDashboard.value?.data?.settings?.showGrid ?? true,
+  set: (val) => {
+    if (isShared.value || !currentDashboard.value) return
+    if (!currentDashboard.value.data) currentDashboard.value.data = { pages: [] }
+    if (!currentDashboard.value.data.settings) currentDashboard.value.data.settings = {}
+    currentDashboard.value.data.settings.showGrid = val
+    handleSave()
+  }
+})
+
+const isLocked = computed({
+  get: () => isShared.value || (currentDashboard.value?.data?.settings?.locked ?? false),
+  set: (val) => {
+    if (isShared.value || !currentDashboard.value) return
+    if (!currentDashboard.value.data) currentDashboard.value.data = { pages: [] }
+    if (!currentDashboard.value.data.settings) currentDashboard.value.data.settings = {}
+    currentDashboard.value.data.settings.locked = val
+    handleSave()
+  }
+})
 
 // Lock layout automatically if shared
 watch(isShared, (shared) => {
