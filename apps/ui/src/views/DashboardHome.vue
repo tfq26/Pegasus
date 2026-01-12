@@ -521,7 +521,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -605,6 +605,48 @@ watch(activeTab, async (val) => {
     } finally {
       isLoadingRecent.value = false
     }
+  }
+})
+
+// Real-time Notifications and Socket Connection
+import { useCollaboration } from '@/composables/useCollaboration'
+const { connect, socket } = useCollaboration()
+
+onMounted(() => {
+  connect()
+  
+  // Wait for socket to be initialized
+  if (socket.value) {
+    socket.value.on('notification_new', (data: any) => {
+      // data: { type: 'mention', dashboardId: '...' }
+      if (data.type === 'mention') {
+        const id = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId
+        
+        // Update counts in all lists
+        const updateList = (list: any[]) => {
+          const idx = list.findIndex(d => d.id === id)
+          if (idx !== -1) {
+            list[idx].unread_count = (list[idx].unread_count || 0) + 1
+          }
+        }
+        
+        updateList(dashboards.value)
+        updateList(recentDashboards.value)
+        updateList(sharedDashboards.value)
+      }
+    })
+
+    socket.value.on('user_mentioned', (data: any) => {
+      // Show toast notification
+      toast.info(`New mention in "${data.dashboardTitle || 'Dashboard'}": ${data.senderName} says: "${data.preview}"`)
+    })
+  }
+})
+
+onBeforeUnmount(() => {
+  if (socket.value) {
+    socket.value.off('notification_new')
+    socket.value.off('user_mentioned')
   }
 })
 
