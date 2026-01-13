@@ -230,6 +230,8 @@ onMounted(() => {
     onUnmounted(cleanup);
 });
 
+// --- Canvas Edit Input Ref (must be defined before useGridEditing to pass it as parameter) ---
+const canvasEditInputRef = ref<HTMLInputElement | null>(null);
 
 // --- Editing (useGridEditing) ---
 const {
@@ -238,9 +240,10 @@ const {
   currentCellRawValue,
   startEditing,
   commitEdit,
+  cancelEdit,
   onCellInputChange,
   onCellBlur
-} = useGridEditing(props.engine, gridContainer, selection);
+} = useGridEditing(props.engine, gridContainer, selection, canvasEditInputRef);
 
 
 // Subscribe to engine changes
@@ -317,6 +320,29 @@ const {
     startColResize,
     handleHeaderDblClick
 } = useGridColumnResize(getColWidth, setColWidth, autoFitColumn);
+
+// Computed position for the floating edit input in canvas mode
+const editingCellPosition = computed(() => {
+    if (!editingCell.value || !useCanvas.value) return null;
+    
+    const { row, col } = editingCell.value;
+    
+    // Calculate X position (sum of all previous column widths + row header)
+    let x = 40; // Row header width
+    for (let c = 0; c < col; c++) {
+        x += getColWidth(c);
+    }
+    
+    // Calculate Y position (row * rowHeight + header height)
+    const y = row * rowHeight + 24; // 24px for column header height
+    
+    return {
+        x: x - virtualState.value.scrollLeft,
+        y: y - virtualState.value.scrollTop,
+        width: getColWidth(col),
+        height: rowHeight
+    };
+});
 
 // --- Selection State (useGridSelection) ---
 
@@ -1810,8 +1836,7 @@ const onKeyDown = async (e: KeyboardEvent) => {
       await commitEdit();
       moveSelection('down');
     } else if (e.key === 'Escape') {
-      editingCell.value = null;
-      formulaBarValue.value = currentCellRawValue.value;
+      cancelEdit();
     }
     return;
   }
@@ -2393,6 +2418,24 @@ defineExpose({
         @mousedown="handleCanvasMouseDown"
         @dblclick="handleCanvasDblClick"
       ></canvas>
+      
+      <!-- Canvas Edit Input Overlay - Floating input for editing in canvas mode -->
+      <input
+        v-if="useCanvas && editingCell && editingCellPosition"
+        ref="canvasEditInputRef"
+        v-model="formulaBarValue"
+        @blur="onCellBlur"
+        @keydown.enter.prevent="commitEdit(); moveSelection('down')"
+        @keydown.tab.prevent="commitEdit(); moveSelection('right')"
+        @keydown.escape="cancelEdit"
+        class="absolute z-30 px-1 text-xs bg-background border-2 border-primary focus:outline-none text-foreground"
+        :style="{
+            left: `${editingCellPosition.x}px`,
+            top: `${editingCellPosition.y}px`,
+            width: `${editingCellPosition.width}px`,
+            height: `${editingCellPosition.height}px`
+        }"
+      />
       
       <!-- Live Cursors Overlay -->
       <PresenceOverlay 

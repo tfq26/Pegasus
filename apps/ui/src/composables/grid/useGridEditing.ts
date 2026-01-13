@@ -5,7 +5,8 @@ import type { CellPosition } from '../../components/TableView/Engine/types';
 export function useGridEditing(
     engine: Engine,
     gridContainer: Ref<HTMLElement | null>,
-    selection: Ref<CellPosition | null>
+    selection: Ref<CellPosition | null>,
+    canvasEditInputRef?: Ref<HTMLInputElement | null>
 ) {
     const editingCell = ref<CellPosition | null>(null);
     const formulaBarValue = ref('');
@@ -49,16 +50,27 @@ export function useGridEditing(
         await nextTick();
         await nextTick();
 
-        // Scoped query selector
+        // Try to find and focus the input
+        // First, try DOM table-based input (for non-canvas mode)
         const td = gridContainer.value?.querySelector(`td[data-row="${row}"][data-col="${col}"]`);
-        const input = td?.querySelector('input') as HTMLInputElement;
-        if (input) {
-            input.focus();
-            // If we have an initial value, put cursor at end
+        const domInput = td?.querySelector('input') as HTMLInputElement;
+
+        // If DOM input found (fallback table mode), focus it
+        if (domInput) {
+            domInput.focus();
             if (initialValue !== undefined) {
-                input.setSelectionRange(initialValue.length, initialValue.length);
+                domInput.setSelectionRange(initialValue.length, initialValue.length);
             } else {
-                input.select();
+                domInput.select();
+            }
+        }
+        // Otherwise, try the canvas overlay input (canvas mode)
+        else if (canvasEditInputRef?.value) {
+            canvasEditInputRef.value.focus();
+            if (initialValue !== undefined) {
+                canvasEditInputRef.value.setSelectionRange(initialValue.length, initialValue.length);
+            } else {
+                canvasEditInputRef.value.select();
             }
         }
     };
@@ -74,6 +86,11 @@ export function useGridEditing(
         await commitEdit();
     };
 
+    const cancelEdit = () => {
+        editingCell.value = null;
+        formulaBarValue.value = currentCellRawValue.value;
+    };
+
     // Helper to sync formula bar with selection when NOT editing
     // Grid.vue normally watches selection to update formulaBarValue if not editing
     // But here we expose formulaBarValue
@@ -84,6 +101,7 @@ export function useGridEditing(
         currentCellRawValue,
         startEditing,
         commitEdit,
+        cancelEdit,
         onCellInputChange,
         onCellBlur
     };
