@@ -20,15 +20,14 @@ export function useGridEditing(
     const commitEdit = async () => {
         if (!editingCell.value) return;
 
-        // Save the value silently (don't trigger auto-save yet)
+        // Only save if value actually changed
         if (formulaBarValue.value !== currentCellRawValue.value && editingCell.value) {
-            await engine.setValue(editingCell.value, formulaBarValue.value, true); // silent = true
+            // Save with silent=false to trigger proper change tracking
+            // This is the moment we want to track changes - when user commits the edit
+            await engine.setValue(editingCell.value, formulaBarValue.value, false);
         }
 
         editingCell.value = null;
-
-        // Now trigger onChange to save
-        engine.notifyChange();
     };
 
     const startEditing = async (row: number, col: number, initialValue?: string) => {

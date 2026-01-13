@@ -942,6 +942,12 @@ export class Engine {
 
         // Record undo command (unless this is an undo/redo operation itself)
         if (!this.isUndoRedoOperation && !silent) {
+            // Track change here - at the entry point when user commits an edit
+            // This is the right place because silent=false means user is committing
+            if (source === 'local') {
+                this.changeTracker.markCellModified(pos);
+            }
+
             const oldValue = this.getCell(pos)?.rawInput || '';
             const { SetValueCommand } = await import('./UndoManager');
             const command = new SetValueCommand(this, pos, input, oldValue);
@@ -997,12 +1003,8 @@ export class Engine {
         }
 
         // 5. Notify change
-        // Only track changes if source is local (user edit)
-        if (source === 'local') {
-            this.changeTracker.markCellModified(pos);
-        }
-
-        // Unless silent mode (UI update)
+        // Change tracking is done at the entry point (when silent=false)
+        // Here we just notify callbacks if not in silent mode
         if (!silent) {
             this.notifyChange();
         }
