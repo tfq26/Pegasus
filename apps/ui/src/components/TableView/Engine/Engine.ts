@@ -227,11 +227,30 @@ export class Engine {
 
     /**
      * Get the serializable state of the engine
+     * 
+     * IMPORTANT: Version 3 format now includes all cells from both the sparse map AND columnStore
+     * to fix the bug where data stored only in columnStore was lost on refresh.
      */
     public getState() {
+        // Build complete cells array from both sources
+        const allCells: [string, CellData][] = [];
+        const totalRows = this.config.rowCount || 0;
+        const totalCols = this.config.colCount || this.columnNames.length || 26;
+
+        // Iterate over all cells using getCell which checks both sources
+        for (let row = 0; row < totalRows; row++) {
+            for (let col = 0; col < totalCols; col++) {
+                const cell = this.getCell({ row, col });
+                if (cell && cell.value !== null && cell.value !== undefined && cell.value !== '') {
+                    const key = `${row},${col}`;
+                    allCells.push([key, cell]);
+                }
+            }
+        }
+
         return {
-            version: 2,
-            cells: Array.from(this.cells.entries()),
+            version: 3,
+            cells: allCells,
             rowCount: this.config.rowCount,
             colCount: this.config.colCount,
             source: {
@@ -254,8 +273,8 @@ export class Engine {
         if (Array.isArray(state)) {
             // V1 format: just cells
             this.cells = new Map(state as [string, CellData][]);
-        } else if (state.version === 2) {
-            // V2 format: cells + source metadata
+        } else if (state.version === 2 || state.version === 3) {
+            // V2/V3 format: cells + source metadata
             this.cells = new Map(state.cells);
             if (state.rowCount) this.config.rowCount = state.rowCount;
             if (state.colCount) this.config.colCount = state.colCount;
@@ -579,8 +598,11 @@ export class Engine {
      * Commit all pending changes to the database
      */
     public async commit(): Promise<void> {
-        if (!this.sourceTable || !this.sourceConnection || !this.sourceProvider) {
-            throw new Error('Cannot commit: Missing source metadata (table, connection, or provider)');
+        if (!this.hasSource()) {
+            console.log('[Engine] Local-only sheet, skipping SQL commit. Changes are persisted via workspace sync.');
+            this.saveStatus = 'saved';
+            this.notifyChange();
+            return;
         }
 
         if (!this.hasPendingModifications()) {
@@ -592,16 +614,17 @@ export class Engine {
         this.notifyChange();
 
         try {
+            let ops: Operation[] = [];
             const strategy = this.getSaveStrategy();
-            let ops: Operation[] = []; // Type issue: ensure matches Operation[]
 
             if (strategy === 'full_replacement') {
-                // For now, SyncManager focuses on delta ops. 
-                // We'd need to extend SyncManager or Adapter to support full replacement if needed.
-                // Or generate DELETE_ALL + INSERT_ALL ops?
-                // Or call adapter.replace(data)?
-                // Let's assume delta for now or throw.
-                throw new Error('Full replacement strategy not fully supported in new Sync layer yet.');
+                console.log('[Engine] Using full replacement strategy');
+                const allRows = this.getAllNonEmptyRows();
+                ops.push({
+                    type: 'full_replacement',
+                    rows: allRows,
+                    timestamp: Date.now()
+                });
             } else {
                 const pending = this.getPendingOperations();
                 // Convert to typed Operation[]
@@ -657,6 +680,13 @@ export class Engine {
             this.notifyChange();
             throw e;
         }
+    }
+
+    /**
+     * Check if the engine has a backing database source
+     */
+    public hasSource(): boolean {
+        return !!(this.sourceTable && this.sourceConnection && this.sourceProvider);
     }
 
     /**
@@ -721,42 +751,41 @@ export class Engine {
     /**
      * Get all non-empty rows for full replacement save
      * Uses smart field naming: actual column names for named-headers mode, letters for column-letters mode
+     * 
+     * IMPORTANT: This now uses getCell() which checks both the sparse cells map AND the columnStore,
+     * fixing the bug where data stored only in columnStore was being ignored.
      */
     public getAllNonEmptyRows(): Array<Record<string, any>> {
-        const rowsMap = new Map<number, Record<string, any>>();
+        const result: Array<Record<string, any>> = [];
 
         // Determine starting row based on schema mode
         const startRow = this.schemaMode === 'named-headers' ? 1 : 0;
 
-        // Collect all rows using smart field names
-        for (const [key, cell] of this.cells.entries()) {
-            const parts = key.split(',');
-            if (parts.length < 2) continue;
-            const rowStr = parts[0];
-            const colStr = parts[1];
-            if (rowStr === undefined || colStr === undefined) continue;
-            const row = parseInt(rowStr);
-            const col = parseInt(colStr);
+        // Get actual row count from config
+        const totalRows = this.config.rowCount || 0;
+        const totalCols = this.config.colCount || this.columnNames.length || 26;
 
-            // Skip header row in named-headers mode
-            if (row < startRow) continue;
+        // Iterate over all rows and columns, using getCell to check both cells map and columnStore
+        for (let row = startRow; row < totalRows; row++) {
+            const rowData: Record<string, any> = {};
+            let hasData = false;
 
-            if (!rowsMap.has(row)) {
-                rowsMap.set(row, {});
+            for (let col = 0; col < totalCols; col++) {
+                // Use getCell which properly checks both cells map and columnStore
+                const cell = this.getCell({ row, col });
+                const value = cell?.value;
+
+                if (value !== null && value !== undefined && value !== '') {
+                    hasData = true;
+                }
+
+                // Use smart field name (either actual column name or letter)
+                const fieldName = this.getFieldName(col);
+                rowData[fieldName] = value ?? null;
             }
 
-            // Use smart field name (either actual column name or letter)
-            const fieldName = this.getFieldName(col);
-            rowsMap.get(row)![fieldName] = cell.value ?? null;
-        }
-
-        // Filter out completely empty rows
-        const result: Array<Record<string, any>> = [];
-        for (const rowData of rowsMap.values()) {
-            const isEmpty = Object.values(rowData).every(val =>
-                val === null || val === undefined || val === ''
-            );
-            if (!isEmpty) {
+            // Only include rows that have at least some data
+            if (hasData) {
                 result.push(rowData);
             }
         }
@@ -845,16 +874,19 @@ export class Engine {
 
     private saveToStorage() {
         try {
-            const data = Array.from(this.cells.entries());
+            // Check actual data presence using config, not just sparse cells map
+            // This fixes the bug where data in columnStore was being ignored
+            const hasData = (this.config.rowCount || 0) > 0 && (this.config.colCount || 0) > 0;
 
-            // If cells map is empty, remove the localStorage item entirely
-            if (data.length === 0) {
+            // If no data configured, remove the localStorage item entirely
+            if (!hasData) {
                 localStorage.removeItem(this.storageKey);
                 return;
             }
 
             // For large datasets without database backing, skip localStorage persistence
-            if (data.length > 5000 && !this.sourceTable) {
+            const estimatedCellCount = (this.config.rowCount || 0) * (this.config.colCount || 0);
+            if (estimatedCellCount > 50000 && !this.sourceTable) {
                 console.warn('[Storage] Skipping localStorage for large non-database sheet');
                 return;
             }

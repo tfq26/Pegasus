@@ -258,9 +258,9 @@ function statusLabel(state?: ConnectionSchemaState) {
         :inactive-tabs="inactiveTabs"
         :active-tab-id="activeTabId"
         @select="(id) => workspaceStore.setActiveTab(id)"
-        @close="(id) => workspaceStore.closeTab(id)"
-        @restore="(id: string) => (workspaceStore as any).restoreTab(id)"
-        @delete-permanently="(id: string) => (workspaceStore as any).deleteInactiveTab(id)"
+        @close="(id) => workspaceStore.closeTab(id, props.connection.id)"
+        @restore="(id: string) => (workspaceStore as any).restoreTab(id, props.connection.id)"
+        @delete-permanently="(id: string) => (workspaceStore as any).deleteInactiveTab(id, props.connection.id)"
       />
     </article>
   </div>

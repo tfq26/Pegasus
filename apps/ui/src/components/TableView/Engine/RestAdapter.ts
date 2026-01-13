@@ -84,4 +84,6 @@ export class RestAdapter implements DatabaseAdapter {
             throw new Error(body.error || 'Commit failed');
         }
     }
+
+
 }

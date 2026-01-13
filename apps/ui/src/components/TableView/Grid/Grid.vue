@@ -6,6 +6,8 @@ import { CanvasRenderer } from '../Engine/CanvasRenderer';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
 import { useGridScroll } from '../../../composables/grid/useGridScroll';
 import { useGridSelection } from '../../../composables/grid/useGridSelection';
+import { useGridCanvas } from '@/composables/grid/useGridCanvas';
+import { useGridColumnResize } from '@/composables/grid/useGridColumnResize';
 import { useRealtimeCursor } from '../../../composables/grid/useRealtimeCursor';
 import { useGridEditing } from '../../../composables/grid/useGridEditing';
 import type { CellPosition } from '../Engine/types';
@@ -35,7 +37,8 @@ import {
   Trash2,
   Download,
   MessageSquare,
-  Activity
+  Activity,
+  Database
 } from 'lucide-vue-next';
 import BindCellDialog from './BindCellDialog.vue';
 import { CSVExporter, ExcelExporter } from '../Engine/Exporters';
@@ -66,6 +69,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'save-query': [query: string, type: 'formula'];
   'version-change': [version: number];
+  'persist-table': [];
   'ai-response': [response: { 
     type: string; 
     task?: string; 
@@ -117,7 +121,6 @@ const {
   lastSelectedColumn,
   lastSelectedRow,
   selectColumn,
-  selectRow,
   clearColumnRowSelection,
   deleteSelectedColumn,
   deleteSelectedRow,
@@ -125,59 +128,34 @@ const {
   fillSelectedRow,
   isColumnSelected,
   isRowSelected,
-  focusGrid
+  focusGrid,
+  selectRow
 } = useGridSelection(props.engine, gridContainer, rowCount, colCount, renderKey);
 
-// --- Canvas Rendering ---
-const useCanvas = ref(true);
-const canvasRef = ref<HTMLCanvasElement | null>(null);
-let canvasRenderer: CanvasRenderer | null = null;
-
-onMounted(() => {
-  if (canvasRef.value && useCanvas.value) {
-    canvasRenderer = new CanvasRenderer(props.engine, canvasRef.value);
-    // Initial draw
-    updateCanvas();
-  }
-});
-
-const updateCanvas = () => {
-   if (!canvasRenderer || !useCanvas.value || !gridContainer.value) return;
-   
-   const { startRow, endRow, startCol, endCol, startColLeft, scrollTop, scrollLeft } = virtualState.value;
-   const width = gridContainer.value.clientWidth;
-   const height = gridContainer.value.clientHeight;
-   
-   // Resize if needed (debounced ideally, but check dimensions)
-   canvasRenderer.resize(width, height);
-   
-   // Prepare selection param
-   let selectionParam = null;
-   if (rangeSelection.value) {
-       selectionParam = rangeSelection.value;
-   } else if (selection.value) {
-       selectionParam = { start: selection.value, end: selection.value };
-   }
-   
-   canvasRenderer.draw({
-     startRow,
-     endRow,
-     startCol,
-     endCol,
-     scrollTop,
-     scrollLeft,
-     startColLeft,
-     rowHeight,
-     getColWidth,
-     selection: selectionParam
-   });
-};
-
-watch([virtualState, selection, rangeSelection, useCanvas], () => {
-  if (useCanvas.value) {
-     requestAnimationFrame(updateCanvas);
-  }
-}, { deep: true });
+// --- Canvas Rendering (useGridCanvas) ---
+const {
+    useCanvas,
+    canvasRef,
+    updateCanvas,
+    handleCanvasMouseDown,
+    handleCanvasDblClick,
+    getCellFromEvent: getCanvasCellFromEvent
+} = useGridCanvas(
+    props.engine,
+    gridContainer,
+    virtualState,
+    ref(rowHeight), // Static config from useGridScroll
+    ref(rowCount),
+    ref(colCount),
+    selection,
+    rangeSelection,
+    getColWidth,
+    {
+        selectRow,
+        onCellMouseDown: (r: number, c: number, e: MouseEvent) => onMouseDown(r, c, e),
+        onCellDblClick: (r: number, c: number, e: MouseEvent) => handleCellDblClick(r, c, e)
+    }
+);
 
 
 // --- Realtime & Follow Me (useRealtimeCursor) ---
@@ -333,45 +311,12 @@ const isFillDragging = ref(false);
 const fillStart = ref<CellPosition | null>(null);
 const fillRange = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 
-// --- Column Resize State ---
-const resizingColumn = ref<number | null>(null);
-const resizeStartX = ref(0);
-const resizeStartWidth = ref(0);
-
-const startColResize = (col: number, e: MouseEvent) => {
-  e.stopPropagation();
-  e.preventDefault();
-  resizingColumn.value = col;
-  resizeStartX.value = e.clientX;
-  resizeStartWidth.value = getColWidth(col);
-  
-  document.addEventListener('mousemove', onColResizeMove);
-  document.addEventListener('mouseup', stopColResize);
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-};
-
-const onColResizeMove = (e: MouseEvent) => {
-  if (resizingColumn.value === null) return;
-  
-  const delta = e.clientX - resizeStartX.value;
-  const newWidth = Math.max(40, Math.min(500, resizeStartWidth.value + delta));
-  setColWidth(resizingColumn.value, newWidth);
-};
-
-const stopColResize = () => {
-  resizingColumn.value = null;
-  document.removeEventListener('mousemove', onColResizeMove);
-  document.removeEventListener('mouseup', stopColResize);
-  document.body.style.cursor = '';
-  document.body.style.userSelect = '';
-};
-
-const handleHeaderDblClick = (col: number, e: MouseEvent) => {
-  // Auto-fit column on double-click
-  e.stopPropagation();
-  autoFitColumn(col);
-};
+// --- Column Resize State (useGridColumnResize) ---
+const {
+    resizingColumn,
+    startColResize,
+    handleHeaderDblClick
+} = useGridColumnResize(getColWidth, setColWidth, autoFitColumn);
 
 // --- Selection State (useGridSelection) ---
 
@@ -729,32 +674,16 @@ const getDisplayValue = (row: number, col: number) => {
 const getCellFromEvent = (e: MouseEvent): CellPosition | null => {
   const target = e.target as HTMLElement;
 
-  // Canvas Support
+  // Use Composable for Canvas events
   if (useCanvas.value && canvasRef.value && (target === canvasRef.value || target.classList.contains('sticky-canvas'))) {
-      const rect = (canvasRef.value as HTMLElement).getBoundingClientRect();
-      const x = e.clientX - rect.left; 
-      const y = e.clientY - rect.top;
-      
-      // Map to World Coordinates: Canvas is translated by scroll keys
-      const worldX = x + virtualState.value.scrollLeft;
-      const worldY = y + virtualState.value.scrollTop;
-      
-      const row = Math.floor(worldY / rowHeight);
-      
-      // Col Search
-      let cx = 0;
-      let col = -1;
-      for (let c = 0; c < colCount; c++) {
-          const w = getColWidth(c);
-          if (worldX >= cx && worldX < cx + w) {
-              col = c;
-              break;
-          }
-          cx += w;
-      }
-      
-      if (row >= 0 && row < rowCount && col >= 0) return { row, col };
-      return null;
+      const pos = getCanvasCellFromEvent(e);
+      // Row is handled inside dispatch, but if we are here, we might just return pos
+      // useGridCanvas's getCanvasCellFromEvent returns null if it's a row header?
+      // No, let's check useGridCanvas implementation.
+      // It returns null for row header! 
+      // But getCellFromEvent is expected to return the cell under cursor.
+      // If it's a row header, it's NOT a cell.
+      return pos;
   }
 
   const cell = target.closest('td');
@@ -864,19 +793,9 @@ const onMouseDown = (row: number, col: number, e: MouseEvent) => {
   document.addEventListener('mouseup', onGlobalMouseUp);
 };
 
-const handleCanvasMouseDown = (e: MouseEvent) => {
-    const pos = getCellFromEvent(e);
-    if (pos) {
-        onMouseDown(pos.row, pos.col, e);
-    }
-};
 
-const handleCanvasDblClick = (e: MouseEvent) => {
-    const pos = getCellFromEvent(e);
-    if (pos) {
-        handleCellDblClick(pos.row, pos.col, e);
-    }
-};
+// handleCanvasMouseDown is now from composable
+// handleCanvasDblClick is now from composable
 
 const onGlobalMouseMove = (e: MouseEvent) => {
   if (!isDragging.value || !dragStart.value) return;
@@ -2305,6 +2224,18 @@ defineExpose({
         :provider="props.engine.sourceProvider" 
       />
       
+      <!-- Local Data Indicator -->
+      <div 
+        v-else 
+        class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 cursor-help shrink-0"
+        title="This tab is stored locally. Save to database to enable persistence."
+        @click="emit('persist-table')"
+      >
+        <Database class="w-3 h-3" />
+        LOCAL
+        <button class="ml-1 hover:underline text-amber-700">Persist</button>
+      </div>
+      
       <div class="flex-1">
         <input
           v-model="formulaBarValue"
@@ -2347,6 +2278,18 @@ defineExpose({
         v-if="props.engine.sourceProvider" 
         :provider="props.engine.sourceProvider" 
       />
+      
+      <!-- Local Data Indicator -->
+      <div 
+        v-else 
+        class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 cursor-help shrink-0"
+        title="This tab is stored locally. Save to database to enable persistence."
+        @click="emit('persist-table')"
+      >
+        <Database class="w-3 h-3" />
+        LOCAL
+        <button class="ml-1 hover:underline text-amber-700">Persist</button>
+      </div>
       
       <div class="flex-1 relative">
         <input
@@ -2444,7 +2387,8 @@ defineExpose({
         ref="canvasRef"
         class="absolute top-0 left-0 z-10 sticky-canvas outline-none"
         :style="{ 
-            transform: `translate(${virtualState.scrollLeft}px, ${virtualState.scrollTop}px)`
+            top: `${rowHeight}px`,
+            transform: `translate(${Math.floor(virtualState.scrollLeft)}px, ${Math.floor(virtualState.scrollTop)}px)`
         }"
         @mousedown="handleCanvasMouseDown"
         @dblclick="handleCanvasDblClick"
@@ -2508,9 +2452,9 @@ defineExpose({
                 showGridlines ? 'border-r border-b border-border' : 'border-none',
                 textWrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
                 {
-                  'bg-blue-50/50 dark:bg-blue-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
+                  'bg-violet-50/50 dark:bg-violet-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
                   'ring-2 ring-primary ring-inset z-10 bg-background': selection?.row === (virtualState.startRow + rowOffset) && selection?.col === col - 1 && !editingCell,
-                  'bg-primary/15': isInSelection(virtualState.startRow + rowOffset, col - 1),
+                  'bg-violet-500/15 dark:bg-violet-500/25': isInSelection(virtualState.startRow + rowOffset, col - 1),
                   'border-r-2 border-r-primary': fillRange && col - 1 === fillRange.end.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
                   'border-l-2 border-l-primary': fillRange && col - 1 === fillRange.start.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
                   'border-t-2 border-t-primary': fillRange && virtualState.startRow + rowOffset === fillRange.start.row && col - 1 >= fillRange.start.col && col - 1 <= fillRange.end.col,

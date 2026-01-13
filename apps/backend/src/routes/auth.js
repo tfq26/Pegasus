@@ -190,12 +190,32 @@ const upsertUser = async (payload, traceId = 'system') => {
 }
 
 // Routes
-auth.get("/login", (c) => {
+auth.get("/login", async (c) => {
     const returnTo = c.req.query("return_to")
     const traceId = Math.random().toString(36).substring(7)
     const isProduction = ConfigService.isProduction()
 
     console.log(`[AUTH_TRACE] [${traceId}] Login initiated. return_to: ${returnTo || 'none'}`)
+
+    // DEV MODE BYPASS
+    if (process.env.PEGASUS_DEV_MODE === 'true') {
+        const frontendUrl = ConfigService.getFrontendUrl()
+        const devPayload = {
+            sub: 'dev_user',
+            email: 'dev@pegasus.ai',
+            firstName: 'Developer',
+            lastName: 'User',
+            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 Days
+        }
+        const devToken = await sign(devPayload, jwtSecret)
+
+        let targetUrl = returnTo || frontendUrl
+        const finalRedirect = new URL(targetUrl, frontendUrl)
+        finalRedirect.searchParams.set('token', devToken)
+
+        console.log(`[AUTH_TRACE] [${traceId}] [DEV_MODE] Bypassing WorkOS. Redirecting with dev token.`)
+        return c.redirect(finalRedirect.toString())
+    }
 
     if (returnTo) {
         setCookie(c, "auth_return_to", returnTo, {
@@ -376,6 +396,26 @@ auth.get("/me", async (c) => {
     c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
     c.header('Pragma', 'no-cache')
     c.header('Expires', '0')
+
+    // DEV MODE BYPASS
+    if (process.env.PEGASUS_DEV_MODE === 'true') {
+        console.log('[IdentityService] [DEV_MODE] Bypassing auth for /me')
+        const mockUser = {
+            sub: 'dev_user',
+            id: 'dev_user',
+            email: 'dev@pegasus.ai',
+            firstName: 'Developer',
+            lastName: 'User',
+            subscription_tier: 'pro_plus',
+        }
+        // Generate a real token so individual verify() calls in other routes pass
+        const devToken = await sign({
+            ...mockUser,
+            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 Days
+        }, jwtSecret)
+
+        return c.json({ user: mockUser, token: devToken })
+    }
 
     const token = getAuthToken(c)
 

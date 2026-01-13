@@ -52,6 +52,7 @@ import Stripe from "stripe"
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
+import crypto from "node:crypto"
 
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 
@@ -102,6 +103,29 @@ const corsConfig = {
 
 // Apply CORS globally
 app.use("*", cors(corsConfig))
+
+// DEV_MODE Middleware: Injects mock user for all protected operations
+if (process.env.PEGASUS_DEV_MODE === 'true') {
+  console.log("🛠️  [DEV_MODE] Authentication bypass middleware active");
+  app.use("*", async (c, next) => {
+    let token = getAuthToken(c);
+
+    // If no token or it's the placeholder string, inject a real signed one
+    if (!token || token === 'dev_token') {
+      const devPayload = {
+        sub: 'dev_user',
+        email: 'dev@pegasus.ai',
+        firstName: 'Developer',
+        lastName: 'User',
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365, // 1 year
+      };
+      const devToken = await sign(devPayload, jwtSecret);
+      c.req.raw.headers.set('Authorization', `Bearer ${devToken}`);
+      console.log("🛠️  [DEV_MODE] Injected/Fixed dev token for request:", c.req.path);
+    }
+    await next();
+  });
+}
 
 // Request Logger
 app.use('*', async (c, next) => {
@@ -796,6 +820,17 @@ app.get("/subscription-status", async (c) => {
   try {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
+
+    // DEV MODE BYPASS: Skip Stripe check
+    if (process.env.PEGASUS_DEV_MODE === 'true' && userId === 'dev_user') {
+      return c.json({
+        tier: 'pro_plus',
+        status: 'active',
+        tokens: 1000000,
+        storage: 1024 * 1024 * 1024 * 10, // 10GB
+        isDev: true
+      })
+    }
 
 
 
@@ -2121,6 +2156,27 @@ app.get("/usage", async (c) => {
     const payload = await verify(token, jwtSecret)
     const userId = payload.sub
 
+    // DEV MODE BYPASS
+    if (process.env.PEGASUS_DEV_MODE === 'true' && userId === 'dev_user') {
+      const mockUsage = {
+        tokens: 5000,
+        limit: 1000000,
+        tier: 'pro_plus',
+        purchasedTokens: 0,
+        purchasedStorage: 0,
+        storage: 1024 * 1024 * 100, // 100MB
+        storageLimit: 1024 * 1024 * 1024 * 10,
+        storageFormatted: '100 MB',
+        storageLimitFormatted: '10 GB',
+        tierUsage: {
+          connections: { current: 1, limit: 100 },
+          tables: { current: 5, limit: 1000 },
+          dashboards: { current: 1, limit: 50 }
+        }
+      }
+      return c.json(mockUsage)
+    }
+
 
     const {
       tier,
@@ -2234,6 +2290,141 @@ const startServer = async () => {
     // 1. Database
     await connectDB();
     console.log('[Main] Database connected');
+
+    // DEV MODE: Setup test user and data
+    if (process.env.PEGASUS_DEV_MODE === 'true') {
+      console.log('🛠️  [DEV_MODE] Setting up development workspace...');
+      try {
+        await db.query(`
+          LET $user = user:dev_user;
+          UPSERT $user CONTENT {
+            email: 'dev@pegasus.ai',
+            first_name: 'Developer',
+            last_name: 'User',
+            subscription_tier: 'pro_plus',
+            stripe_customer_id: '',
+            purchased_tokens: 0,
+            purchased_storage: 0,
+            created_at: time::now(),
+            updated_at: time::now()
+          };
+
+          -- Create a test connection if none exists
+          LET $existing = SELECT id FROM connection WHERE user = $user LIMIT 1;
+          IF array::len($existing) == 0 THEN
+            CREATE connection CONTENT {
+              user: $user,
+              type: 'sqlite',
+              name: 'Sample Data',
+              config: '{"sqlite":{"path":"pegasus.db"}}',
+              is_locked: false,
+              created_at: time::now(),
+              updated_at: time::now()
+            };
+          END;
+        `);
+        console.log('✅ [DEV_MODE] Development workspace ready');
+
+        // 1. Auto-import files from command line
+        const autoFiles = process.env.PEGASUS_AUTO_IMPORT_FILES;
+        if (autoFiles) {
+          const files = autoFiles.split(',');
+          for (const filePath of files) {
+            try {
+              const fullPath = path.resolve(filePath);
+              const fileName = path.basename(fullPath);
+              const fileType = fileName.split('.').pop().toLowerCase();
+              const content = await fs.readFile(fullPath);
+
+              console.log(`🛠️  [DEV_MODE] Auto-importing file: ${fileName}`);
+
+              let rows = [];
+              if (fileType === 'xlsx') {
+                try {
+                  const { interpretExcelFromXML } = await import('./ai/xmlExcelInterpreter.js');
+                  const result = await interpretExcelFromXML(fullPath);
+                  if (result && result.data && result.data.length > 0) {
+                    rows = result.data;
+                  } else {
+                    console.log(`🛠️  [DEV_MODE] XML interpreter failed or found no data, falling back to regular parser`);
+                    const { parseExcel } = await import('./lib/excelParser.js');
+                    const excelResult = await parseExcel(fullPath);
+                    const firstSheet = Object.keys(excelResult.sheets)[0];
+                    rows = excelResult.sheets[firstSheet] || [];
+                  }
+                } catch (err) {
+                  console.error(`❌ [DEV_MODE] XML interpreter failed:`, err.message);
+                  const { parseExcel } = await import('./lib/excelParser.js');
+                  const excelResult = await parseExcel(fullPath);
+                  const firstSheet = Object.keys(excelResult.sheets)[0];
+                  rows = excelResult.sheets[firstSheet] || [];
+                }
+              } else if (fileType === 'json') {
+                rows = JSON.parse(content.toString());
+                if (!Array.isArray(rows)) rows = [rows];
+              } else if (fileType === 'xml') {
+                const parsed = parseXML(content.toString());
+                rows = flattenXML(parsed);
+              }
+
+              if (rows.length > 0) {
+                const uploadUuid = crypto.createHash('md5').update(fileName + Date.now()).digest('hex');
+                const tableName = fileName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+                const tableId = `data_${uploadUuid}_${tableName}`;
+                const uploadId = `uploads:${uploadUuid}`;
+
+                // Create metadata
+                await db.query(`
+                  UPSERT \`${uploadId}\` CONTENT {
+                    user_id: user:dev_user,
+                    filename: $fileName,
+                    display_name: $fileName,
+                    created_at: time::now(),
+                    format: $fileType
+                  };
+                `, { fileName, fileType });
+
+                // Create table
+                await createTableAndInsertData(tableId, rows);
+                console.log(`✅ [DEV_MODE] Imported ${rows.length} rows into ${tableId}`);
+              }
+            } catch (err) {
+              console.error(`❌ [DEV_MODE] Failed to import file ${filePath}:`, err.message);
+            }
+          }
+        }
+
+        // 2. Auto-import connections from command line (Format: name:type:config)
+        const autoConns = process.env.PEGASUS_AUTO_IMPORT_CONNS;
+        if (autoConns) {
+          const conns = autoConns.split('|');
+          for (const connStr of conns) {
+            try {
+              const [name, type, configStr] = connStr.split(':');
+              if (!name || !type) continue;
+
+              console.log(`🛠️  [DEV_MODE] Auto-importing connection: ${name} (${type})`);
+
+              await db.query(`
+                CREATE connection CONTENT {
+                  user: user:dev_user,
+                  name: $name,
+                  type: $type,
+                  config: $config,
+                  created_at: time::now(),
+                  updated_at: time::now()
+                };
+              `, { name, type, config: configStr || '{}' });
+              console.log(`✅ [DEV_MODE] Connection ${name} added`);
+            } catch (err) {
+              console.error(`❌ [DEV_MODE] Failed to add connection ${connStr}:`, err.message);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('❌ [DEV_MODE] Failed to setup dev data:', e.message);
+      }
+    }
 
     // 2. Schema initialization
     try {

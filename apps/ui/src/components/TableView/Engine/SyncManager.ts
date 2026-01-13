@@ -1,13 +1,14 @@
 import type { CellPosition } from './types';
 
 export interface Operation {
-    type: 'UPDATE' | 'INSERT_ROW' | 'DELETE_ROW' | 'INSERT_COL' | 'DELETE_COL';
+    type: 'UPDATE' | 'INSERT_ROW' | 'DELETE_ROW' | 'INSERT_COL' | 'DELETE_COL' | 'full_replacement';
     row?: number;
     col?: number;
     value?: any;
     count?: number; // for insert/delete
     name?: string; // for columns
     timestamp: number;
+    rows?: any[]; // for full_replacement
 }
 
 export interface DatabaseAdapter {
@@ -116,4 +117,6 @@ export class SyncManager {
             }
         }
     }
+
+
 }

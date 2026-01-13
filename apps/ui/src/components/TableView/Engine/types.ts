@@ -35,6 +35,7 @@ export interface UserPresence {
     color: string;
     cursor: CellPosition;
     lastActive: number;
+    cursorMode?: 'cell' | 'row' | 'col';
 }
 
 // Basic styling properties
@@ -71,6 +72,19 @@ export interface EngineConfig {
     rowCount: number;
     colCount: number;
     dataSource?: DataSource; // Optional external source
+    providerProvider?: string;
+}
+
+// Virtualization State
+export interface VirtualState {
+    startRow: number;
+    endRow: number;
+    visibleRowCount: number;
+    startCol: number;
+    endCol: number;
+    startColLeft: number;
+    scrollTop: number;
+    scrollLeft: number;
 }
 
 // Helpers

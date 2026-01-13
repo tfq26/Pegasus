@@ -133,20 +133,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         } catch (e) { console.error(e) }
     }
 
-    async function saveWorkspace() {
+    async function saveWorkspace(connectionId?: string) {
+        const targetId = connectionId || activeConnectionId.value
         if (saveTimeout) clearTimeout(saveTimeout)
 
         saveTimeout = setTimeout(async () => {
             isSaving.value = true
             try {
-                const workspace = currentWorkspace.value
+                const workspace = workspacesByConnection.value[targetId]
+                if (!workspace) return // Should not happen
+
                 const data = {
                     tabs: workspace.tabs,
                     inactiveTabs: workspace.inactiveTabs,
                     activeTabId: workspace.activeTabId
                 }
 
-                await fetch(`${QUERY_API_URL}/workspace/${activeConnectionId.value}`, {
+                await fetch(`${QUERY_API_URL}/workspace/${targetId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -156,8 +159,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                     body: JSON.stringify({ workspace: data })
                 })
 
-                lastSaved.value = new Date()
-                console.log(`[WorkspaceStore] Saved workspace for ${activeConnectionId.value}`)
+                if (targetId === activeConnectionId.value) {
+                    lastSaved.value = new Date()
+                }
+                console.log(`[WorkspaceStore] Saved workspace for ${targetId}`)
             } catch (e) {
                 console.error('[WorkspaceStore] Save error:', e)
             } finally {
@@ -171,7 +176,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         if (activeConnectionId.value === connectionId) return
 
         // Save current workspace before switching
-        await saveWorkspace()
+        await saveWorkspace(activeConnectionId.value)
 
         // Load the new connection's workspace
         await loadWorkspace(connectionId)
@@ -199,14 +204,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
         workspace.tabs.push(newTab)
         workspace.activeTabId = newId
-        saveWorkspace()
+        saveWorkspace(activeConnectionId.value)
 
         console.log('[WorkspaceStore] Created tab:', { id: newId, type })
         return newTab
     }
 
-    function closeTab(tabId: string) {
-        const workspace = workspacesByConnection.value[activeConnectionId.value]
+    function closeTab(tabId: string, connectionId?: string) {
+        const targetId = connectionId || activeConnectionId.value
+        const workspace = workspacesByConnection.value[targetId]
         if (!workspace) return
 
         const index = workspace.tabs.findIndex(t => t.id === tabId)
@@ -229,12 +235,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             }
         }
 
-        saveWorkspace()
+        saveWorkspace(targetId)
         console.log('[WorkspaceStore] Archived tab to history:', tabId)
     }
 
-    function restoreTab(tabId: string) {
-        const workspace = workspacesByConnection.value[activeConnectionId.value]
+    function restoreTab(tabId: string, connectionId?: string) {
+        const targetId = connectionId || activeConnectionId.value
+        const workspace = workspacesByConnection.value[targetId]
         if (!workspace) return
 
         const index = workspace.inactiveTabs?.findIndex(t => t.id === tabId)
@@ -245,20 +252,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             delete tab.closedAt
             workspace.tabs.push(tab)
             workspace.activeTabId = tab.id
-            saveWorkspace()
+            saveWorkspace(targetId)
             console.log('[WorkspaceStore] Restored tab:', tabId)
         }
     }
 
-    function deleteInactiveTab(tabId: string) {
-        const workspace = workspacesByConnection.value[activeConnectionId.value]
+    function deleteInactiveTab(tabId: string, connectionId?: string) {
+        const targetId = connectionId || activeConnectionId.value
+        const workspace = workspacesByConnection.value[targetId]
         if (!workspace) return
 
         const index = workspace.inactiveTabs?.findIndex(t => t.id === tabId)
         if (index === -1 || index === undefined) return
 
         workspace.inactiveTabs.splice(index, 1)
-        saveWorkspace()
+        saveWorkspace(targetId)
         console.log('[WorkspaceStore] Permanently deleted tab from history:', tabId)
     }
 

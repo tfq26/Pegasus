@@ -250,6 +250,8 @@ const getEngineForTab = (tabId: string) => {
         console.log('[Workspace] Restoring engine state from Pinia store (Cross-device sync enabled)');
         engine.loadState(tab.data.engineState);
     }
+    
+    // Set source metadata if available (but DON'T fetch data if already loading)
     if (tab?.data?.tableName) {
         console.log('[Workspace] Restoring engine metadata from tab:', tab.data);
         engine.setSource(
@@ -259,10 +261,10 @@ const getEngineForTab = (tabId: string) => {
             tab.data.provider
         );
         
-        // Initial load logic
-        if (loadingTabIds.value.has(tabId)) {
-            console.log('[Workspace] Already loading data for tab:', tabId);
-        } else {
+        // IMPORTANT: Only fetch data if NOT already being loaded by another caller (e.g., openTable)
+        // This prevents race conditions where openTable populates the engine, then this fetch clears it
+        if (!loadingTabIds.value.has(tabId)) {
+            console.log('[Workspace] Triggering initial data load for tab:', tabId);
             loadingTabIds.value.add(tabId);
             fetchTableData(tab.data.tableName as string, tab.data.connection, tab.data.provider as string)
                 .then(({ rows }) => {
@@ -310,6 +312,8 @@ const getEngineForTab = (tabId: string) => {
                 .finally(() => {
                     loadingTabIds.value.delete(tabId);
                 });
+        } else {
+            console.log('[Workspace] Skipping data load - already loading for tab:', tabId);
         }
     }
     
@@ -332,15 +336,17 @@ const getEngineForTab = (tabId: string) => {
         workspaceStore.setTabDirty(tabId, engine.hasPendingModifications());
 
         // Debounce Pinia sync to prevent UI hangs with large datasets
+        // Optimization: Use a larger debounce for local-only state sync
+        const debounceMs = engine.hasSource() ? 1000 : 3000;
+        
         const syncToPinia = () => {
+             console.log(`[Workspace] Syncing engine state to Pinia for tab ${tabId}`);
              workspaceStore.updateTabData(tabId, { engineState: engine.getState() });
         };
         
-        // Use a separate timeout for Pinia sync, or just rely on the save one
-        // For now, let's just make it slightly more efficient
         if (!(window as any).syncTimeouts) (window as any).syncTimeouts = {};
         if ((window as any).syncTimeouts[tabId]) clearTimeout((window as any).syncTimeouts[tabId]);
-        (window as any).syncTimeouts[tabId] = setTimeout(syncToPinia, 1000);
+        (window as any).syncTimeouts[tabId] = setTimeout(syncToPinia, debounceMs);
         
         // Calculate time since last save
         const now = Date.now();
@@ -531,6 +537,8 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         return;
     }
 
+    let newId: string | undefined;
+
     try {
         const loadingId = toast.loading(`Loading ${formatTableName(tableName)}...`);
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
@@ -614,7 +622,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         // Use store action to create tab
         const createdTab = workspaceStore.createTab('table', { 
             tableName, 
-            data: rows, 
+            // data: rows, // Don't persist rows to store to avoid bloat
             label: sheetLabel,
             connection,
             provider,
@@ -622,7 +630,10 @@ const openTable = async (tableName: string, connection: any, provider: string) =
             schemaMode
         });
         
-        const newId = createdTab.id;
+        newId = createdTab.id;
+
+        // Prevent getEngineForTab from triggering a redundant fetch
+        loadingTabIds.value.add(newId);
 
         // 4. Load into Engine (OPTIMIZED)
         const engine = getEngineForTab(newId);
@@ -679,6 +690,10 @@ const openTable = async (tableName: string, connection: any, provider: string) =
     } catch (e: any) {
         console.error('[Workspace] Failed to open table:', e);
         toast.error(`Failed to open table: ${e.message}`);
+    } finally {
+        if (typeof newId !== 'undefined') {
+            loadingTabIds.value.delete(newId);
+        }
     }
 };
 
@@ -804,6 +819,65 @@ const handleVersionChange = async (tabId: string, version: number) => {
     tab.data.headers = engine.columnNames; 
     
     toast.success(`Switched to version ${version === 0 ? 'Original' : 'v' + version}`);
+};
+
+// Handle persisting a local-only table to the database
+const handlePersistTable = async (tabId: string) => {
+    const engine = getEngineForTab(tabId);
+    if (!engine || engine.hasSource()) return;
+
+    // We'll show a prompt for the table name
+    const tableName = prompt('Enter a name for your new table:', (tabs.value as any).find((t: any) => t.id === tabId)?.label || 'MySheet1');
+    if (!tableName) return;
+
+    try {
+        const loadingId = toast.loading(`Persisting ${tableName} to database...`);
+        
+        // 1. Prepare data for export
+        const csvContent = CSVExporter.getContent(engine);
+        
+        // 2. Upload to backend
+        const baseUrl = import.meta.env.VITE_QUERY_API_URL;
+        const res = await fetch(`${baseUrl}/api/table/upload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                name: tableName,
+                data: csvContent,
+                provider: 'local' // Default provider
+            })
+        });
+
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || 'Failed to persist table');
+
+        toast.dismiss(loadingId);
+        toast.success(`Table "${tableName}" persisted successfully!`);
+
+        // 3. Update engine and tab metadata to point to the new source
+        engine.setSource(body.tableName, body.connection, engine.columnNames, body.provider);
+        
+        const tab = (tabs.value as any).find((t: any) => t.id === tabId);
+        if (tab) {
+            tab.label = formatTableName(body.tableName);
+            tab.data = {
+                ...tab.data,
+                tableName: body.tableName,
+                connection: body.connection,
+                provider: body.provider,
+                headers: engine.columnNames
+            };
+            workspaceStore.saveWorkspace();
+        }
+
+        // Trigger a commit to ensure everything is in sync
+        await engine.commit();
+        
+    } catch (e: any) {
+        console.error('[Workspace] Persist failed:', e);
+        toast.error(`Failed to persist table: ${e.message}`);
+    }
 };
 
 // ... existing findOrCreateSheetTab ...
@@ -1218,6 +1292,7 @@ defineExpose({
             @save-query="(query, type) => emit('save-query', query, type)"
             @version-change="(v) => handleVersionChange(tab.id, v)"
             @ai-response="handleAIResponse"
+            @persist-table="() => handlePersistTable(tab.id)"
           />
           
           <!-- Chat Interface -->

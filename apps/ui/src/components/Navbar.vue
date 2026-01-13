@@ -10,7 +10,10 @@
           alt="Pegasus Logo"
           class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
         />
-        <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block">Pegasus</span>
+        <div class="flex flex-col">
+          <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block leading-none">Pegasus</span>
+          <span v-if="isDevMode" class="text-[10px] font-bold text-amber-500 tracking-widest uppercase mt-0.5">Dev Mode</span>
+        </div>
       </RouterLink>
 
       <!-- Center: Desktop Links -->
@@ -326,6 +329,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const { isPhone } = usePlatform()
+const isDevMode = import.meta.env.VITE_PEGASUS_DEV_MODE === 'true'
 const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
 const { user, isLoading, fetchUser, logout } = useAuth()
 

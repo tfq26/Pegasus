@@ -23,17 +23,42 @@ export class CanvasRenderer {
     private height: number = 0;
 
     // Theme configs
-    private theme = {
+    private isDark = false;
+
+    private lightTheme = {
         gridColor: '#e2e8f0', // slate-200
         textColor: '#0f172a', // slate-900
-        font: '13px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        paddingX: 8,
-        paddingY: 0, // centered vertically
-        selectionColor: 'rgba(59, 130, 246, 0.10)', // blue-500 alpha
-        selectionBorder: '#3b82f6', // blue-500
+        backgroundColor: '#ffffff',
         headerBg: '#f8fafc', // slate-50
-        headerText: '#64748b' // slate-500
+        headerText: '#64748b', // slate-500
+        paddingX: 8,
+        paddingY: 0,
+        selectionColor: 'rgba(124, 58, 237, 0.10)', // violet-600 with opacity
+        selectionBorder: '#7c3aed', // violet-600
+        rowHeaderWidth: 40,
+        font: '13px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     };
+
+    private darkTheme = {
+        gridColor: '#3b3b3f', // stone-700
+        textColor: '#f8fafc', // slate-50
+        backgroundColor: '#151517', // stone-900 conforming to global theme
+        headerBg: '#252527', // stone-800
+        headerText: '#94a3b8', // slate-400
+        paddingX: 8,
+        paddingY: 0,
+        selectionColor: 'rgba(139, 92, 246, 0.20)', // violet-500 with opacity
+        selectionBorder: '#8b5cf6', // violet-500
+        rowHeaderWidth: 40,
+        font: '13px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    };
+
+    private theme = this.lightTheme;
+
+    public setMode(isDark: boolean) {
+        this.isDark = isDark;
+        this.theme = isDark ? this.darkTheme : this.lightTheme;
+    }
 
     constructor(engine: Engine, canvas: HTMLCanvasElement) {
         this.engine = engine;
@@ -49,16 +74,25 @@ export class CanvasRenderer {
     }
 
     public resize(width: number, height: number) {
+        this.dpr = window.devicePixelRatio || 1;
         this.width = width;
         this.height = height;
 
         const canvas = this.ctx.canvas;
-        canvas.width = Math.floor(width * this.dpr);
-        canvas.height = Math.floor(height * this.dpr);
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
+        const targetWidth = Math.floor(width * this.dpr);
+        const targetHeight = Math.floor(height * this.dpr);
 
-        this.ctx.scale(this.dpr, this.dpr);
+        // prevent redundant resizing which clears context and kills perf
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            canvas.style.width = `${width}px`;
+            canvas.style.height = `${height}px`;
+
+            // Context is reset when width/height changes, so we must re-scale
+            this.ctx.scale(this.dpr, this.dpr);
+            this.ctx.textBaseline = 'middle'; // Restore baseline
+        }
     }
 
     public draw(state: RenderState) {
@@ -71,75 +105,149 @@ export class CanvasRenderer {
         const ctx = this.ctx;
 
         // 1. Clear background
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = this.theme.backgroundColor;
         ctx.fillRect(0, 0, this.width, this.height);
 
-        // Optimize: Batch line drawing
-        ctx.beginPath();
-        ctx.strokeStyle = this.theme.gridColor;
-        ctx.lineWidth = 1;
-
-        // Track x positions for columns
-        let currentX = startColLeft - scrollLeft;
-
-        // We iterate columns to draw vertical lines and cells
-        // Note: we might need to draw slightly outside viewport to avoid clipping issues
+        // --- Pass 1: Draw Cells (Backgrounds + Content) ---
+        let currentX = (startColLeft - scrollLeft) + this.theme.rowHeaderWidth;
 
         for (let c = startCol; c <= endCol; c++) {
             const width = getColWidth(c);
-
-            // Vertical Line (Right side of column)
-            // Fix: Draw at x + width
-            const lineX = Math.floor(currentX + width) + 0.5; // Sharp lines
-            if (lineX >= 0 && lineX <= this.width) {
-                ctx.moveTo(lineX, 0);
-                ctx.lineTo(lineX, this.height);
-            }
 
             // Draw Cells in this Column
             for (let r = startRow; r <= endRow; r++) {
                 const y = (r * rowHeight) - scrollTop;
 
-                // Skip if completely outside (though endRow should handle this)
+                // Skip if completely outside
                 if (y + rowHeight < 0 || y > this.height) continue;
 
-                // Value
-                const val = this.engine.getDisplayValue({ row: r, col: c });
-                if (val) {
-                    ctx.fillStyle = this.theme.textColor;
-                    ctx.font = this.theme.font;
+                const cell = this.engine.getCell({ row: r, col: c });
+                if (cell) {
+                    // Background
+                    if (cell.style?.background) {
+                        ctx.fillStyle = cell.style.background;
+                        ctx.fillRect(currentX, y, width, rowHeight);
+                    }
 
-                    const textX = currentX + this.theme.paddingX;
-                    const textY = y + (rowHeight / 2);
-                    ctx.fillText(val, textX, textY);
-                }
+                    // Content
+                    const val = String(cell.value ?? '');
+                    if (val) {
+                        // Font Style
+                        let font = this.theme.font;
+                        if (cell.style?.bold) font = 'bold ' + font;
+                        if (cell.style?.italic) font = 'italic ' + font;
+                        ctx.font = font;
 
-                // Live Data Indicator
-                if (this.engine.cellBindings.get(`${r},${c}`)) {
-                    this.drawLiveIndicator(currentX, y, width, rowHeight);
+                        // Text Color
+                        ctx.fillStyle = cell.style?.color || this.theme.textColor;
+
+                        // Text Alignment
+                        const align = cell.style?.align || 'left';
+                        let textX = currentX + this.theme.paddingX;
+
+                        // Center/Right alignment adjustments
+                        if (align === 'center') {
+                            textX = currentX + (width / 2);
+                            ctx.textAlign = 'center';
+                        } else if (align === 'right') {
+                            textX = currentX + width - this.theme.paddingX;
+                            ctx.textAlign = 'right';
+                        } else {
+                            ctx.textAlign = 'left';
+                        }
+
+                        const textY = y + (rowHeight / 2);
+
+                        // Clip text to cell width
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.rect(currentX, y, width, rowHeight);
+                        ctx.clip();
+                        ctx.fillText(val, textX, textY);
+                        ctx.restore();
+                    }
+
+                    // Live Data Indicator (from feature/LiveAPISpreadsheets)
+                    if (this.engine.cellBindings.get(`${r},${c}`)) {
+                        this.drawLiveIndicator(currentX, y, width, rowHeight);
+                    }
                 }
             }
-
             currentX += width;
         }
 
-        // Draw Horizontal Lines
+        // --- Pass 2: Draw Grid Lines (On Top) ---
+        ctx.beginPath();
+        ctx.strokeStyle = this.theme.gridColor;
+        ctx.lineWidth = 1;
+
+        // Vertical Lines
+        let gridCurrentX = (startColLeft - scrollLeft) + this.theme.rowHeaderWidth;
+        for (let c = startCol; c <= endCol; c++) {
+            const width = getColWidth(c);
+            const lineX = Math.floor(gridCurrentX + width) + 0.5;
+
+            if (lineX >= this.theme.rowHeaderWidth && lineX <= this.width) {
+                ctx.moveTo(lineX, 0);
+                ctx.lineTo(lineX, this.height);
+            }
+            gridCurrentX += width;
+        }
+
+        // Horizontal Lines
         for (let r = startRow; r <= endRow; r++) {
             const y = Math.floor((r * rowHeight) - scrollTop) + 0.5;
-            // Valid range check
             const lineY = y + rowHeight;
             if (lineY >= 0 && lineY <= this.height) {
-                ctx.moveTo(0, lineY);
+                ctx.moveTo(this.theme.rowHeaderWidth, lineY);
                 ctx.lineTo(this.width, lineY);
             }
         }
-
         ctx.stroke();
 
         // 4. Draw Selection Highlight
         if (selection) {
             this.drawSelection(selection, state);
         }
+
+        // 5. Draw Row Headers (Sticky)
+        this.drawRowHeaders(state);
+    }
+
+    private drawRowHeaders(state: RenderState) {
+        const { startRow, endRow, scrollTop, rowHeight } = state;
+        const ctx = this.ctx;
+        const width = this.theme.rowHeaderWidth;
+
+        // Header Background
+        ctx.fillStyle = this.theme.headerBg;
+        ctx.fillRect(0, 0, width, this.height);
+
+        // Right side border
+        ctx.strokeStyle = this.theme.gridColor;
+        ctx.beginPath();
+        ctx.moveTo(width - 0.5, 0);
+        ctx.lineTo(width - 0.5, this.height);
+
+        ctx.font = '10px Inter, sans-serif';
+        ctx.fillStyle = this.theme.headerText;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        for (let r = startRow; r <= endRow; r++) {
+            const y = (r * rowHeight) - scrollTop;
+            if (y + rowHeight < 0 || y > this.height) continue;
+
+            const textX = width / 2;
+            const textY = y + (rowHeight / 2);
+
+            ctx.fillText((r + 1).toString(), textX, textY);
+
+            // Row separator
+            ctx.moveTo(0, Math.floor(y + rowHeight) + 0.5);
+            ctx.lineTo(width, Math.floor(y + rowHeight) + 0.5);
+        }
+        ctx.stroke();
     }
 
     private drawLiveIndicator(x: number, y: number, width: number, height: number) {
@@ -210,7 +318,7 @@ export class CanvasRenderer {
         for (let c = startCol; c < visibleMinCol; c++) {
             x += getColWidth(c);
         }
-        left = x;
+        left = x + this.theme.rowHeaderWidth;
 
         // Iterate to find width
         width = 0;

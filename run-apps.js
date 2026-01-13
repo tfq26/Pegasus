@@ -16,6 +16,35 @@ const mode = args.includes('--desktop') ? 'desktop'
     : args.includes('--all') ? 'all'
         : 'web'; // Default to web
 
+const isDevMode = args.includes('--dev');
+if (isDevMode) {
+    process.env.PEGASUS_DEV_MODE = 'true';
+    process.env.VITE_PEGASUS_DEV_MODE = 'true';
+
+    // Parse additional dev flags
+    const filesToAdd = [];
+    const connsToAdd = [];
+
+    args.forEach((arg, i) => {
+        if (arg === '--add-file' && args[i + 1]) {
+            filesToAdd.push(args[i + 1]);
+        }
+        if (arg === '--add-connection' && args[i + 1]) {
+            connsToAdd.push(args[i + 1]);
+        }
+    });
+
+    if (filesToAdd.length > 0) {
+        process.env.PEGASUS_AUTO_IMPORT_FILES = filesToAdd.join(',');
+    }
+    if (connsToAdd.length > 0) {
+        process.env.PEGASUS_AUTO_IMPORT_CONNS = connsToAdd.join('|');
+    }
+
+    console.log("🛠️  Development mode enabled (bypassing auth, auto-populating test data)");
+    if (filesToAdd.length) console.log(`📂  Auto-importing files: ${filesToAdd.join(', ')}`);
+}
+
 console.log(`\n🚀 Starting Pegasus in ${mode.toUpperCase()} mode...\n`);
 
 // Load environment variables from backend .env file
