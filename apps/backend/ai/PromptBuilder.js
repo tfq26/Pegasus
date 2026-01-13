@@ -466,6 +466,14 @@ RULES:
 - Use appropriate quoting for special characters
 - DEFAULT LIMIT: 100
 
+LIVE DATA BINDING:
+- You have access to a \`bind_to_live_data\` tool. 
+- Use this when users ask for "real-time", "live", or "current" data for a list of items.
+- COMMON FIELD NAMES: 
+    - Stocks/Crypto: 'price', 'change24h'
+    - Weather: 'temp', 'humidity', 'windSpeed', 'description'
+- If the user asks for "live stock prices", identify the column with symbols (e.g., Column A) and the target column for prices (e.g., Column B).
+
 ${customInstructions ? `USER INSTRUCTIONS: ${customInstructions}` : ''}
     `;
   }

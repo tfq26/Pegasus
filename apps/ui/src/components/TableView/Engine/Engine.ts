@@ -37,6 +37,9 @@ export class Engine {
     // Presence System
     public presence: Map<string, UserPresence> = new Map();
 
+    // Live Data Bindings
+    public cellBindings: Map<string, any> = new Map();
+
     public saveStatus: 'saved' | 'saving' | 'error' = 'saved';
 
     // Branching state

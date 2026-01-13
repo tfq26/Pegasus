@@ -24,6 +24,8 @@ import docsRoutes from "./src/routes/docs.js"
 import { ragRoutes } from "./src/routes/rag.js"
 import { agentRoutes } from "./src/routes/agent.js"
 import { weatherRoutes } from "./src/routes/weather.js"
+import { dataSourceRoutes } from "./src/routes/data-sources.js"
+import { startPollingService } from "./src/services/polling-service.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"
@@ -247,6 +249,7 @@ app.route('/api/docs', docsRoutes)
 app.route('/rag', ragRoutes)
 app.route('/agent', agentRoutes)
 app.route('/weather', weatherRoutes)
+app.route('/data-sources', dataSourceRoutes)
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -2262,6 +2265,9 @@ const startServer = async () => {
       initializeWeeklyDigest()
       console.log('[Main] Weekly digest cron initialized');
     }
+
+    startPollingService();
+    console.log('[Main] Data source polling service active');
 
     // 4. Start Server
     if (isVercel) {

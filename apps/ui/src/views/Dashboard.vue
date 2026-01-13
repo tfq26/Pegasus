@@ -344,7 +344,7 @@
             :isAIThinking="isAIThinking"
             :typingUsers="typingUsers"
             :isDetached="isChatDetached"
-            :collaborators="store.authorizedUsers"
+            :collaborators="(store.authorizedUsers as any)"
             @close="showChat = false"
             @send="handleSendMessage"
             @pegasus-query="handlePegasusQuery"
@@ -896,15 +896,40 @@ watch(() => socket.value, (s) => {
         }
       }
     })
+
+    s.on('cell_binding_updated', async (data: any) => {
+      // data: { cellId, value, spreadsheetId, dataSourceId }
+      if (!currentDashboard.value) return
+
+      const elementsToRefresh: string[] = []
+      currentDashboard.value.data.pages?.forEach((page: any) => {
+        page.elements.forEach((el: any) => {
+          // If query mentions the spreadsheet (table name) or if connection directly matches
+          const usesSpreadsheet = el.connectionId === data.spreadsheetId || 
+                                 (el.query && el.query.includes(data.spreadsheetId))
+          
+          if (usesSpreadsheet) {
+            elementsToRefresh.push(el.id)
+          }
+        })
+      })
+
+      if (elementsToRefresh.length > 0) {
+        console.log(`[Dashboard] Auto-refreshing ${elementsToRefresh.length} elements due to live data update`)
+        for (const elId of elementsToRefresh) {
+            store.executeElementQuery(elId, true)
+        }
+      }
+    })
   }
 }, { immediate: true })
 
 const chatDragHandle = computed(() => dashboardChatRef.value?.headerRef)
 
 // Make Chat Draggable
-const { x, y, style } = useDraggable(chatSidebarRef, {
+const { x, y, style } = useDraggable(chatSidebarRef as any, {
   initialValue: { x: window.innerWidth - 370, y: 80 },
-  handle: chatDragHandle
+  handle: chatDragHandle as any
 })
 
 // Click outside to close chat

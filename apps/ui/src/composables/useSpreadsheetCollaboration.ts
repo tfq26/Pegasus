@@ -12,6 +12,7 @@ const collaborators = ref<any[]>([]);
 const activeCells = ref<Record<string, { row: number, col: number, user: any }>>({});
 const currentSpreadsheetId = ref<string | null>(null);
 const incomingCellEdit = ref<{ row: number, col: number, value: string, user: any } | null>(null);
+const incomingBindingUpdate = ref<{ cellId: string, value: any, spreadsheetId: string, dataSourceId: string } | null>(null);
 
 export interface Collaborator {
     socketId: string;
@@ -129,6 +130,19 @@ export function useSpreadsheetCollaboration(
             }, 100);
         });
 
+        socket.value.on('cell_binding_updated', (data) => {
+            incomingBindingUpdate.value = data;
+            // Dispatch global event
+            window.dispatchEvent(new CustomEvent('spreadsheet:binding-update', {
+                detail: data
+            }));
+
+            // Clear after a tick
+            setTimeout(() => {
+                if (incomingBindingUpdate.value === data) incomingBindingUpdate.value = null;
+            }, 100);
+        });
+
         socket.value.on('spreadsheet_kicked', (data) => {
             console.log('[SpreadsheetCollab] Kicked:', data.reason);
             collaborators.value = [];
@@ -215,6 +229,7 @@ export function useSpreadsheetCollaboration(
         collaboratorCount,
         activeCells,
         incomingCellEdit,
+        incomingBindingUpdate,
         currentSpreadsheetId,
         connect,
         disconnect,

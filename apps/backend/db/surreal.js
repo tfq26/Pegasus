@@ -349,6 +349,35 @@ const initSchema = async () => {
             DEFINE FIELD description ON TABLE user_payment TYPE string;
             DEFINE FIELD stripe_session_id ON TABLE user_payment TYPE string;
             DEFINE FIELD created_at ON TABLE user_payment TYPE datetime DEFAULT time::now();
+
+            -- Live Data Sources
+            DEFINE TABLE data_source SCHEMAFULL
+                PERMISSIONS
+                    FOR select, create, update, delete WHERE user = $auth.id;
+            DEFINE FIELD user ON TABLE data_source TYPE record<user>;
+            DEFINE FIELD name ON TABLE data_source TYPE string;
+            DEFINE FIELD type ON TABLE data_source TYPE string; -- 'stock', 'weather', 'crypto', 'custom'
+            DEFINE FIELD config ON TABLE data_source TYPE object;
+            DEFINE FIELD polling_interval ON TABLE data_source TYPE int DEFAULT 300;
+            DEFINE FIELD is_active ON TABLE data_source TYPE bool DEFAULT true;
+            DEFINE FIELD last_fetched ON TABLE data_source TYPE option<datetime>;
+            DEFINE FIELD last_result ON TABLE data_source TYPE option<object>;
+            DEFINE FIELD error ON TABLE data_source TYPE option<string>;
+            DEFINE FIELD created_at ON TABLE data_source TYPE datetime DEFAULT time::now();
+            DEFINE INDEX idx_user_datasource ON TABLE data_source COLUMNS user;
+
+            -- Cell Bindings
+            DEFINE TABLE cell_binding SCHEMAFULL
+                PERMISSIONS
+                    FOR select, create, update, delete WHERE user = $auth.id;
+            DEFINE FIELD user ON TABLE cell_binding TYPE record<user>;
+            DEFINE FIELD spreadsheet_id ON TABLE cell_binding TYPE string;
+            DEFINE FIELD cell_id ON TABLE cell_binding TYPE string;
+            DEFINE FIELD data_source ON TABLE cell_binding TYPE record<data_source>;
+            DEFINE FIELD field_path ON TABLE cell_binding TYPE string;
+            DEFINE FIELD last_value ON TABLE cell_binding TYPE any;
+            DEFINE FIELD updated_at ON TABLE cell_binding TYPE datetime DEFAULT time::now();
+            DEFINE INDEX idx_cell ON TABLE cell_binding COLUMNS spreadsheet_id, cell_id UNIQUE;
         `);
 
         console.log('[SurrealDB] Schema initialized (Batch Mode)');

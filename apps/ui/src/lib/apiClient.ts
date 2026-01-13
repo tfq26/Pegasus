@@ -28,7 +28,7 @@ interface RequestOptions {
     signal?: AbortSignal
 }
 
-class ApiClient {
+export class ApiClient {
     private baseUrl: string
 
     constructor(baseUrl: string) {

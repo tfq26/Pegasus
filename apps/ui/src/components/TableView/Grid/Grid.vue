@@ -11,6 +11,7 @@ import { useGridEditing } from '../../../composables/grid/useGridEditing';
 import type { CellPosition } from '../Engine/types';
 import { CellType } from '../Engine/types';
 import { toast } from '@/composables/useNotifications';
+import { api } from '@/lib/apiClient';
 import { useFeatureFlags } from '@/composables/useFeatureFlags';
 import FindDialog from '../FindDialog.vue';
 import CommitBar from './CommitBar.vue';
@@ -33,8 +34,10 @@ import {
   ArrowRight,
   Trash2,
   Download,
-  MessageSquare
+  MessageSquare,
+  Activity
 } from 'lucide-vue-next';
+import BindCellDialog from './BindCellDialog.vue';
 import { CSVExporter, ExcelExporter } from '../Engine/Exporters';
 import {
   ContextMenu,
@@ -194,8 +197,25 @@ const {
     activeCells,
     incomingCellEdit,
     broadcastCellFocus: broadcastFocusSocket,
-    broadcastCellEdit: broadcastEditSocket
+    broadcastCellEdit: broadcastEditSocket,
+    incomingBindingUpdate
 } = useSpreadsheetCollaboration(tableName, isLive);
+
+watch(incomingBindingUpdate, (update) => {
+    if (update && update.spreadsheetId === (props.engine['storageKey'] || 'default')) {
+        const parts = update.cellId.split(',');
+        const rStr = parts[0];
+        const cStr = parts[1];
+        if (rStr !== undefined && cStr !== undefined) {
+            const row = parseInt(rStr);
+            const col = parseInt(cStr);
+            if (!isNaN(row) && !isNaN(col)) {
+                props.engine.setValue({ row, col }, String(update.value), true, 'remote');
+                renderKey.value++; // Force canvas redraw
+            }
+        }
+    }
+});
 
 // Sync remote presence to engine
 watch(activeCells, (newCells) => {
@@ -227,6 +247,8 @@ onMounted(() => {
             broadcastEditSocket(pos.row, pos.col, val);
         }
     });
+
+    fetchCellBindings();
     onUnmounted(cleanup);
 });
 
@@ -405,6 +427,31 @@ const contextMenuPos = ref({ x: 0, y: 0 });
 const contextMenuOptions = ref<GridContextMenuItem[]>([]);
 const contextTarget = ref<{ type: 'cell' | 'row-header' | 'col-header', row?: number, col?: number } | null>(null);
 
+// Live Data State
+const showBindDialog = ref(false);
+const bindTarget = ref<{ row: number, col: number, label: string } | null>(null);
+const cellBindings = ref<Record<string, any>>({}); // key: "row,col"
+
+const fetchCellBindings = async () => {
+    try {
+        const spreadsheetId = props.engine['storageKey'] || 'default';
+        const resp = await api.get<any[]>(`/data-sources/bindings?spreadsheetId=${spreadsheetId}`);
+        const map: Record<string, any> = {};
+        props.engine.cellBindings.clear();
+        resp.forEach((b: any) => {
+            map[b.cell_id] = b;
+            props.engine.cellBindings.set(b.cell_id, b);
+        });
+        cellBindings.value = map;
+        renderKey.value++;
+    } catch (e) {}
+};
+
+const onBindingSaved = () => {
+    fetchCellBindings();
+    showBindDialog.value = false;
+};
+
 // Note State
 const activeNoteCell = ref<{row: number, col: number} | null>(null);
 const activeNotePos = ref({ x: 0, y: 0 });
@@ -492,6 +539,8 @@ const onContextMenu = (e: MouseEvent) => {
                 { type: 'divider' },
                 { label: 'Insert Note', action: 'insert_note', icon: MessageSquare },
                 { type: 'divider' },
+                { label: 'Bind to Live Data', action: 'bind_live_data', icon: Activity },
+                { type: 'divider' },
                 { label: 'Toggle Simulation (Demo)', action: 'toggle_simulation', icon: Sparkles },
                 { type: 'divider' },
                 { label: 'Export Selection (CSV)', action: 'export_selection_csv', icon: Download },
@@ -539,6 +588,14 @@ const handleContextMenuAction = async (action: string) => {
             case 'insert_note':
                 activeNoteCell.value = { row: r, col: c };
                 activeNotePos.value = { x: contextMenuPos.value.x, y: contextMenuPos.value.y };
+                break;
+            case 'bind_live_data':
+                bindTarget.value = { 
+                    row: r, 
+                    col: c, 
+                    label: `${colIndexToLabel(c)}${r + 1}` 
+                };
+                showBindDialog.value = true;
                 break;
             case 'toggle_simulation':
                 if (props.engine['simulationInterval']) {
@@ -1296,6 +1353,16 @@ const generateAIFormula = async (userRequest: string) => {
             }
             break;
             
+          case 'live_data_binding_request':
+            // AI wants to bind a column to live data
+            await executeLiveDataBindingRequest(
+              toolResult.sourceColumn,
+              toolResult.targetColumn,
+              toolResult.providerType,
+              toolResult.fieldPath
+            );
+            break;
+            
           default:
             console.warn(`Unknown tool result type: ${toolResult.type}`);
         }
@@ -1312,6 +1379,89 @@ const generateAIFormula = async (userRequest: string) => {
   } finally {
     isProcessingAI.value = false;
   }
+};
+
+// Helper: AI-driven batch live data binding
+const executeLiveDataBindingRequest = async (sourceCol: number, targetCol: number, providerType: string, fieldPath: string) => {
+    const rowCountVal = rowCount;
+    let boundCount = 0;
+    let errorCount = 0;
+
+    toast.info(`Configuring live data for ${providerType}...`);
+
+    try {
+        const spreadsheetId = (props.engine as any).storageKey || 'default';
+        
+        // 1. Fetch existing data sources to avoid duplicates
+        const existingSources = await api.get<any[]>('/data-sources');
+        
+        // 2. Iterate through rows (skipping header row 0)
+        for (let r = 1; r < rowCountVal; r++) {
+            const identifier = props.engine.getDisplayValue({ row: r, col: sourceCol })?.toString().trim();
+            if (!identifier) continue;
+
+            try {
+                // Find or create data source for this identifier
+                let source = existingSources.find((s: any) => 
+                    s.type === providerType && 
+                    (providerType === 'stock' ? s.config.symbol === identifier : 
+                     providerType === 'crypto' ? s.config.coinId === identifier.toLowerCase() : 
+                     s.config.city === identifier)
+                );
+
+                if (!source) {
+                    // Create new source
+                    const config: any = {};
+                    if (providerType === 'stock') config.symbol = identifier;
+                    else if (providerType === 'crypto') config.coinId = identifier.toLowerCase();
+                    else if (providerType === 'weather') config.city = identifier;
+
+                    source = await api.post<any>('/data-sources', {
+                        name: `${identifier} (${providerType})`,
+                        type: providerType,
+                        config: config,
+                        polling_interval: providerType === 'weather' ? 1800 : 3600 // 30m for weather, 1h for stocks/crypto
+                    });
+                    
+                    // Add to our local list so we don't recreate it for the same identifier in another row
+                    existingSources.push(source);
+                }
+
+                // 3. Bind the cell in target column
+                await api.post('/data-sources/bindings', {
+                    spreadsheetId,
+                    cellId: `${r},${targetCol}`,
+                    dataSourceId: source.id,
+                    fieldPath: fieldPath || (providerType === 'weather' ? 'temp' : 'price')
+                });
+
+                // Update engine's local binding map so UI shows indicators immediately
+                props.engine.cellBindings.set(`${r},${targetCol}`, {
+                    data_source: source.id,
+                    field_path: fieldPath || (providerType === 'weather' ? 'temp' : 'price')
+                });
+
+                boundCount++;
+            } catch (err) {
+                console.error(`Failed to bind row ${r}:`, err);
+                errorCount++;
+            }
+        }
+
+        if (boundCount > 0) {
+            toast.success(`Successfully bound ${boundCount} cells to live ${providerType} data.`);
+            // Trigger UI refresh
+            if (typeof (props.engine as any).notifyChange === 'function') {
+                (props.engine as any).notifyChange();
+            }
+        } else if (errorCount > 0) {
+            toast.error(`Binding failed for ${errorCount} cells.`);
+        } else {
+            toast.info("No valid identifiers found to bind.");
+        }
+    } catch (e: any) {
+        toast.error(`Failed to execute batch binding: ${e.message}`);
+    }
 };
 
 // Helper to apply calculation to column
@@ -2402,10 +2552,15 @@ defineExpose({
                 class="absolute top-0 left-0 w-0 h-0 border-r-[6px] border-r-transparent border-t-[6px] border-t-blue-500 pointer-events-none z-20"
               ></div>
 
-              <!-- Note Indicator (Top Right) -->
               <div 
                 v-if="props.engine.hasNotes(`${virtualState.startRow + rowOffset},${col - 1}`)" 
                 class="absolute top-0 right-0 w-0 h-0 border-l-[6px] border-l-transparent border-t-[6px] border-t-amber-500 pointer-events-none"
+              ></div>
+
+              <!-- Live Data Indicator (Bottom Left) -->
+              <div 
+                v-if="cellBindings[`${virtualState.startRow + rowOffset},${col - 1}`]" 
+                class="absolute bottom-0 left-0 w-0 h-0 border-r-[6px] border-r-transparent border-b-[6px] border-b-green-500 pointer-events-none z-20"
               ></div>
 
               <!-- Fill Handle (only on active cell) -->
@@ -2671,11 +2826,18 @@ defineExpose({
       @commit="commitChanges"
     />
 
-    <ChangeReviewDialog
-      v-model:open="showReviewDialog"
-      :diffs="pendingDiffs"
       :loading="committing"
       @commit="commitChanges"
+    />
+
+    <BindCellDialog
+      v-if="showBindDialog && bindTarget"
+      :spreadsheetId="props.engine['storageKey'] || 'default'"
+      :row="bindTarget.row"
+      :col="bindTarget.col"
+      :cellLabel="bindTarget.label"
+      @saved="onBindingSaved"
+      @closed="showBindDialog = false"
     />
 </template>
 

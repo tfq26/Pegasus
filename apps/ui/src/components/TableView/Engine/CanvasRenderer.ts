@@ -106,25 +106,17 @@ export class CanvasRenderer {
                 // Value
                 const val = this.engine.getDisplayValue({ row: r, col: c });
                 if (val) {
-                    // Save context for clipping? 
-                    // To optimize, we don't save/restore for every text.
-                    // Instead we just clip if text is long.
-                    // For now, simpler: no clip, or basic clip.
-
                     ctx.fillStyle = this.theme.textColor;
                     ctx.font = this.theme.font;
 
-                    // Simple text positioning
                     const textX = currentX + this.theme.paddingX;
                     const textY = y + (rowHeight / 2);
-
-                    // Basic clipping by checking width?
-                    // ctx.save();
-                    // ctx.beginPath();
-                    // ctx.rect(currentX, y, width, rowHeight);
-                    // ctx.clip();
                     ctx.fillText(val, textX, textY);
-                    // ctx.restore();
+                }
+
+                // Live Data Indicator
+                if (this.engine.cellBindings.get(`${r},${c}`)) {
+                    this.drawLiveIndicator(currentX, y, width, rowHeight);
                 }
             }
 
@@ -148,6 +140,18 @@ export class CanvasRenderer {
         if (selection) {
             this.drawSelection(selection, state);
         }
+    }
+
+    private drawLiveIndicator(x: number, y: number, width: number, height: number) {
+        const ctx = this.ctx;
+        const size = 6;
+        ctx.fillStyle = '#22c55e'; // green-500
+        ctx.beginPath();
+        ctx.moveTo(x, y + height);
+        ctx.lineTo(x + size, y + height);
+        ctx.lineTo(x, y + height - size);
+        ctx.closePath();
+        ctx.fill();
     }
 
     private drawSelection(

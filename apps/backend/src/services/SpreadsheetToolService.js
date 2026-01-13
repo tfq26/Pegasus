@@ -827,6 +827,41 @@ export class SpreadsheetToolService {
                 };
             }
         });
+
+        this.registerTool({
+            name: "bind_to_live_data",
+            description: "Bind a column of identifiers (like stock symbols or crypto IDs) to live data sources. Use this when the user asks for 'live prices', 'current market data', or 'weather updates' for a list of items. For example, 'get live prices for stocks in column A and put them in column B'.",
+            category: "spreadsheet",
+            parameters: {
+                type: "object",
+                properties: {
+                    sourceColumn: {
+                        type: "number",
+                        description: "0-based index of the column containing the identifiers (e.g., 'AAPL', 'BTC', 'London')"
+                    },
+                    targetColumn: {
+                        type: "number",
+                        description: "0-based index of the column where the live values should be displayed"
+                    },
+                    providerType: {
+                        type: "string",
+                        enum: ["stock", "crypto", "weather"],
+                        description: "The type of live data provider to use"
+                    },
+                    fieldPath: {
+                        type: "string",
+                        description: "The specific field to bind to (e.g., 'price' for stocks/crypto, 'temp' or 'humidity' for weather). FIELD NAMES: Stocks/Crypto: 'price', 'change24h'. Weather: 'temp', 'humidity', 'windSpeed', 'description'."
+                    }
+                },
+                required: ["sourceColumn", "targetColumn", "providerType"]
+            },
+            handler: async (args, context) => {
+                return {
+                    type: "live_data_binding_request",
+                    ...args
+                };
+            }
+        });
     }
 
     registerTool(tool) {
