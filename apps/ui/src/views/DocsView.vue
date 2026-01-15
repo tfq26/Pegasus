@@ -33,11 +33,19 @@
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-transparent'
                 ]"
               >
-                <div :class="[
-                  'w-1.5 h-1.5 rounded-full transition-all',
-                  activeType === 'guide' && activeSlug === slug ? 'bg-violet-500 scale-110 shadow-[0_0_8px_rgba(139,92,246,0.5)]' : 'bg-transparent group-hover:bg-muted-foreground/30'
-                ]"></div>
-                {{ slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') }}
+                <div class="relative flex items-center justify-center w-5 h-5">
+                   <img 
+                     v-if="getProviderLogo(slug)" 
+                     :src="getProviderLogo(slug)" 
+                     class="w-4 h-4 object-contain transition-all group-hover:scale-110" 
+                     :alt="slug"
+                   />
+                   <div v-else :class="[
+                    'w-1.5 h-1.5 rounded-full transition-all',
+                    activeType === 'guide' && activeSlug === slug ? 'bg-violet-500 scale-110 shadow-[0_0_8px_rgba(139,92,246,0.5)]' : 'bg-transparent group-hover:bg-muted-foreground/30'
+                  ]"></div>
+                </div>
+                {{ formatTitle(slug) }}
               </button>
             </div>
           </div>
@@ -102,7 +110,7 @@
                 Guide
               </span>
               <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-white drop-shadow-lg capitalize">
-                {{ activeSlug.split('-').join(' ') }}
+                {{ formatTitle(activeSlug) }}
               </h1>
             </div>
           </div>
@@ -172,10 +180,28 @@ import {
 } from 'lucide-vue-next'
 import MarkdownIt from 'markdown-it'
 import { api } from '@/lib/apiClient'
+import { useColorMode } from '@vueuse/core'
 
 const route = useRoute()
 const router = useRouter()
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
+const mode = useColorMode()
+const isDark = computed(() => mode.value === 'dark')
+
+const formatTitle = (slug: string) => {
+  const acronyms = ['aws', 'gcp', 'api', 'sql', 'db', 'ui', 'ux', 'ai', 'ml', 'cli', 'sdk', 'ci', 'cd']
+  return slug.split('-').map(w => {
+    if (acronyms.includes(w.toLowerCase())) return w.toUpperCase()
+    return w.charAt(0).toUpperCase() + w.slice(1)
+  }).join(' ')
+}
+
+const getProviderLogo = (slug: string) => {
+  if (slug.includes('azure')) return '/icons/microsoft/Azure/azure-2.svg'
+  if (slug.includes('aws')) return isDark.value ? '/icons/aws/aws-colored-white-text.svg' : '/icons/aws/aws-colored-black-text.svg'
+  if (slug.includes('gcp')) return '/icons/google/GCP/icons8-google-cloud.svg'
+  return null
+}
 
 const guides = ref<string[]>([])
 const changelogs = ref<string[]>([])
