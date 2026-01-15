@@ -1,0 +1,288 @@
+{
+    "title": "v0.8.8 - Premium Visual Identity & Enterprise Cloud",
+    "date": "2026-01-15",
+    "version": "0.8.8",
+    "description": "A comprehensive visual identity overhaul introducing tier-based dynamic theming, enterprise-grade cloud integrations with BYOM (Bring Your Own Model) support, and improved documentation for cloud providers.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Bring Your Own Model (BYOM)",
+                    "description": "Enterprise users can now use their own cloud AI providers instead of Pegasus defaults.",
+                    "details": [
+                        "AWS Bedrock Integration: Connect your AWS account and use Claude 3 Sonnet/Haiku directly.",
+                        "Azure OpenAI Support: Use your private GPT-4 deployments for secure enterprise AI.",
+                        "GCP Vertex AI: Access Gemini 1.5 Pro through your Google Cloud credentials.",
+                        "Dynamic Model Switching: AIClient now resolves providers dynamically based on user preferences.",
+                        "Enterprise Gating: BYOM features are available exclusively for Teams and Enterprise tiers."
+                    ]
+                },
+                {
+                    "title": "AI Configuration API",
+                    "description": "New backend routes for managing AI provider preferences.",
+                    "details": [
+                        "GET /ai-config: Retrieve current AI provider configuration.",
+                        "POST /ai-config: Set preferred AI provider with entitlement validation.",
+                        "GET /ai-config/models: List available models including connected cloud providers.",
+                        "Vault Integration: AI preferences stored securely in the secret vault."
+                    ]
+                },
+                {
+                    "title": "Cloud Provider Documentation",
+                    "description": "Comprehensive user-friendly setup guides for all cloud providers.",
+                    "details": [
+                        "AWS Credentials Guide: Step-by-step IAM user creation and Access Key setup.",
+                        "Azure OAuth Guide: Simple connect flow with troubleshooting tips.",
+                        "GCP OAuth Guide: Google Cloud connection with consent screen guidance.",
+                        "No developer knowledge required: Guides written for end-users, not admins."
+                    ]
+                },
+                {
+                    "title": "Tier-Based Visual Identity",
+                    "description": "Dynamic, subscription-aware styling throughout the application.",
+                    "details": [
+                        "Tier Gradients: Each subscription tier (Free, Pro, Pro+, Teams) now has its own signature color palette.",
+                        "Profile Glow Border: User avatars feature an animated glow effect color-matched to their subscription tier.",
+                        "Navigation Accents: Active tab underlines dynamically reflect the user's tier colors.",
+                        "Loading Screen Gradients: The global loading progress bar now displays tier-specific gradient animations.",
+                        "Progress Bar Theming: The GlobalProgressBar component uses tier-aware colors for all operations."
+                    ]
+                },
+                {
+                    "title": "Consolidated Purchase Dashboard",
+                    "description": "Unified resource purchasing experience with tabbed navigation.",
+                    "details": [
+                        "Single Card Interface: Combined 'Add Tokens' and 'Expand Storage' into one streamlined card.",
+                        "Smart Tabbed Navigation: Tabs intelligently default to Tokens for paid tiers, Storage for free users.",
+                        "Animated Price Ticker: Real-time price calculations with smooth NumberTicker animations.",
+                        "NumberField Controls: Modern increment/decrement inputs replacing legacy sliders."
+                    ]
+                },
+                {
+                    "title": "Enhanced Profile Header",
+                    "description": "Redesigned profile page header with consolidated subscription information.",
+                    "details": [
+                        "Subscription Integration: Renewal dates and billing moved directly into the header.",
+                        "Dynamic Tier Badges: Premium badges with gradient backgrounds matching subscription tier.",
+                        "Organization Display: Company/team name now prominently shown with icon.",
+                        "Streamlined Actions: Upgrade, Manage Plan, and Sign Out unified in header."
+                    ]
+                },
+                {
+                    "title": "GlowBorder Component",
+                    "description": "New reusable animated border effect component.",
+                    "details": [
+                        "CSS Mask Animation: Efficient radial gradient animation using CSS masks.",
+                        "Configurable Colors: Accepts single color or array of colors for gradient.",
+                        "Performance Optimized: Uses will-change and GPU-accelerated transforms.",
+                        "Accessibility: Respects motion-safe preferences for reduced motion."
+                    ]
+                },
+                {
+                    "title": "NumberTicker Component",
+                    "description": "Animated number display for dynamic value changes.",
+                    "details": [
+                        "Smooth Transitions: Animated counting effect when values change.",
+                        "Decimal Support: Configurable decimal places for currency displays.",
+                        "Intersection Observer: Only animates when visible in viewport.",
+                        "Theme Aware: Inherits text colors from parent containers."
+                    ]
+                },
+                {
+                    "title": "Enhanced Cloud Resource Manager",
+                    "description": "Unified resource management with multi-provider support.",
+                    "details": [
+                        "New Resource Button: Generic 'New Resource' button replaces specific KQL button.",
+                        "Inline Provisioning: Opens CloudProvisionWizard at resource selection step with pre-filled context.",
+                        "Multi-Provider API Calls: All API endpoints now use dynamic provider ID for Azure, AWS, GCP.",
+                        "Dynamic Portal Links: 'Open in Portal' button routes to correct provider's console.",
+                        "Provider Icons: AWS and GCP logos displayed alongside Azure in Resource Manager header.",
+                        "shadcn Select Component: Resource Group dropdown now uses premium Select UI."
+                    ]
+                },
+                {
+                    "title": "Cloud Provisioning Wizard Enhancements",
+                    "description": "Extended wizard with new resources, configuration modes, and progress tracking.",
+                    "details": [
+                        "Azure Data Explorer (KQL): New resource option for big data analytics.",
+                        "Azure OpenAI Restored: AI services option re-added to resource selection.",
+                        "Configuration Mode Step: New Step 5 for choosing Pegasus Managed vs Custom Setup.",
+                        "Manual Setup Link: Direct link to cloud provider's portal for custom configuration.",
+                        "Default Config Info Dialog: Info button reveals default configurations per provider.",
+                        "initialStep Prop: Wizard can start at any step with pre-filled subscription/location/RG.",
+                        "Real-time Progress Polling: Provisioning status updates via 10-second polling interval.",
+                        "Global Progress Integration: Uses useProgress for operation tracking in GlobalProgressBar."
+                    ]
+                },
+                {
+                    "title": "Multi-Cloud Provider Backend",
+                    "description": "Full AWS and GCP integration in cloud-provision routes.",
+                    "details": [
+                        "AWS Routes: GET /aws/subscriptions, /aws/locations, /aws/resources, POST /aws/provision.",
+                        "GCP Routes: GET /gcp/subscriptions, /gcp/locations, /gcp/resources, POST /gcp/provision.",
+                        "AWS S3 Integration: Lists real S3 buckets using @aws-sdk/client-s3.",
+                        "GCP Storage Integration: Lists Cloud Storage buckets via @google-cloud/storage.",
+                        "Dynamic Config Routes: GET/POST /:provider/config for storing user preferences per provider.",
+                        "Resource Status Field: Added provisioningState to Azure resource listings."
+                    ]
+                },
+                {
+                    "title": "Multi-Provider Cloud Auth",
+                    "description": "Complete authentication flows for AWS and GCP.",
+                    "details": [
+                        "AWS Init: Direct credential storage from environment variables (no OAuth dance).",
+                        "GCP OAuth Flow: Full Google OAuth2 with consent screen and token exchange.",
+                        "Status Endpoints: GET /:provider/status checks connection for all three providers.",
+                        "Disconnect Endpoints: DELETE /:provider/disconnect removes credentials from vault.",
+                        "Parallel Status Check: CloudTab now checks Azure, AWS, and GCP status simultaneously."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "AI Settings UI Enhancements",
+                    "description": "Model Provider selector added to AI settings tab.",
+                    "details": [
+                        "Provider Cards: Visual selector for Pegasus, AWS, Azure, and GCP providers.",
+                        "Lock States: Non-enterprise users see locked indicators with upgrade prompts.",
+                        "Enterprise Badge: Clear indication that BYOM is an enterprise feature.",
+                        "Auto-refresh: Page reloads to fetch models when provider changes."
+                    ]
+                },
+                {
+                    "title": "Entitlement Service Expansion",
+                    "description": "Enhanced feature gating capabilities.",
+                    "details": [
+                        "hasFeature() Method: Check if user has access to specific features by name.",
+                        "BYOM Feature Flag: 'byom_models' feature available for teams/enterprise tiers.",
+                        "manuallyGrantTier(): Admin function to provision enterprise accounts without Stripe."
+                    ]
+                },
+                {
+                    "title": "Settings Tab Visibility",
+                    "description": "Cloud Infrastructure tab now tier-gated.",
+                    "details": [
+                        "Dynamic Tab List: Cloud tab only visible for Teams/Enterprise subscribers.",
+                        "Auto-redirect: If user downgrades, they're redirected to General tab.",
+                        "Computed Tabs: Tab list is now reactive based on subscription tier."
+                    ]
+                },
+                {
+                    "title": "shadcn-vue Card Standardization",
+                    "description": "Unified card components across the Profile page.",
+                    "details": [
+                        "Dynamic Class Support: Card components now accept Vue object/array class syntax.",
+                        "Consistent Styling: All profile sections use standardized Card/CardHeader/CardContent.",
+                        "Type Safety: HTMLAttributes['class'] typing for proper TypeScript support."
+                    ]
+                },
+                {
+                    "title": "Navbar Tier Display",
+                    "description": "Subscription tier visibility in navigation.",
+                    "details": [
+                        "Desktop Navbar: Tier badge shown next to username with gradient styling.",
+                        "Mobile Drawer: Consistent tier display in mobile navigation footer.",
+                        "Profile Picture Cleanup: Removed legacy purple ring styling from avatars.",
+                        "Global State: Migrated to useEntitlements composable for unified tier access."
+                    ]
+                },
+                {
+                    "title": "Marketing Site Performance",
+                    "description": "Optimized hero section animations.",
+                    "details": [
+                        "anime.js Integration: Replaced CSS keyframes with anime.js for constellation.",
+                        "Sequential Shimmer: Preserved original 5s cycle with 0.5s staggered delays.",
+                        "GPU Acceleration: SVG animations optimized for smooth 60fps rendering.",
+                        "Bundle Size: anime.js v3.2.2 adds minimal overhead (~17kb gzipped)."
+                    ]
+                },
+                {
+                    "title": "Build System Fixes",
+                    "description": "Resolved production deployment issues.",
+                    "details": [
+                        "NumberField Fix: Resolved esbuild transform error with v-model type casting.",
+                        "Script Tag Restoration: Fixed malformed Vue SFC structure in number-field.vue.",
+                        "Computed Refactor: Replaced useVModel with explicit computed get/set pattern."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Technical Improvements",
+            "items": [
+                {
+                    "title": "Cloud AI Provider Architecture",
+                    "description": "New provider classes for cloud AI services.",
+                    "details": [
+                        "AWSBedrockProvider: Interfaces with Bedrock Runtime API for Claude models.",
+                        "AzureOpenAIProvider: Uses openai SDK with AzureOpenAI client configuration.",
+                        "GCPVertexProvider: Integrates @google-cloud/vertexai for Gemini access.",
+                        "Dynamic Instantiation: Providers created on-demand with user credentials from vault."
+                    ]
+                },
+                {
+                    "title": "AIClient Refactoring",
+                    "description": "Enhanced model resolution with user context.",
+                    "details": [
+                        "userId Parameter: getProviderForModel now accepts userId for BYOM resolution.",
+                        "Prefix-based Routing: 'aws:', 'azure:', 'gcp:' prefixes route to cloud providers.",
+                        "Fallback Chain: If cloud provider fails, gracefully falls back to default.",
+                        "listModels Enhancement: Lists both default and user's connected cloud models."
+                    ]
+                },
+                {
+                    "title": "Component Architecture",
+                    "description": "Improved component patterns and reusability.",
+                    "details": [
+                        "tierDisplay Computed: Centralized tier-to-style mapping across components.",
+                        "activeTabClass Computed: Unified navigation underline styling logic.",
+                        "tierGradientClass: Shared gradient definitions for progress indicators."
+                    ]
+                },
+                {
+                    "title": "Code Quality",
+                    "description": "Cleanup and standardization efforts.",
+                    "details": [
+                        "Removed Redundant Code: Eliminated checkSubscription watchers in favor of global store.",
+                        "Import Cleanup: Removed unused useVModel imports, added computed from vue.",
+                        "Lint Compliance: Resolved empty ruleset warnings in constellation component.",
+                        "Grid.vue Fixes: Moved constants to top of file, fixed unref usage for connections."
+                    ]
+                },
+                {
+                    "title": "SecretService Path Resolution",
+                    "description": "Fixed environment variable loading in backend services.",
+                    "details": [
+                        "Explicit .env Path: Uses fileURLToPath and path.resolve to locate .env from service directory.",
+                        "Debug Logging: Logs the resolved .env path on service initialization.",
+                        "Monorepo Compatibility: Fixes issues where dotenv couldn't find .env in complex project structures."
+                    ]
+                },
+                {
+                    "title": "New UI Component Library Additions",
+                    "description": "shadcn-vue compatible components added to the design system.",
+                    "details": [
+                        "Progress Component: Reka-UI based progress bar with indicator animation.",
+                        "NumberField Component: Increment/decrement input with Plus/Minus buttons.",
+                        "NumberTicker Component: Animated number transitions with viewport detection.",
+                        "GlowBorder Component: Animated radial gradient border effect for cards.",
+                        "CSS Glow Animation: Added @keyframes glow to styles.css with @theme inline block."
+                    ]
+                },
+                {
+                    "title": "Resource Manager Auto-Close",
+                    "description": "UX improvement for cloud disconnection flow.",
+                    "details": [
+                        "Auto-Close on Disconnect: Resource Manager closes when its provider is disconnected.",
+                        "Provider-Aware Check: Only closes if the disconnected provider matches the open manager."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

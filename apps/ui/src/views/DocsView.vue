@@ -76,17 +76,42 @@
 
       <!-- Main Content -->
       <main class="flex-1 overflow-y-auto">
+        <!-- Hero Banner with Unsplash Background -->
+        <div 
+          v-if="activeSlug && unsplashUrl"
+          class="relative h-48 md:h-64 w-full overflow-hidden"
+        >
+          <img 
+            :src="unsplashUrl" 
+            :alt="activeSlug"
+            class="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+          />
+          <!-- Gradient Overlays -->
+          <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent"></div>
+          <div class="absolute inset-0 bg-gradient-to-r from-background/40 to-transparent"></div>
+          
+          <!-- Content on the banner -->
+          <div class="absolute bottom-0 left-0 right-0 p-8 max-w-4xl mx-auto">
+            <div v-if="activeType === 'release' && releaseData" class="space-y-2">
+              <span class="text-sm text-white/70">{{ releaseData.date }}</span>
+              <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-white drop-shadow-lg">{{ releaseData.title }}</h1>
+            </div>
+            <div v-else class="space-y-2">
+              <span class="px-3 py-1 rounded-lg text-xs font-bold bg-violet-600/20 text-violet-300 border border-violet-500/30 backdrop-blur-sm">
+                Guide
+              </span>
+              <h1 class="text-3xl md:text-4xl font-bold tracking-tight text-white drop-shadow-lg capitalize">
+                {{ activeSlug.split('-').join(' ') }}
+              </h1>
+            </div>
+          </div>
+        </div>
+
         <div class="max-w-4xl mx-auto px-8 py-12">
-          <div class="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <!-- Release Header -->
-            <div v-if="activeType === 'release' && releaseData" class="mb-10 space-y-4">
-              <div class="flex items-center gap-3">
-                <span class="px-3 py-1 rounded-lg text-xs font-bold bg-violet-600/10 text-violet-400 border border-violet-500/20">
-                  {{ releaseData.version }}
-                </span>
-                <span class="text-sm text-muted-foreground">{{ releaseData.date }}</span>
-              </div>
-              <h1 class="text-4xl font-bold tracking-tight text-foreground">{{ releaseData.title }}</h1>
+          <BlurReveal :trigger-key="activeSlug" :duration="0.5" :blur="'8px'" :y-offset="15">
+            <!-- Release Description (moved below banner) -->
+            <div v-if="activeType === 'release' && releaseData" class="mb-10">
               <p class="text-lg text-muted-foreground leading-relaxed">{{ releaseData.description }}</p>
             </div>
 
@@ -122,16 +147,18 @@
                 </div>
               </div>
             </div>
-          </div>
+          </BlurReveal>
         </div>
       </main>
     </div>
   </div>
 </template>
 
+
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
+import BlurReveal from '@/components/blur-reveal/BlurReveal.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { 
   FileText, 
@@ -159,6 +186,36 @@ const activeSlug = ref('')
 const content = ref('')
 const contentType = ref<'markdown' | 'html'>('markdown')
 const releaseData = ref<any>(null)
+
+// Keyword mapping for more relevant Unsplash images
+const getUnsplashKeywords = (type: 'guide' | 'release', slug: string): string => {
+  const keywordMap: Record<string, string> = {
+    // Guides
+    'getting-started': 'workspace,desk,startup',
+    'azure-credentials': 'cloud,server,technology',
+    'aws-credentials': 'cloud,data-center,network',
+    'gcp-credentials': 'cloud,computing,abstract',
+    'keyboard-shortcuts': 'keyboard,productivity,minimal',
+    'data-visualization': 'charts,analytics,dashboard',
+    'collaboration': 'team,office,meeting',
+    'spreadsheet': 'excel,data,table',
+    // Releases default to abstract/tech
+    'default-release': 'abstract,gradient,technology',
+    'default-guide': 'documentation,minimalist,workspace'
+  }
+  
+  const defaultKeywords = type === 'release' ? 'abstract,gradient,technology' : 'documentation,minimalist,workspace'
+  const key = keywordMap[slug] || defaultKeywords
+  return key
+}
+
+// Generate deterministic image URL (same doc = same image)
+const unsplashUrl = computed(() => {
+  if (!activeSlug.value) return ''
+  // Use Picsum Photos with seed for deterministic images
+  // The seed ensures the same doc always gets the same image
+  return `https://picsum.photos/seed/${activeSlug.value}/1920/600?blur=1`
+})
 
 const fetchIndex = async () => {
   isLoadingList.value = true
