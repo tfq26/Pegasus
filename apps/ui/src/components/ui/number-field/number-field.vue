@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { NumberFieldDecrement, NumberFieldIncrement, NumberFieldInput, NumberFieldRoot } from 'reka-ui'
 import { Plus, Minus } from 'lucide-vue-next'
-import { useVModel } from '@vueuse/core'
+import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   modelValue?: number
@@ -20,13 +20,16 @@ const emit = defineEmits<{
   'update:modelValue': [value: number]
 }>()
 
-const modelValue = useVModel(props, 'modelValue', emit)
+const localValue = computed({
+  get: () => props.modelValue,
+  set: (val: number) => emit('update:modelValue', val)
+})
 </script>
 
 <template>
   <NumberFieldRoot
     :id="id"
-    v-model="(modelValue as any)"
+    v-model="localValue"
     :min="min"
     :max="max"
     :step="step"
