@@ -16,7 +16,7 @@ export interface Operation {
     startedAt: number        // Unix timestamp
     completedAt?: number     // Unix timestamp
     duration?: number        // milliseconds
-    category?: 'query' | 'ai' | 'data' | 'export' | 'import'
+    category?: 'query' | 'ai' | 'data' | 'export' | 'import' | 'cloud'
     retryable?: boolean
     retryCount?: number
     maxRetries?: number
@@ -254,7 +254,7 @@ export function useProgress() {
 
     const loadHistoryFromBackend = async () => {
         try {
-            const backendHistory = await fetchOperationHistory(MAX_HISTORY)
+            const backendHistory = await fetchOperationHistory(MAX_HISTORY) as any[]
             // Map backend fields to frontend fields if necessary
             const mapped = backendHistory.map((h: any) => ({
                 id: h.id,

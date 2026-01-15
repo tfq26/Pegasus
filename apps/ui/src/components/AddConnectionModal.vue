@@ -52,6 +52,15 @@ const canAddConnection = computed(() => {
   if (f.provider === 'sqlite') return !!f.sqlite.path
   if (f.provider === 'file') return !!(f.sqlite.path || f.surrealdb?.uploadId) // File uploads can store in either sqlite.path or surrealdb.uploadId
   if (f.provider === 'surrealdb') return !!f.surrealdb?.uploadId // SurrealDB file uploads
+  if (f.provider === 'ai_provider') return !!f.ai_provider?.apiKey
+  if (f.provider === 'cloud_storage') {
+      const cs = f.cloud_storage
+      if (!cs?.bucket) return false
+      if (cs.service === 'azure_blob') return !!cs.connectionString
+      if (cs.service === 's3') return !!(cs.accessKey && cs.secretKey)
+      if (cs.service === 'gcs') return !!cs.secretKey // JSON key
+      return false
+  }
   return false
 })
 

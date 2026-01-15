@@ -1,4 +1,4 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage'
 
 export type MySQLConfig = {
   host: string
@@ -56,6 +56,24 @@ export type SurrealConfig = {
   url?: string
 }
 
+export type AIProviderConfig = {
+  service: 'openai' | 'anthropic' | 'azure_openai' | 'custom'
+  apiKey: string // stored as vault:// reference
+  baseUrl?: string
+  allowedModels?: string[]
+  defaultModel?: string
+}
+
+export type CloudStorageConfig = {
+  service: 'azure_blob' | 's3' | 'gcs'
+  connectionString?: string // for Azure
+  accessKey?: string // for S3
+  secretKey?: string // for S3
+  region?: string
+  bucket?: string // default bucket
+  allowedBuckets?: string[] // whitelist
+}
+
 export type ConnectionEntry = {
   id: string
   nickname: string
@@ -68,6 +86,8 @@ export type ConnectionEntry = {
   sqlite?: SQLiteConfig
   file?: FileConfig
   surrealdb?: SurrealConfig
+  ai_provider?: AIProviderConfig
+  cloud_storage?: CloudStorageConfig
   isLocked?: boolean
 }
 
@@ -109,7 +129,7 @@ export const buildConnectionPayload = (
   entry: ConnectionEntry,
   overrides: ConnectionOverrides = {},
 ) => {
-  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.surrealdb || entry.kusto;
+  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.surrealdb || entry.kusto || entry.ai_provider || entry.cloud_storage;
   if (!isRawEntry) return { ...entry, ...overrides };
 
   let basePayload: any = {}
@@ -133,6 +153,13 @@ export const buildConnectionPayload = (
       break
     case 'surrealdb':
       basePayload = { provider: 'surrealdb', ...entry.surrealdb }
+      break
+
+    case 'ai_provider':
+      basePayload = { provider: 'ai_provider', ...entry.ai_provider }
+      break
+    case 'cloud_storage':
+      basePayload = { provider: 'cloud_storage', ...entry.cloud_storage }
       break
     default:
       basePayload = { provider: entry.provider }

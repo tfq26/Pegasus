@@ -50,26 +50,13 @@
           </div>
         </section>
 
+
         <section v-if="activeTab === 'ai'" class="fade-section">
           <AITab :settings="settings" />
         </section>
 
-        <section v-if="activeTab === 'queries'" class="fade-section">
-          <QueriesTab :settings="settings" />
-        </section>
-
-        <section v-if="activeTab === 'data'" class="fade-section">
-          <DataTab :settings="settings" />
-        </section>
-
-
-
-        <section v-if="activeTab === 'view'" class="fade-section">
-          <ViewTab :settings="settings" />
-        </section>
-
-        <section v-if="activeTab === 'integrations'" class="fade-section">
-          <IntegrationsTab :settings="settings" />
+        <section v-if="activeTab === 'cloud'" class="fade-section">
+          <CloudTab :settings="settings" />
         </section>
 
         <section v-if="activeTab === 'database'" class="fade-section h-full">
@@ -126,11 +113,7 @@ import { useColorMode } from '@vueuse/core'
 import { toast } from '@/composables/useNotifications'
 import GeneralTab from './GeneralTab.vue'
 import AITab from './AITab.vue'
-import QueriesTab from './QueriesTab.vue'
-import DataTab from './DataTab.vue'
-
-import ViewTab from './ViewTab.vue'
-import IntegrationsTab from './IntegrationsTab.vue'
+import CloudTab from './CloudTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
 import ExperimentalSettings from './ExperimentalSettings.vue'
 import AnalyticsTab from './AnalyticsTab.vue'
@@ -139,29 +122,47 @@ import type { ConnectionEntry } from '@/lib/db-connections'
 import { fetchConnectionSchema, QUERY_API_URL, getAuthHeaders } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
 import { usePlatform } from '@/composables/usePlatform'
+import { useEntitlements } from '@/composables/useEntitlements'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { storeToRefs } from 'pinia'
+import { unref, watch } from 'vue'
 
 defineOptions({ name: 'SettingsPage' })
 
 const router = useRouter()
 const { isPhone } = usePlatform()
+const { subscriptionTier } = useEntitlements()
 
-const tabs = [
-  { id: 'general', label: 'General' },
-  { id: 'ai', label: 'AI' },
-  { id: 'queries', label: 'Queries' },
-  { id: 'data', label: 'Data' },
-  { id: 'view', label: 'View' },
-  { id: 'database', label: 'Database Connections' },
-  { id: 'integrations', label: 'Linked Accounts' },
-  { id: 'analytics', label: 'Analytics & Logs' },
-  { id: 'experimental', label: 'Experimental' },
-]
+const tabs = computed(() => {
+  const list = [
+    { id: 'general', label: 'General' },
+    { id: 'ai', label: 'AI' },
+    { id: 'database', label: 'Database Connections' },
+  ]
+
+  // Only show Cloud Infrastructure tab for Teams/Enterprise plans
+  if (['teams', 'enterprise'].includes(subscriptionTier.value)) {
+    list.push({ id: 'cloud', label: 'Cloud Infrastructure' })
+  }
+
+  list.push(
+    { id: 'analytics', label: 'Analytics & Logs' },
+    { id: 'experimental', label: 'Experimental' }
+  )
+
+  return list
+})
 
 const activeTab = ref('general')
 const isInitializing = ref(true)
+
+// Redirect if active tab becomes invalid (e.g. on plan downgrade)
+watch(tabs, (newTabs) => {
+  if (!newTabs.find(t => t.id === activeTab.value)) {
+    activeTab.value = 'general'
+  }
+})
 
 // --- Theme ---
 const mode = useColorMode({
@@ -186,7 +187,6 @@ const toggleTheme = () => {
 // --- Settings model ---
 const settingsStore = useSettingsStore()
 const { isLoading } = storeToRefs(settingsStore)
-import { unref } from 'vue'
 const settings = computed(() => unref(settingsStore.settings))
 
 const savedConnections = ref<ConnectionEntry[]>([])
@@ -227,6 +227,15 @@ const connectionForm = reactive<ConnectionFormState>({
     ssl: false
   },
   surrealdb: {},
+  ai_provider: {
+    service: 'openai',
+    apiKey: '',
+    defaultModel: ''
+  },
+  cloud_storage: {
+      service: 'azure_blob',
+      bucket: ''
+  },
   isLocked: false
 })
 
@@ -343,6 +352,15 @@ const resetConnectionForm = () => {
       ssl: false
     },
     surrealdb: {},
+    ai_provider: {
+      service: 'openai',
+      apiKey: '',
+      defaultModel: ''
+    },
+    cloud_storage: {
+        service: 'azure_blob',
+        bucket: ''
+    },
     isLocked: false
   }
   Object.assign(connectionForm, fresh)

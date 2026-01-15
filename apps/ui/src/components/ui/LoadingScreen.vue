@@ -4,7 +4,10 @@
       <!-- Pulsing background line -->
       <div class="absolute inset-0 bg-primary/5 animate-pulse"></div>
       <!-- Moving progress bar -->
-      <div class="h-full bg-gradient-to-r from-primary/80 via-primary to-primary/80 rounded-full shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)] animate-progress-active border-r border-white/20"></div>
+      <div 
+        class="h-full rounded-full shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)] animate-progress-active border-r border-white/20"
+        :class="tierGradientClass"
+      ></div>
     </div>
     <div class="mt-10 text-center space-y-3">
       <h2 class="text-2xl font-black tracking-tight text-foreground bg-clip-text text-transparent bg-gradient-to-b from-foreground to-foreground/70">
@@ -18,6 +21,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useEntitlements } from '@/composables/useEntitlements'
+
 defineProps({
   title: {
     type: String,
@@ -27,6 +33,17 @@ defineProps({
     type: String,
     default: 'Securing your session and fetching encrypted data...'
   }
+})
+
+const { subscriptionTier } = useEntitlements()
+
+const tierGradientClass = computed(() => {
+    switch (subscriptionTier.value) {
+        case 'pro': return 'bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600'
+        case 'pro_plus': return 'bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-500' // Adjusted to match profile/pricing
+        case 'teams': return 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500' // Adjusted to match profile/pricing
+        default: return 'bg-gradient-to-r from-primary/80 via-primary to-primary/80' // Keep original for Free
+    }
 })
 </script>
 

@@ -54,6 +54,7 @@ const props = defineProps<{
   currentVersion?: number
   textWrap?: boolean
   showGridlines?: boolean
+  hasUncommittedChanges?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -309,8 +310,9 @@ const emit = defineEmits<{
     <!-- Spacer -->
     <div class="flex-1"></div>
 
-      <!-- COMMIT BUTTON (Primary Action) -->
+      <!-- COMMIT BUTTON -->
       <button 
+        v-if="privateMode || props.hasUncommittedChanges"
         @click="emit('commit')"
         class="flex items-center gap-1.5 px-3 py-1.5 mr-2 rounded-md bg-stone-900 text-stone-50 hover:bg-stone-800 transition-colors shadow-sm text-xs font-bold uppercase tracking-wide border border-stone-800 disabled:opacity-50"
         :disabled="saveStatus === 'saving'"

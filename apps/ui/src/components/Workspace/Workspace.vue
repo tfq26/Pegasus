@@ -10,7 +10,7 @@ import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
-import { fetchTableSchema, fetchTableQuery, saveTableData } from '@/lib/api';
+import { fetchTableSchema, fetchTableQuery } from '@/lib/api';
 import { buildConnectionPayload } from '@/lib/db-connections';
 import { Plus, MessageSquare, Layout, Sparkles, Database, FileCode } from 'lucide-vue-next';
 
@@ -191,11 +191,8 @@ const refreshTableData = async (engine: Engine) => {
 
 // Auto-save logic (Hybrid Strategy: Full Replacement or Delta Operations)
 const saveChanges = async (engine: Engine) => {
-   // Prevent save during refresh
-   if (isRefreshing.value) {
-     console.log('[Save] Skipping save during refresh');
-     return;
-   }
+    // Prevent save during refresh
+    if (isRefreshing.value) return;
    
     try {
       if (!engine.hasPendingModifications()) {
@@ -348,29 +345,7 @@ const getEngineForTab = (tabId: string) => {
         if ((window as any).syncTimeouts[tabId]) clearTimeout((window as any).syncTimeouts[tabId]);
         (window as any).syncTimeouts[tabId] = setTimeout(syncToPinia, debounceMs);
         
-        // Calculate time since last save
-        const now = Date.now();
-        const timeSinceLastSave = now - lastSaveTime;
-        
-        // Clear any existing timeout
-        if (saveTimeout) clearTimeout(saveTimeout);
-        
-        // If enough time has passed, save immediately
-        if (timeSinceLastSave >= SAVE_INTERVAL) {
-            lastSaveTime = now;
-            hasPendingChanges = false;
-            saveChanges(engine);
-        } else {
-            // Otherwise, schedule save for when interval is up
-            const timeUntilNextSave = SAVE_INTERVAL - timeSinceLastSave;
-            saveTimeout = setTimeout(() => {
-                if (hasPendingChanges) {
-                    lastSaveTime = Date.now();
-                    hasPendingChanges = false;
-                    saveChanges(engine);
-                }
-            }, timeUntilNextSave);
-        }
+        // Manual save required now - notifying UI of dirty state is handled by workspaceStore.setTabDirty above
     });
     
     // Set up change listener for undo/redo state
@@ -821,17 +796,24 @@ const handleVersionChange = async (tabId: string, version: number) => {
     toast.success(`Switched to version ${version === 0 ? 'Original' : 'v' + version}`);
 };
 
-// Handle persisting a local-only table to the database
+// Handle persisting a local-only table OR Forking an existing table (Save A Copy)
 const handlePersistTable = async (tabId: string) => {
     const engine = getEngineForTab(tabId);
-    if (!engine || engine.hasSource()) return;
+    if (!engine) return;
 
-    // We'll show a prompt for the table name
+    // IF engine has a source, we treat this as a "Save Copy" (Fork) action
+    if (engine.hasSource()) {
+        await handleForkTable(tabId);
+        return;
+    }
+
+    // Otherwise, standard persist for local scratchpad
     const tableName = prompt('Enter a name for your new table:', (tabs.value as any).find((t: any) => t.id === tabId)?.label || 'MySheet1');
     if (!tableName) return;
 
+    let loadingId;
     try {
-        const loadingId = toast.loading(`Persisting ${tableName} to database...`);
+        loadingId = toast.loading(`Persisting ${tableName} to database...`);
         
         // 1. Prepare data for export
         const csvContent = CSVExporter.getContent(engine);
@@ -875,8 +857,61 @@ const handlePersistTable = async (tabId: string) => {
         await engine.commit();
         
     } catch (e: any) {
+        if (loadingId) toast.dismiss(loadingId);
         console.error('[Workspace] Persist failed:', e);
         toast.error(`Failed to persist table: ${e.message}`);
+    }
+};
+
+// Handle Forking (Copying) a table on the server
+const handleForkTable = async (tabId: string) => {
+    const engine = getEngineForTab(tabId);
+    if (!engine || !engine.sourceTable) return;
+
+    const currentLabel = (tabs.value as any).find((t: any) => t.id === tabId)?.label || engine.sourceTable || 'Table';
+    const newName = prompt('Save a Copy As:', `${currentLabel}_copy`);
+    
+    if (!newName) return;
+
+    // Basic sanitization for the prompt input to avoid SQL injection risks in display names, 
+    // though backend usually handles table naming logic.
+    const cleanName = newName.replace(/[^a-zA-Z0-9_\-\s]/g, ''); 
+    
+    // Construct new table name (system will likely prefix it)
+    // For now we pass the user label, backend might generate data_UUID_CleanName
+    const newSystemName = `data_${crypto.randomUUID().replace(/-/g, '')}_${cleanName.replace(/\s+/g, '_')}`;
+
+    let loadingId;
+    try {
+        loadingId = toast.loading(`Saving copy as ${cleanName}...`);
+        const baseUrl = import.meta.env.VITE_QUERY_API_URL;
+        
+        const res = await fetch(`${baseUrl}/api/copy-table`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                sourceTableName: engine.sourceTable,
+                newTableName: newSystemName,
+                connection: engine.sourceConnection,
+                provider: engine.sourceProvider
+            })
+        });
+
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Failed to copy table');
+
+        toast.dismiss(loadingId);
+        toast.success(`Saved copy "${cleanName}"`);
+
+        // Open the NEW copy
+        // We reuse openTable logic to load this new table
+        await openTable(result.tableName, engine.sourceConnection || {}, engine.sourceProvider || 'local');
+
+    } catch (e: any) {
+        if (loadingId) toast.dismiss(loadingId);
+        console.error('[Workspace] Copy failed:', e);
+        toast.error(`Failed to save copy: ${e.message}`);
     }
 };
 
@@ -920,14 +955,14 @@ const setGridRef = (el: any, id: string) => {
   }
 };
 
-const setFormulaBarValue = (value: string) => {
+const setFormulaBarValue = (value: string | null) => {
   const tabId = (activeTabId.value as unknown as string);
   if (!tabId) return;
   
   const activeGrid = gridRefs.value.get(tabId);
   if (activeGrid && activeGrid.formulaBarValue) {
     // formulaBarValue is a ref, so we need to set .value
-    activeGrid.formulaBarValue.value = value;
+    activeGrid.formulaBarValue.value = value || '';
   } else {
     console.warn('Could not set formula bar value - no active grid or formulaBarValue not found');
   }
@@ -1158,11 +1193,26 @@ watch(() => activeTabId.value, (newId) => {
     }
 });
 
+const hasUncommittedChanges = computed(() => {
+  const tabId = activeTabId.value as unknown as string;
+  if (!tabId) return false;
+  const grid = gridRefs.value.get(tabId);
+  return grid?.hasUncommittedChanges || false;
+});
+
 // Save functionality exposed to parent
 const saveCurrentTab = async () => {
-  const tabId = activeTabId.value;
+  const tabId = activeTabId.value as unknown as string;
   if (!tabId) return;
   
+  const grid = gridRefs.value.get(tabId);
+  if (grid) {
+    if (grid.hasUncommittedChanges) {
+      await grid.commitChanges();
+      return;
+    }
+  }
+
   const engine = engineCache.get(tabId as any);
   if (engine) {
     if (engine.hasPendingModifications()) {
@@ -1200,9 +1250,9 @@ defineExpose({
   canUndo,
   canRedo,
   activeTabId,
-  handleVersionChange
+  handleVersionChange,
+  hasUncommittedChanges
 });
-
 
 </script>
 

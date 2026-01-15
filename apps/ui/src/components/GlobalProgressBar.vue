@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useProgress } from '@/lib/progress'
+import { useEntitlements } from '@/composables/useEntitlements'
 import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, X } from 'lucide-vue-next'
 
 const { operations, history, hasActive, cancelOperation, groupedOperations } = useProgress()
+const { subscriptionTier } = useEntitlements()
 const expanded = ref(false)
 const activeTab = ref<'active' | 'history'>('active')
 const containerRef = ref<HTMLElement | null>(null)
@@ -16,7 +18,12 @@ const handleClickOutside = (e: MouseEvent) => {
     }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
+onMounted(() => {
+    document.addEventListener('click', handleClickOutside)
+    // Ensure entitlements are loaded to show correct tier colors
+    const { fetchEntitlements } = useEntitlements()
+    fetchEntitlements()
+})
 onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 
 const totalProgress = computed(() => {
@@ -38,6 +45,24 @@ const successRate = computed(() => {
     const successful = history.value.filter(op => op.status === 'completed').length
     return Math.round((successful / history.value.length) * 100)
 })
+
+const tierGradientClass = computed(() => {
+    switch (subscriptionTier.value) {
+        case 'pro': return 'bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600'
+        case 'pro_plus': return 'bg-gradient-to-r from-violet-600 via-purple-500 to-orange-500'
+        case 'teams': return 'bg-gradient-to-r from-violet-600 via-purple-500 to-red-500'
+        default: return 'bg-gradient-to-r from-violet-600 via-fuchsia-500 to-teal-500'
+    }
+})
+
+const tierAccentClass = computed(() => {
+    switch (subscriptionTier.value) {
+        case 'pro': return 'text-blue-500'
+        case 'pro_plus': return 'text-orange-500'
+        case 'teams': return 'text-red-500'
+        default: return 'text-teal-500'
+    }
+})
 </script>
 
 <template>
@@ -49,10 +74,10 @@ const successRate = computed(() => {
            :class="{'animate-pulse border-primary/50': activeCount > 0, 'bg-muted/50': expanded}"
        >
            <div class="relative flex items-center justify-center">
-               <Loader2 
-                   v-if="activeCount > 0" 
-                   class="h-4 w-4 text-primary animate-spin" 
-               />
+                <Loader2 
+                    v-if="activeCount > 0" 
+                    :class="['h-4 w-4 animate-spin', tierAccentClass]" 
+                />
                <CheckCircle2 
                    v-else 
                    class="h-4 w-4 text-muted-foreground" 
@@ -64,10 +89,11 @@ const successRate = computed(() => {
                    {{ activeCount > 0 ? `${activeCount} Active` : 'Ready' }}
                </div>
                <div class="h-1.5 w-20 bg-muted/50 rounded-lg overflow-hidden">
-                   <div 
-                       class="h-full bg-primary transition-all duration-300 ease-out"
-                       :style="{ width: `${totalProgress}%` }"
-                   ></div>
+                    <div 
+                        class="h-full transition-all duration-300 ease-out"
+                        :class="tierGradientClass"
+                        :style="{ width: `${totalProgress}%` }"
+                    ></div>
                </div>
            </div>
 
@@ -144,7 +170,7 @@ const successRate = computed(() => {
                                    >
                                        <X class="h-3 w-3" />
                                    </button>
-                                   <Loader2 v-if="item.status === 'running' || item.status === 'pending'" class="h-3 w-3 text-primary animate-spin" />
+                                    <Loader2 v-if="item.status === 'running' || item.status === 'pending'" :class="['h-3 w-3 animate-spin', tierAccentClass]" />
                                    <CheckCircle2 v-else-if="item.status === 'completed'" class="h-3 w-3 text-emerald-500" />
                                    <XCircle v-else class="h-3 w-3 text-destructive" />
                                    <span class="text-xs font-mono text-muted-foreground w-8 text-right">{{ Math.round(item.progress) }}%</span>
@@ -152,15 +178,15 @@ const successRate = computed(() => {
                            </div>
                            
                            <div class="h-1 w-full bg-muted rounded-lg overflow-hidden">
-                               <div 
-                                   class="h-full transition-all duration-300"
-                                   :class="{
-                                       'bg-primary': item.status === 'running' || item.status === 'pending',
-                                       'bg-emerald-500': item.status === 'completed',
-                                       'bg-destructive': item.status === 'error'
-                                   }"
-                                   :style="{ width: `${item.progress}%` }"
-                               ></div>
+                                <div 
+                                    class="h-full transition-all duration-300"
+                                    :class="[
+                                        (item.status === 'running' || item.status === 'pending') ? tierGradientClass : '',
+                                        item.status === 'completed' ? 'bg-emerald-500' : '',
+                                        item.status === 'error' ? 'bg-destructive' : ''
+                                    ]"
+                                    :style="{ width: `${item.progress}%` }"
+                                ></div>
                            </div>
                            
                            <div v-if="!('isGroup' in item) && (item.details || item.error)" class="mt-1.5 text-[10px] truncate" :class="item.error ? 'text-destructive' : 'text-muted-foreground'">

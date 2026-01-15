@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp, Lock, Plus, MoreHorizontal, Activity } from 'lucide-vue-next'
+import { Database, Trash, Table2, Layers, ChevronDown, ChevronUp, Lock, Plus, MoreHorizontal, Activity, Bot, Cloud } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import type { ConnectionSchemaState } from '@/composables/useExplorerSchema'
 import TableList from './TableList.vue'
@@ -90,6 +90,14 @@ function statusDotClasses(status?: ConnectionSchemaState['status']) {
 function statusLabel(state?: ConnectionSchemaState) {
   if (state?.status === 'loading') return 'Syncing...'
   if (state?.status === 'error') return 'Error'
+  
+  if (props.connection.provider === 'ai_provider') {
+    return props.connection.ai_provider?.service ? props.connection.ai_provider.service.replace('_', ' ').toUpperCase() : 'AI'
+  }
+  if (props.connection.provider === 'cloud_storage') {
+     return props.connection.cloud_storage?.service ? props.connection.cloud_storage.service.replace('_', ' ').toUpperCase() : 'STORAGE'
+  }
+
   return `${state?.tables?.length || 0} Tables`
 }
 </script>
@@ -121,7 +129,9 @@ function statusLabel(state?: ConnectionSchemaState) {
                 : 'bg-muted/50 border-border/50 text-muted-foreground group-hover:text-foreground group-hover:border-border'
             ]"
           >
-            <Database class="w-4 h-4" />
+            <Bot v-if="connection.provider === 'ai_provider'" class="w-4 h-4" />
+            <Cloud v-else-if="connection.provider === 'cloud_storage'" class="w-4 h-4" />
+            <Database v-else class="w-4 h-4" />
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">

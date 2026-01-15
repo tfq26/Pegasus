@@ -1,7 +1,7 @@
 <template>
   <transition name="sidebar-slide">
     <aside 
-      v-if="visible" 
+      v-show="visible" 
       class="shrink-0 border-r border-border overflow-y-auto relative bg-background"
       :class="{ 'transition-all duration-75 ease-out': !isResizing }"
       :style="{ width: `${sidebarWidth}px` }"
@@ -13,12 +13,14 @@
           :chats="chats"
           :selected-chat-id="selectedChatId"
           :query-history="queryHistory"
+          :is-pinned="isPinned"
           @update:selected-connection-id="$emit('update:selectedConnectionId', $event)"
           @edit-table="(conn, table) => $emit('edit-table', conn, table)"
           @create-chat="$emit('create-chat')"
           @select-chat="$emit('select-chat', $event)"
           @load-query="(q) => { console.log('ChatSidebar: emitting load-query', q); $emit('load-query', q) }"
           @sanitize-table="(conn, table) => $emit('sanitize-table', conn, table)"
+          @toggle-pin="$emit('toggle-pin')"
         />
       </div>
 
@@ -62,6 +64,7 @@ const props = withDefaults(defineProps<{
   chats?: any[]
   selectedChatId?: string
   queryHistory?: any[]
+  isPinned?: boolean
 }>(), { 
   visible: true,
   side: 'left',
@@ -77,10 +80,11 @@ defineEmits<{
   'select-chat': [id: string]
   'load-query': [query: string]
   'sanitize-table': [connection: ConnectionEntry, table: string]
+  'toggle-pin': []
 }>()
 
 // Resizing Logic
-const sidebarWidth = ref(300)
+const sidebarWidth = ref(260)
 const isResizing = ref(false)
 
 const startResize = (e: MouseEvent) => {

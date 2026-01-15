@@ -1,6 +1,6 @@
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef } from 'vue';
+import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef, unref } from 'vue';
 import { Engine } from '../Engine/Engine';
 import { CanvasRenderer } from '../Engine/CanvasRenderer';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
@@ -38,7 +38,9 @@ import {
   Download,
   MessageSquare,
   Activity,
-  Database
+  Database,
+  Copy,
+  Cloud
 } from 'lucide-vue-next';
 import BindCellDialog from './BindCellDialog.vue';
 import { CSVExporter, ExcelExporter } from '../Engine/Exporters';
@@ -55,6 +57,21 @@ import PresenceOverlay from '../PresenceOverlay.vue';
 import { connectToSurreal } from '@/lib/surreal';
 import { RealtimeSync } from '../Engine/RealtimeSync';
 import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration';
+import { useConnectionStore } from '@/stores/connection';
+import SaveSnapshotDialog from './SaveSnapshotDialog.vue';
+
+const BUILT_IN_FUNCTIONS = [
+  'SUM', 'AVERAGE', 'COUNT', 'MIN', 'MAX', 
+  'IF', 'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'CEILING', 'FLOOR', 
+  'ABS', 'POWER', 'SQRT'
+];
+
+const REFERENCE_COLORS = [
+  'ring-2 ring-blue-500 ring-inset',
+  'ring-2 ring-green-500 ring-inset',
+  'ring-2 ring-purple-500 ring-inset',
+  'ring-2 ring-orange-500 ring-inset',
+];
 
 const props = defineProps<{
   engine: Engine;
@@ -300,12 +317,19 @@ watch(formulaBarValue, (val) => {
     
     // Extract references for highlighting
     const { cells, ranges } = props.engine.parser.extractReferences(val);
-    formulaReferences.value = cells;
-    formulaRanges.value = ranges;
+    
+    // Only update if changed to avoid unnecessary re-renders (which can kill input focus)
+    if (JSON.stringify(cells) !== JSON.stringify(formulaReferences.value)) {
+      formulaReferences.value = cells;
+    }
+    if (JSON.stringify(ranges) !== JSON.stringify(formulaRanges.value)) {
+      formulaRanges.value = ranges;
+    }
   } else {
     showSuggestions.value = false;
-    formulaReferences.value = [];
-    formulaRanges.value = [];
+    // Only clear if not already empty
+    if (formulaReferences.value.length > 0) formulaReferences.value = [];
+    if (formulaRanges.value.length > 0) formulaRanges.value = [];
   }
 });
 
@@ -382,6 +406,40 @@ const showFormulaErrorPopover = ref(false);
 const formulaErrorData = ref<any>(null);
 const popoverPosition = ref({ x: 0, y: 0 });
 const isAnalyzingFormula = ref(false);
+
+// --- Cloud Snapshot Logic ---
+const connectionStore = useConnectionStore();
+const showSnapshotDialog = ref(false);
+const cloudConnections = computed(() => 
+    (unref(connectionStore.connections) || []).filter((c: any) => c.provider === 'cloud_storage')
+);
+
+const handleCloudSnapshot = async (config: any) => {
+    if (config.provider === 'internal') {
+        toast.promise(
+            props.engine.saveToUserStorage(),
+            {
+                loading: 'Saving to Pegasus storage...',
+                success: 'Saved successfully!',
+                error: (e: any) => `Save failed: ${e.message}`
+            }
+        );
+        return;
+    }
+
+    toast.promise(
+        props.engine.saveSnapshot(config),
+        {
+            loading: 'Uploading snapshot to cloud...',
+            success: 'Snapshot uploaded successfully!',
+            error: (e: any) => `Upload failed: ${e.message}`
+        }
+    );
+};
+
+onMounted(() => {
+    connectionStore.loadConnections();
+});
 
 // --- Context Menu State ---
 export interface GridContextMenuItem {
@@ -609,10 +667,6 @@ const handleContextMenuAction = async (action: string) => {
 const { hasManualFormulas } = useFeatureFlags();
 
 // --- Formula Autocomplete State ---
-const BUILT_IN_FUNCTIONS = [
-  'SUM', 'AVERAGE', 'COUNT', 'MIN', 'MAX', 
-  'IF', 'ROUND', 'ABS', 'SQRT'
-];
 const formulaSuggestions = ref<string[]>([]);
 const showSuggestions = ref(false);
 const selectedSuggestionIndex = ref(0);
@@ -632,13 +686,6 @@ const showManualFormulaFeatures = computed(() => {
 });
 
 
-// Reference colors for highlighting
-const REFERENCE_COLORS = [
-  'ring-2 ring-blue-500 ring-inset',
-  'ring-2 ring-green-500 ring-inset',
-  'ring-2 ring-purple-500 ring-inset',
-  'ring-2 ring-orange-500 ring-inset',
-];
 
 // --- Computed ---
 const selectedCellLabel = computed(() => {
@@ -687,6 +734,10 @@ const isCellModified = (row: number, col: number) => {
   const key = `${row},${col}`;
   return props.engine.changeTracker.getModifiedCellKeys().has(key);
 };
+
+const hasUncommittedChanges = computed(() => {
+  return modifiedRows.value.size > 0 || deletedRows.value.size > 0 || addedRows.value.size > 0;
+});
 
 // Helper for display value (direct engine access for performance)
 const getDisplayValue = (row: number, col: number) => {
@@ -2207,6 +2258,21 @@ const commitChanges = async () => {
   }
 };
 
+const saving = ref(false);
+const saveChanges = async () => {
+  saving.value = true;
+  try {
+    await props.engine.saveToUserStorage();
+    renderKey.value++; // Refresh view even though it's a save
+    toast.success('Spreadsheet saved to your Pegasus storage');
+  } catch (err: any) {
+    console.error('Save failed:', err);
+    toast.error(`Save failed: ${err.message}`);
+  } finally {
+    saving.value = false;
+  }
+};
+
 const handleUndo = () => {
     if (props.engine.undoManager.undo()) {
         props.engine.notifyChange();
@@ -2225,11 +2291,21 @@ defineExpose({
     showGridlines,
     autoFitAllColumns,
     handleUndo,
-    handleRedo
+    handleRedo,
+    commitChanges,
+    saveChanges,
+    hasUncommittedChanges
 });
 </script>
 
 <template>
+  <SaveSnapshotDialog 
+      :open="showSnapshotDialog"
+      :connections="cloudConnections"
+      @update:open="showSnapshotDialog = $event"
+      @confirm="handleCloudSnapshot"
+  />
+
   <ContextMenu>
     <ContextMenuTrigger as-child>
       <div 
@@ -2249,9 +2325,9 @@ defineExpose({
         :provider="props.engine.sourceProvider" 
       />
       
-      <!-- Local Data Indicator -->
+      <!-- Local Data Indicator (Re-enabled) -->
       <div 
-        v-else 
+        v-if="props.engine.hasSource() && props.engine.sourceProvider === 'local'" 
         class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 cursor-help shrink-0"
         title="This tab is stored locally. Save to database to enable persistence."
         @click="emit('persist-table')"
@@ -2299,14 +2375,34 @@ defineExpose({
       </div>
       
       <!-- Provider Badge -->
-      <ProviderBadge 
-        v-if="props.engine.sourceProvider" 
-        :provider="props.engine.sourceProvider" 
-      />
+      <div class="flex items-center gap-1.5" v-if="props.engine.sourceProvider">
+          <ProviderBadge :provider="props.engine.sourceProvider" />
+          
+          <!-- Save a Copy Action -->
+           <button 
+            v-if="props.engine.sourceProvider !== 'surrealdb' || props.engine.sourceTable?.includes('local')"
+            class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+            title="Save a copy of this table to your account"
+            @click="emit('persist-table')"
+          >
+            <Copy class="w-2.5 h-2.5" />
+            Save Copy
+          </button>
+
+          <!-- Cloud Snapshot Action -->
+          <button 
+            class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-[10px] font-medium text-sky-600 hover:bg-sky-500/20 transition-colors"
+            title="Back up to Cloud Storage (S3/Azure/GCS)"
+            @click="showSnapshotDialog = true"
+          >
+            <Cloud class="w-2.5 h-2.5" />
+            Snapshot
+          </button>
+      </div>
       
-      <!-- Local Data Indicator -->
+      <!-- Local Data Indicator (Re-enabled) -->
       <div 
-        v-else 
+        v-if="props.engine.sourceProvider === 'local-file' || props.engine.sourceTable === 'local-file'" 
         class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 cursor-help shrink-0"
         title="This tab is stored locally. Save to database to enable persistence."
         @click="emit('persist-table')"
@@ -2803,17 +2899,15 @@ defineExpose({
         />
     </div>
 
-    <!-- Commit Bar & Review Dialog (Now always visible if there are changes) -->
+    <!-- Commit Bar & Review Dialog -->
     <CommitBar
+      v-if="hasUncommittedChanges"
       :modified-count="modifiedRows.size"
       :deleted-count="deletedRows.size"
       :added-count="addedRows.size"
+      :loading="committing"
       @discard="discardAllChanges"
       @review="openReviewDialog"
-      @commit="commitChanges"
-    />
-
-      :loading="committing"
       @commit="commitChanges"
     />
 

@@ -1,14 +1,19 @@
 import type { CellPosition } from './types';
 
 export interface Operation {
-    type: 'UPDATE' | 'INSERT_ROW' | 'DELETE_ROW' | 'INSERT_COL' | 'DELETE_COL' | 'full_replacement';
+    type: 'UPDATE' | 'INSERT_ROW' | 'DELETE_ROW' | 'INSERT_COL' | 'DELETE_COL' | 'full_replacement' | 'update' | 'create' | 'delete' | 'add_column' | 'drop_column' | 'cleanup_empty';
     row?: number;
     col?: number;
     value?: any;
     count?: number; // for insert/delete
     name?: string; // for columns
+    column?: string; // for drop_column/add_column
+    id?: string | number;
+    changes?: Record<string, any>;
+    data?: any;
     timestamp: number;
     rows?: any[]; // for full_replacement
+    storage_config?: any; // for cloud snapshots
 }
 
 export interface DatabaseAdapter {
@@ -21,6 +26,9 @@ export interface DatabaseAdapter {
 
     // Bulk Import (for File adapter)
     import?(data: any[]): Promise<void>;
+
+    // Save (Full State Persistence) - optional, for saving versions to user storage
+    save?(data: any[]): Promise<void>;
 }
 
 export class SyncManager {
@@ -108,7 +116,7 @@ export class SyncManager {
             // Re-queue operations?
             // In a robust system, we'd prepend them back or notify user.
             this.pendingOperations.unshift(...batch);
-            if (this.onError) this.onError(e);
+            this.onError?.(e);
         } finally {
             this.isSyncing = false;
             // If more ops arrived during sync, trigger again
@@ -118,5 +126,11 @@ export class SyncManager {
         }
     }
 
-
+    public async save(data: any[]): Promise<void> {
+        if (this.adapter.save) {
+            return this.adapter.save(data);
+        }
+        console.warn('[SyncManager] Adapter does not support full state save');
+        return Promise.resolve();
+    }
 }

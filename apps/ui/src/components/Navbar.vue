@@ -27,7 +27,9 @@
         >
           {{ link.label }}
           <span
-            class="absolute left-0 -bottom-1 h-0.5 w-0 bg-primary opacity-0 transition-all duration-300"
+            class="absolute left-0 -bottom-1 h-0.5 w-0 transition-all duration-300"
+            :class="[activeTabClass]"
+            :style="{ width: route.path.startsWith(link.to) ? '100%' : '0%' }"
           ></span>
         </RouterLink>
       </div>
@@ -90,16 +92,16 @@
             <img
               :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
               alt="Profile"
-              class="h-7 w-7 rounded-lg object-cover transition-all"
-              :class="isPro ? 'border-2 border-primary ring-2 ring-primary/20' : 'border border-border'"
+              class="h-7 w-7 rounded-lg object-cover border border-border transition-all"
             />
             <span class="hidden sm:inline font-medium flex items-center gap-1">
               {{ user.firstName || 'User' }}
               <span
-                v-if="isPro"
-                class="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase border border-primary/20"
+                v-if="tierDisplay && subscriptionTier !== 'free'"
+                class="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                :class="tierDisplay.badgeClass"
               >
-                PRO
+                {{ tierDisplay.label }}
               </span>
             </span>
             <ChevronDown
@@ -236,10 +238,11 @@
                       {{ user.firstName }} {{ user.lastName }}
                     </span>
                     <span
-                      v-if="isPro"
-                      class="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase border border-primary/20"
+                      v-if="tierDisplay && subscriptionTier !== 'free'"
+                      class="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                      :class="tierDisplay.badgeClass"
                     >
-                      PRO
+                      {{ tierDisplay.label }}
                     </span>
                   </div>
                   <div class="text-[10px] text-muted-foreground truncate">
@@ -294,6 +297,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useEntitlements } from '@/composables/useEntitlements'
 import { usePlatform, isTauri as isTauriRef, isOnline as isOnlineRef } from '@/composables/usePlatform'
 import { useColorMode } from '@vueuse/core'
 import { getSubscriptionStatus } from '@/lib/api'
@@ -375,7 +379,28 @@ const dropdownItems = [
 const showDropdown = ref(false)
 const mobileOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
-const isPro = ref(false)
+
+const { subscriptionTier } = useEntitlements()
+
+const tierDisplay = computed(() => {
+  const tier = subscriptionTier.value
+  const displayMap: Record<string, { label: string, badgeClass: string }> = {
+    free: { label: 'FREE', badgeClass: 'bg-muted text-muted-foreground' },
+    pro: { label: 'PRO', badgeClass: 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-purple-500/20' },
+    pro_plus: { label: 'PRO+', badgeClass: 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-500/20' },
+    teams: { label: 'TEAMS', badgeClass: 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-500/20' }
+  }
+  return displayMap[tier] || displayMap.free
+})
+
+const activeTabClass = computed(() => {
+  switch (subscriptionTier.value) {
+      case 'pro': return 'bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600'
+      case 'pro_plus': return 'bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-500' 
+      case 'teams': return 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500' 
+      default: return 'bg-primary' 
+  }
+})
 
 const toggleDropdown = () => (showDropdown.value = !showDropdown.value)
 
@@ -399,29 +424,11 @@ const handleClickOutside = (e: MouseEvent) => {
   }
 }
 
-const checkSubscription = async () => {
-  if (user.value) {
-    try {
-      const status = (await getSubscriptionStatus()) as any
-      isPro.value = status.tier === 'pro'
-    } catch (e) {
-      console.error('Failed to check subscription', e)
-    }
-  } else {
-    isPro.value = false
-  }
-}
-
 onMounted(async () => {
   await fetchUser()
-  await checkSubscription()
   document.addEventListener('click', handleClickOutside)
 })
 
-// Re-check subscription when user changes
-watch(user, () => {
-  checkSubscription()
-})
 
 // Close drawer on route change
 watch(

@@ -12,10 +12,12 @@ import { useConnectionStore } from '@/stores/connection'
 import { useDesktopMenu } from '@/composables/useDesktopMenu'
 import { usePlatform } from '@/composables/usePlatform'
 import { useColorMode } from '@vueuse/core'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import ErrorPage from '@/views/ErrorPage.vue'
 import 'vue-sonner/style.css'
 
 const { isTauri } = usePlatform()
+const { setUser } = useFeatureFlags()
 const isDesktop = ref(false)
 const route = useRoute()
 
@@ -34,12 +36,21 @@ const handleGlobalError = (error: any, info?: string) => {
     
     // Ignore harmless known warnings/errors if needed
     if (error?.message?.includes('ResizeObserver')) return false
+    if (error?.message?.includes('VersionRetrievalFailure')) return false
+    if (error?.message?.includes('ERR_CONNECTION_REFUSED')) return false
+    if (String(error).includes('VersionRetrievalFailure')) return false
+    
+    // Ignore null errors if they don't have enough context
+    if (error === null && info === 'Window Error') {
+        console.warn('[App] Ignoring null Window Error')
+        return false
+    }
 
     // Format error for display
     capturedError.value = {
         code: error?.code || 'RUNTIME_ERR',
         title: 'Application Error',
-        message: error?.message || 'An unexpected error occurred.',
+        message: error?.message || (error === null ? 'Unknown Window Error' : String(error)),
         details: `${error?.stack || String(error)}\n\nContext: ${info || 'Global Scope'}`,
         fatal: true
     }
@@ -82,6 +93,7 @@ onMounted(async () => {
     await identityService.init()
     
     if (identityService.isAuthenticated) {
+        setUser(identityService.user as any)
         entitlementService.fetch()
         // Only load connections if we have a valid authenticated session
         connectionStore.loadConnections()

@@ -232,11 +232,160 @@ const temperatureValue = computed({
   },
 })
 
+// --- BYOM Logic ---
+const currentProvider = ref('default') // 'default' | 'aws' | 'azure' | 'gcp'
+const canUseByom = computed(() => {
+  return ['teams', 'enterprise'].includes(subscriptionTier.value)
+})
+
+const changeProvider = async (provider: string) => {
+  if (provider !== 'default' && !canUseByom.value) {
+    showUpgradeModal.value = true
+    return
+  }
+  
+  // Optimistic update
+  currentProvider.value = provider
+  
+  try {
+    // Call backend to save preference
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/ai-config`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        'x-user-id': localStorage.getItem('user_id') || ''
+      },
+      body: JSON.stringify({ provider })
+    })
+    
+    if (!response.ok) {
+       // Revert if failed (e.g. entitlement check failed on backend)
+       currentProvider.value = 'default'
+       if (response.status === 403) {
+         showUpgradeModal.value = true
+       }
+    } else {
+      // Reload models for the new provider
+      loading.value = true
+      const newModels = await getAIModels()
+      // ... (logic to update models list - might need refactoring onMounted logic into a function)
+      // For now, let's just reload the page or re-fetch in next step
+      window.location.reload() 
+    }
+  } catch (e) {
+    currentProvider.value = 'default'
+  }
+}
+
+// Ensure we load the current provider on mount
+onMounted(async () => {
+  try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/ai-config`, {
+        headers: {
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            'x-user-id': localStorage.getItem('user_id') || ''
+        }
+      })
+      if (res.ok) {
+          const config = await res.json()
+          if (config.provider) {
+              currentProvider.value = config.provider
+          }
+      }
+  } catch (e) {}
+})
+
 </script>
 
 <template>
-  <div class="space-y-6 max-w-3xl">
+<div class="space-y-6 max-w-3xl">
     <h2 class="text-2xl font-semibold text-primary mb-6">Pegasus AI</h2>
+
+    <!-- Provider Selection (Enterprise/Teams) -->
+    <div class="p-4 rounded-xl border border-border bg-card">
+      <h3 class="text-foreground font-medium mb-3 flex items-center gap-2">
+        Model Provider
+        <span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-500 border border-purple-500/20 font-bold uppercase">
+          Enterprise
+        </span>
+      </h3>
+      
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <!-- Pegasus Default -->
+        <div 
+          @click="changeProvider('default')"
+          class="relative cursor-pointer p-3 rounded-lg border transition-all"
+          :class="currentProvider === 'default' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'"
+        >
+          <div class="flex items-center gap-2 mb-1">
+             <div class="w-4 h-4 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-[10px]">P</div>
+             <span class="text-sm font-medium text-foreground">Pegasus</span>
+          </div>
+          <p class="text-[10px] text-muted-foreground">Managed models, standard limits.</p>
+          <div v-if="currentProvider === 'default'" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+        </div>
+
+        <!-- AWS -->
+        <div 
+          @click="changeProvider('aws')"
+          class="relative cursor-pointer p-3 rounded-lg border transition-all"
+          :class="[
+            currentProvider === 'aws' ? 'border-orange-500 bg-orange-500/5' : 'border-border',
+            !canUseByom ? 'opacity-60 cursor-not-allowed' : 'hover:border-orange-500/50'
+          ]"
+        >
+          <div class="flex items-center gap-2 mb-1">
+             <div class="w-4 h-4 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500 font-bold text-[10px]">A</div>
+             <span class="text-sm font-medium text-foreground">AWS Bedrock</span>
+          </div>
+          <p class="text-[10px] text-muted-foreground">Use your AWS credits & models.</p>
+           <Lock v-if="!canUseByom" class="absolute top-2 right-2 w-3.5 h-3.5 text-muted-foreground" />
+           <div v-else-if="currentProvider === 'aws'" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-orange-500 animate-pulse"></div>
+        </div>
+
+        <!-- Azure -->
+        <div 
+          @click="changeProvider('azure')"
+          class="relative cursor-pointer p-3 rounded-lg border transition-all"
+          :class="[
+            currentProvider === 'azure' ? 'border-blue-500 bg-blue-500/5' : 'border-border',
+            !canUseByom ? 'opacity-60 cursor-not-allowed' : 'hover:border-blue-500/50'
+          ]"
+        >
+          <div class="flex items-center gap-2 mb-1">
+             <div class="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-500 font-bold text-[10px]">M</div>
+             <span class="text-sm font-medium text-foreground">Azure OpenAI</span>
+          </div>
+           <p class="text-[10px] text-muted-foreground">Private GPT-4 deployments.</p>
+           <Lock v-if="!canUseByom" class="absolute top-2 right-2 w-3.5 h-3.5 text-muted-foreground" />
+           <div v-else-if="currentProvider === 'azure'" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+        </div>
+
+        <!-- GCP -->
+        <div 
+          @click="changeProvider('gcp')"
+          class="relative cursor-pointer p-3 rounded-lg border transition-all"
+          :class="[
+            currentProvider === 'gcp' ? 'border-emerald-500 bg-emerald-500/5' : 'border-border',
+            !canUseByom ? 'opacity-60 cursor-not-allowed' : 'hover:border-emerald-500/50'
+          ]"
+        >
+           <div class="flex items-center gap-2 mb-1">
+             <div class="w-4 h-4 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 font-bold text-[10px]">G</div>
+             <span class="text-sm font-medium text-foreground">Google Cloud</span>
+          </div>
+           <p class="text-[10px] text-muted-foreground">Vertex AI & Gemini Pro.</p>
+           <Lock v-if="!canUseByom" class="absolute top-2 right-2 w-3.5 h-3.5 text-muted-foreground" />
+           <div v-else-if="currentProvider === 'gcp'" class="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+        </div>
+      </div>
+      
+      <div v-if="!canUseByom" class="mt-3 text-xs text-muted-foreground flex items-center gap-2 p-2 bg-muted/50 rounded-md">
+         <AlertCircle class="w-3.5 h-3.5 text-purple-500" />
+         Upgrade to <strong>Teams</strong> or <strong>Enterprise</strong> to connect your own cloud providers.
+      </div>
+    </div>
     
     <!-- Local AI Status (Desktop Only) -->
     <div v-if="isTauri" class="p-4 rounded-xl border border-border bg-card/50 mb-6">

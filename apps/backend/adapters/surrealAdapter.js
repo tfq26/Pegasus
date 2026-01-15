@@ -53,11 +53,9 @@ export class SurrealAdapter extends DatabaseAdapter {
         try {
             // Resolve table names (handle friendly display names -> internal data_uuid_name)
             const resolvedQuery = await this.resolveTableNames(query);
-
-            // console.log(`[SurrealDB] Executing query: ${resolvedQuery}`);
+            // console.log(`[SurrealDB] FINAL QUERY: ${resolvedQuery}`);
             const result = await this.db.query(resolvedQuery);
-            // console.log(`[SurrealDB] Raw result type: ${typeof result}`);
-            // console.log(`[SurrealDB] Raw result stringified:`, JSON.stringify(result, null, 2));
+            // console.log(`[SurrealDB] Raw result:`, JSON.stringify(result, null, 2));
 
             if (!Array.isArray(result)) {
                 // console.log('[SurrealDB] Result is not an array');
@@ -77,8 +75,8 @@ export class SurrealAdapter extends DatabaseAdapter {
             const cleanRecord = (record) => {
                 if (!record || typeof record !== 'object') return record;
                 const cleaned = { ...record };
-                delete cleaned.id;
-                delete cleaned.__id;
+                // delete cleaned.id;
+                // delete cleaned.__id;
                 delete cleaned._row_order;
                 return cleaned;
             };

@@ -10,7 +10,12 @@
     <template v-if="!isInitializing">
       <!-- Explorer sidebar -->
     <ChatSidebar 
-      v-show="sidebarOpen" 
+      :visible="effectiveSidebarOpen" 
+      :is-pinned="sidebarOpen"
+      :class="{ 
+          'absolute z-50 h-full shadow-2xl border-r border-border/50': isHoverRevealed,
+          'relative': !isHoverRevealed
+      }"
       :side="sidebarSide" 
       :connections="connections"
       :selected-connection-id="selectedConnectionId"
@@ -20,13 +25,26 @@
       @update:selected-connection-id="handleSelectConnection"
       @edit-table="handleEditTableWrapper"
       @toggle="toggleSidebar" 
+      @toggle-pin="toggleSidebar"
       @select-chat="selectChat"
       @create-chat="handleCreateChat"
       @load-query="handleLoadQuery"
       @sanitize-table="handleSanitizeFixed"
+      @mouseenter="clearHoverTimer"
+      @mouseleave="startHoverTimer"
     />
+    
+    <!-- Hover Reveal Trigger Zone -->
+    <!-- Only visible when sidebar is closed and not currently revealed -->
+    <div 
+        v-if="!sidebarOpen && !isHoverRevealed"
+        class="absolute left-0 top-0 bottom-0 w-6 z-40 bg-transparent hover:bg-transparent"
+        @mouseenter="onHoverZoneEnter"
+        aria-hidden="true"
+    />
+
     <button
-      v-if="!sidebarOpen"
+      v-if="!effectiveSidebarOpen"
       class="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-r-lg bg-muted/80 backdrop-blur-md text-muted-foreground hover:text-violet-500 dark:hover:text-violet-400 hover:bg-muted transition-all border border-l-0 border-border shadow-sm"
       @click="toggleSidebar"
       aria-label="Open sidebar"
@@ -35,7 +53,13 @@
     </button>
 
     <!-- Main content area with results panel -->
-    <div class="flex-1 flex overflow-hidden" :class="{ 'flex-col': resultsPanelPosition === 'bottom', 'flex-row': resultsPanelPosition === 'right' }">
+    <div 
+        class="flex-1 flex overflow-hidden" 
+        :class="{ 
+            'flex-col': resultsPanelPosition === 'bottom', 
+            'flex-row': resultsPanelPosition === 'right' 
+        }"
+    >
       <!-- Editor workspace -->
       <section class="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
         <!-- Toolbar -->
@@ -62,6 +86,7 @@
           :current-version="workspaceRef?.activeTabVersion"
           :text-wrap="workspaceRef?.activeTabTextWrap"
           :show-gridlines="workspaceRef?.activeTabShowGridlines"
+          :has-uncommitted-changes="workspaceRef?.hasUncommittedChanges"
           @update:mode="mode = $event"
           @update:selected-connection-id="handleSelectConnection"
           @update:ai-options="aiOptions = $event"
@@ -565,6 +590,40 @@ const {
 
 const sidebarOpen = ref(true)
 const sidebarSide = ref<'left' | 'right'>('left')
+
+// Hover Reveal Logic
+const isHoverRevealed = ref(false)
+const hoverTimer = ref<any>(null)
+
+const effectiveSidebarOpen = computed(() => sidebarOpen.value || isHoverRevealed.value)
+
+const onHoverZoneEnter = () => {
+    isHoverRevealed.value = true
+    if (hoverTimer.value) clearTimeout(hoverTimer.value)
+}
+
+const startHoverTimer = () => {
+    // Only auto-hide if it's currently open due to hover (and not pinned open)
+    if (!sidebarOpen.value && isHoverRevealed.value) {
+        hoverTimer.value = setTimeout(() => {
+            isHoverRevealed.value = false
+        }, 500) // 0.5 seconds delay as requested
+    }
+}
+
+const clearHoverTimer = () => {
+    if (hoverTimer.value) clearTimeout(hoverTimer.value)
+}
+
+// Watch sidebarOpen to cancel hover state if user manually opens it
+watch(sidebarOpen, (isOpen) => {
+    if (isOpen) {
+        isHoverRevealed.value = false
+        clearHoverTimer()
+    }
+})
+
+
 const toggleSidebar = () => {
     sidebarOpen.value = !sidebarOpen.value
     sidebarSide.value = sidebarOpen.value ? (sidebarSide.value === 'left' ? 'right' : 'left') : sidebarSide.value

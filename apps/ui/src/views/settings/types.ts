@@ -1,4 +1,4 @@
-import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, PostgresConfig, SurrealConfig } from '@/lib/db-connections'
+import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, PostgresConfig, SurrealConfig, AIProviderConfig, CloudStorageConfig } from '@/lib/db-connections'
 import type { SchemaPreview } from '@/lib/api'
 
 export type ConnectionFormState = {
@@ -11,6 +11,8 @@ export type ConnectionFormState = {
   kusto: KustoConfig
   sqlite: SQLiteConfig
   surrealdb: SurrealConfig
+  ai_provider: AIProviderConfig
+  cloud_storage: CloudStorageConfig
   isLocked: boolean
 }
 
@@ -24,6 +26,8 @@ export const defaultConnectionForm: ConnectionFormState = {
   kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '' },
   sqlite: { path: '', authToken: '' },
   surrealdb: { protocol: 'ws', host: '127.0.0.1', port: 8000, namespace: 'test', database: 'test', username: 'root', password: 'root' },
+  ai_provider: { service: 'openai', apiKey: '', allowedModels: [], defaultModel: '' },
+  cloud_storage: { service: 'azure_blob', connectionString: '', allowedBuckets: [], bucket: '' },
   isLocked: false
 }
 

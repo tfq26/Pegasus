@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useColorMode } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { 
   ExternalLink, 
@@ -20,6 +21,9 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const mode = useColorMode()
+const isDark = computed(() => mode.value === 'dark')
+
 const showAzureDetails = ref(false)
 const showAWSDetails = ref(false)
 
@@ -53,7 +57,7 @@ const awsStatus = computed(() => {
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-5">
             <div class="p-4 rounded-2xl bg-violet-600/10 border border-violet-500/20 backdrop-blur-md shadow-inner">
-              <img src="/icons/microsoft/microsoft-purple.svg" class="w-10 h-10 object-contain" alt="Azure" />
+              <img :src="isDark ? '/icons/microsoft/Azure/azure-2.svg' : '/icons/microsoft/Azure/azure-2.svg'" class="w-10 h-10 object-contain" alt="Azure" />
             </div>
             <div>
               <div class="flex items-center gap-3">
@@ -149,7 +153,7 @@ const awsStatus = computed(() => {
         <div class="flex items-start justify-between">
           <div class="flex items-center gap-5">
             <div class="p-4 rounded-2xl bg-violet-600/10 border border-violet-500/20 backdrop-blur-md shadow-inner">
-              <img src="/icons/aws/aws-purple.svg" class="w-10 h-10 object-contain" alt="AWS" />
+              <img :src="isDark ? '/icons/aws/aws-colored-white-text.svg' : '/icons/aws/aws-colored-black-text.svg'" class="w-10 h-10 object-contain" alt="AWS" />
             </div>
             <div>
               <div class="flex items-center gap-3">

@@ -15,6 +15,27 @@ export const EXPERIMENTAL_FEATURES = {
         description: 'Allow AI to call external APIs (Stocks, Weather, Custom) to get live information for inference',
         category: 'ai',
         defaultEnabled: false
+    },
+    MANUAL_EXCEL_FORMULAS: {
+        id: 'manual-excel-formulas',
+        name: 'Manual Excel Formulas',
+        description: 'Enable direct entry of Excel-style formulas in spreadsheet cells with autocomplete and syntax highlighting',
+        category: 'spreadsheet',
+        defaultEnabled: false
+    },
+    ADVANCED_AI_MODES: {
+        id: 'advanced-ai-modes',
+        name: 'Advanced AI Modes',
+        description: 'Experimental AI capabilities including iterative multi-step reasoning and autonomous data cleansing',
+        category: 'ai',
+        defaultEnabled: false
+    },
+    QUERY_PERFORMANCE_INSIGHTS: {
+        id: 'query-performance-insights',
+        name: 'Query Performance Insights',
+        description: 'Detailed analysis of query execution plans and performance optimization suggestions',
+        category: 'database',
+        defaultEnabled: false
     }
 }
 

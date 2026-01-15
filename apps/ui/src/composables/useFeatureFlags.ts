@@ -22,12 +22,14 @@ export function useFeatureFlags() {
     // Feature-specific helpers
     const hasManualFormulas = computed(() => hasFeature('manual-excel-formulas'))
     const hasQueryInsights = computed(() => hasFeature('query-performance-insights'))
+    const hasAdvancedAI = computed(() => hasFeature('advanced-ai-modes'))
 
     return {
         featureFlags,
         hasFeature,
         setUser,
         hasManualFormulas,
-        hasQueryInsights
+        hasQueryInsights,
+        hasAdvancedAI
     }
 }

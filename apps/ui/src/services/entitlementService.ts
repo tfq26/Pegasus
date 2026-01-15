@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { identityService } from './identityService'
 import { api } from '@/lib/apiClient'
 
-export type Tier = 'free' | 'pro' | 'pro_plus'
+export type Tier = 'free' | 'pro' | 'pro_plus' | 'teams' | 'enterprise'
 
 class EntitlementService {
     private _tier = ref<Tier>('free')

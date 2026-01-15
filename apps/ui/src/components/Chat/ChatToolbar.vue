@@ -30,6 +30,7 @@ const props = defineProps<{
   currentVersion?: number
   textWrap?: boolean
   showGridlines?: boolean
+  hasUncommittedChanges?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -136,6 +137,7 @@ const models = computed(() => {
           :current-version="currentVersion"
           :text-wrap="textWrap"
           :show-gridlines="showGridlines"
+          :has-uncommitted-changes="hasUncommittedChanges"
           @toggle-ai-mode="emit('toggle-ai-mode')"
           @format="(t, v) => emit('format', t, v)"
           @visualize="emit('visualize')"

@@ -38,7 +38,7 @@ export class RestAdapter implements DatabaseAdapter {
                 }
             };
 
-            const response = await fetch(`${this.baseUrl}/api/data`, {
+            const response = await fetch(`${this.baseUrl}/api/table/${this.tableName}/query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -82,6 +82,34 @@ export class RestAdapter implements DatabaseAdapter {
         if (!response.ok) {
             const body = await response.json();
             throw new Error(body.error || 'Commit failed');
+        }
+    }
+
+    public async save(data: any[]): Promise<void> {
+        // "Save" here means saving a version to the user's storage
+        // We use the existing operations endpoint but with a special 'full_replacement' op
+        // tailored for user-storage tables.
+
+        const payload = {
+            connection: this.connection.provider ? buildConnectionPayload(this.connection) : this.connection,
+            provider: 'surrealdb', // Always save to Pegasus internal DB (Surreal)
+            operations: [{
+                type: 'full_replacement',
+                rows: data,
+                timestamp: Date.now()
+            }]
+        };
+
+        const response = await fetch(`${this.baseUrl}/api/table/${this.tableName}/operations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || 'Save failed');
         }
     }
 

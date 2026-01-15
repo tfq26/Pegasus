@@ -8,6 +8,7 @@ import { etag } from 'hono/etag'
 import { initSocketServer } from "./src/socket.js"
 import { ConfigService } from "./src/services/ConfigService.js"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
+import aiRoutes from "./src/routes/ai.js"
 import { sign, verify } from "hono/jwt"
 import { db, connectDB, ensureConnection } from "./db/surreal.js"
 import { stockService } from "./src/services/StockService.js"
@@ -24,6 +25,8 @@ import docsRoutes from "./src/routes/docs.js"
 import { ragRoutes } from "./src/routes/rag.js"
 import { agentRoutes } from "./src/routes/agent.js"
 import { weatherRoutes } from "./src/routes/weather.js"
+import cloudAuth from "./src/routes/cloud-auth.js"
+import cloudProvision from "./src/routes/cloud-provision.js"
 import { dataSourceRoutes } from "./src/routes/data-sources.js"
 import { startPollingService } from "./src/services/polling-service.js"
 import { aiClient } from "./ai/AIClient.js"
@@ -96,10 +99,16 @@ const corsConfig = {
   },
   methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
   credentials: true,
-  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With", "Accept", "Origin"],
+  allowHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With", "Accept", "Origin", "x-user-id"],
   exposeHeaders: ["Content-Type", "Authorization", "Set-Cookie"],
   maxAge: 86400
 };
+
+// --- AI Configuration ---
+app.route("/ai-config", aiRoutes);
+
+// --- Chat Endpoint ---
+app.use("/ai/chat/*", cors(corsConfig))
 
 // Apply CORS globally
 app.use("*", cors(corsConfig))
@@ -274,6 +283,8 @@ app.route('/rag', ragRoutes)
 app.route('/agent', agentRoutes)
 app.route('/weather', weatherRoutes)
 app.route('/data-sources', dataSourceRoutes)
+app.route('/api/cloud-auth', cloudAuth)
+app.route('/api/cloud-provision', cloudProvision)
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB

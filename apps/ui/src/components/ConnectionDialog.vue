@@ -41,6 +41,8 @@ import KustoForm from './ConnectionForms/KustoForm.vue'
 import SQLiteForm from './ConnectionForms/SQLiteForm.vue'
 import SurrealDBForm from './ConnectionForms/SurrealDBForm.vue'
 import FileImportForm from './ConnectionForms/FileImportForm.vue'
+import AIProviderForm from './ConnectionForms/AIProviderForm.vue'
+import CloudStorageForm from './ConnectionForms/CloudStorageForm.vue'
 
 const props = defineProps<{
   open: boolean
@@ -108,6 +110,8 @@ const closeModal = () => {
                 <SelectItem value="sqlite">SQLite</SelectItem>
                 <SelectItem value="surrealdb">SurrealDB</SelectItem>
                 <SelectItem value="file">File Import (Excel/JSON/XML)</SelectItem>
+                <SelectItem value="ai_provider">AI Provider (OpenAI / Anthropic)</SelectItem>
+                <SelectItem value="cloud_storage">Cloud Storage (S3 / Azure / GCP)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -160,6 +164,8 @@ const closeModal = () => {
           :connection-form="props.connectionForm"
           @upload-success="emit('upload-success')"
         />
+        <AIProviderForm v-else-if="props.connectionForm.provider === 'ai_provider'" :connection-form="props.connectionForm" />
+        <CloudStorageForm v-else-if="props.connectionForm.provider === 'cloud_storage'" :connection-form="props.connectionForm" />
 
         <DialogFooter class="flex justify-end gap-3 pt-4 border-t border-border">
           <button

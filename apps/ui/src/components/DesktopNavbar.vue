@@ -12,14 +12,19 @@
             v-for="link in links"
             :key="link.to"
             @click="handleNavClick(link)"
-            class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+            class="relative px-3 py-1.5 text-sm font-medium rounded-md transition-all group overflow-hidden"
             :class="[
               isLinkActive(link.to)
-                ? 'text-foreground bg-muted'
+                ? 'text-foreground font-semibold'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
             ]"
           >
-            <component :is="link.icon" class="w-4 h-4 inline mr-1.5" />
+            <span 
+              v-if="isLinkActive(link.to)"
+              class="absolute bottom-0 left-0 w-full h-0.5 opacity-80"
+              :class="activeTabClass"
+            ></span>
+            <component :is="link.icon" class="w-4 h-4 inline mr-1.5 mb-0.5" />
             {{ link.label }}
           </button>
         </div>
@@ -67,7 +72,16 @@
               alt="Profile"
               class="h-6 w-6 rounded-md object-cover border border-border"
             />
-            <span class="text-sm font-medium text-foreground">{{ user.firstName || 'User' }}</span>
+            <span class="text-sm font-medium text-foreground flex items-center gap-1.5">
+              {{ user.firstName || 'User' }}
+              <span
+                v-if="tierDisplay && subscriptionTier !== 'free'"
+                class="text-[8px] px-1 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                :class="tierDisplay.badgeClass"
+              >
+                {{ tierDisplay.label }}
+              </span>
+            </span>
             <ChevronDown
               class="h-3 w-3 text-muted-foreground transition-transform duration-200"
               :class="{ 'rotate-180': showDropdown }"
@@ -120,6 +134,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useEntitlements } from '@/composables/useEntitlements'
 import NotificationCenter from './NotificationCenter.vue'
 import GlobalProgressBar from './GlobalProgressBar.vue'
 import {
@@ -152,6 +167,28 @@ const { user, logout, login } = useAuth()
 const isOnline = ref(navigator.onLine)
 const showDropdown = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+
+const { subscriptionTier } = useEntitlements()
+
+const tierDisplay = computed(() => {
+  const tier = subscriptionTier.value
+  const displayMap: Record<string, { label: string, badgeClass: string }> = {
+    free: { label: 'FREE', badgeClass: 'bg-muted text-muted-foreground' },
+    pro: { label: 'PRO', badgeClass: 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-purple-500/20' },
+    pro_plus: { label: 'PRO+', badgeClass: 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-blue-500/20' },
+    teams: { label: 'TEAMS', badgeClass: 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-500/20' }
+  }
+  return displayMap[tier] || displayMap.free
+})
+
+const activeTabClass = computed(() => {
+  switch (subscriptionTier.value) {
+      case 'pro': return 'bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600'
+      case 'pro_plus': return 'bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-500' 
+      case 'teams': return 'bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500' 
+      default: return 'bg-primary' 
+  }
+})
 
 // Theme icons based on prop
 const currentIcon = computed(() => {

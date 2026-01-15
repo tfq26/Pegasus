@@ -645,6 +645,84 @@ table.post("/save-table-data", async (c) => {
     }
 })
 
+// 0. Copy Table (Fork)
+table.post("/copy-table", async (c) => {
+    try {
+        const { sourceTableName, newTableName, connection, provider } = await c.req.json()
+
+        console.log(`[Copy] Request to copy ${sourceTableName} to ${newTableName} (${provider})`)
+
+        const token = getAuthToken(c)
+        if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+        let userId = null;
+        try {
+            const payload = await verify(token, jwtSecret)
+            userId = payload.sub
+        } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+
+        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        if (!Adapter) return c.json({ error: `Provider ${provider} not supported` }, 400)
+
+        const adapter = new Adapter(connection)
+
+        try {
+            await adapter.connect()
+            console.log('[Copy] Adapter connected')
+
+            // Strategy: Adapter-specific copy or generic fallback
+            // 1. SurrealDB
+            if (provider === 'surrealdb') {
+                // Create copy via INSERT INTO ... SELECT
+                // Note: We need to handle internal IDs if necessary, or just rely on new IDs
+                const query = `INSERT INTO ${newTableName} SELECT * FROM ${sourceTableName}`;
+                await adapter.query(query);
+
+                // Also copy display_name metadata if it exists (optional)
+                // For now, we assume newTableName includes the upload/data prefix logic if needed
+            }
+            // 2. Generic SQL (Postgres, MySQL, SQLite)
+            else if (['postgres', 'mysql', 'sqlite', 'duckdb'].includes(provider)) {
+                // Try CREATE TABLE AS SELECT
+                try {
+                    await adapter.query(`CREATE TABLE "${newTableName}" AS SELECT * FROM "${sourceTableName}"`);
+                } catch (e) {
+                    // Fallback for systems that don't support CAS (e.g. some T-SQL versions might differ, but standard SQL supports it)
+                    console.warn('[Copy] CREATE TABLE AS failed, trying distinct steps', e);
+
+                    // Get Schema
+                    // This is complex generic implementation, staying with CAS for now as it covers 90%
+                    throw new Error('Copy strategy failed: ' + e.message);
+                }
+            }
+            // 3. Fallback / Other
+            else {
+                throw new Error('Copy not supported for this provider yet');
+            }
+
+            console.log('[Copy] Success')
+            await adapter.disconnect()
+
+            // Register ownership if it's an upload-style table (starts with data_)
+            if (newTableName.startsWith('data_')) {
+                // Determine if we need to track this lookup
+                // For now, we assume the naming convention implies ownership if the user created it via this auth flow
+            }
+
+            return c.json({ ok: true, tableName: newTableName })
+
+        } catch (e) {
+            console.error('[Copy] Adapter error:', e)
+            await adapter.disconnect().catch(() => { })
+            return c.json({ error: e.message }, 500)
+        }
+
+    } catch (e) {
+        console.error('[Copy] Error:', e)
+        return c.json({ error: e.message }, 500)
+    }
+})
+
 // === New Table API Routes ===
 
 // 1. Fetch Table Schema
@@ -686,7 +764,7 @@ table.post("/table/:tableName/query", async (c) => {
         const tableName = c.req.param("tableName")
         const { connection, provider, limit = 100, offset = 0 } = await c.req.json()
 
-        // console.log(`[Query] Table: ${tableName}, Provider: ${provider}, Limit: ${limit}`);
+        console.log(`[Query] Table: ${tableName}, Provider: ${provider}, Limit: ${limit}, Offset: ${offset}`);
 
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -831,12 +909,64 @@ table.post("/table/:tableName/operations", async (c) => {
                     if (op.type === 'full_replacement') {
                         const rows = op.rows || []
 
+                        // --- Cloud Snapshot Integration (Multi-Cloud / BYOC) ---
+                        try {
+                            // Dynamic Imports
+                            const { StorageFactory } = await import('../../services/storage/StorageFactory.js');
+                            const { secretService } = await import('../services/SecretService.js');
+
+                            let cloudConfig = {};
+                            let serviceType = 'azure_blob'; // Default if system configured
+
+                            // 1. Resolve Configuration & Secrets
+                            if (op.storage_config && op.storage_config.provider === 'cloud_storage') {
+                                const sc = op.storage_config;
+                                serviceType = sc.service;
+
+                                // Common Config
+                                cloudConfig.bucket = sc.bucket;
+
+                                // Service Specific Secret Resolution
+                                if (sc.service === 'azure_blob') {
+                                    cloudConfig.connectionString = await secretService.resolveSecret(sc.connectionString);
+                                } else if (sc.service === 's3') {
+                                    cloudConfig.accessKey = await secretService.resolveSecret(sc.accessKey);
+                                    cloudConfig.secretKey = await secretService.resolveSecret(sc.secretKey);
+                                    cloudConfig.region = sc.region;
+                                } else if (sc.service === 'gcs') {
+                                    // GCS keys are often JSON files passed as content
+                                    cloudConfig.credentialsJSON = await secretService.resolveSecret(sc.secretKey);
+                                }
+                            } else {
+                                // Fallback to System Env (Azure)
+                                if (!process.env.AZURE_STORAGE_CONNECTION_STRING) {
+                                    // No user config, no system config -> Skip
+                                    serviceType = null;
+                                }
+                            }
+
+                            // 2. Perform Upload
+                            if (serviceType) {
+                                const provider = StorageFactory.getProvider(serviceType);
+                                const snapshotName = `${tableName}_snapshot_${Date.now()}.json`;
+
+                                const url = await provider.upload(snapshotName, rows, cloudConfig);
+                                console.log(`[Cloud] Snapshot persisted to ${serviceType}: ${url}`);
+                            } else {
+                                console.log('[Cloud] No storage configured, skipping snapshot.');
+                            }
+
+                        } catch (cloudErr) {
+                            console.error('[Cloud] Failed to upload snapshot:', cloudErr.message);
+                        }
+                        // ------------------------------------------
+
                         // Define schema fields for all columns in the data
                         if (rows.length > 0) {
                             const allColumns = new Set();
                             rows.forEach(row => {
                                 Object.keys(row).forEach(key => {
-                                    if (key !== '_row_order') allColumns.add(key);
+                                    if (key !== '_row_order' && key !== 'id' && key !== '__id') allColumns.add(key);
                                 });
                             });
 
@@ -860,10 +990,13 @@ table.post("/table/:tableName/operations", async (c) => {
                         // 2. Insert all with row_order to preserve order
                         const batchSize = 1000
                         for (let i = 0; i < rows.length; i += batchSize) {
-                            const batch = rows.slice(i, i + batchSize).map((row, idx) => ({
-                                ...row,
-                                _row_order: i + idx  // Add order field
-                            }))
+                            const batch = rows.slice(i, i + batchSize).map((row, idx) => {
+                                const { id, __id, ...cleanRow } = row;
+                                return {
+                                    ...cleanRow,
+                                    _row_order: i + idx
+                                };
+                            })
                             if (batch.length > 0) {
                                 queries.push(`INSERT INTO ${tableName} ${JSON.stringify(batch)}`)
                             }
@@ -874,7 +1007,9 @@ table.post("/table/:tableName/operations", async (c) => {
                     }
                     else if (op.type === 'update') {
                         if (op.id) {
-                            queries.push(`UPDATE ${op.id} MERGE ${JSON.stringify(op.changes)}`)
+                            const [t, ...r] = op.id.split(':');
+                            const escapedId = r.length > 0 ? `\`${t}\`:\`${r.join(':')}\`` : `\`${t}\``;
+                            queries.push(`UPDATE ${escapedId} MERGE ${JSON.stringify(op.changes)}`)
                         } else {
                             // Fallback if no ID (should rely on full_replacement usually)
                             console.warn('[SurrealDB] Update operation missing ID, skipping')
@@ -882,7 +1017,9 @@ table.post("/table/:tableName/operations", async (c) => {
                     }
                     else if (op.type === 'delete') {
                         if (op.id) {
-                            queries.push(`DELETE ${op.id}`)
+                            const [t, ...r] = op.id.split(':');
+                            const escapedId = r.length > 0 ? `\`${t}\`:\`${r.join(':')}\`` : `\`${t}\``;
+                            queries.push(`DELETE ${escapedId}`)
                         }
                     }
                 }

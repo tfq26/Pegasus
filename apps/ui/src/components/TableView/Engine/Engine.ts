@@ -574,35 +574,95 @@ export class Engine {
      * Determine the optimal save strategy based on table size and change volume
      */
     public getSaveStrategy(): 'full_replacement' | 'delta_operations' {
-        const totalRows = this.config.rowCount || 0;
-        const modifiedCount = this.changeTracker.getModifiedCellKeys().size;
-        const deletedCount = this.changeTracker.getDeletedRows().length;
+        // CRITICAL FIX: Always use delta operations to prevent data loss
+        // The previous logic triggered full_replacement for small tables (<10k), which caused
+        // catastrophic data loss if the replacement payload was incomplete or failed.
+        // We now enforce delta updates unless schema changes require a heavier approach.
+
         const deletedColsCount = this.changeTracker.getDeletedColumns().length;
         const addedColsCount = this.changeTracker.getAddedColumns().length;
 
-        // Use full replacement if:
-        // 1. Table is small (< 10k rows)
-        // 2. More than 30% of rows changed
-        // 3. Schema changed (columns added/deleted)
-        const changeRatio = (modifiedCount + deletedCount) / Math.max(totalRows, 1);
+        // Only use full replacement if strictly necessary (e.g. massive schema re-structuring)
+        // For now, even schema changes should ideally be handled via specific ops if possible
+        // but keeping it restrictive.
         const schemaChanged = deletedColsCount > 0 || addedColsCount > 0;
 
-        if (totalRows < 10000 || changeRatio > 0.3 || schemaChanged) {
-            return 'full_replacement';
+        if (schemaChanged) {
+            // Even with schema changes, we might want to be careful, but for now 
+            // if columns are added/removed we might need to restructure.
+            // However, to be SAFE for MongoDB, let's stick to operations if possible.
+            // But if the backend requires full replacement for schema changes:
+            // return 'full_replacement'; 
+
+            // Re-evaluating: 'add_column' and 'drop_column' are supported ops now.
+            // So we can stick to delta_operations even for schema changes.
+            return 'delta_operations';
         }
 
+        // Default to delta operations for everything, including regular updates
         return 'delta_operations';
     }
 
     /**
-     * Commit all pending changes to the database
+     * Save current spreadsheet state to local storage (Snapshots)
+     * This creates a full "Save Point" in the user's local session/browser storage
+     */
+    /**
+     * Save current spreadsheet state to User's Pegasus Storage (Full Sync)
+     * This creates a full "Save Point" in the user's internal database (SurrealDB)
+     * regardless of the external source.
+     */
+    public async saveToUserStorage(): Promise<void> {
+        console.log('[Engine] Saving snapshot to user storage...');
+        const allRows = this.getAllNonEmptyRows();
+
+        if (this.syncManager && this.syncManager.save) {
+            await this.syncManager.save(allRows);
+        } else {
+            // Fallback to local storage if no backend connection
+            if (this.sourceTable) {
+                localStorage.setItem(`pegasus_snapshot_${this.sourceTable}`, JSON.stringify(allRows));
+            }
+        }
+
+        this.saveStatus = 'saved';
+        this.notifyChange();
+    }
+
+    /**
+     * Save snapshot to External Cloud Provider (S3/Azure/GCP)
+     */
+    public async saveSnapshot(storageConfig: any): Promise<string> {
+        console.log('[Engine] Saving snapshot to external cloud...', storageConfig);
+
+        if (!this.syncManager) {
+            throw new Error('SyncManager not initialized');
+        }
+
+        const allRows = this.getAllNonEmptyRows();
+
+        // Create a special Full Replacement operation with storage config
+        const op: Operation = {
+            type: 'full_replacement',
+            rows: allRows,
+            timestamp: Date.now(),
+            storage_config: storageConfig // Pass config to backend
+        };
+
+        // We use commit() to send this operation. 
+        // The backend intercepts 'full_replacement' + 'storage_config' to trigger cloud upload.
+        await this.syncManager.commit([op]);
+
+        return 'Snapshot upload initiated';
+    }
+
+    /**
+     * Commit all pending changes to the database (Delta Sync)
      */
     public async commit(): Promise<void> {
         if (!this.hasSource()) {
-            console.log('[Engine] Local-only sheet, skipping SQL commit. Changes are persisted via workspace sync.');
-            this.saveStatus = 'saved';
-            this.notifyChange();
-            return;
+            // If local-only, "Commit" just means Save Snapshot
+            return this.saveToUserStorage();
         }
 
         if (!this.hasPendingModifications()) {
@@ -640,7 +700,8 @@ export class Engine {
 
                     return {
                         ...p,
-                        type: p.type === 'update' ? 'UPDATE' : 'UPDATE', // Needs refinement
+                        type: p.type, // Pass through 'update', 'create', 'delete' directly
+                        id: p.rowId || p.id, // Ensure ID is passed for delta ops
                         name,
                         timestamp: Date.now()
                     } as Operation;
@@ -648,16 +709,12 @@ export class Engine {
 
                 // Schema changes (mapped from ChangeTracker)
                 this.changeTracker.getDeletedColumns().forEach(colName => {
-                    const colIndex = this.columnNames.indexOf(colName);
-                    if (colIndex !== -1) {
-                        ops.push({ type: 'DELETE_COL', col: colIndex, timestamp: Date.now() });
-                    }
+                    // Match backend expectation: 'drop_column'
+                    ops.push({ type: 'drop_column', column: colName, timestamp: Date.now() });
                 });
                 this.changeTracker.getAddedColumns().forEach(colName => {
-                    const colIndex = this.columnNames.indexOf(colName);
-                    if (colIndex !== -1) {
-                        ops.push({ type: 'INSERT_COL', col: colIndex, name: colName, timestamp: Date.now() });
-                    }
+                    // Match backend expectation: 'add_column'
+                    ops.push({ type: 'add_column', column: colName, timestamp: Date.now() });
                 });
             }
 

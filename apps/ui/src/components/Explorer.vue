@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, toRefs } from 'vue'
 import { toast } from '@/composables/useNotifications'
-import { Database, Plus, Trash, Search, Sparkles, FolderOpen } from 'lucide-vue-next'
+import { Database, Plus, Trash, Search, Sparkles, FolderOpen, Lock, Unlock } from 'lucide-vue-next'
 import { useStorage } from '@vueuse/core'
 import { isTauri } from '@/composables/usePlatform'
 
@@ -47,6 +47,7 @@ const props = defineProps<{
   chats?: any[]
   selectedChatId?: string
   queryHistory?: any[]
+  isPinned?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -56,6 +57,7 @@ const emit = defineEmits<{
   'select-chat': [id: string]
   'load-query': [query: string]
   'sanitize-table': [connection: ConnectionEntry, table: string]
+  'toggle-pin': []
 }>()
 
 // --- State & Composables ---
@@ -313,21 +315,31 @@ const onTestDataGenerated = (sql: string) => {
   >
     <!-- Header -->
     <header class="p-4 border-b border-border">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Explorer</h2>
-        <div class="flex items-center gap-1.5 p-1 bg-muted/40 rounded-xl border border-border">
-          <button
-            v-for="tab in sidebarTabs"
-            :key="tab"
-            @click="activeTab = tab"
-            class="px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
-            :class="[
-              activeTab === tab 
-                ? 'bg-purple-100/50 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 shadow-sm ring-1 ring-purple-500/20' 
-                : 'text-muted-foreground hover:text-foreground'
-            ]"
+      <div class="flex items-center justify-end">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5 p-1 bg-muted/40 rounded-xl border border-border">
+            <button
+              v-for="tab in sidebarTabs"
+              :key="tab"
+              @click="activeTab = tab"
+              class="px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+              :class="[
+                activeTab === tab 
+                  ? 'bg-purple-100/50 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 shadow-sm ring-1 ring-purple-500/20' 
+                  : 'text-muted-foreground hover:text-foreground'
+              ]"
+            >
+              {{ tab }}
+            </button>
+          </div>
+          
+          <button 
+            @click="emit('toggle-pin')"
+            class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all active:scale-95"
+            :title="isPinned ? 'Unlock Sidebar (Auto-hide)' : 'Lock Sidebar (Always show)'"
           >
-            {{ tab }}
+            <Unlock v-if="!isPinned" class="w-3.5 h-3.5" />
+            <Lock v-else class="w-3.5 h-3.5 text-purple-500" />
           </button>
         </div>
       </div>

@@ -17,7 +17,13 @@ export function useEntitlements() {
     const isPaid = computed(() => entitlementService.isPaid)
 
     const tierDisplayName = computed(() => {
-        const names = { free: 'Free', pro: 'Pro', pro_plus: 'Pro+' }
+        const names: Record<string, string> = {
+            free: 'Free',
+            pro: 'Pro',
+            pro_plus: 'Pro+',
+            teams: 'Teams+',
+            enterprise: 'Enterprise'
+        }
         return names[subscriptionTier.value] || 'Free'
     })
 

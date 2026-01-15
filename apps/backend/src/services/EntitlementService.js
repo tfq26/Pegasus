@@ -222,4 +222,46 @@ export class EntitlementService {
             WHERE stripe_customer_id = $custId;
         `, { custId: customerId });
     }
+
+    /**
+     * Checks if a user has access to a specific feature
+     */
+    async hasFeature(userId, featureName) {
+        if (!userId) return false;
+        const rawId = this._getRawId(userId);
+
+        const [userResult] = await this.db.query(`
+            SELECT subscription_tier FROM type::thing('user', $rawId)
+        `, { rawId });
+
+        const tier = userResult && userResult[0] && userResult[0].subscription_tier ? userResult[0].subscription_tier : 'free';
+
+        const FEATURES = {
+            'free': [],
+            'pro': ['advanced_charts', 'priority_support'],
+            'pro_plus': ['advanced_charts', 'priority_support', 'extended_context'],
+            'teams': ['advanced_charts', 'priority_support', 'extended_context', 'byom_models', 'team_sharing'],
+            'enterprise': ['advanced_charts', 'priority_support', 'extended_context', 'byom_models', 'team_sharing', 'sso', 'audit_logs']
+        };
+
+        // Allow higher tiers to inherit lower tier features? 
+        // For simplicity, just listing them explicitly above.
+        // Enterprise/Teams get everything.
+
+        const allowedFeatures = FEATURES[tier] || [];
+        return allowedFeatures.includes(featureName);
+    }
+
+    /**
+     * Manually sets a user's tier (For Enterprise/Sales-led deals)
+     */
+    async manuallyGrantTier(email, tier) {
+        console.log(`[Entitlement] Manually granting ${tier} to ${email}`);
+        await this.db.query(`
+            UPDATE user SET 
+                subscription_tier = $tier,
+                updated_at = time::now()
+            WHERE email = $email;
+        `, { email, tier });
+    }
 }
