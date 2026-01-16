@@ -304,6 +304,69 @@ const initSchema = async () => {
             DEFINE FIELD workspace_data ON TABLE connection_workspace TYPE object;
             DEFINE INDEX idx_workspace_conn ON TABLE connection_workspace COLUMNS connection_id, user UNIQUE;
 
+            -- Data Space
+            DEFINE TABLE data_space SCHEMAFULL
+                PERMISSIONS
+                    FOR select WHERE user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.id AND user = $auth.id)
+                    FOR update, delete WHERE user = $auth.id;
+            DEFINE FIELD user ON TABLE data_space TYPE record<user>;
+            DEFINE FIELD name ON TABLE data_space TYPE string;
+            DEFINE FIELD description ON TABLE data_space TYPE option<string>;
+            DEFINE FIELD icon ON TABLE data_space TYPE string DEFAULT "database";
+            DEFINE FIELD color ON TABLE data_space TYPE string DEFAULT "#8B5CF6";
+            DEFINE FIELD is_default ON TABLE data_space TYPE bool DEFAULT false;
+            DEFINE FIELD created_at ON TABLE data_space TYPE datetime DEFAULT time::now();
+            DEFINE FIELD updated_at ON TABLE data_space TYPE datetime DEFAULT time::now();
+
+            -- Space Permissions
+            DEFINE TABLE space_permission SCHEMALESS
+                PERMISSIONS
+                    FOR select WHERE user = $auth.id OR space.user = $auth.id
+                    FOR create, update, delete WHERE space.user = $auth.id;
+            DEFINE FIELD user ON TABLE space_permission TYPE record<user>;
+            DEFINE FIELD space ON TABLE space_permission TYPE record<data_space>;
+            DEFINE FIELD role ON TABLE space_permission TYPE string; 
+            DEFINE INDEX unique_access ON TABLE space_permission COLUMNS user, space UNIQUE;
+
+            -- Space Source
+            DEFINE TABLE space_source SCHEMAFULL
+                PERMISSIONS
+                    FOR select WHERE space.user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.space AND user = $auth.id)
+                    FOR create, update, delete WHERE space.user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.space AND user = $auth.id AND role = 'editor');
+            DEFINE FIELD space ON TABLE space_source TYPE record<data_space>;
+            DEFINE FIELD source_type ON TABLE space_source TYPE string;
+            DEFINE FIELD name ON TABLE space_source TYPE string;
+            DEFINE FIELD config ON TABLE space_source TYPE string;
+            DEFINE FIELD schema_cache ON TABLE space_source TYPE option<object>;
+            DEFINE FIELD last_synced_at ON TABLE space_source TYPE option<datetime>;
+            DEFINE FIELD status ON TABLE space_source TYPE string DEFAULT 'active';
+            DEFINE FIELD created_at ON TABLE space_source TYPE datetime DEFAULT time::now();
+
+            -- Space Files
+            DEFINE TABLE space_file SCHEMAFULL
+                PERMISSIONS
+                    FOR select WHERE space.user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.space AND user = $auth.id)
+                    FOR create, update, delete WHERE space.user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.space AND user = $auth.id AND role = 'editor');
+            DEFINE FIELD space ON TABLE space_file TYPE record<data_space>;
+            DEFINE FIELD filename ON TABLE space_file TYPE string;
+            DEFINE FIELD file_type ON TABLE space_file TYPE string;
+            DEFINE FIELD storage_path ON TABLE space_file TYPE string;
+            DEFINE FIELD file_size_bytes ON TABLE space_file TYPE number;
+            DEFINE FIELD parsed_schema ON TABLE space_file TYPE option<object>;
+            DEFINE FIELD created_at ON TABLE space_file TYPE datetime DEFAULT time::now();
+
+            -- Space Notes
+            DEFINE TABLE space_note SCHEMAFULL
+                PERMISSIONS
+                    FOR select WHERE space.user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.space AND user = $auth.id)
+                    FOR create, update, delete WHERE space.user = $auth.id OR (SELECT id FROM space_permission WHERE space = $parent.space AND user = $auth.id AND role = 'editor');
+            DEFINE FIELD space ON TABLE space_note TYPE record<data_space>;
+            DEFINE FIELD title ON TABLE space_note TYPE string;
+            DEFINE FIELD content ON TABLE space_note TYPE string;
+            DEFINE FIELD note_type ON TABLE space_note TYPE string DEFAULT 'general';
+            DEFINE FIELD created_at ON TABLE space_note TYPE datetime DEFAULT time::now();
+            DEFINE FIELD updated_at ON TABLE space_note TYPE datetime DEFAULT time::now();
+
             -- Knowledge Base (Vector Store)
             DEFINE TABLE knowledge_chunk SCHEMAFULL
                 PERMISSIONS
@@ -378,6 +441,13 @@ const initSchema = async () => {
             DEFINE FIELD last_value ON TABLE cell_binding TYPE any;
             DEFINE FIELD updated_at ON TABLE cell_binding TYPE datetime DEFAULT time::now();
             DEFINE INDEX idx_cell ON TABLE cell_binding COLUMNS spreadsheet_id, cell_id UNIQUE;
+
+            -- Update connection to support spaces
+            DEFINE TABLE connection SCHEMALESS
+                PERMISSIONS
+                    FOR select, update, delete WHERE user = $auth.id
+                    FOR create WHERE user = $auth.id;
+            DEFINE FIELD space ON TABLE connection TYPE option<record<data_space>>;
         `);
 
         console.log('[SurrealDB] Schema initialized (Batch Mode)');

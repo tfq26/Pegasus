@@ -8,6 +8,7 @@ import { adapters } from "../../adapters/index.js"
 import { analyzeForSanitization, applySanitization, interpretDataset } from "../../ai/sanitizer.js"
 
 import { ConfigService } from "../services/ConfigService.js"
+import { SyncService } from "../services/SyncService.js"
 
 const table = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -638,6 +639,13 @@ table.post("/save-table-data", async (c) => {
             return c.json({ error: err.message }, 500)
         } finally {
             await adapter.disconnect()
+
+            // [Sync] Trigger background sync if enabled
+            if (connection?.enableSync) {
+                // Run in background (fire-and-forget)
+                SyncService.syncUpdates(connection, tableName, updates, deletedRowIds, userId)
+                    .catch(e => console.error('[Sync] Background sync failed:', e))
+            }
         }
     } catch (e) {
         console.error("[Save] API Error:", e)

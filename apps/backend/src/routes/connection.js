@@ -5,6 +5,7 @@ import { db } from "../../db/surreal.js"
 import { canCreateConnection } from "../../lib/tierLimits.js"
 
 import { ConfigService } from "../services/ConfigService.js"
+import { SyncService } from "../services/SyncService.js"
 
 const connections = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -178,6 +179,23 @@ connections.post("/", async (c) => {
             ...(typeof finalConfig === 'string' ? JSON.parse(finalConfig) : finalConfig)
         }
 
+        // [Sync] Trigger Sync or Polling
+        const isSql = ['sqlite', 'mysql', 'postgres'].includes(mappedSaved.provider);
+        const isNoSql = ['mongodb', 'kusto'].includes(mappedSaved.provider);
+
+        if (isSql && mappedSaved.enableSync) {
+            SyncService.initialSync(mappedSaved, payload.sub)
+                .catch(e => console.error('[Connection] Initial sync failed:', e));
+        }
+
+        if (isNoSql) {
+            if (mappedSaved.enableLiveCache) {
+                SyncService.startPolling(mappedSaved);
+            } else {
+                SyncService.stopPolling(mappedSaved.id);
+            }
+        }
+
         return c.json(mappedSaved);
     } catch (e) {
         console.error('[Connection POST] Error:', e)
@@ -222,6 +240,23 @@ connections.put("/:id", async (c) => {
             nickname: updated.name,
             isLocked: updated.is_locked,
             ...(typeof finalConfig === 'string' ? JSON.parse(finalConfig) : finalConfig)
+        }
+
+        // [Sync] Trigger Sync or Polling
+        const isSql = ['sqlite', 'mysql', 'postgres'].includes(mappedUpdated.provider);
+        const isNoSql = ['mongodb', 'kusto'].includes(mappedUpdated.provider);
+
+        if (isSql && mappedUpdated.enableSync) {
+            SyncService.initialSync(mappedUpdated, payload.sub)
+                .catch(e => console.error('[Connection] Initial sync failed:', e));
+        }
+
+        if (isNoSql) {
+            if (mappedUpdated.enableLiveCache) {
+                SyncService.startPolling(mappedUpdated);
+            } else {
+                SyncService.stopPolling(mappedUpdated.id);
+            }
         }
 
         return c.json(mappedUpdated);

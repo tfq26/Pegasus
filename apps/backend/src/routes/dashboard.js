@@ -412,11 +412,25 @@ dashboard.get("/dashboards/recent", async (c) => {
             FROM accessed 
             WHERE in = type::thing('user', $userId)
             ORDER BY accessed_at DESC 
-            LIMIT 12;
+            LIMIT 50;
         `, { userId });
 
+        console.log(`[Recent] Found ${results?.length || 0} access records for user ${userId}`);
+
+        // Deduplicate by dashboard ID (take most recent access for each dashboard)
+        const seenIds = new Set();
+        const uniqueResults = [];
+        for (const item of results || []) {
+            const dashId = item.id?.toString?.() || '';
+            if (!seenIds.has(dashId) && item.title) {
+                seenIds.add(dashId);
+                uniqueResults.push(item);
+            }
+            if (uniqueResults.length >= 12) break; // Limit to 12 after deduplication
+        }
+
         // Fetch shared roles for recent dashboards that the user doesn't own
-        const dashboards = await Promise.all(results.map(async (item) => {
+        const dashboards = await Promise.all(uniqueResults.map(async (item) => {
             let role = item.is_owner ? 'owner' : null;
 
             if (!role) {
@@ -456,7 +470,15 @@ dashboard.post("/dashboards/:id/access", async (c) => {
         let id = c.req.param("id")
         if (!id.includes(':')) id = `dashboard:${id}`
 
-        // Record the access using a RELATE statement (creates or updates)
+        // Delete existing access record first, then create new one
+        // This ensures we always have exactly one access record per user-dashboard pair
+        await db.query(`
+            DELETE accessed 
+            WHERE in = type::thing('user', $userId) 
+            AND out = ${id};
+        `, { userId });
+
+        // Create fresh access record with current timestamp
         await db.query(`
             RELATE type::thing('user', $userId)->accessed->${id} 
             SET accessed_at = time::now();
@@ -464,6 +486,7 @@ dashboard.post("/dashboards/:id/access", async (c) => {
 
         return c.json({ ok: true })
     } catch (e) {
+        console.error("[Access tracking] Error:", e);
         return c.json({ error: "Failed to track access" }, 500)
     }
 })

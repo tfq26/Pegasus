@@ -87,22 +87,10 @@ const getTabTooltip = (tab: Tab) => {
 </script>
 
 <template>
-  <div class="flex items-center h-10 border-b border-border bg-muted/40 px-2 overflow-x-auto">
-    <!-- Add New Tab Dropdown Trigger -->
-    <div class="relative mr-2">
-        <button 
-          ref="plusButtonRef"
-          class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" 
-          title="New Tab"
-          @click.stop="toggleDropdown"
-        >
-           <Plus class="w-4 h-4" />
-        </button>
-    </div>
-
+  <div class="flex items-center h-9 border-b border-border bg-muted/40 px-2 overflow-x-auto">
     <!-- Tab List -->
     <TooltipProvider :delay-duration="100">
-      <div class="flex items-center gap-1 flex-1">
+      <div class="flex items-center gap-1">
         <Tooltip v-for="tab in tabs" :key="tab.id">
           <TooltipTrigger as-child>
             <div 
@@ -140,9 +128,23 @@ const getTabTooltip = (tab: Tab) => {
             {{ getTabTooltip(tab) }}
           </TooltipContent>
         </Tooltip>
-        </div>
-      </TooltipProvider>
+      </div>
+    </TooltipProvider>
 
+    <!-- Add New Tab Button (Immediately to the right) -->
+    <div class="relative ml-1 shrink-0">
+        <button 
+          ref="plusButtonRef"
+          class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" 
+          title="New Tab"
+          @click.stop="toggleDropdown"
+        >
+           <Plus class="w-4 h-4" />
+        </button>
+    </div>
+
+    <!-- Spacer to fill the rest of the bar -->
+    <div class="flex-1"></div>
     
     <!-- Teleport dropdown to body to escape stacking context -->
     <Teleport to="body">

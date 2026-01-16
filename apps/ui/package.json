@@ -40,6 +40,7 @@
     "hyperformula": "^3.1.0",
     "interactjs": "^1.10.27",
     "lucide-vue-next": "^0.553.0",
+    "mammoth": "^1.11.0",
     "markdown-it": "^14.1.0",
     "monaco-editor-vue3": "^1.0.4",
     "motion-v": "^1.7.4",

@@ -21,6 +21,8 @@
           @load-query="(q) => { console.log('ChatSidebar: emitting load-query', q); $emit('load-query', q) }"
           @sanitize-table="(conn, table) => $emit('sanitize-table', conn, table)"
           @toggle-pin="$emit('toggle-pin')"
+          @select-note="$emit('select-note', $event)"
+          @select-file="$emit('select-file', $event)"
         />
       </div>
 
@@ -81,6 +83,8 @@ defineEmits<{
   'load-query': [query: string]
   'sanitize-table': [connection: ConnectionEntry, table: string]
   'toggle-pin': []
+  'select-note': [note: any]
+  'select-file': [file: any]
 }>()
 
 // Resizing Logic

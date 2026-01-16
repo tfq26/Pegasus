@@ -9,7 +9,7 @@ import ToolbarQuery from './Toolbars/ToolbarQuery.vue'
 import ToolbarSpreadsheet from './Toolbars/ToolbarSpreadsheet.vue'
 
 const props = defineProps<{
-  mode: 'chat' | 'write' | 'spreadsheet'
+  mode: 'chat' | 'write' | 'spreadsheet' | 'note' | 'file'
   connections: any[]
   selectedConnectionId: string
   isExecuting: boolean
@@ -31,6 +31,10 @@ const props = defineProps<{
   textWrap?: boolean
   showGridlines?: boolean
   hasUncommittedChanges?: boolean
+  noteIsPrivate?: boolean
+  noteFileType?: 'txt' | 'md' | 'docx' | 'pdf'
+  noteFormatState?: { bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean }
+  noteSaving?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -68,6 +72,11 @@ const emit = defineEmits<{
   'version-change': [version: number]
   'update:text-wrap': [value: boolean]
   'update:show-gridlines': [value: boolean]
+  'note-format': [command: string, value?: string]
+  'update:note-is-private': [value: boolean]
+  'update:note-file-type': [value: 'txt' | 'md' | 'docx' | 'pdf']
+  'note-share': []
+  'note-download': []
 }>()
 
 const expanded = ref(false)
@@ -86,9 +95,9 @@ const models = computed(() => {
 </script>
 
 <template>
-  <div class="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+  <div class="border-b border-border bg-background">
     <!-- Compact Toolbar -->
-    <div class="flex items-center justify-between px-4 py-2 gap-4">
+    <div class="flex items-center justify-between px-2 py-1 gap-2">
       <!-- Left: Mode Controls -->
       <div class="flex items-center gap-3 w-full">
         
@@ -156,6 +165,8 @@ const models = computed(() => {
           @update:text-wrap="(v) => emit('update:text-wrap', v)"
           @update:show-gridlines="(v) => emit('update:show-gridlines', v)"
         />
+
+        <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->
 
       </div>
 

@@ -102,21 +102,29 @@
             </button>
             <div 
               v-if="showDetails" 
-              class="mt-4 rounded-xl border p-4 text-left overflow-x-auto custom-scrollbar max-h-48 shadow-inner animate-in slide-in-from-top-2 duration-200"
+              class="mt-4 rounded-xl border p-4 text-left overflow-x-auto custom-scrollbar max-h-48 shadow-inner animate-in slide-in-from-top-2 duration-200 relative group/code"
               :class="isDark 
                 ? 'bg-black/50 border-purple-500/20' 
                 : 'bg-stone-50 border-stone-200'"
             >
+                <button 
+                    @click="copyDetails" 
+                    class="absolute top-2 right-2 p-1.5 rounded-md transition-all opacity-0 group-hover/code:opacity-100 bg-background/50 backdrop-blur-sm border border-border"
+                    :class="copied ? 'text-green-500' : 'text-muted-foreground hover:text-purple-500'"
+                >
+                    <Check v-if="copied" class="w-3.5 h-3.5" />
+                    <Copy v-else class="w-3.5 h-3.5" />
+                </button>
                 <pre class="text-[10px] font-mono whitespace-pre-wrap break-all leading-relaxed" :class="isDark ? 'text-purple-300/90' : 'text-purple-800/80'">{{ errorDetails }}</pre>
             </div>
         </div>
 
         <div class="mt-2">
-            <a 
-              href="mailto:support@pegasus.com" 
-              class="text-xs font-medium transition-colors"
+            <button 
+              @click="handleSupport" 
+              class="text-xs font-medium transition-colors cursor-pointer hover:underline bg-transparent border-none p-0"
               :class="isDark ? 'text-stone-600 hover:text-stone-400' : 'text-stone-400 hover:text-stone-600'"
-            >Contact Support</a>
+            >Contact Support</button>
         </div>
       </div>
 
@@ -127,8 +135,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { AlertTriangle, AlertOctagon, RefreshCcw, ChevronDown, ChevronUp, Sparkles, LayoutDashboard } from 'lucide-vue-next'
-import { useColorMode, usePreferredDark } from '@vueuse/core'
+import { AlertTriangle, AlertOctagon, RefreshCcw, ChevronDown, ChevronUp, Sparkles, LayoutDashboard, Copy, Check } from 'lucide-vue-next'
+import { useColorMode, usePreferredDark, useClipboard } from '@vueuse/core'
 
 const props = defineProps<{
     code?: string | number
@@ -141,6 +149,7 @@ const props = defineProps<{
 const route = useRoute()
 const useRouterObj = useRouter()
 const preferredDark = usePreferredDark()
+const { copy, copied } = useClipboard()
 const mode = useColorMode({
   emitAuto: true,
   selector: 'html',
@@ -172,6 +181,22 @@ const handleReload = () => {
 const goDashboard = () => {
     // Force a full reload to clear any corrupted state
     window.location.href = '/dashboard'
+}
+
+const handleSupport = async () => {
+    const text = `Error Code: ${errorCode.value}\nMessage: ${displayMessage.value}\nDetails: ${errorDetails.value || 'N/A'}\nURL: ${window.location.href}`;
+    await copy(text);
+    // Add small delay to let copy happen? copy is async usually? useClipboard returns promise?
+    // useClipboard copy() is async.
+    setTimeout(() => {
+        window.location.href = '/support';
+    }, 100);
+}
+
+const copyDetails = async () => {
+    if (errorDetails.value) {
+        await copy(errorDetails.value);
+    }
 }
 </script>
 

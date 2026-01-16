@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import type { ConnectionFormState } from '@/views/settings/types'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Info } from 'lucide-vue-next'
 
 defineProps<{
   connectionForm: ConnectionFormState
@@ -59,6 +62,27 @@ defineProps<{
         />
         Enable SSL (Required for most cloud databases)
       </label>
+    </div>
+
+    <!-- Sync Toggle -->
+    <div class="col-span-full border p-3 rounded-lg bg-muted/20 space-y-4">
+        <div class="flex items-center justify-between space-x-2">
+           <div class="space-y-0.5">
+               <Label class="text-xs font-medium">Enable Cloud Sync</Label>
+               <p class="text-[10px] text-muted-foreground">Sync to Pegasus Cloud for cross-device access.</p>
+           </div>
+           <Switch :checked="connectionForm.postgres.enableSync" @update:checked="(v) => connectionForm.postgres.enableSync = v" />
+        </div>
+        
+        <div v-if="connectionForm.postgres.enableSync" class="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 flex gap-3 items-start">
+           <Info class="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+           <div class="space-y-1">
+               <p class="text-xs font-medium text-blue-500">Privacy Notice</p>
+               <p class="text-[10px] text-muted-foreground leading-relaxed">
+                   Your database will be synced to Pegasus Cloud (SurrealDB). Data is encrypted and secure.
+               </p>
+           </div>
+        </div>
     </div>
   </div>
 </template>

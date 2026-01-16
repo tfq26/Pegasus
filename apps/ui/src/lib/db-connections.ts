@@ -6,6 +6,7 @@ export type MySQLConfig = {
   user: string
   password: string
   database: string
+  enableSync?: boolean
 }
 
 export type PostgresConfig = {
@@ -16,12 +17,15 @@ export type PostgresConfig = {
   database: string
   ssl?: boolean
   connectionString?: string
+  enableSync?: boolean
 }
 
 export type MongoConfig = {
   url: string
   database: string
   collection: string
+  enableLiveCache?: boolean
+  pollingInterval?: number
 }
 
 export type KustoConfig = {
@@ -30,6 +34,8 @@ export type KustoConfig = {
   tenantId?: string
   clientId?: string
   clientSecret?: string
+  enableLiveCache?: boolean
+  pollingInterval?: number
 }
 
 export type SQLiteConfig = {
@@ -37,6 +43,7 @@ export type SQLiteConfig = {
   database?: string
   authToken?: string
   tables?: string[]
+  enableSync?: boolean
 }
 
 export type FileConfig = {
@@ -79,6 +86,7 @@ export type ConnectionEntry = {
   nickname: string
   description?: string
   provider: Provider
+  space?: string
   mysql?: MySQLConfig
   postgres?: PostgresConfig
   mongodb?: MongoConfig

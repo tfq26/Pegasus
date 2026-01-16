@@ -28,6 +28,7 @@ import { weatherRoutes } from "./src/routes/weather.js"
 import cloudAuth from "./src/routes/cloud-auth.js"
 import cloudProvision from "./src/routes/cloud-provision.js"
 import { dataSourceRoutes } from "./src/routes/data-sources.js"
+import { spaceRoutes } from "./src/routes/space.js"
 import { startPollingService } from "./src/services/polling-service.js"
 import { aiClient } from "./ai/AIClient.js"
 import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
@@ -285,6 +286,7 @@ app.route('/weather', weatherRoutes)
 app.route('/data-sources', dataSourceRoutes)
 app.route('/api/cloud-auth', cloudAuth)
 app.route('/api/cloud-provision', cloudProvision)
+app.route('/spaces', spaceRoutes)
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -1891,7 +1893,7 @@ app.post("/schema", async (c) => {
       if (provider === 'surrealdb') {
         for (const tableName of tables) {
           // Extract UUID from table name
-          const uuidMatch = tableName.match(/^data_([a-f0-9]{32})_/i)
+          const uuidMatch = tableName.match(/^data_([a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/i)
           if (uuidMatch) {
             const uuid = uuidMatch[1]
             // Note: SurrealDB uploads are stored without hyphens
@@ -1923,9 +1925,9 @@ app.post("/schema", async (c) => {
         }
         if (provider === 'surrealdb' && tableName.startsWith('data_')) {
           // Fallback: extract from table name
-          const match = tableName.match(/^data_[a-f0-9]{32}_(.+)$/i)
+          const match = tableName.match(/^data_([a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_(.+)$/i)
           if (match) {
-            return match[1]
+            return match[2] // Group 2 is the name part
           }
         }
         return tableName

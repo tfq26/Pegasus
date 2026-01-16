@@ -58,15 +58,14 @@ const contextUsage = 45
 </script>
 
 <template>
-  <div class="flex items-center gap-3 w-full">
+  <div class="flex items-center gap-2 w-full">
     <!-- Model Selection -->
-    <div class="flex items-center gap-2">
-      <span class="hidden md:inline text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Model</span>
+    <div class="flex items-center gap-1">
       <Select 
         :model-value="aiOptions.model"
         @update:model-value="updateOption('model', $event)"
       >
-        <SelectTrigger class="w-[180px] h-8 text-xs text-muted-foreground bg-background border-border focus:ring-primary focus:border-primary">
+        <SelectTrigger class="w-[160px] h-7 text-xs border-none bg-transparent hover:bg-muted/50 focus:ring-0 px-2 shadow-none">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -82,8 +81,8 @@ const contextUsage = 45
     </div>
     
     <!-- Temperature Slider -->
-    <div class="flex items-center gap-2">
-       <span class="hidden md:inline text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Temp</span>
+    <div class="flex items-center gap-2 px-2">
+       <span class="text-[10px] text-muted-foreground w-3">T:</span>
        <input
         :value="aiOptions.temperature"
         @input="updateOption('temperature', Number(($event.target as HTMLInputElement).value))"
@@ -91,15 +90,15 @@ const contextUsage = 45
         min="0"
         max="1"
         step="0.1"
-        class="w-24 h-2 bg-muted-foreground/20 rounded-lg appearance-none cursor-pointer accent-primary"
+        class="w-16 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
         :title="`Temperature: ${aiOptions.temperature}`"
       />
     </div>
 
     <!-- Context Usage Indicator -->
-    <div class="flex items-center gap-2 px-2 border-l border-border ml-2" title="Context Token Usage">
-        <span class="hidden md:inline text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Context</span>
-        <div class="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+    <div class="flex items-center gap-2 px-2" title="Context Token Usage">
+        <span class="text-[10px] text-muted-foreground w-3">C:</span>
+        <div class="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
             <div 
                 class="h-full bg-blue-500/70 rounded-full transition-all duration-500" 
                 :style="{ width: `${contextUsage}%` }"
@@ -110,17 +109,7 @@ const contextUsage = 45
     <div class="flex-1"></div>
 
     <!-- Actions -->
-    <div class="flex items-center gap-2">
-      <!-- Run Button Removed as requested -->
-      <!-- <button
-        @click="emit('run')"
-        :disabled="isExecuting"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-wait"
-      >
-        <Zap v-if="!isExecuting" class="w-3.5 h-3.5" />
-        <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
-        <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
-      </button> -->
+    <div class="flex items-center gap-1">
       
       <!-- Clear -->
       <TooltipProvider>
@@ -128,9 +117,9 @@ const contextUsage = 45
           <TooltipTrigger as-child>
             <button
               @click="emit('clear')"
-              class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
             >
-              <Eraser class="w-3.5 h-3.5" />
+              <Eraser class="w-4 h-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Clear Chat</TooltipContent>
@@ -143,9 +132,9 @@ const contextUsage = 45
           <TooltipTrigger as-child>
             <button
               @click="emit('toggle-wrangler')"
-              class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-violet-500 transition-colors"
+              class="p-1.5 rounded text-muted-foreground hover:bg-muted hover:text-violet-500 transition-colors"
             >
-              <Wand2 class="w-3.5 h-3.5" />
+              <Wand2 class="w-4 h-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Data Wrangler</TooltipContent>

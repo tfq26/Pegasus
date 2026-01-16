@@ -629,3 +629,62 @@ export async function saveTableData(tableName: string, updates: any[], deletedRo
     provider: connection.provider
   })
 }
+export async function fetchSpaces() {
+  const body = await api.get<{ spaces: any[] }>('/spaces')
+  return body.spaces || []
+}
+
+export async function createSpace(name: string, description?: string, icon?: string, color?: string) {
+  return api.post<{ id: string }>('/spaces', { name, description, icon, color })
+}
+
+export async function updateSpace(id: string, updates: any) {
+  return api.put(`/spaces/${id}`, updates)
+}
+
+export async function deleteSpace(id: string) {
+  return api.delete(`/spaces/${id}`)
+}
+
+export async function fetchSpacePermissions(spaceId: string) {
+  return api.get<{ permissions: any[], currentUserRole?: string, owner?: any }>(`/spaces/${spaceId}/permissions`)
+}
+
+export async function inviteUserToSpace(spaceId: string, email: string, role: string = 'read') {
+  return api.post(`/spaces/${spaceId}/share/invite`, { email, role })
+}
+
+export async function removeSpacePermission(spaceId: string, email: string) {
+  return api.delete(`/spaces/${spaceId}/permissions/${email}`)
+}
+
+export async function fetchSpaceSources(spaceId: string) {
+  const body = await api.get<{ sources: any[] }>(`/spaces/${spaceId}/sources`)
+  return body.sources || []
+}
+
+export async function fetchSpaceFiles(spaceId: string) {
+  const body = await api.get<{ files: any[] }>(`/spaces/${spaceId}/files`)
+  return body.files || []
+}
+
+export async function createSpaceFile(spaceId: string, fileData: any) {
+  return api.post(`/spaces/${spaceId}/files`, fileData)
+}
+
+export async function fetchSpaceNotes(spaceId: string) {
+  const body = await api.get<{ notes: any[] }>(`/spaces/${spaceId}/notes`)
+  return body.notes || []
+}
+
+export async function createSpaceNote(spaceId: string, noteData: any) {
+  return api.post(`/spaces/${spaceId}/notes`, noteData)
+}
+
+export async function updateSpaceNote(noteId: string, updates: any) {
+  return api.put(`/spaces/notes/${noteId}`, updates)
+}
+
+export async function deleteSpaceNote(noteId: string) {
+  return api.delete(`/spaces/notes/${noteId}`)
+}

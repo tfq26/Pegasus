@@ -46,20 +46,19 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
 </script>
 
 <template>
-  <div class="flex items-center gap-3 w-full">
-    <!-- Run / Stop Controls -->
-    <!-- Run / Stop Controls -->
-    <div class="flex items-center gap-2">
+  <div class="flex items-center gap-2 w-full">
+    <!-- Run / Save Controls -->
+    <div class="flex items-center gap-1">
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <button
               @click="emit('run')"
               :disabled="isExecuting"
-              class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all disabled:opacity-50 disabled:cursor-wait"
+              class="flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-wait"
             >
               <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
-              <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-lg animate-spin"></span>
+              <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
               <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
             </button>
           </TooltipTrigger>
@@ -72,10 +71,9 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
             <button
               @click="emit('save')"
-              class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+              class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
             >
-              <Save class="w-3.5 h-3.5" />
-              <span class="hidden md:inline">Save</span>
+              <Save class="w-4 h-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Save query (Ctrl+S)</TooltipContent>
@@ -87,7 +85,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
             <button
               @click="emit('stop')" 
-              class="p-1.5 rounded-md text-destructive hover:bg-muted hover:text-destructive/80 transition-colors"
+              class="p-1.5 rounded text-destructive hover:bg-muted hover:text-destructive/80 transition-colors"
             >
               <Square class="w-3.5 h-3.5 fill-current" />
             </button>
@@ -98,15 +96,15 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
     </div>
 
     <!-- SQL Tools -->
-    <div class="flex items-center gap-1 border-l border-border pl-2 ml-2">
+    <div class="flex items-center gap-1 border-l border-border pl-1 ml-1 h-4">
        <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <button
                @click="emit('format-sql')"
-               class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+               class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
              >
-               <AlignLeft class="w-3.5 h-3.5" />
+               <AlignLeft class="w-4 h-4" />
              </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Format SQL</TooltipContent>
@@ -118,9 +116,9 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
              <button
                @click="emit('translate')"
-               class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+               class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
              >
-               <Languages class="w-3.5 h-3.5" />
+               <Languages class="w-4 h-4" />
              </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Translate Query</TooltipContent>
@@ -132,98 +130,96 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
              <button
                @click="emit('explain-query')"
-               class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+               class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
              >
-               <Info class="w-3.5 h-3.5" />
+               <Info class="w-4 h-4" />
              </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Explain Query Plan</TooltipContent>
         </Tooltip>
       </TooltipProvider>
-    </div>
 
-    <!-- History Dropdown -->
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <button
-                 class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-1"
+      <!-- History Dropdown -->
+      <DropdownMenu>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <DropdownMenuTrigger as-child>
+                <button class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors">
+                   <History class="w-4 h-4" />
+                 </button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Recent Queries</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <DropdownMenuContent class="w-64 max-h-60 overflow-y-auto">
+           <template v-if="queryHistory && queryHistory.length">
+               <DropdownMenuItem
+                  v-for="(q, i) in queryHistory.slice(0, 10)"
+                  :key="i"
+                  @click="emit('load-query', q.query)"
+                  class="text-xs truncate"
                >
-                 <History class="w-3.5 h-3.5" />
-               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-64 max-h-60 overflow-y-auto">
-               <template v-if="queryHistory && queryHistory.length">
-                   <DropdownMenuItem
-                      v-for="(q, i) in queryHistory.slice(0, 10)"
-                      :key="i"
-                      @click="emit('load-query', q.query)"
-                      class="text-xs truncate"
-                   >
-                      {{ q.query }}
-                   </DropdownMenuItem>
-               </template>
-               <div v-else class="p-2 text-xs text-muted-foreground text-center">No recent history</div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">Recent Queries</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+                  {{ q.query }}
+               </DropdownMenuItem>
+           </template>
+           <div v-else class="p-2 text-xs text-muted-foreground text-center">No recent history</div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
 
     <div class="flex-1"></div>
 
     <!-- Query Options -->
-    <div class="flex items-center gap-3 text-xs text-muted-foreground">
-        <div class="flex items-center gap-2">
-            <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Timeout</span>
+    <div class="flex items-center gap-2 text-xs text-muted-foreground">
+        <div class="flex items-center gap-1.5" title="Timeout (seconds)">
+            <span class="text-[10px] text-muted-foreground">Timeout:</span>
             <input
                 :value="queryOptions.timeout"
                 @input="updateOption('timeout', Number(($event.target as HTMLInputElement).value))"
                 type="number"
                 min="1"
                 max="300"
-                class="w-12 px-1 py-0.5 rounded border border-border bg-background text-foreground focus:border-primary focus:ring-1 focus:ring-primary text-center"
+                class="w-10 px-1 py-0.5 rounded border-none bg-transparent hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-primary text-center transition-colors appearance-none"
             />
         </div>
 
-        <div class="flex items-center gap-2">
-            <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Limit</span>
+        <div class="flex items-center gap-1.5" title="Row Limit">
+            <span class="text-[10px] text-muted-foreground">Limit:</span>
             <input
                 :value="queryOptions.limit"
                 @input="updateOption('limit', Number(($event.target as HTMLInputElement).value))"
                 type="number"
                 min="1"
                 max="100000"
-                class="w-16 px-1 py-0.5 rounded border border-border bg-background text-foreground focus:border-primary focus:ring-1 focus:ring-primary text-center"
+                class="w-14 px-1 py-0.5 rounded border-none bg-transparent hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-primary text-center transition-colors appearance-none"
             />
         </div>
 
-        <div class="flex items-center gap-2">
-            <label class="flex items-center gap-2 cursor-pointer">
+        <div class="flex items-center gap-1.5 ml-1">
+            <label class="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
                 <input
                 :checked="queryOptions.autoCommit"
                 @change="updateOption('autoCommit', ($event.target as HTMLInputElement).checked)"
                 type="checkbox"
-                class="rounded border-border bg-background text-primary focus:ring-primary w-3.5 h-3.5"
+                class="rounded border-muted-foreground/40 bg-transparent text-primary focus:ring-primary w-3.5 h-3.5"
                 />
-                <span class="hidden md:inline text-[10px] uppercase tracking-wider font-semibold">Auto-commit</span>
+                <span class="text-[10px]">Auto-commit</span>
             </label>
         </div>
     </div>
 
     <!-- Clear Button -->
-     <div class="border-l border-border pl-2 ml-2">
+     <div class="border-l border-border pl-1 ml-1 h-4">
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <button
               @click="emit('clear')"
-              class="p-1.5 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              class="p-1.5 rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
-              <Eraser class="w-3.5 h-3.5" />
+              <Eraser class="w-4 h-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Clear editor</TooltipContent>

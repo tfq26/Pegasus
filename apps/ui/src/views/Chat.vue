@@ -3,8 +3,8 @@
     <!-- Initial Boot Loader (Only for Metadata/Auth) -->
     <LoadingScreen 
       v-if="isInitializing" 
-      :title="isInitializing ? 'Initializing Pegasus Workspace' : 'Synchronizing Secure Data Vault'"
-      :message="isInitializing ? 'Establishing encrypted links and allocating compute...' : 'Loading all spreadsheet connections in parallel...'"
+      :title="isInitializing ? 'Loading your workspace' : 'Syncing your workspace'"
+      :message="isInitializing ? 'Loading your connections and resources...' : 'Syncing your connections and resources...'"
     />
 
     <template v-if="!isInitializing">
@@ -30,6 +30,8 @@
       @create-chat="handleCreateChat"
       @load-query="handleLoadQuery"
       @sanitize-table="handleSanitizeFixed"
+      @select-note="handleSelectNote"
+      @select-file="handleSelectFile"
       @mouseenter="clearHoverTimer"
       @mouseleave="startHoverTimer"
     />
@@ -62,66 +64,7 @@
     >
       <!-- Editor workspace -->
       <section class="flex-1 flex flex-col overflow-hidden min-h-0 min-w-0">
-        <!-- Toolbar -->
-        <ChatToolbar 
-          v-if="(workspaceTabs as any).length > 0"
-          :mode="mode"
-          :connections="connections"
-          :selected-connection-id="selectedConnectionId"
-          :is-executing="isExecuting"
-          :ai-options="aiOptions"
-          :query-options="queryOptions"
-          :available-models="availableModels"
-          :save-status="saveStatus"
-          :ai-mode="aiMode"
-          :auto-execute="autoExecute"
-          :private-mode="privateMode"
-          :live-mode="liveMode"
-          :collaborator-count="collaboratorCount"
-          :can-undo="canUndo"
-          :can-redo="canRedo"
-          :query-history="queryHistory"
-          :is-syncing="workspaceRef?.isDataLoading"
-          :versions="workspaceRef?.activeTabVersions"
-          :current-version="workspaceRef?.activeTabVersion"
-          :text-wrap="workspaceRef?.activeTabTextWrap"
-          :show-gridlines="workspaceRef?.activeTabShowGridlines"
-          :has-uncommitted-changes="workspaceRef?.hasUncommittedChanges"
-          @update:mode="mode = $event"
-          @update:selected-connection-id="handleSelectConnection"
-          @update:ai-options="aiOptions = $event"
-          @update:query-options="queryOptions = $event"
-          @update:auto-execute="autoExecute = $event"
-          @run="run"
-          @stop="stopExecution"
-          @ai-generate="handleAIGenerate"
-          @clear="clear"
-          @format="handleFormat"
-          @toggle-ai-mode="handleToggleAIMode"
-          @visualize="handleVisualize"
-          @sanitize="handleSanitize"
-          @load-table-to-sheet="() => handleLoadTableToSheet(Array.isArray(queryResult) ? queryResult : [])"
-          @export="onExportSelected"
-          @update:private-mode="privateMode = $event"
-          @update:live-mode="handleUpdateLiveMode"
-          @share="shareDialogOpen = true"
-          @merge="handleMergeRequest"
-          @refresh-table="handleRefreshTable"
-          @undo="handleUndo"
-          @redo="handleRedo"
-          @format-sql="handleFormatSqlAction"
-          @translate="handleTranslate"
-          @explain-query="handleExplainQuery"
-          @load-query="handleLoadQuery"
-          @export-chat="handleExportChat"
-          @save="handleToolbarSave"
-          @toggle-wrangler="toggleWrangler"
-          @version-change="(v) => workspaceRef?.handleVersionChange(workspaceRef?.activeTabId as string, v)"
-          @update:text-wrap="(v) => workspaceRef?.toggleTextWrap(v)"
-          @update:show-gridlines="(v) => workspaceRef?.toggleGridlines(v)"
-        />
-
-        <!-- Editor -->
+        <!-- Editor (Toolbar is now inside Workspace) -->
         <Workspace
           ref="workspaceRef"
           class="flex-1 min-h-0"
@@ -222,7 +165,7 @@
       />
 
       <!-- Global Modals -->
-    <WranglerDialog :open="wranglerOpen" @update:open="wranglerOpen = $event" />
+    <!-- <WranglerDialog :open="wranglerOpen" @update:open="wranglerOpen = $event" /> -->
 
     <!-- Share Dialog -->
     <ShareDialog
@@ -244,7 +187,6 @@ import { toast } from '@/composables/useNotifications'
 import { storeToRefs } from 'pinia'
 import { toRef } from 'vue'
 import ChatSidebar from '@/components/Chat/ChatSidebar.vue'
-import ChatToolbar from '@/components/Chat/ChatToolbar.vue'
 import Workspace from '@/components/Workspace/Workspace.vue'
 import ResultsPanel from '@/components/Chat/ResultsPanel.vue'
 import AmbiguityDialog from '@/components/Chat/AmbiguityDialog.vue'
@@ -376,7 +318,28 @@ const settings = ref<any>(null)
 const isInitializing = ref(true)
 
 // Collaboration state
-const liveMode = ref(false)
+const liveMode = ref(false)  // When true, enables real-time collaboration
+
+// Compute toolbar mode based on active tab type
+const toolbarMode = computed(() => {
+    const tabs = workspaceStore.tabs as any
+    const activeTab = tabs.find((t: any) => t.id === workspaceStore.activeTabId)
+    if (!activeTab) return mode.value
+
+    // Map tab types to toolbar modes
+    if (activeTab.type === 'note' || activeTab.type === 'file') {
+        return activeTab.type
+    }
+    if (activeTab.type === 'query') {
+        return 'write'
+    }
+    if (activeTab.type === 'table' || activeTab.type === 'spreadsheet') {
+        return 'spreadsheet'
+    }
+    
+    return mode.value // default to current mode
+})
+
 const shareDialogOpen = ref(false)
 const activeTableName = computed(() => {
     const tab = (workspaceStore.activeTab as any)?.value ?? workspaceStore.activeTab
@@ -636,6 +599,70 @@ const handleEditTableWrapper = (conn: any, table: string) => {
     if (workspaceRef.value?.openTable) {
         workspaceRef.value.openTable(table, connection, connection.provider || 'sqlite')
     }
+}
+
+const handleSelectNote = (note: any) => {
+    if (workspaceRef.value?.openNote) {
+        workspaceRef.value.openNote(note)
+    }
+}
+
+const handleSelectFile = (file: any) => {
+    if (workspaceRef.value?.openNote) {
+        workspaceRef.value.openNote(file, 'file')
+    }
+}
+
+// Note toolbar handlers
+const handleNoteFormat = (command: string, value?: string) => {
+    if (workspaceRef.value?.getNoteEditorRef) {
+        const editorRef = workspaceRef.value.getNoteEditorRef()
+        if (editorRef?.execCommand) {
+            editorRef.execCommand(command, value)
+        }
+    }
+}
+
+const handleNotePrivacyChange = (isPrivate: boolean) => {
+    const activeTab = (workspaceStore.tabs as any).find((t: any) => t.id === workspaceStore.activeTabId)
+    if (activeTab) {
+        workspaceStore.updateTabData(activeTab.id, { isPrivate })
+        toast.info(isPrivate ? 'Note is now private' : 'Note is now public')
+    }
+}
+
+const handleNoteFileTypeChange = (fileType: 'txt' |'md' | 'docx' | 'pdf') => {
+    const activeTab = (workspaceStore.tabs as any).find((t: any) => t.id === workspaceStore.activeTabId)
+    if (activeTab) {
+        workspaceStore.updateTabData(activeTab.id, { file_type: fileType })
+        toast.success(`Changed format to ${fileType.toUpperCase()}`)
+    }
+}
+
+const handleNoteShare = () => {
+    shareDialogOpen.value = true
+    // TODO: Pass note ID to share dialog for note-specific sharing
+}
+
+const handleNoteDownload = () => {
+    const activeTab = (workspaceStore.tabs as any).find((t: any) => t.id === workspaceStore.activeTabId)
+    if (!activeTab) return
+
+    const content = activeTab.data?.content || ''
+    const title = activeTab.data?.title || 'note'
+    const fileType = activeTab.data?.file_type || 'md'
+    
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${title}.${fileType}`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    toast.success('Note downloaded')
 }
 
 const clear = () => {

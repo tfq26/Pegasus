@@ -10,9 +10,15 @@ import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
-import { fetchTableSchema, fetchTableQuery } from '@/lib/api';
+import { fetchTableSchema, fetchTableQuery, getAIModels } from '@/lib/api';
 import { buildConnectionPayload } from '@/lib/db-connections';
-import { Plus, MessageSquare, Layout, Sparkles, Database, FileCode } from 'lucide-vue-next';
+import { localAI } from '@/services/LocalAIService';
+import { useSettingsStore } from '@/stores/settings';
+import { Plus, MessageSquare, Layout, Sparkles, Database, FileCode, StickyNote, FileText } from 'lucide-vue-next';
+import NotesEditor from '../Explorer/NotesEditor.vue';
+import RichTextEditor from './RichTextEditor.vue';
+import FileViewer from './FileViewer.vue';
+import Toolbar from './Toolbar.vue';
 
 // Interface for version history
 interface TableVersion {
@@ -44,16 +50,55 @@ const emit = defineEmits<{
   (e: 'explain-query', query: string): void;
   (e: 'optimize-query', query: string): void;
   (e: 'show-results'): void;
+  (e: 'share'): void;
 }>();
 
 // --- Pinia Store ---
 const workspaceStore = useWorkspaceStore();
+const settingsStore = useSettingsStore();
 const { tabs, activeTabId, activeTab } = storeToRefs(workspaceStore);
+const { settings } = storeToRefs(settingsStore);
 
-// Load tabs from storage on mount
-// Load tabs handled by Chat.vue via store
-onMounted(() => {
-  // workspaceStore.loadWorkspace('temp'); // Handled by parent
+const allModels = ref<any[]>([]);
+
+// Load available models (Cloud + Local)
+onMounted(async () => {
+    try {
+        const [cloud, localStatus] = await Promise.all([
+             getAIModels().catch(() => []),
+             localAI.getStatus().catch(() => ({ is_running: false, models: [] }))
+        ]);
+        
+        let models = Array.isArray(cloud) ? cloud : (cloud as any).models || [];
+        
+        // Merge local models
+        if (localStatus.is_running) {
+             const local = (localStatus.models || []).map((m: string) => ({
+                 id: `local:${m}`,
+                 name: m,
+                 provider: 'local'
+             }));
+             models = [...local, ...models];
+        }
+        
+        allModels.value = models;
+        
+        // Initialize settings if needed
+        if (settings.value && !(settings.value as any).enabledModels) {
+            (settings.value as any).enabledModels = models.map((m: any) => m.id);
+        }
+    } catch (e) {
+        console.error('[Workspace] Failed to load AI models:', e);
+    }
+});
+
+const availableModels = computed(() => {
+    if (!settings.value) return allModels.value;
+    const enabled = (settings.value as any).enabledModels;
+    if (enabled && enabled.length > 0) {
+        return allModels.value.filter(m => enabled.includes(m.id));
+    }
+    return allModels.value;
 });
 
 // Sync chatHistory prop to active chat tab's data
@@ -66,9 +111,102 @@ watch(() => props.chatHistory, (newHistory) => {
 
 // Engine cache for spreadsheet tabs
 const engineCache = new Map<string, Engine>();
+const noteEditorRef = ref<any>(null);
 const privateEngines = new Map<string, Engine>(); // Cache for private branches
 const loadingTabIds = ref(new Set<string>());
+const aiOptions = ref({ model: 'gemini-2.5-flash', temperature: 0.7 });
 const isDataLoading = computed(() => loadingTabIds.value.size > 0);
+
+// Compute toolbar mode based on active tab type
+const toolbarMode = computed(() => {
+    const currentTab = (activeTab as any).value;
+    if (!currentTab) return 'chat';
+
+    // Map tab types to toolbar modes
+    if (currentTab.type === 'note' || currentTab.type === 'file') {
+        return currentTab.type;
+    }
+    if (currentTab.type === 'query') {
+        return 'write';
+    }
+    if (currentTab.type === 'table' || currentTab.type === 'spreadsheet') {
+        return 'spreadsheet';
+    }
+    
+    return 'chat';
+});
+
+// Toolbar handlers (direct access to editor refs)
+const handleToolbarRun = () => {
+    emit('submit');
+};
+
+const handleToolbarClear = () => {
+    const currentTab = (activeTab as any).value;
+    if (currentTab) {
+        workspaceStore.updateTabData(currentTab.id, { content: '' });
+    }
+};
+
+const handleNoteFormat = (command: string, value?: string) => {
+    console.log('[Workspace] handleNoteFormat called:', command, value);
+    console.log('[Workspace] noteEditorRef:', noteEditorRef.value);
+    
+    // Handle both single ref and array (from v-for)
+    let editor = noteEditorRef.value;
+    if (Array.isArray(editor)) {
+        editor = editor[0]; // Get first (should be the active one)
+    }
+    
+    if (editor?.execCommand) {
+        console.log('[Workspace] Executing command:', command);
+        editor.execCommand(command, value);
+    } else {
+        console.warn('[Workspace] No execCommand available on noteEditorRef');
+    }
+};
+
+const handleNotePrivacyChange = (isPrivate: boolean) => {
+    const currentTab = (activeTab as any).value;
+    if (currentTab) {
+        workspaceStore.updateTabData(currentTab.id, { isPrivate });
+        toast.info(isPrivate ? 'Note is now private' : 'Note is now public');
+    }
+};
+
+const handleNoteFileTypeChange = (fileType: 'txt' | 'md' | 'docx' | 'pdf') => {
+    const currentTab = (activeTab as any).value;
+    if (currentTab) {
+        workspaceStore.updateTabData(currentTab.id, { file_type: fileType });
+        toast.success(`Changed format to ${fileType.toUpperCase()}`);
+    }
+};
+
+const handleNoteShare = () => {
+    emit('share');
+};
+
+const handleNoteDownload = () => {
+    const currentTab = (activeTab as any).value;
+    if (!currentTab) return;
+
+    const content = (currentTab as any).data?.content || '';
+    const title = (currentTab as any).data?.title || 'note';
+    const fileType = (currentTab as any).data?.file_type || 'md';
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title}.${fileType}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Note downloaded');
+};
+
 
 // Queue for background preloading to prevent UI from freezing when many tabs exist
 const preloadQueue = ref<string[]>([]);
@@ -944,6 +1082,85 @@ const findOrCreateSheetTab = (tableName: string): boolean => {
   return false;
 };
 
+const handleNoteSave = async (tabId: string, content: string) => {
+    const tab = (tabs.value as unknown as Tab[]).find(t => t.id === tabId);
+    if (!tab || !tab.data?.itemId) return;
+
+    try {
+        // Update backend via API
+        // await updateSpaceNote(tab.data.itemId, { content });
+        workspaceStore.updateTabData(tabId, { content });
+        console.log('[Workspace] Note saved:', { tabId, noteId: tab.data.itemId });
+    } catch (e: any) {
+        console.error('[Workspace] Failed to save note:', e);
+        toast.error('Failed to save note');
+    }
+};
+
+const handleFileDownload = (fileData: any) => {
+    if (!fileData?.filename || !fileData?.content) {
+        toast.error('File data not available');
+        return;
+    }
+
+    try {
+        // Convert content to blob if needed
+        const blob = fileData.content instanceof Blob 
+            ? fileData.content 
+            : new Blob([fileData.content]);
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileData.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast.success('File download started');
+    } catch (e: any) {
+        console.error('[Workspace] File download failed:', e);
+        toast.error('Failed to download file');
+    }
+};
+
+const openNote = (item: any, type: 'note' | 'file' = 'note') => {
+    const tabType = type === 'file' ? 'file' : 'note';
+    const itemId = type === 'file' ? item.id : item.id;
+    
+    // Check if tab already exists
+    const existingTab = (tabs.value as unknown as Tab[]).find(t => 
+        t.type === tabType && t.data?.itemId === itemId
+    );
+    
+    if (existingTab) {
+        workspaceStore.setActiveTab(existingTab.id);
+        return;
+    }
+
+    // Create new tab
+    if (type === 'file') {
+        workspaceStore.createTab('file', {
+            itemId: item.id,
+            label: item.filename,
+            filename: item.filename,
+            file_type: item.file_type,
+            storage_path: item.storage_path,
+            content: item.content
+        });
+    } else {
+        workspaceStore.createTab('note', {
+            itemId: item.id,
+            label: item.title,
+            title: item.title,
+            content: item.content,
+            file_type: item.file_type || 'md',
+            updated_at: item.updated_at
+        });
+    }
+};
+
 // GridRefs to access component methods
 const gridRefs = ref(new Map<string, any>());
 
@@ -1205,6 +1422,17 @@ const saveCurrentTab = async () => {
   const tabId = activeTabId.value as unknown as string;
   if (!tabId) return;
   
+  const currentTab = activeTab.value as unknown as Tab | null;
+  
+  // Handle note saves
+  if (currentTab?.type === 'note') {
+    const content = currentTab.data?.content || '';
+    await handleNoteSave(tabId, content);
+    toast.success('Note saved');
+    return;
+  }
+  
+  // Handle spreadsheet saves
   const grid = gridRefs.value.get(tabId);
   if (grid) {
     if (grid.hasUncommittedChanges) {
@@ -1220,6 +1448,15 @@ const saveCurrentTab = async () => {
     } else {
       toast.info('No changes to save');
     }
+  }
+};
+
+// Refresh functionality
+const handleRefreshTable = async () => {
+  const currentId = (activeTabId.value as unknown as string);
+  const engine = engineCache.get(currentId);
+  if (engine) {
+    await refreshTableData(engine);
   }
 };
 
@@ -1251,7 +1488,10 @@ defineExpose({
   canRedo,
   activeTabId,
   handleVersionChange,
-  hasUncommittedChanges
+  handleRefreshTable,
+  openNote,
+  hasUncommittedChanges,
+  getNoteEditorRef: () => noteEditorRef.value
 });
 
 </script>
@@ -1267,6 +1507,45 @@ defineExpose({
       @add="onAddTab"
     />
     
+
+    <!-- Toolbar (self-contained within Workspace) -->
+    <Toolbar
+      v-if="(tabs as any).length > 0 && toolbarMode !== 'note'"
+      :mode="toolbarMode"
+      :connections="[]"
+      :selected-connection-id="''"
+      :is-executing="false"
+      :ai-options="aiOptions"
+      @update:ai-options="aiOptions = $event as any"
+      :available-models="availableModels"
+      :query-options="{ timeout: 30000, limit: 1000, autoCommit: true }"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :save-status="'saved'"
+      :versions="activeTabVersions as any"
+      :current-version="activeTabVersion"
+      :text-wrap="activeTabTextWrap"
+      :show-gridlines="activeTabShowGridlines"
+      :has-uncommitted-changes="hasUncommittedChanges"
+      :note-file-type="(activeTab as any)?.data?.file_type || 'md'"
+      :note-is-private="(activeTab as any)?.data?.isPrivate || false"
+      @run="handleToolbarRun"
+      @clear="handleToolbarClear"
+      @format="handleFormat"
+      @undo="handleUndo"
+      @redo="handleRedo"
+      @save="saveCurrentTab"
+      @export="(f) => exportCurrentTable(f)"
+      @refresh-table="handleRefreshTable"
+      @version-change="(v) => handleVersionChange(activeTabId as any, v)"
+      @update:text-wrap="(v) => toggleTextWrap(v)"
+      @update:show-gridlines="(v) => toggleGridlines(v)"
+      @note-format="handleNoteFormat"
+      @update:note-is-private="handleNotePrivacyChange"
+      @update:note-file-type="handleNoteFileTypeChange"
+      @note-share="handleNoteShare"
+      @note-download="handleNoteDownload"
+    />
 
     <!-- Editor Content Area -->
     <div class="flex-1 overflow-hidden relative">
@@ -1370,7 +1649,34 @@ defineExpose({
             @explain-query="(q) => emit('explain-query', q)"
             @optimize-query="(q) => emit('optimize-query', q)"
           />
-        </div>
+            <!-- Note Editor -->
+          <RichTextEditor
+            ref="noteEditorRef"
+            v-else-if="tab.type === 'note'"
+            :content="tab.data?.content || ''"
+            :file-type="tab.data?.file_type || 'md'"
+            :file-name="tab.data?.title"
+            :auto-save="true"
+            :is-private="tab.data?.isPrivate || false"
+            @update:content="(val) => workspaceStore.updateTabData(tab.id, { content: val })"
+            @save="(val) => handleNoteSave(tab.id, val)"
+            @share="emit('share')"
+            @download="handleNoteDownload"
+            @update:is-private="(val) => handleNotePrivacyChange(val)"
+          />
+
+          <!-- File Viewer -->
+          <FileViewer
+            v-else-if="tab.type === 'file'"
+            :file="{
+              filename: tab.data?.filename || '',
+              file_type: tab.data?.file_type || '',
+              storage_path: tab.data?.storage_path,
+              content: tab.data?.content
+            }"
+            @download="handleFileDownload(tab.data)"
+          />
+      </div>
       </template>
     </div>
   </div>

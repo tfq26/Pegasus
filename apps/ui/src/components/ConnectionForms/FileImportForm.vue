@@ -15,6 +15,13 @@ const emit = defineEmits<{
 const isUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const tempError = ref<string | null>(null)
+const isDragging = ref(false)
+
+const handleDrop = async (e: DragEvent) => {
+    isDragging.value = false
+    const file = e.dataTransfer?.files[0]
+    if (file) await processFile(file)
+}
 
 const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement
@@ -60,31 +67,74 @@ const processFile = async (file: File) => {
 
 <template>
   <div class="space-y-4">
-    <div class="space-y-1.5">
       <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Upload File</label>
-      <div class="flex items-center gap-3">
-          <input 
-              type="file" 
-              ref="fileInput"
-              accept=".xlsx,.xml,.json"
-              @change="handleFileUpload"
-              class="hidden"
-          />
+      
+      <input 
+          type="file" 
+          ref="fileInput"
+          accept=".xlsx,.xml,.json,.sqlite,.db"
+          @change="handleFileUpload"
+          class="hidden"
+      />
+
+      <!-- Success State -->
+      <div 
+        v-if="connectionForm.sqlite.path || connectionForm.surrealdb?.uploadId"
+        class="w-full p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-between"
+      >
+          <div class="flex items-center gap-3">
+              <div class="p-2 rounded-full bg-emerald-500/20 text-emerald-500">
+                  <Upload class="w-4 h-4" /> 
+              </div>
+              <div class="space-y-0.5">
+                  <p class="text-sm font-medium text-emerald-500">File uploaded successfully</p>
+                  <p class="text-xs text-muted-foreground opacity-80">Ready to save connection</p>
+              </div>
+          </div>
           <button 
-              type="button"
-              @click="fileInput?.click()"
-              class="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-input hover:border-primary hover:bg-muted/50 transition-colors text-sm text-muted-foreground"
+            type="button" 
+            @click="fileInput?.click()"
+            class="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
           >
-              <Upload class="w-4 h-4" />
-              {{ isUploading ? 'Uploading...' : 'Choose File (Excel, JSON, XML)' }}
+            Replace
           </button>
-          <span v-if="connectionForm.sqlite.path || connectionForm.surrealdb?.uploadId" class="text-xs text-emerald-400">
-              File uploaded successfully!
-          </span>
       </div>
-      <p v-if="tempError" class="text-[10px] text-rose-500">{{ tempError }}</p>
-      <p class="text-[10px] text-muted-foreground">Supported formats: .xlsx, .xml, .json</p>
-    </div>
+
+      <!-- Upload Zone -->
+      <div 
+          v-else
+          @click="fileInput?.click()"
+          @dragenter.prevent="isDragging = true"
+          @dragleave.prevent="isDragging = false"
+          @dragover.prevent
+          @drop.prevent="handleDrop"
+          class="group relative w-full h-32 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer"
+          :class="[
+            isDragging 
+              ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg ring-2 ring-primary/20' 
+              : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30',
+            {'opacity-60 cursor-not-allowed': isUploading}
+          ]"
+      >
+          <div 
+            class="p-3 rounded-full bg-muted/50 group-hover:bg-background group-hover:shadow-sm transition-all duration-300 ring-1 ring-border/50"
+          >
+              <Upload class="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+          </div>
+          
+          <div class="text-center space-y-1">
+             <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                 {{ isUploading ? 'Uploading...' : 'Click to select file' }}
+             </p>
+             <p class="text-xs text-muted-foreground">
+                 Supported formats: .xlsx, .xml, .json, .sqlite, .db
+             </p>
+          </div>
+      </div>
+
+      <p v-if="tempError" class="text-xs font-medium text-rose-500 flex items-center justify-center gap-2 mt-2">
+         <span>⚠️</span> {{ tempError }}
+      </p>
     <!-- Hidden SQLite path field -->
     <input type="hidden" v-model="connectionForm.sqlite.path" />
   </div>

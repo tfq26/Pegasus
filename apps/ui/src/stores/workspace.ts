@@ -4,7 +4,7 @@ import { QUERY_API_URL, getAuthHeaders } from '../lib/api'
 
 export interface Tab {
     id: string
-    type: 'chat' | 'query' | 'table' | 'spreadsheet'
+    type: 'chat' | 'query' | 'table' | 'spreadsheet' | 'note' | 'file'
     label: string
     isDirty?: boolean  // Track unsaved changes
     closedAt?: string // ISO string for history cleanup
@@ -191,7 +191,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             chat: 'Query Editor',
             query: 'SQL Query',
             table: 'Spreadsheet',
-            spreadsheet: 'Spreadsheet'
+            spreadsheet: 'Spreadsheet',
+            note: 'Note',
+            file: 'File'
         }
 
         const newTab: Tab = {

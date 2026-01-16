@@ -1,16 +1,37 @@
 <script setup lang="ts">
-import { ref, toRefs } from 'vue'
+import { ref, toRefs, computed, onMounted, watch } from 'vue'
 import { toast } from '@/composables/useNotifications'
-import { Database, Plus, Trash, Search, Sparkles, FolderOpen, Lock, Unlock } from 'lucide-vue-next'
+import { 
+  Database, Plus, Trash, Search, Sparkles, FolderOpen, Lock, Unlock,
+  FileText, Notebook, FileUp, StickyNote
+} from 'lucide-vue-next'
 import { useStorage } from '@vueuse/core'
 import { isTauri } from '@/composables/usePlatform'
 
 // UI Components
 import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import AddTableToConnectionModal from './Explorer/AddTableToConnectionModal.vue'
-import ConnectionItem from './Explorer/ConnectionItem.vue'
+import ExplorerTree from './Explorer/ExplorerTree.vue'
 import ChatHistoryList from './Explorer/ChatHistoryList.vue'
 import QueryLogList from './Explorer/QueryLogList.vue'
+import SpaceSelector from './Explorer/SpaceSelector.vue'
+import { useSpaceStore } from '@/stores/space'
+import { useConnectionStore } from '@/stores/connection'
+
+// ... (keep imports)
+
+// Add state for selected table
+const selectedTable = ref<{ connectionId: string; tableName: string } | null>(null)
+
+const handleHealthCheck = async (conn: ConnectionEntry) => {
+   try {
+     const { refreshConnectionSchema } = useExplorerSchema(ref([conn]))
+     await refreshConnectionSchema(conn)
+     toast.success('Connection healthy', { description: `${conn.nickname} is active` })
+   } catch (err: any) {
+     toast.error('Connection failed', { description: err.message || String(err) })
+   }
+}
 import DataViewerModal from './Explorer/DataViewerModal.vue'
 import RenameTableDialog from './Explorer/RenameTableDialog.vue'
 import AIReportDialog from './Explorer/AIReportDialog.vue'
@@ -38,7 +59,10 @@ import {
   renameTable as apiRenameTable,
   deleteTable as apiDeleteTable,
   deleteQuery as apiDeleteQuery,
-  clearAllQueries as apiClearAllQueries
+  clearAllQueries as apiClearAllQueries,
+  createSpaceNote,
+  createSpaceFile,
+  updateConnection
 } from '@/lib/api'
 
 const props = defineProps<{
@@ -58,7 +82,25 @@ const emit = defineEmits<{
   'load-query': [query: string]
   'sanitize-table': [connection: ConnectionEntry, table: string]
   'toggle-pin': []
+  'select-note': [note: any]
+  'select-file': [file: any]
 }>()
+
+// --- Data Spaces ---
+const spaceStore = useSpaceStore()
+
+onMounted(() => {
+  spaceStore.loadSpaces()
+  
+  // Force refresh connections to ensure we have latest space assignments
+  const connStore = useConnectionStore()
+  connStore.loadConnections(true)
+
+  console.log('[Explorer] Mounted. Current Space:', spaceStore.currentSpaceId)
+  watch(() => connections.value, (val) => {
+     console.log('[Explorer] Connections:', val.map(c => ({ id: c.id, provider: c.provider, space: c.space })))
+  }, { immediate: true })
+})
 
 // --- State & Composables ---
 const { connections } = toRefs(props)
@@ -68,6 +110,35 @@ const {
   refreshSchemas,
   refreshConnectionSchema
 } = useExplorerSchema(connections)
+
+const filteredConnections = computed(() => {
+  // If no specific space context is loaded yet, show everything (safe fallback)
+  if (!spaceStore.currentSpaceId) return connections.value
+
+  const activeSpaceId = (spaceStore.currentSpaceId as any)?.split(':').pop()
+  
+  return connections.value.filter(conn => {
+    // Show connections with no space assigned (legacy/global)
+    if (!conn.space) return true
+    
+    const connSpaceId = (conn.space as any).split(':').pop()
+    
+    // 1. Strict Match: Connection belongs to currently selected space
+    if (connSpaceId === activeSpaceId) return true
+
+    // 2. Orphan Check: Connection belongs to a space that the user usually doesn't have access to
+    // (e.g. a deleted space, or a ghost space from migration errors). 
+    // If the space ID is NOT found in the user's space list, we treat it as Global/Unassigned so it's not lost.
+    const allSpaces = spaceStore.allSpaces as unknown as any[];
+    const spaceExists = allSpaces.some((s: any) => s.id.includes(connSpaceId))
+    if (!spaceExists) return true
+
+    return false
+  })
+})
+
+const currentFiles = computed(() => spaceStore.currentSpaceFiles || [])
+const currentNotes = computed(() => spaceStore.currentSpaceNotes || [])
 
 const {
   viewer,
@@ -111,8 +182,29 @@ const onTableAdded = () => {
   refreshSchemas(true)
 }
 
-// --- Rename Logic ---
 const renamingTable = ref<{ conn: ConnectionEntry; oldName: string; newName: string } | null>(null)
+
+// --- Dynamic Add Logic ---
+const currentContext = ref('db')
+const handleDynamicAdd = () => {
+    if (currentContext.value === 'files') handleUploadFile()
+    else if (currentContext.value === 'notes') handleAddNote()
+    else addConnectionModalOpen.value = true
+}
+
+const handleMoveConnection = async (conn: any, spaceId: string) => {
+  try {
+    await updateConnection({ ...conn, space: spaceId })
+    // Update local connection object
+    conn.space = spaceId
+    // Access store array safely
+    const spaces = (spaceStore.allSpaces as any)
+    const spaceName = spaces.find ? spaces.find((s: any) => s.id === spaceId)?.name : 'Space' 
+    toast.success(`Connection moved to ${spaceName || 'Space'}`)
+  } catch (err: any) {
+    toast.error('Failed to move connection', { description: err.message })
+  }
+}
 
 const startRenameTable = (conn: ConnectionEntry, table: string) => {
   const schema = connectionSchemas.value[conn.id]
@@ -157,6 +249,36 @@ const handleExplainTable = async (conn: ConnectionEntry, table: string) => {
   } finally {
     aiReportLoading.value = false
   }
+}
+
+// --- Space Context Logic (Files & Notes) ---
+const newNoteTitle = ref('')
+const handleAddNote = async () => {
+    if (!spaceStore.currentSpaceId) return
+    try {
+        const spaceId = spaceStore.currentSpaceId as any
+        const note = await createSpaceNote(spaceId, {
+            title: "New Note",
+            content: "",
+            note_type: "general"
+        })
+        await spaceStore.fetchSpaceContext()
+        toast.success('Note created')
+    } catch (e: any) {
+        toast.error('Failed to create note', { description: e.message })
+    }
+}
+
+const handleUploadFile = () => {
+    toast.info('File upload coming soon', { description: 'Integration with storage service in progress' })
+}
+
+const handleSelectNote = (note: any) => {
+    emit('select-note', note)
+}
+
+const handleSelectFile = (file: any) => {
+    emit('select-file', file)
 }
 
 // --- Delete Table Logic ---
@@ -313,6 +435,9 @@ const onTestDataGenerated = (sql: string) => {
   <aside 
     class="flex flex-col h-full bg-background border-r border-border w-full"
   >
+    <!-- Space Selector -->
+    <SpaceSelector />
+
     <!-- Header -->
     <header class="p-4 border-b border-border">
       <div class="flex items-center justify-end">
@@ -346,82 +471,60 @@ const onTestDataGenerated = (sql: string) => {
     </header>
 
     <!-- Content Area -->
-    <div class="flex-1 overflow-y-auto overflow-x-hidden p-3 scrollbar-hide">
+    <div class="flex-1 overflow-hidden relative flex flex-col">
       <!-- DATA TAB -->
-      <section v-if="activeTab === 'data'" class="space-y-4">
-        <div class="flex items-center justify-between px-1 mb-2">
-          <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Connections</h3>
-        
-        <div class="flex items-center gap-1">
-          <button 
-            v-if="isTauri"
-            @click="openLocalFile"
-            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            title="Open Local File"
-          >
-            <FolderOpen class="w-4 h-4" />
-          </button>
-          <button 
-            @click="addConnectionModalOpen = true"
-            class="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            title="Add Connection"
-          >
-            <Plus class="w-4 h-4" />
-          </button>
-        </div>
-        </div>
-
-        <div v-if="!connections.length" class="py-12 text-center space-y-4">
-          <div class="w-12 h-12 rounded-2xl bg-muted border border-border flex items-center justify-center mx-auto opacity-50">
-            <Database class="w-6 h-6 text-muted-foreground" />
-          </div>
-          <div class="space-y-1">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No connections</p>
-            <button @click="addConnectionModalOpen = true" class="text-[9px] font-bold uppercase tracking-widest text-purple-500 hover:text-purple-400">Add first database</button>
-          </div>
-        </div>
-
-        <div class="space-y-3">
-          <ConnectionItem 
-            v-for="conn in connections"
-            :key="conn.id"
-            :connection="conn"
-            :selected="selectedConnectionId === conn.id"
-            :schema="schemaFor(conn.id)"
-            @select="(id) => emit('update:selectedConnectionId', id)"
-            @delete="handleDeleteConnection"
-            @table-click="(c, t) => emit('edit-table', c, t)"
-            @preview-table="openViewer"
-            @edit-table="(c, t) => emit('edit-table', c, t)"
-            @rename-table="startRenameTable"
-            @delete-table="handleDeleteTable"
-            @add-table="handleAddTable"
-            @explain-table="handleExplainTable"
-            @generate-data="handleGenerateData"
-          />
-        </div>
+      <section v-if="activeTab === 'data'" class="flex-1 h-full flex flex-col overflow-hidden">
+         <div class="flex-1 overflow-hidden p-2">
+             <ExplorerTree 
+                :connections="filteredConnections"
+                :files="(currentFiles as any)"
+                :notes="(currentNotes as any)"
+                :spaces="(spaceStore.allSpaces as any)"
+                :selected-table="selectedTable"
+                @select-connection="(conn: any) => emit('update:selectedConnectionId', conn.id)"
+                @select-table="(conn: any, table: string) => { selectedTable = { connectionId: conn.id, tableName: table }; emit('edit-table', conn, table) }"
+                @preview-table="openViewer"
+                @rename-table="startRenameTable"
+                @delete-table="handleDeleteTable"
+                @explain-table="handleExplainTable"
+                @generate-data="handleGenerateData"
+                @delete-connection="handleDeleteConnection"
+                @add-table="handleAddTable"
+                @health-check="handleHealthCheck"
+                
+                @select-file="handleSelectFile"
+                @select-note="handleSelectNote"
+                @add-connection="addConnectionModalOpen = true"
+                @upload-file="handleUploadFile"
+                @add-note="handleAddNote"
+                @update:context="(c) => currentContext = c"
+                @move-connection="handleMoveConnection"
+              />
+         </div>
       </section>
 
       <!-- CHATS TAB -->
-      <ChatHistoryList 
-        v-if="activeTab === 'chats'"
-        :chats="chats"
-        :selected-chat-id="selectedChatId"
-        @select-chat="(id) => emit('select-chat', id)"
-        @create-chat="emit('create-chat')"
-        @clear-all="clearAllChatsDialogOpen = true"
-        @delete-chat="startDeleteChat"
-      />
+      <section v-if="activeTab === 'chats'" class="flex-1 overflow-y-auto p-3 scrollbar-hide">
+        <ChatHistoryList 
+          :chats="chats"
+          :selected-chat-id="selectedChatId"
+          @select-chat="(id) => emit('select-chat', id)"
+          @create-chat="emit('create-chat')"
+          @clear-all="clearAllChatsDialogOpen = true"
+          @delete-chat="startDeleteChat"
+        />
+      </section>
 
       <!-- QUERIES TAB -->
-      <QueryLogList 
-        v-if="activeTab === 'queries'"
-        :query-history="queryHistory"
-        @load-query="(q) => emit('load-query', q)"
-        @delete-query="handleDeleteQuery"
-        @share-query="handleShareQuery"
-        @clear-history="handleClearHistory"
-      />
+      <section v-if="activeTab === 'queries'" class="flex-1 overflow-y-auto p-3 scrollbar-hide">
+        <QueryLogList 
+          :query-history="queryHistory"
+          @load-query="(q) => emit('load-query', q)"
+          @delete-query="handleDeleteQuery"
+          @share-query="handleShareQuery"
+          @clear-history="handleClearHistory"
+        />
+      </section>
     </div>
 
     <!-- Viewer & Dialogs -->

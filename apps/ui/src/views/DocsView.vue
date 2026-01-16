@@ -200,7 +200,7 @@ const getProviderLogo = (slug: string) => {
   if (slug.includes('azure')) return '/icons/microsoft/Azure/azure-2.svg'
   if (slug.includes('aws')) return isDark.value ? '/icons/aws/aws-colored-white-text.svg' : '/icons/aws/aws-colored-black-text.svg'
   if (slug.includes('gcp')) return '/icons/google/GCP/icons8-google-cloud.svg'
-  return null
+  return undefined
 }
 
 const guides = ref<string[]>([])
