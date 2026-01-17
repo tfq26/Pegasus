@@ -1,7 +1,7 @@
 import { Database } from 'duckdb-async';
 
 class DuckManager {
-    private static instance: Database;
+    static instance;
 
     static async getInstance() {
         if (!this.instance) {
@@ -17,7 +17,7 @@ class DuckManager {
         return this.instance;
     }
 
-    static async query(sql: string, params: any[] = []) {
+    static async query(sql, params = []) {
         const db = await this.getInstance();
         return db.all(sql, ...params);
     }
