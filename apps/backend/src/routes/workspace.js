@@ -1,47 +1,35 @@
 import { Hono } from "hono"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { users } from "../db/schema.js"
+import { eq } from "drizzle-orm"
 import { WorkspaceService } from "../services/WorkspaceService.js"
+import { ConfigService } from "../services/ConfigService.js"
 
 const workspace = new Hono()
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
+const jwtSecret = ConfigService.getJwtSecret()
 
 // Helper to ensure user exists in DB (Copy from other routes to ensure self-containment)
 // In a refactor, this should be a middleware or service.
 const upsertUser = async (payload) => {
     try {
-        const userId = payload.sub || payload.id
-        const userRecordId = `user:${userId}`
-
-        // 1. Try to find by ID
-        const [existingById] = await db.query(`SELECT id FROM ${userRecordId}`);
-
-        if (existingById && existingById.length > 0) {
-            // Found by ID -> Update
-            await db.query(`
-                UPDATE ${userRecordId} SET 
-                    email = $email,
-                    updated_at = time::now();
-            `, { email: payload.email });
-            return existingById[0].id.toString();
-        } else {
-            // 2. Not found by ID -> Check by Email
-            const [existingByEmail] = await db.query(`SELECT id FROM user WHERE email = $email`, { email: payload.email });
-            if (existingByEmail && existingByEmail.length > 0) {
-                return existingByEmail[0].id.toString();
-            } else {
-                // 3. Create new
-                const [created] = await db.query(`
-                    CREATE ${userRecordId} CONTENT {
-                        email: $email,
-                        created_at: time::now(),
-                        updated_at: time::now()
-                    };
-                `, { email: payload.email });
-                return created && created[0] ? created[0].id.toString() : userRecordId;
-            }
-        }
+        const userId = payload.sub || payload.id;
+        const [user] = await db.insert(users)
+            .values({
+                id: userId,
+                email: payload.email,
+                updatedAt: new Date()
+            })
+            .onConflictDoUpdate({
+                target: users.id,
+                set: {
+                    email: payload.email,
+                    updatedAt: new Date()
+                }
+            })
+            .returning();
+        return user.id;
     } catch (e) {
         console.error("[Workspace] Failed to upsert user:", e)
         return null;

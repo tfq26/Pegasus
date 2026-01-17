@@ -1,3 +1,5 @@
+import { eq, and, sql } from "drizzle-orm";
+import { transactionMaster, userPayments, users } from "../db/schema.js";
 
 // EntitlementService.js
 // Handles all logic for updating user limits and logging transactions
@@ -22,10 +24,10 @@ export class EntitlementService {
      * @returns {Promise<boolean>}
      */
     async isTransactionProcessed(sessionId) {
-        const [result] = await this.db.query(`
-            SELECT status FROM transaction_master WHERE stripe_session_id = $sid
-        `, { sid: sessionId });
-        return result && result[0] && result[0].status === 'completed';
+        const result = await this.db.query.transactionMaster.findFirst({
+            where: eq(transactionMaster.stripeSessionId, sessionId)
+        });
+        return result && result.status === 'completed';
     }
 
     /**
@@ -33,22 +35,14 @@ export class EntitlementService {
      */
     async initTransaction(sessionId, type, userId, customerId, payload) {
         try {
-            await this.db.query(`
-                INSERT INTO transaction_master {
-                    stripe_session_id: $sid,
-                    status: 'pending',
-                    type: $type,
-                    user_id: $uid,
-                    customer_id: $cid,
-                    payload: $payload,
-                    created_at: time::now()
-                }
-            `, {
-                sid: sessionId,
+            await this.db.insert(transactionMaster).values({
+                stripeSessionId: sessionId,
+                status: 'pending',
                 type,
-                uid: userId,
-                cid: customerId,
-                payload
+                userId: this._getRawId(userId),
+                customerId,
+                payload,
+                createdAt: new Date()
             });
         } catch (e) {
             // Ignore if already exists (idempotency check might have flagged it, but safety first)
@@ -60,18 +54,18 @@ export class EntitlementService {
      * Marks transaction as completed
      */
     async completeTransaction(sessionId) {
-        await this.db.query(`
-            UPDATE transaction_master SET status = 'completed' WHERE stripe_session_id = $sid
-        `, { sid: sessionId });
+        await this.db.update(transactionMaster)
+            .set({ status: 'completed' })
+            .where(eq(transactionMaster.stripeSessionId, sessionId));
     }
 
     /**
      * Marks transaction as failed
      */
     async failTransaction(sessionId, error) {
-        await this.db.query(`
-            UPDATE transaction_master SET status = 'failed', error = $err WHERE stripe_session_id = $sid
-        `, { sid: sessionId, err: error });
+        await this.db.update(transactionMaster)
+            .set({ status: 'failed', error })
+            .where(eq(transactionMaster.stripeSessionId, sessionId));
     }
 
     /**
@@ -82,32 +76,23 @@ export class EntitlementService {
         console.log(`[Entitlement] Granting ${tokenAmount} tokens to ${userId}`);
 
         // 1. Update User Record
-        await this.db.query(`
-            UPDATE type::thing('user', $rawId) SET 
-                purchased_tokens = <int>(purchased_tokens OR 0) + <int>$amount,
-                updated_at = time::now();
-        `, { rawId, amount: tokenAmount });
+        await this.db.update(users)
+            .set({
+                purchasedTokens: sql`${users.purchasedTokens} + ${tokenAmount}`,
+                updatedAt: new Date()
+            })
+            .where(eq(users.id, rawId));
 
         // 2. Create User Payment Log
-        await this.db.query(`
-            INSERT INTO user_payment {
-                user: type::thing('user', $rawId),
-                amount: $amount,
-                currency: $cur,
-                tokens: $tokens,
-                storage_bytes: 0,
-                status: 'completed',
-                description: $desc,
-                stripe_session_id: $sid,
-                created_at: time::now()
-            }
-        `, {
-            rawId,
+        await this.db.insert(userPayments).values({
+            userId: rawId,
             amount: amountPaid,
-            cur: currency,
+            currency,
             tokens: tokenAmount,
-            desc: `${(tokenAmount / 1000).toFixed(0)}k AI Token Pack`,
-            sid: sessionId
+            storageBytes: 0,
+            status: 'completed',
+            stripePaymentIntentId: sessionId, // Using sessionId as a reference if that's what's available
+            createdAt: new Date()
         });
     }
 
@@ -120,32 +105,23 @@ export class EntitlementService {
         console.log(`[Entitlement] Granting ${gb}GB storage to ${userId}`);
 
         // 1. Update User Record
-        await this.db.query(`
-            UPDATE type::thing('user', $rawId) SET 
-                purchased_storage = <int>(purchased_storage OR 0) + <int>$amount,
-                updated_at = time::now();
-        `, { rawId, amount: storageBytes });
+        await this.db.update(users)
+            .set({
+                purchasedStorage: sql`${users.purchasedStorage} + ${storageBytes}`,
+                updatedAt: new Date()
+            })
+            .where(eq(users.id, rawId));
 
         // 2. Create User Payment Log
-        await this.db.query(`
-            INSERT INTO user_payment {
-                user: type::thing('user', $rawId),
-                amount: $amount,
-                currency: $cur,
-                tokens: 0,
-                storage_bytes: $storage_bytes,
-                status: 'completed',
-                description: $desc,
-                stripe_session_id: $sid,
-                created_at: time::now()
-            }
-        `, {
-            rawId,
+        await this.db.insert(userPayments).values({
+            userId: rawId,
             amount: amountPaid,
-            cur: currency,
-            storage_bytes: storageBytes,
-            desc: `${gb}GB Vault Storage Expansion`,
-            sid: sessionId
+            currency,
+            tokens: 0,
+            storageBytes: storageBytes,
+            status: 'completed',
+            stripePaymentIntentId: sessionId,
+            createdAt: new Date()
         });
     }
 
@@ -156,43 +132,28 @@ export class EntitlementService {
         console.log(`[Entitlement] Updating subscription for ${email} to ${tier}`);
 
         // 1. Update User Record
-        // We use email here because sometimes we only have customer email from Stripe
-        const [userResult] = await this.db.query(`
-            UPDATE user SET 
-                stripe_customer_id = $custId, 
-                subscription_tier = $tier,
-                updated_at = time::now()
-            WHERE email = $email
-            RETURN id;
-        `, {
-            custId: customerId,
-            tier: tier,
-            email: email
-        });
+        const [updatedUser] = await this.db.update(users)
+            .set({
+                stripeCustomerId: customerId,
+                subscriptionTier: tier,
+                updatedAt: new Date()
+            })
+            .where(eq(users.email, email))
+            .returning();
 
-        const userId = userResult[0]?.id;
+        const userId = updatedUser?.id;
 
         // 2. Log Payment if session ID is provided (Initial purchase)
         if (sessionId && userId) {
-            const rawId = this._getRawId(userId);
-            await this.db.query(`
-                INSERT INTO user_payment {
-                    user: type::thing('user', $rawId),
-                    amount: $amount,
-                    currency: $cur,
-                    tokens: 0,
-                    storage_bytes: 0,
-                    status: 'completed',
-                    description: $desc,
-                    stripe_session_id: $sid,
-                    created_at: time::now()
-                }
-            `, {
-                rawId,
+            await this.db.insert(userPayments).values({
+                userId,
                 amount: amountPaid,
-                cur: currency,
-                desc: `${tier === 'pro_plus' ? 'Pro+' : 'Pro'} Subscription Upgrade`,
-                sid: sessionId
+                currency,
+                tokens: 0,
+                storageBytes: 0,
+                status: 'completed',
+                stripePaymentIntentId: sessionId,
+                createdAt: new Date()
             });
         }
     }
@@ -202,12 +163,12 @@ export class EntitlementService {
      */
     async removeSubscription(customerId) {
         console.log(`[Entitlement] Removing subscription for customer ${customerId}`);
-        await this.db.query(`
-            UPDATE user SET 
-                subscription_tier = 'free',
-                updated_at = time::now() 
-            WHERE stripe_customer_id = $custId;
-        `, { custId: customerId });
+        await this.db.update(users)
+            .set({
+                subscriptionTier: 'free',
+                updatedAt: new Date()
+            })
+            .where(eq(users.stripeCustomerId, customerId));
     }
 
     /**
@@ -215,12 +176,12 @@ export class EntitlementService {
     */
     async removeStorageSubscription(customerId) {
         console.log(`[Entitlement] Removing storage subscription for customer ${customerId}`);
-        await this.db.query(`
-            UPDATE user SET 
-                purchased_storage = 0,
-                updated_at = time::now() 
-            WHERE stripe_customer_id = $custId;
-        `, { custId: customerId });
+        await this.db.update(users)
+            .set({
+                purchasedStorage: 0,
+                updatedAt: new Date()
+            })
+            .where(eq(users.stripeCustomerId, customerId));
     }
 
     /**
@@ -230,11 +191,12 @@ export class EntitlementService {
         if (!userId) return false;
         const rawId = this._getRawId(userId);
 
-        const [userResult] = await this.db.query(`
-            SELECT subscription_tier FROM type::thing('user', $rawId)
-        `, { rawId });
+        const user = await this.db.query.users.findFirst({
+            where: eq(users.id, rawId),
+            columns: { subscriptionTier: true }
+        });
 
-        const tier = userResult && userResult[0] && userResult[0].subscription_tier ? userResult[0].subscription_tier : 'free';
+        const tier = user?.subscriptionTier || 'free';
 
         const FEATURES = {
             'free': [],
@@ -243,10 +205,6 @@ export class EntitlementService {
             'teams': ['advanced_charts', 'priority_support', 'extended_context', 'byom_models', 'team_sharing'],
             'enterprise': ['advanced_charts', 'priority_support', 'extended_context', 'byom_models', 'team_sharing', 'sso', 'audit_logs']
         };
-
-        // Allow higher tiers to inherit lower tier features? 
-        // For simplicity, just listing them explicitly above.
-        // Enterprise/Teams get everything.
 
         const allowedFeatures = FEATURES[tier] || [];
         return allowedFeatures.includes(featureName);
@@ -257,11 +215,11 @@ export class EntitlementService {
      */
     async manuallyGrantTier(email, tier) {
         console.log(`[Entitlement] Manually granting ${tier} to ${email}`);
-        await this.db.query(`
-            UPDATE user SET 
-                subscription_tier = $tier,
-                updated_at = time::now()
-            WHERE email = $email;
-        `, { email, tier });
+        await this.db.update(users)
+            .set({
+                subscriptionTier: tier,
+                updatedAt: new Date()
+            })
+            .where(eq(users.email, email));
     }
 }

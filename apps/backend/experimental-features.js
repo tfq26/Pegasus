@@ -1,5 +1,7 @@
 // Experimental Features Management
-// This module handles experimental feature flags and access control
+import { db } from './src/db/index.js';
+import { users, experimentalRequests, experimentalAccess, userFeatureFlags } from './src/db/schema.js';
+import { eq, and, desc } from 'drizzle-orm';
 
 export const EXPERIMENTAL_FEATURES = {
     RAG_PIPELINE: {
@@ -39,33 +41,11 @@ export const EXPERIMENTAL_FEATURES = {
     }
 }
 
-// Initialize experimental features tables
-export async function initExperimentalTables(db) {
-    // Define tables (Schema-less but good to declare)
-    try {
-        await db.query(`
-            DEFINE TABLE experimental_request SCHEMALESS;
-            DEFINE TABLE experimental_access SCHEMALESS;
-            DEFINE TABLE user_feature_flag SCHEMALESS;
-        `);
-        console.log('✅ Experimental features tables initialized')
-    } catch (e) {
-        // Ignore "table already exists" errors which happen on restart
-        if (e.message && e.message.includes('already exists')) {
-            // console.log('Experimental tables already exist');
-        } else {
-            console.error('Failed to init experimental tables:', e);
-        }
-    }
-}
-
 // Get user's experimental status
-// Checks WorkOS metadata first (set via WorkOS Dashboard), then falls back to SurrealDB
-export async function getExperimentalStatus(db, userId, jwtPayload = null) {
+export async function getExperimentalStatus(database, userId, jwtPayload = null) {
     try {
-        // 1. Check WorkOS user metadata first (managed via WorkOS Dashboard)
+        // 1. Check WorkOS user metadata first
         if (jwtPayload && jwtPayload.experimental_access === true) {
-            console.log(`[Experimental] Access granted via WorkOS metadata for user: ${userId}`);
             return {
                 hasAccess: true,
                 source: 'workos',
@@ -74,10 +54,12 @@ export async function getExperimentalStatus(db, userId, jwtPayload = null) {
             };
         }
 
-        // 1.1 Check SurrealDB for subscription tier (Pro+ gets automatic access)
-        const userRec = `user:${userId}`;
-        const [userData] = await db.query(`SELECT subscription_tier FROM ${userRec}`);
-        const tier = userData && userData[0] ? userData[0].subscription_tier : 'free';
+        // 1.1 Check subscription tier
+        const userRec = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { subscriptionTier: true }
+        });
+        const tier = userRec?.subscriptionTier || 'free';
 
         if (tier === 'pro_plus') {
             return {
@@ -88,33 +70,26 @@ export async function getExperimentalStatus(db, userId, jwtPayload = null) {
             };
         }
 
-        // 2. Fallback: Check SurrealDB for legacy/manual grants
-        // Check if user has experimental access
-        const [access] = await db.query(`
-            SELECT has_access, granted_at FROM experimental_access 
-            WHERE user = $user AND has_access = true LIMIT 1;
-        `, {
-            user: userRec
+        // 2. Fallback: Check Neon/Postgres for legacy/manual grants
+        const access = await db.query.experimentalAccess.findFirst({
+            where: and(eq(experimentalAccess.userId, userId), eq(experimentalAccess.hasAccess, true))
         });
 
-        const hasAccess = !!(access && access[0]);
+        const hasAccess = !!access;
 
         // Check if user has a pending request
-        const [request] = await db.query(`
-            SELECT id, requested_at FROM experimental_request 
-            WHERE user = $user AND status = 'pending' 
-            ORDER BY requested_at DESC LIMIT 1;
-        `, {
-            user: userRec
+        const request = await db.query.experimentalRequests.findFirst({
+            where: and(eq(experimentalRequests.userId, userId), eq(experimentalRequests.status, 'pending')),
+            orderBy: [desc(experimentalRequests.requestedAt)]
         });
 
-        const requested = !!(request && request[0]);
+        const requested = !!request;
 
         return {
             hasAccess,
-            source: hasAccess ? 'surrealdb' : null,
+            source: hasAccess ? 'postgres' : null,
             requested,
-            requestedAt: requested ? request[0].requested_at : null
+            requestedAt: requested ? request.requestedAt : null
         }
     } catch (e) {
         console.error("Error getting experimental status:", e);
@@ -123,24 +98,20 @@ export async function getExperimentalStatus(db, userId, jwtPayload = null) {
 }
 
 // Get user's enabled feature flags
-export async function getUserFeatureFlags(db, userId) {
-    const status = await getExperimentalStatus(db, userId)
+export async function getUserFeatureFlags(database, userId) {
+    const status = await getExperimentalStatus(database, userId)
 
     if (!status.hasAccess) {
-        return [] // No access = no experimental features
+        return []
     }
 
     try {
-        const userRec = `user:${userId}`;
-        const [flags] = await db.query(`
-            SELECT feature_id FROM user_feature_flag 
-            WHERE user = $user AND enabled = true;
-        `, {
-            user: userRec
+        const flags = await db.query.userFeatureFlags.findMany({
+            where: and(eq(userFeatureFlags.userId, userId), eq(userFeatureFlags.enabled, true)),
+            columns: { featureId: true }
         });
 
-        if (!flags) return [];
-        return flags.map(row => row.feature_id)
+        return flags.map(row => row.featureId)
     } catch (e) {
         console.error("Error getting feature flags:", e);
         return [];
@@ -148,28 +119,19 @@ export async function getUserFeatureFlags(db, userId) {
 }
 
 // Create experimental access request
-export async function createExperimentalRequest(db, userId, reason, email) {
-    const id = crypto.randomUUID()
-    const requestedAt = Date.now()
-
+export async function createExperimentalRequest(database, userId, reason, email) {
     try {
-        const userRec = `user:${userId}`;
-        await db.query(`
-            CREATE experimental_request CONTENT {
-                user: $user,
-                reason: $reason,
-                email: $email,
+        const [created] = await db.insert(experimentalRequests)
+            .values({
+                userId,
+                reason,
+                email: email || null,
                 status: 'pending',
-                requested_at: $requestedAt
-            };
-        `, {
-            user: userRec,
-            reason,
-            email: email || null,
-            requestedAt
-        });
+                requestedAt: new Date()
+            })
+            .returning();
 
-        return { id, requestedAt }
+        return { id: created.id, requestedAt: created.requestedAt }
     } catch (e) {
         console.error("Error creating request:", e);
         throw e;
@@ -177,43 +139,35 @@ export async function createExperimentalRequest(db, userId, reason, email) {
 }
 
 // Grant experimental access (admin function)
-export async function grantExperimentalAccess(db, userId, grantedBy) {
-    const grantedAt = Date.now()
-    const accessId = `experimental_access:${userId}`;
-    const userRec = `user:${userId}`;
+export async function grantExperimentalAccess(database, userId, grantedBy) {
+    const now = new Date();
 
     try {
-        // Transaction to update access and approve requests
-        await db.query(`
-            BEGIN TRANSACTION;
+        await db.transaction(async (tx) => {
+            // 1. Upsert Access Record
+            await tx.insert(experimentalAccess)
+                .values({
+                    userId,
+                    hasAccess: true,
+                    grantedAt: now,
+                    grantedBy
+                })
+                .onConflictDoUpdate({
+                    target: experimentalAccess.userId,
+                    set: { hasAccess: true, grantedAt: now, grantedBy }
+                });
 
-            -- 1. Upsert Access Record (Delete then Create to ensure state)
-            DELETE type::thing('experimental_access', $userId);
-            CREATE type::thing('experimental_access', $userId) CONTENT {
-                user: $user,
-                has_access: true,
-                granted_at: $grantedAt,
-                granted_by: $grantedBy
-            };
-
-            -- 2. Approve Pending Requests
-            UPDATE experimental_request SET 
-                status = 'approved', 
-                reviewed_at = $reviewedAt, 
-                reviewed_by = $reviewedBy
-            WHERE user = $user AND status = 'pending';
-
-            COMMIT TRANSACTION;
-        `, {
-            userId,
-            user: userRec,
-            grantedAt,
-            grantedBy,
-            reviewedAt: grantedAt,
-            reviewedBy: grantedBy
+            // 2. Approve Pending Requests
+            await tx.update(experimentalRequests)
+                .set({
+                    status: 'approved',
+                    reviewedAt: now,
+                    reviewedBy: grantedBy
+                })
+                .where(and(eq(experimentalRequests.userId, userId), eq(experimentalRequests.status, 'pending')));
         });
 
-        return { grantedAt }
+        return { grantedAt: now }
     } catch (e) {
         console.error("Error granting access:", e);
         throw e;
@@ -221,30 +175,26 @@ export async function grantExperimentalAccess(db, userId, grantedBy) {
 }
 
 // Toggle a feature flag for a user
-export async function toggleUserFeature(db, userId, featureId, enabled) {
-    const enabledAt = enabled ? Date.now() : null
-    // Create a deterministic ID for the flag record: user_feature_flag:USERID_FEATUREID
-    const recordId = `user_feature_flag:${userId}_${featureId}`;
-    const userRec = `user:${userId}`;
+export async function toggleUserFeature(database, userId, featureId, enabled) {
+    const now = new Date();
 
     try {
-        await db.query(`
-            DELETE type::thing('user_feature_flag', $recordId);
-            CREATE type::thing('user_feature_flag', $recordId) CONTENT {
-                user: $user,
-                feature_id: $featureId,
-                enabled: $enabled,
-                enabled_at: $enabledAt
-            };
-        `, {
-            recordId: `${userId}_${featureId}`,
-            user: userRec,
-            featureId,
-            enabled: !!enabled,
-            enabledAt
-        });
+        // We use a combination of userId and featureId to identify the flag
+        // In the schema, it's safer to use an upsert pattern if we had a composite unique key, 
+        // but for now we'll handle it via insert with conflict or separate check.
+        await db.insert(userFeatureFlags)
+            .values({
+                userId,
+                featureId,
+                enabled: !!enabled,
+                enabledAt: now
+            })
+            .onConflictDoUpdate({
+                target: [userFeatureFlags.userId, userFeatureFlags.featureId], // We should add this unique constraint
+                set: { enabled: !!enabled, enabledAt: now }
+            });
 
-        return { featureId, enabled, enabledAt }
+        return { featureId, enabled, enabledAt: now }
     } catch (e) {
         console.error("Error toggling feature:", e);
         throw e;

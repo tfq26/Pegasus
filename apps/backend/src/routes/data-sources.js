@@ -1,5 +1,6 @@
-import { Hono } from "hono"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { dataSources, cellBindings } from "../db/schema.js"
+import { eq, and, desc } from "drizzle-orm"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { ConfigService } from "../services/ConfigService.js"
@@ -29,8 +30,11 @@ dataSourceRoutes.get('/', async (c) => {
     const user = c.get('user')
     const userId = user.sub || user.id
     try {
-        const [sources] = await db.query(`SELECT * FROM data_source WHERE user = type::thing('user', $userId) ORDER BY created_at DESC`, { userId })
-        return c.json(sources || [])
+        const results = await db.query.dataSources.findMany({
+            where: eq(dataSources.userId, userId),
+            orderBy: [desc(dataSources.createdAt)]
+        });
+        return c.json(results || [])
     } catch (e) {
         return c.json({ error: e.message }, 500)
     }
@@ -46,24 +50,16 @@ dataSourceRoutes.post('/', async (c) => {
     const body = await c.req.json()
 
     try {
-        const [source] = await db.query(`
-            CREATE data_source CONTENT {
-                user: type::thing('user', $userId),
-                name: $name,
-                type: $type,
-                config: $config,
-                polling_interval: $interval,
-                is_active: true,
-                created_at: time::now()
-            }
-        `, {
+        const [source] = await db.insert(dataSources).values({
             userId,
             name: body.name,
             type: body.type,
             config: body.config || {},
-            interval: body.polling_interval || 300
-        })
-        return c.json(source[0])
+            pollingInterval: body.polling_interval || 300,
+            isActive: true,
+            createdAt: new Date()
+        }).returning();
+        return c.json(source)
     } catch (e) {
         return c.json({ error: e.message }, 500)
     }
@@ -75,13 +71,9 @@ dataSourceRoutes.post('/', async (c) => {
  */
 dataSourceRoutes.delete('/:id', async (c) => {
     const id = c.req.param('id')
+    const rawId = id.includes(':') ? id.split(':')[1] : id
     try {
-        const recordId = id.includes(':') ? id : `data_source:${id}`
-
-        // Delete bindings first to maintain integrity
-        await db.query(`DELETE cell_binding WHERE data_source = type::thing('data_source', $id)`, { id: recordId.split(':')[1] || recordId })
-
-        await db.query(`DELETE ${recordId}`)
+        await db.delete(dataSources).where(eq(dataSources.id, rawId));
         return c.json({ success: true })
     } catch (e) {
         return c.json({ error: e.message }, 500)
@@ -100,16 +92,15 @@ dataSourceRoutes.get('/bindings', async (c) => {
     const spreadsheetId = c.req.query('spreadsheetId')
 
     try {
-        let query = `SELECT * FROM cell_binding WHERE user = type::thing('user', $userId)`
-        const params = { userId }
-
+        let whereClause = eq(cellBindings.userId, userId);
         if (spreadsheetId) {
-            query += ` AND spreadsheet_id = $spreadsheetId`
-            params.spreadsheetId = spreadsheetId
+            whereClause = and(whereClause, eq(cellBindings.spreadsheetId, spreadsheetId));
         }
 
-        const [bindings] = await db.query(query, params)
-        return c.json(bindings || [])
+        const results = await db.query.cellBindings.findMany({
+            where: whereClause
+        });
+        return c.json(results || [])
     } catch (e) {
         return c.json({ error: e.message }, 500)
     }
@@ -125,41 +116,26 @@ dataSourceRoutes.post('/bindings', async (c) => {
     const body = await c.req.json()
 
     try {
-        // Use UPSERT pattern
-        const [binding] = await db.query(`
-            BEGIN TRANSACTION;
-            LET $existing = (SELECT id FROM cell_binding WHERE spreadsheet_id = $spreadsheetId AND cell_id = $cellId LIMIT 1);
-            IF $existing[0].id {
-                UPDATE $existing[0].id SET
-                    data_source = type::thing('data_source', $dataSourceId),
-                    field_path = $fieldPath,
-                    updated_at = time::now();
-            } ELSE {
-                CREATE cell_binding CONTENT {
-                    user: type::thing('user', $userId),
-                    spreadsheet_id: $spreadsheetId,
-                    cell_id: $cellId,
-                    data_source: type::thing('data_source', $dataSourceId),
-                    field_path: $fieldPath,
-                    updated_at: time::now()
-                };
-            };
-            COMMIT TRANSACTION;
-        `, {
-            userId,
-            spreadsheetId: body.spreadsheetId,
-            cellId: body.cellId,
-            dataSourceId: body.dataSourceId,
-            fieldPath: body.fieldPath
-        })
+        const [binding] = await db.insert(cellBindings)
+            .values({
+                userId,
+                spreadsheetId: body.spreadsheetId,
+                cellId: body.cellId,
+                dataSourceId: body.dataSourceId,
+                fieldPath: body.fieldPath,
+                updatedAt: new Date()
+            })
+            .onConflictDoUpdate({
+                target: [cellBindings.spreadsheetId, cellBindings.cellId],
+                set: {
+                    dataSourceId: body.dataSourceId,
+                    fieldPath: body.fieldPath,
+                    updatedAt: new Date()
+                }
+            })
+            .returning();
 
-        // Return the updated/created binding
-        const [result] = await db.query(`SELECT * FROM cell_binding WHERE spreadsheet_id = $spreadsheetId AND cell_id = $cellId`, {
-            spreadsheetId: body.spreadsheetId,
-            cellId: body.cellId
-        })
-
-        return c.json(result[0])
+        return c.json(binding)
     } catch (e) {
         return c.json({ error: e.message }, 500)
     }
@@ -171,9 +147,9 @@ dataSourceRoutes.post('/bindings', async (c) => {
  */
 dataSourceRoutes.delete('/bindings/:id', async (c) => {
     const id = c.req.param('id')
+    const rawId = id.includes(':') ? id.split(':')[1] : id
     try {
-        const recordId = id.includes(':') ? id : `cell_binding:${id}`
-        await db.query(`DELETE ${recordId}`)
+        await db.delete(cellBindings).where(eq(cellBindings.id, rawId));
         return c.json({ success: true })
     } catch (e) {
         return c.json({ error: e.message }, 500)

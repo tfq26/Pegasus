@@ -1,8 +1,8 @@
 import { Hono } from "hono"
 import { getCookie } from "hono/cookie"
-import { getAuthToken } from "../../lib/auth.js"
-import { verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { connections } from "../db/schema.js"
+import { eq } from "drizzle-orm"
 import { RAGService } from "../services/ragService.js"
 import { adapters } from "../../adapters/index.js"
 
@@ -25,19 +25,17 @@ rag.post("/index", async (c) => {
 
         if (type === 'database') {
             // 1. Fetch connection
-            let connectionId = sourceId;
-            if (!connectionId.includes(':')) connectionId = `connection:${connectionId}`
+            const rawConnId = sourceId.includes(':') ? sourceId.split(':')[1] : sourceId;
 
-            const [rs] = await db.query(
-                "SELECT * FROM connection WHERE id = type::thing($id)",
-                { id: connectionId }
-            )
-            const connRow = rs ? rs[0] : null
+            const connRow = await db.query.connections.findFirst({
+                where: eq(connections.id, rawConnId)
+            });
+
             if (!connRow) return c.json({ error: "Connection not found" }, 404)
 
             const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
-            const provider = connRow.provider
-            const adapterConfig = config[provider]
+            const provider = connRow.type
+            const adapterConfig = config[provider] || config
 
             // 2. Connect and fetch data
             const Adapter = adapters[provider]
@@ -52,12 +50,12 @@ rag.post("/index", async (c) => {
                 const chunks = RAGService.chunkTable(rows, tableName)
 
                 // Clear existing first
-                await RAGService.clearSource(`${connectionId}_${tableName}`, userId)
+                await RAGService.clearSource(`${rawConnId}_${tableName}`, userId)
 
                 // Index in background
                 RAGService.indexChunks(chunks, {
                     source: connRow.name,
-                    source_id: `${connectionId}_${tableName}`,
+                    source_id: `${rawConnId}_${tableName}`,
                     table_name: tableName,
                     type: 'database'
                 }, userId, modelId || 'openai')

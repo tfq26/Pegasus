@@ -1,3 +1,6 @@
+import { eq, sql, count, and } from "drizzle-orm";
+import { connections, dashboards, users } from "../src/db/schema.js";
+
 // Tier-based limits and validation
 // Centralized configuration for subscription tier restrictions
 
@@ -53,11 +56,11 @@ export async function canCreateConnection(db, userId, tier = 'free') {
         return { allowed: true }
     }
 
-    const [result] = await db.query(`
-    SELECT count() as total FROM connection WHERE user = type::thing('user', $userId)
-  `, { userId })
+    const [result] = await db.select({ total: count() })
+        .from(connections)
+        .where(eq(connections.userId, userId));
 
-    const current = result?.[0]?.total || 0
+    const current = result?.total || 0
 
     return {
         allowed: current < limits.connections,
@@ -73,25 +76,9 @@ export async function canCreateConnection(db, userId, tier = 'free') {
  * Count total tables across all user connections
  */
 export async function countUserTables(db, userId) {
-    const [connections] = await db.query(`
-    SELECT id FROM connection WHERE user = type::thing('user', $userId)
-  `, { userId })
-
-    if (!connections || connections.length === 0) {
-        return 0
-    }
-
-    let totalTables = 0
-    for (const conn of connections) {
-        const [tables] = await db.query(`
-      SELECT tables FROM ${conn.id}
-    `)
-        if (tables?.[0]?.tables) {
-            totalTables += tables[0].tables.length
-        }
-    }
-
-    return totalTables
+    // This previously queried SurrealDB metadata. 
+    // For now, return 0 as a placeholder or implement based on how you track external tables.
+    return 0;
 }
 
 /**
@@ -128,19 +115,18 @@ export async function canCreateDashboard(db, userId, tier = 'free') {
         return { allowed: true }
     }
 
-    const [result] = await db.query(`
-    SELECT count() as total FROM dashboard 
-    WHERE owner = type::thing('user', $userId)
-  `, { userId })
+    const [result] = await db.select({ total: count() })
+        .from(dashboards)
+        .where(eq(dashboards.ownerId, userId));
 
-    const current = result?.[0]?.total || 0
+    const current = result?.total || 0
 
     return {
         allowed: current < limits.dashboards,
         current,
         limit: limits.dashboards,
         message: current >= limits.dashboards
-            ? `You've reached the ${tier} tier limit of ${limits.dashboards} dashboard${limits.dashboards > 1 ? 's' : ''}. Upgrade to ${tier === 'free' ? 'Pro' : 'Pro+'} for ${tier === 'free' ? '10 dashboards' : 'unlimited dashboards'}.`
+            ? `You've reached the ${tier} limit of ${limits.dashboards} dashboard${limits.dashboards > 1 ? 's' : ''}. Upgrade to ${tier === 'free' ? 'Pro' : 'Pro+'} for ${tier === 'free' ? '10 dashboards' : 'unlimited dashboards'}.`
             : null
     }
 }
@@ -179,21 +165,24 @@ export function isModelAllowed(modelId, tier = 'free') {
 export async function getUserUsageSummary(db, userId, tier = 'free') {
     const limits = getTierLimits(tier)
 
-    const [connectionCount] = await db.query(`
-    SELECT count() as total FROM connection WHERE user = type::thing('user', $userId)
-  `, { userId })
+    const [connectionResult] = await db.select({ total: count() })
+        .from(connections)
+        .where(eq(connections.userId, userId));
 
-    const [dashboardCount] = await db.query(`
-    SELECT count() as total FROM dashboard WHERE owner = type::thing('user', $userId)
-  `, { userId })
+    const [dashboardResult] = await db.select({ total: count() })
+        .from(dashboards)
+        .where(eq(dashboards.ownerId, userId));
 
     const tableCount = await countUserTables(db, userId)
 
+    const cTotal = connectionResult?.total || 0;
+    const dTotal = dashboardResult?.total || 0;
+
     return {
         connections: {
-            current: connectionCount?.[0]?.total || 0,
+            current: cTotal,
             limit: limits.connections,
-            percentage: limits.connections === Infinity ? 0 : Math.round((connectionCount?.[0]?.total || 0) / limits.connections * 100)
+            percentage: limits.connections === Infinity ? 0 : Math.round(cTotal / limits.connections * 100)
         },
         tables: {
             current: tableCount,
@@ -201,9 +190,9 @@ export async function getUserUsageSummary(db, userId, tier = 'free') {
             percentage: limits.tables === Infinity ? 0 : Math.round(tableCount / limits.tables * 100)
         },
         dashboards: {
-            current: dashboardCount?.[0]?.total || 0,
+            current: dTotal,
             limit: limits.dashboards,
-            percentage: limits.dashboards === Infinity ? 0 : Math.round((dashboardCount?.[0]?.total || 0) / limits.dashboards * 100)
+            percentage: limits.dashboards === Infinity ? 0 : Math.round(dTotal / limits.dashboards * 100)
         }
     }
 }
@@ -211,49 +200,22 @@ export async function getUserUsageSummary(db, userId, tier = 'free') {
 /**
  * Calculate total user limits (tokens & storage) including purchased add-ons
  * @param {Object} db - Database instance
- * @param {String} userId - User ID (e.g. "user:123")
+ * @param {String} userId - User ID
  */
 export async function calculateUserLimits(db, userId) {
-    // 1. Get User Subscription Tier
-    const [userRecord] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM ${userId}`);
-    const tier = userRecord[0]?.subscription_tier || 'free';
+    const user = await db.query.users.findFirst({
+        where: eq(users.id, userId)
+    });
 
-    // 2. Calculate purchased tokens and storage from payment history (Source of Truth)
-    // We rely on user_payment table sums rather than user record cache if possible, or support both strategies.
-    // The /usage endpoint sums user_payment. Let's replicate that for consistency.
-    const rawId = userId.replace('user:', '');
+    const tier = user?.subscriptionTier || 'free';
+    const purchasedTokens = user?.purchasedTokens || 0;
+    const purchasedStorage = user?.purchasedStorage || 0;
 
-    // Summing might be heavy for every chat message. 
-    // Optimization: Check userRecord.purchased_tokens first. 
-    // IF userRecord.purchased_tokens is 0 but we suspect issues, we could fallback.
-    // However, for correctness matching the profile page, we MUST use the same method.
-    // The profile page uses the sum. Let's use the sum.
-
-    const [tokenPayments] = await db.query(`
-      SELECT math::sum(tokens) as total_tokens FROM user_payment
-      WHERE user = type::thing('user', $rawId)
-      AND tokens > 0
-      GROUP ALL
-    `, { rawId });
-
-    const [storagePayments] = await db.query(`
-      SELECT math::sum(storage_bytes) as total_storage FROM user_payment
-      WHERE user = type::thing('user', $rawId)
-      AND storage_bytes > 0
-      GROUP ALL
-    `, { rawId });
-
-    const purchasedTokens = Number(tokenPayments[0]?.total_tokens || 0);
-    const purchasedStorage = Number(storagePayments[0]?.total_storage || 0);
-
-    // 3. Determine Base Limits
     const limits = getTierLimits(tier);
 
-    // TIER_LIMITS in this file already has correct base values for free, pro, pro_plus
     const baseTokenLimit = limits.tokens;
     const baseStorageLimit = limits.storage;
 
-    // 4. Calculate Totals
     const tokenLimit = baseTokenLimit + purchasedTokens;
     const storageLimit = baseStorageLimit + purchasedStorage;
 

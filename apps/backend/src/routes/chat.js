@@ -1,7 +1,9 @@
 import { Hono } from "hono"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { users, chats, queryHistory, connections } from "../db/schema.js"
+import { eq, and, sql, desc, gte } from "drizzle-orm"
 import { aiClient } from "../../ai/AIClient.js"
 import { interpretDataset } from "../../ai/sanitizer.js"
 import { adapters } from "../../adapters/index.js"
@@ -18,59 +20,28 @@ const jwtSecret = ConfigService.getJwtSecret()
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
     try {
-        const userId = payload.sub || payload.id
-        const userRecordId = `user:${userId}`
-        const [existingById] = await db.query(`SELECT id FROM ${userRecordId}`);
-        if (existingById && existingById.length > 0) {
-            await db.query(`
-                UPDATE ${userRecordId} SET 
-                    email = $email,
-                    first_name = $firstName,
-                    last_name = $lastName,
-                    profile_picture_url = $pic,
-                    updated_at = time::now();
-            `, {
+        const userId = payload.sub || payload.id;
+        const [user] = await db.insert(users)
+            .values({
+                id: userId,
                 email: payload.email,
                 firstName: payload.firstName || payload.first_name,
                 lastName: payload.lastName || payload.last_name,
-                pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-            });
-            return existingById[0].id.toString();
-        } else {
-            const [existingByEmail] = await db.query(`SELECT id FROM user WHERE email = $email`, { email: payload.email });
-            if (existingByEmail && existingByEmail.length > 0) {
-                const targetId = existingByEmail[0].id.toString();
-                await db.query(`
-                    UPDATE ${targetId} SET 
-                        first_name = $firstName,
-                        last_name = $lastName,
-                        profile_picture_url = $pic,
-                        updated_at = time::now();
-                `, {
-                    firstName: payload.firstName || payload.first_name,
-                    lastName: payload.lastName || payload.last_name,
-                    pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-                });
-                return targetId;
-            } else {
-                await db.query(`
-                    CREATE ${userRecordId} CONTENT {
-                        email: $email,
-                        first_name: $firstName,
-                        last_name: $lastName,
-                        profile_picture_url: $pic,
-                        created_at: time::now(),
-                        updated_at: time::now()
-                    };
-                `, {
+                profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
+                updatedAt: new Date()
+            })
+            .onConflictDoUpdate({
+                target: users.id,
+                set: {
                     email: payload.email,
                     firstName: payload.firstName || payload.first_name,
                     lastName: payload.lastName || payload.last_name,
-                    pic: (payload.profilePictureUrl || payload.profile_picture_url) ?? null
-                });
-                return userRecordId;
-            }
-        }
+                    profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
+                    updatedAt: new Date()
+                }
+            })
+            .returning();
+        return user.id;
     } catch (e) {
         console.error("[Chat] Failed to upsert user:", e)
         return null;
@@ -80,24 +51,23 @@ const upsertUser = async (payload) => {
 // Helper to check AI quota
 const checkAiQuota = async (userId) => {
     try {
-        // Use centralized limit calculation that respects Pro+ and purchased tokens
-        const { tokenLimit, tier } = await calculateUserLimits(db, `user:${userId}`);
+        const { tokenLimit, tier } = await calculateUserLimits(db, userId);
         const limit = tokenLimit;
 
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
 
-        const [usageResult] = await db.query(`
-            SELECT math::sum(tokens_used) as total FROM query_history 
-            WHERE user = $user AND created_at >= $start
-            GROUP ALL
-        `, {
-            user: `user:${userId}`,
-            start: startOfMonth
-        });
+        const [usageResult] = await db.select({
+            total: sql`sum(${queryHistory.tokensUsed})`.mapWith(Number)
+        })
+            .from(queryHistory)
+            .where(and(
+                eq(queryHistory.userId, userId),
+                gte(queryHistory.createdAt, startOfMonth)
+            ));
 
-        const used = usageResult[0]?.total || 0;
+        const used = usageResult?.total || 0;
 
         if (used >= limit) {
             console.log(`[Quota] User ${userId} (${tier}) exceeded limit: ${used}/${limit}`);
@@ -131,24 +101,17 @@ const colIndexToLabel = (index) => {
 const logAiUsage = async (userId, tokens, model, type, content, connectionId) => {
     if (!tokens || tokens <= 0) return;
     try {
-        await db.query(`
-            CREATE query_history CONTENT {
-                user: $user,
-                query: $content,
-                source: $source,
-                model: $model,
-                status: 'success',
-                connection: $connection,
-                tokens_used: $tokens,
-                created_at: time::now()
-            }
-        `, {
-            user: `user:${userId}`,
-            content: content ? content.substring(0, 500) : 'AI Operation',
+        const rawConnId = connectionId ? (connectionId.includes(':') ? connectionId.split(':')[1] : connectionId) : null;
+
+        await db.insert(queryHistory).values({
+            userId,
+            query: content ? content.substring(0, 500) : 'AI Operation',
             source: type,
             model: model,
-            connection: connectionId ? (connectionId.includes(':') ? connectionId : `connection:${connectionId}`) : null,
-            tokens: tokens
+            status: 'success',
+            connectionId: rawConnId,
+            tokensUsed: tokens,
+            createdAt: new Date()
         });
         console.log(`[Usage] Logged ${tokens} tokens for ${userId} (${type})`);
     } catch (e) {
@@ -178,9 +141,16 @@ chat.get("/chats", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
-        const [chats] = await db.query(`SELECT * FROM chat WHERE user = $user ORDER BY updated_at DESC;`, { user: `user:${payload.sub}` });
-        return c.json({ chats })
-    } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+        const userId = payload.sub
+        const results = await db.query.chats.findMany({
+            where: eq(chats.userId, userId),
+            orderBy: [desc(chats.updatedAt)]
+        });
+        return c.json({ chats: results })
+    } catch (e) {
+        console.error("[Chat] Fetch error:", e);
+        return c.json({ error: "Unauthorized" }, 401)
+    }
 })
 
 chat.post("/chats", async (c) => {
@@ -188,16 +158,24 @@ chat.post("/chats", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
-        let userId = payload.sub
-        const resolvedId = await upsertUser(payload)
-        if (resolvedId) {
-            const parts = resolvedId.toString().split(':')
-            userId = parts.length > 1 ? parts[1] : resolvedId
-        }
+        const userId = await upsertUser(payload)
         const { title } = await c.req.json()
-        const [created] = await db.query(`CREATE chat CONTENT { user: $user, title: $title, messages: [], created_at: time::now(), updated_at: time::now() };`, { user: `user:${userId}`, title: title || "New Chat" });
-        return c.json({ id: created[0].id.toString().split(':')[1] || created[0].id, title: created[0].title })
-    } catch (e) { return c.json({ error: "Failed to create chat" }, 500) }
+
+        const [created] = await db.insert(chats)
+            .values({
+                userId,
+                title: title || "New Chat",
+                messages: [],
+                createdAt: new Date(),
+                updatedAt: new Date()
+            })
+            .returning();
+
+        return c.json({ id: created.id, title: created.title })
+    } catch (e) {
+        console.error("[Chat] Creation error:", e);
+        return c.json({ error: "Failed to create chat" }, 500)
+    }
 })
 
 chat.get("/chats/:id", async (c) => {
@@ -206,11 +184,18 @@ chat.get("/chats/:id", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         let chatId = c.req.param("id")
-        if (!chatId.includes(':')) chatId = `chat:${chatId}`
-        const [result] = await db.query(`SELECT * FROM ${chatId} WHERE user = $user;`, { user: `user:${payload.sub}` });
-        if (!result || !result[0]) return c.json({ error: "Chat not found" }, 404)
-        return c.json({ chat: result[0], messages: result[0].messages || [] })
-    } catch (e) { return c.json({ error: "Failed to fetch chat" }, 500) }
+        const rawChatId = chatId.includes(':') ? chatId.split(':')[1] : chatId
+
+        const result = await db.query.chats.findFirst({
+            where: and(eq(chats.id, rawChatId), eq(chats.userId, payload.sub))
+        });
+
+        if (!result) return c.json({ error: "Chat not found" }, 404)
+        return c.json({ chat: result, messages: result.messages || [] })
+    } catch (e) {
+        console.error("[Chat] Fetch failed:", e);
+        return c.json({ error: "Failed to fetch chat" }, 500)
+    }
 })
 
 chat.post("/chats/:id/messages", async (c) => {
@@ -218,31 +203,44 @@ chat.post("/chats/:id/messages", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
-        let userId = payload.sub
-        const resolvedId = await upsertUser(payload)
-        if (resolvedId) {
-            const parts = resolvedId.toString().split(':')
-            userId = parts.length > 1 ? parts[1] : resolvedId
-        }
+        const userId = await upsertUser(payload)
         let chatId = c.req.param("id")
-        if (!chatId.includes(':')) chatId = `chat:${chatId}`
+        const rawChatId = chatId.includes(':') ? chatId.split(':')[1] : chatId
+
         const { role, content, meta } = await c.req.json()
         const newMessage = { id: crypto.randomUUID(), role, content, meta: meta || null, created_at: Math.floor(Date.now() / 1000) }
-        const [updated] = await db.query(`UPDATE ${chatId} SET messages += $msg, updated_at = time::now() WHERE user = $user RETURN title, messages;`, { msg: newMessage, user: `user:${userId}` });
-        if (!updated || !updated[0]) return c.json({ error: "Chat not found" }, 404)
-        const chatData = updated[0];
-        if (chatData.title === 'New Chat' && chatData.messages && chatData.messages.length >= 2) {
+
+        // Fetch current messages
+        const existingChat = await db.query.chats.findFirst({
+            where: and(eq(chats.id, rawChatId), eq(chats.userId, userId))
+        });
+
+        if (!existingChat) return c.json({ error: "Chat not found" }, 404)
+
+        const updatedMessages = [...(existingChat.messages || []), newMessage];
+
+        await db.update(chats)
+            .set({
+                messages: updatedMessages,
+                updatedAt: new Date()
+            })
+            .where(eq(chats.id, rawChatId));
+
+        if (existingChat.title === 'New Chat' && updatedMessages.length >= 2) {
             setImmediate(async () => {
                 try {
-                    const newTitle = await aiClient.generateTitle(chatData.messages)
+                    const newTitle = await aiClient.generateTitle(updatedMessages)
                     if (newTitle && newTitle.trim() && newTitle !== 'New Chat') {
-                        await db.query(`UPDATE ${chatId} SET title = $title`, { title: newTitle.trim() })
+                        await db.update(chats).set({ title: newTitle.trim() }).where(eq(chats.id, rawChatId));
                     }
                 } catch (e) { console.error("[Chat] Failed to auto-label chat:", e) }
             })
         }
         return c.json({ id: newMessage.id })
-    } catch (e) { return c.json({ error: "Failed to send message" }, 500) }
+    } catch (e) {
+        console.error("[Chat] Message send error:", e);
+        return c.json({ error: "Failed to send message" }, 500)
+    }
 })
 
 chat.delete("/chats/:id", async (c) => {
@@ -251,11 +249,14 @@ chat.delete("/chats/:id", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         let chatId = c.req.param("id")
-        if (!chatId.includes(':')) chatId = `chat:${chatId}`
-        const result = await db.query(`DELETE ${chatId} WHERE user = $user RETURN BEFORE;`, { user: `user:${payload.sub}` });
-        if (!result || !result[0] || result[0].length === 0) return c.json({ error: "Chat not found" }, 404)
+        const rawChatId = chatId.includes(':') ? chatId.split(':')[1] : chatId
+
+        await db.delete(chats).where(and(eq(chats.id, rawChatId), eq(chats.userId, payload.sub)));
         return c.json({ success: true })
-    } catch (e) { return c.json({ error: "Failed to delete chat" }, 500) }
+    } catch (e) {
+        console.error("[Chat] Delete failed:", e);
+        return c.json({ error: "Failed to delete chat" }, 500)
+    }
 })
 
 chat.delete("/chats", async (c) => {
@@ -263,9 +264,12 @@ chat.delete("/chats", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
-        await db.query(`DELETE chat WHERE user = $user;`, { user: `user:${payload.sub}` });
+        await db.delete(chats).where(eq(chats.userId, payload.sub));
         return c.json({ success: true })
-    } catch (e) { return c.json({ error: "Failed to delete chats" }, 500) }
+    } catch (e) {
+        console.error("[Chat] Multi-delete failed:", e);
+        return c.json({ error: "Failed to delete chats" }, 500)
+    }
 })
 
 chat.post("/ai/spreadsheet-action", async (c) => {
@@ -327,18 +331,18 @@ chat.post("/ai/health-profile", async (c) => {
         const quota = await checkAiQuota(payload.sub);
         if (!quota.allowed) return c.json(quota, 403);
         const { connectionId, model } = await c.req.json()
-        const connId = connectionId.includes(':') ? connectionId : `connection:${connectionId}`
-        const userIdForConn = payload.sub.includes(':') ? payload.sub : `user:${payload.sub}`
-        const [rs] = await db.query("SELECT * FROM connection WHERE id = type::thing('connection', $id) AND user = type::thing('user', $uid)", {
-            id: connId.split(':').pop(),
-            uid: userIdForConn.split(':').pop()
-        })
-        if (!rs?.[0]) return c.json({ error: "Connection not found" }, 404)
-        const config = typeof rs[0].config === 'string' ? JSON.parse(rs[0].config) : rs[0].config
-        const provider = rs[0].type || rs[0].provider
-        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
+        const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+
+        const connRow = await db.query.connections.findFirst({
+            where: eq(connections.id, rawConnId)
+        });
+
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        const provider = connRow.type
+        const Adapter = adapters[provider]
         if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
-        const adapter = new Adapter(config[provider] || config[provider?.toLowerCase()])
+        const adapter = new Adapter(config[provider] || config)
         await adapter.connect()
         const tables = await adapter.listCollections();
         const stats = `Provider: ${provider}, Total Tables: ${tables.length}`
@@ -355,17 +359,17 @@ chat.post("/ai/explain-table", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const { connectionId, tableName, model } = await c.req.json()
-        const connId = connectionId.includes(':') ? connectionId : `connection:${connectionId}`
-        const userIdForConn = payload.sub.includes(':') ? payload.sub : `user:${payload.sub}`
-        const [rs] = await db.query("SELECT * FROM connection WHERE id = type::thing('connection', $id) AND user = type::thing('user', $uid)", {
-            id: connId.split(':').pop(),
-            uid: userIdForConn.split(':').pop()
-        })
-        if (!rs?.[0]) return c.json({ error: "Connection not found" }, 404)
-        const config = typeof rs[0].config === 'string' ? JSON.parse(rs[0].config) : rs[0].config
-        const provider = rs[0].type || rs[0].provider
-        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
-        const adapter = new Adapter(config[provider] || config[provider?.toLowerCase()])
+        const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+
+        const connRow = await db.query.connections.findFirst({
+            where: eq(connections.id, rawConnId)
+        });
+
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        const provider = connRow.type
+        const Adapter = adapters[provider]
+        const adapter = new Adapter(config[provider] || config)
         await adapter.connect()
         const sample = await adapter.query(`SELECT * FROM ${tableName} LIMIT 3`)
         const prompt = `Explain table "${tableName}" based on sample: ${JSON.stringify(sample)}`
@@ -394,17 +398,17 @@ chat.post("/ai/explain-query", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const { query, connectionId, model } = await c.req.json()
-        const connId = connectionId.includes(':') ? connectionId : `connection:${connectionId}`
-        const userIdForConn = payload.sub.includes(':') ? payload.sub : `user:${payload.sub}`
-        const [rs] = await db.query("SELECT * FROM connection WHERE id = type::thing('connection', $id) AND user = type::thing('user', $uid)", {
-            id: connId.split(':').pop(),
-            uid: userIdForConn.split(':').pop()
-        })
-        if (!rs?.[0]) return c.json({ error: "Connection not found" }, 404)
-        const config = typeof rs[0].config === 'string' ? JSON.parse(rs[0].config) : rs[0].config
-        const provider = rs[0].type || rs[0].provider
-        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
-        const adapter = new Adapter(config[provider] || config[provider?.toLowerCase()])
+        const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+
+        const connRow = await db.query.connections.findFirst({
+            where: eq(connections.id, rawConnId)
+        });
+
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        const provider = connRow.type
+        const Adapter = adapters[provider]
+        const adapter = new Adapter(config[provider] || config)
         await adapter.connect()
         const plan = await captureQueryPlan(adapter, query, provider)
         const prompt = `Explain query: ${query}. Plan: ${plan}`
@@ -420,17 +424,17 @@ chat.post("/ai/optimize-query", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const { query, connectionId, model } = await c.req.json()
-        const connId = connectionId.includes(':') ? connectionId : `connection:${connectionId}`
-        const userIdForConn = payload.sub.includes(':') ? payload.sub : `user:${payload.sub}`
-        const [rs] = await db.query("SELECT * FROM connection WHERE id = type::thing('connection', $id) AND user = type::thing('user', $uid)", {
-            id: connId.split(':').pop(),
-            uid: userIdForConn.split(':').pop()
-        })
-        if (!rs?.[0]) return c.json({ error: "Connection not found" }, 404)
-        const config = typeof rs[0].config === 'string' ? JSON.parse(rs[0].config) : rs[0].config
-        const provider = rs[0].type || rs[0].provider
-        const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
-        const adapter = new Adapter(config[provider] || config[provider?.toLowerCase()])
+        const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+
+        const connRow = await db.query.connections.findFirst({
+            where: eq(connections.id, rawConnId)
+        });
+
+        if (!connRow) return c.json({ error: "Connection not found" }, 404)
+        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
+        const provider = connRow.type
+        const Adapter = adapters[provider]
+        const adapter = new Adapter(config[provider] || config)
         await adapter.connect()
         const plan = await captureQueryPlan(adapter, query, provider)
         const prompt = `Optimize query: ${query}. Plan: ${plan}. Return JSON: { "optimizedQuery": "...", "explanation": "..." }`
@@ -467,10 +471,8 @@ chat.post("/ai/generate", async (c) => {
         if (!quota.allowed) return c.json(quota, 403);
         const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = await c.req.json()
 
-        // Handle connection ID - could be undefined for virtual/local-only usage
-        let connectionId = rawConnId;
-        if (connectionId && !connectionId.includes(':')) connectionId = `connection:${connectionId}`
-        const userIdFixed = userId.includes(':') ? userId : `user:${userId}`
+        // Handle connection ID
+        const connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
 
         console.log(`[AI Generate] User: ${userId}, ConnectionId: ${connectionId || 'none'}, ActiveTable: ${activeTable || 'none'}`)
 
@@ -478,46 +480,25 @@ chat.post("/ai/generate", async (c) => {
         let userSettings = null
         let activeModel = null
 
-        // Only query DB if we have a valid connectionId
-        if (connectionId && connectionId !== 'connection:undefined' && connectionId !== 'connection:null') {
-            const connIdPart = connectionId.split(':').pop()
-            const userIdPart = userIdFixed.split(':').pop()
+        // Fetch user first to get settings
+        const userRow = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { settings: true }
+        });
 
-            // First, find the connection by ID (like other endpoints do)
-            const [connResults] = await db.query(
-                `SELECT * FROM connection WHERE id = type::thing('connection', $id)`,
-                { id: connIdPart }
-            )
+        userSettings = userRow?.settings || null
+        activeModel = userSettings?.activeModel || null
 
-            // Also fetch user settings
-            const [settingsResults] = await db.query(
-                `SELECT settings FROM user WHERE id = type::thing('user', $uid)`,
-                { uid: userIdPart }
-            )
+        if (connectionId && connectionId !== 'undefined' && connectionId !== 'null' && connectionId !== 'local') {
+            connRow = await db.query.connections.findFirst({
+                where: eq(connections.id, connectionId)
+            });
 
-            userSettings = settingsResults?.[0]?.settings || null
-            activeModel = userSettings?.activeModel || null
-
-            if (connResults && connResults.length > 0) {
-                connRow = connResults[0]
-
-                // Log ownership info for debugging
-                const connOwner = connRow.user?.toString() || 'unknown'
-                const requester = userIdFixed
-                console.log(`[AI Generate] Found connection ${connectionId}. Owner: ${connOwner}, Requester: ${requester}`)
-
-                // Note: We allow the connection even if user doesn't match for now
-                // This handles shared/dashboard scenarios and legacy connections
+            if (connRow) {
+                console.log(`[AI Generate] Found connection ${connectionId}. Owner: ${connRow.userId}, Requester: ${userId}`)
             } else {
                 console.log(`[AI Generate] Connection ${connectionId} not found in DB`)
             }
-        } else {
-            // No connectionId provided - fetch user settings only
-            const [settingsRs] = await db.query(`SELECT settings FROM user WHERE id = type::thing('user', $uid)`, {
-                uid: userIdFixed.split(':').pop()
-            })
-            userSettings = settingsRs?.[0]?.settings || null
-            activeModel = userSettings?.activeModel || null
         }
 
         // Handle local/virtual connections (e.g., spreadsheets without DB backing)
@@ -705,11 +686,17 @@ chat.get("/ai/models", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     try {
         const payload = await verify(token, jwtSecret)
-        const [userData] = await db.query(`SELECT subscription_tier FROM type::thing('user', $userId)`, { userId: payload.sub })
-        const tier = userData?.[0]?.subscription_tier || 'free'
+        const userRow = await db.query.users.findFirst({
+            where: eq(users.id, payload.sub),
+            columns: { subscriptionTier: true }
+        });
+        const tier = userRow?.subscriptionTier || 'free'
         const allModels = await aiClient.listModels()
         return c.json({ models: filterModelsByTier(allModels, tier), tier })
-    } catch (e) { return c.json({ error: "Failed to list models" }, 500) }
+    } catch (e) {
+        console.error("[AI Models] Error:", e);
+        return c.json({ error: "Failed to list models" }, 500)
+    }
 })
 
 chat.post("/ai/dashboard-query", async (c) => {

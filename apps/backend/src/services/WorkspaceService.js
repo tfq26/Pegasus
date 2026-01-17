@@ -1,4 +1,6 @@
-import { db } from "../../db/surreal.js";
+import { db } from "../db/index.js";
+import { connectionWorkspaces } from "../db/schema.js";
+import { eq, and } from "drizzle-orm";
 
 export class WorkspaceService {
     /**
@@ -10,17 +12,16 @@ export class WorkspaceService {
         try {
             console.log(`[WorkspaceService] Fetching workspace for user: ${userId}, connection: ${connectionId}`);
 
-            const [result] = await db.query(`
-                SELECT * FROM connection_workspace 
-                WHERE user = type::thing('user', $userId) 
-                AND connection_id = $connectionId
-                LIMIT 1;
-            `, { userId, connectionId });
+            const result = await db.query.connectionWorkspaces.findFirst({
+                where: and(
+                    eq(connectionWorkspaces.userId, userId),
+                    eq(connectionWorkspaces.connectionId, connectionId)
+                )
+            });
 
-            if (result && result.length > 0) {
-                const workspace = result[0];
+            if (result) {
                 console.log(`[WorkspaceService] Found workspace for user ${userId}`);
-                return workspace.workspace_data || {};
+                return result.workspaceData || {};
             }
 
             console.log(`[WorkspaceService] No workspace found for user: ${userId}, connection: ${connectionId}`);
@@ -39,52 +40,20 @@ export class WorkspaceService {
      */
     static async saveWorkspace(userId, connectionId, workspaceData) {
         try {
-            // Check for existing record
-            const [existing] = await db.query(`
-                SELECT id FROM connection_workspace 
-                WHERE user = type::thing('user', $userId) 
-                AND connection_id = $connectionId
-            `, { userId, connectionId });
-
-            const saveData = {
-                workspace_data: workspaceData,
-                updated_at: new Date()
-            };
-
-            if (existing && existing.length > 0) {
-                const id = existing[0].id;
-                try {
-                    await db.merge(id, saveData);
-                } catch (mergeErr) {
-                    // Auto-migrate bad records (legacy expires_at issue)
-                    if (mergeErr.message && mergeErr.message.includes('expires_at')) {
-                        console.log('[WorkspaceService] Auto-migrating bad record:', id);
-                        await db.delete(id);
-                        // Use query with type::thing for proper record reference
-                        await db.query(`
-                            CREATE connection_workspace CONTENT {
-                                user: type::thing('user', $userId),
-                                connection_id: $connectionId,
-                                workspace_data: $data,
-                                updated_at: time::now()
-                            };
-                        `, { userId, connectionId, data: workspaceData });
-                        console.log('[WorkspaceService] Migration successful');
-                    } else {
-                        throw mergeErr;
+            await db.insert(connectionWorkspaces)
+                .values({
+                    userId,
+                    connectionId,
+                    workspaceData,
+                    updatedAt: new Date()
+                })
+                .onConflictDoUpdate({
+                    target: [connectionWorkspaces.userId, connectionWorkspaces.connectionId],
+                    set: {
+                        workspaceData,
+                        updatedAt: new Date()
                     }
-                }
-            } else {
-                // Use query with type::thing for proper record reference
-                await db.query(`
-                    CREATE connection_workspace CONTENT {
-                        user: type::thing('user', $userId),
-                        connection_id: $connectionId,
-                        workspace_data: $data,
-                        updated_at: time::now()
-                    };
-                `, { userId, connectionId, data: workspaceData });
-            }
+                });
 
             return { success: true };
         } catch (error) {
@@ -100,11 +69,11 @@ export class WorkspaceService {
      */
     static async deleteWorkspace(userId, connectionId) {
         try {
-            await db.query(`
-                DELETE connection_workspace 
-                WHERE user = type::thing('user', $userId) 
-                AND connection_id = $connectionId;
-            `, { userId, connectionId });
+            await db.delete(connectionWorkspaces)
+                .where(and(
+                    eq(connectionWorkspaces.userId, userId),
+                    eq(connectionWorkspaces.connectionId, connectionId)
+                ));
             return { success: true };
         } catch (error) {
             console.error("[WorkspaceService] Error deleting workspace:", error);

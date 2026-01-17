@@ -1,8 +1,11 @@
-import { db } from '../../db/surreal.js';
+import { db } from '../db/index.js';
+import { userPayments } from '../db/schema.js';
+import { eq, desc } from 'drizzle-orm';
 import { getAuthToken } from '../../lib/auth.js';
 import { verify } from 'hono/jwt';
+import { ConfigService } from '../services/ConfigService.js';
 
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
+const jwtSecret = ConfigService.getJwtSecret();
 
 export const getPayments = async (c) => {
     try {
@@ -16,26 +19,17 @@ export const getPayments = async (c) => {
             return c.json({ error: 'Unauthorized' }, 401);
         }
 
-        const sub = payload.sub || '';
-        const rawId = sub.includes(':') ? sub.split(':')[1] : sub;
-        const userId = `user:${rawId}`;
+        const userId = payload.sub;
 
-
-
-        // Fetch user payments - RLS allows this query to only return the user's records
-        const [payments] = await db.query(`
-            SELECT * FROM user_payment 
-            WHERE user = type::thing('user', $rawId)
-            ORDER BY created_at DESC 
-            LIMIT 50
-        `, { rawId });
-
-
-
+        const results = await db.query.userPayments.findMany({
+            where: eq(userPayments.userId, userId),
+            orderBy: [desc(userPayments.createdAt)],
+            limit: 50
+        });
 
         return c.json({
             success: true,
-            payments: payments || []
+            payments: results || []
         });
     } catch (err) {
         console.error('[Payments API] Error:', err.message);

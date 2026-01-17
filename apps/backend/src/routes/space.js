@@ -1,7 +1,9 @@
 import { Hono } from "hono"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { dataSpaces, spacePermissions, users, connections, spaceSources, spaceFiles, spaceNotes } from "../db/schema.js"
+import { eq, and, or, sql } from "drizzle-orm"
 import { ConfigService } from "../services/ConfigService.js"
 
 const spaces = new Hono()
@@ -11,33 +13,27 @@ const jwtSecret = ConfigService.getJwtSecret()
 const getSpaceRole = async (userId, spaceId) => {
     const rawSpaceId = spaceId.includes(':') ? spaceId.split(':')[1] : spaceId;
     const rawUserId = userId.includes(':') ? userId.split(':')[1] : userId;
-    const fullUserId = `user:${rawUserId}`;
 
     try {
         // 1. Check Ownership
-        const [spaceResult] = await db.query(`
-            SELECT user FROM type::thing('data_space', $spaceId);
-        `, { spaceId: rawSpaceId });
+        const space = await db.query.dataSpaces.findFirst({
+            where: eq(dataSpaces.id, rawSpaceId)
+        });
 
-        if (spaceResult && spaceResult.length > 0) {
-            const owner = spaceResult[0].user;
-            const ownerId = (owner && typeof owner === 'object') ? (owner.id || String(owner)) : String(owner);
-
-            if (ownerId === fullUserId || ownerId === rawUserId || ownerId.endsWith(rawUserId)) {
-                return 'owner';
-            }
+        if (space && space.userId === rawUserId) {
+            return 'owner';
         }
 
         // 2. Check Permissions Table
-        const [permCheck] = await db.query(`
-            SELECT role FROM space_permission 
-            WHERE space = type::thing('data_space', $spaceId) 
-            AND user = type::thing('user', $userId) 
-            LIMIT 1;
-        `, { spaceId: rawSpaceId, userId: rawUserId });
+        const permCheck = await db.query.spacePermissions.findFirst({
+            where: and(
+                eq(spacePermissions.spaceId, rawSpaceId),
+                eq(spacePermissions.userId, rawUserId)
+            )
+        });
 
-        if (permCheck && permCheck.length > 0) {
-            return permCheck[0].role;
+        if (permCheck) {
+            return permCheck.role;
         }
 
     } catch (err) {
@@ -59,37 +55,36 @@ spaces.get("/:id/permissions", async (c) => {
         const role = await getSpaceRole(userId, id);
         if (!role) return c.json({ error: "Unauthorized" }, 403)
 
-        const rawSpaceId = id.split(':')[1];
+        const currentPerms = await db.select({
+            access_level: spacePermissions.role,
+            user_id: spacePermissions.userId,
+            email: users.email,
+            first_name: users.firstName,
+            last_name: users.lastName,
+            profile_picture_url: users.profilePictureUrl
+        })
+            .from(spacePermissions)
+            .innerJoin(users, eq(spacePermissions.userId, users.id))
+            .where(eq(spacePermissions.spaceId, rawSpaceId))
 
-        const [permissions] = await db.query(`
-            SELECT 
-                role as access_level,
-                user as user_id,
-                user.email as email,
-                user.first_name as first_name,
-                user.last_name as last_name,
-                user.profile_picture_url as profile_picture_url,
-                created_at 
-            FROM space_permission 
-            WHERE space = type::thing('data_space', $spaceId);
-        `, { spaceId: rawSpaceId });
-
-        const [ownerData] = await db.query(`
-            SELECT 
-                user as id,
-                user.email as email,
-                user.first_name as first_name,
-                user.last_name as last_name,
-                user.profile_picture_url as profile_picture_url
-            FROM type::thing('data_space', $spaceId)
-        `, { spaceId: rawSpaceId });
+        const ownerData = await db.select({
+            id: users.id,
+            email: users.email,
+            first_name: users.firstName,
+            last_name: users.lastName,
+            profile_picture_url: users.profilePictureUrl
+        })
+            .from(users)
+            .innerJoin(dataSpaces, eq(users.id, dataSpaces.userId))
+            .where(eq(dataSpaces.id, rawSpaceId))
 
         return c.json({
-            permissions: permissions || [],
+            permissions: currentPerms || [],
             currentUserRole: role,
             owner: ownerData?.[0] || null
         })
     } catch (e) {
+        console.error("[GET Permissions] Error:", e)
         return c.json({ error: "Failed to fetch permissions" }, 500)
     }
 })
@@ -111,22 +106,30 @@ spaces.post("/:id/share/invite", async (c) => {
             return c.json({ error: "Unauthorized" }, 403)
         }
 
-        const [targetUser] = await db.query(`SELECT id FROM user WHERE email = $email LIMIT 1`, { email });
-        if (!targetUser || !targetUser.length) {
+        const targetUser = await db.query.users.findFirst({
+            where: eq(users.email, email)
+        })
+
+        if (!targetUser) {
             return c.json({ error: "User not found. They must log in at least once." }, 404)
         }
 
-        const rawTargetId = targetUser[0].id.toString().split(':')[1];
         const rawSpaceId = id.split(':')[1];
 
-        await db.query(`
-            INSERT INTO space_permission (user, space, role, created_at)
-            VALUES (type::thing('user', $userId), type::thing('data_space', $spaceId), $role, time::now())
-            ON DUPLICATE KEY UPDATE role = $role;
-        `, { userId: rawTargetId, spaceId: rawSpaceId, role: role || 'read' });
+        await db.insert(spacePermissions)
+            .values({
+                userId: targetUser.id,
+                spaceId: rawSpaceId,
+                role: role || 'viewer'
+            })
+            .onConflictDoUpdate({
+                target: [spacePermissions.userId, spacePermissions.spaceId],
+                set: { role: role || 'viewer' }
+            })
 
         return c.json({ ok: true })
     } catch (e) {
+        console.error("[Invite] Error:", e)
         return c.json({ error: "Failed to invite user" }, 500)
     }
 })
@@ -144,24 +147,25 @@ spaces.delete("/:id/permissions/:email", async (c) => {
         const currentRole = await getSpaceRole(userId, id);
         if (currentRole !== 'owner' && currentRole !== 'editor') return c.json({ error: "Unauthorized" }, 403)
 
-        let rawTargetId = null;
-        const [userCheck] = await db.query(`SELECT id FROM user WHERE email = $email LIMIT 1`, { email });
-        if (userCheck && userCheck.length > 0) {
-            rawTargetId = userCheck[0].id.toString().split(':')[1];
-        } else {
-            rawTargetId = email;
+        let targetUserId = email;
+        const userCheck = await db.query.users.findFirst({
+            where: eq(users.email, email)
+        })
+        if (userCheck) {
+            targetUserId = userCheck.id;
         }
 
         const rawSpaceId = id.split(':')[1];
 
-        await db.query(`
-            DELETE FROM space_permission 
-            WHERE user = type::thing('user', $targetId) 
-            AND space = type::thing('data_space', $spaceId);
-        `, { targetId: rawTargetId, spaceId: rawSpaceId });
+        await db.delete(spacePermissions)
+            .where(and(
+                eq(spacePermissions.userId, targetUserId),
+                eq(spacePermissions.spaceId, rawSpaceId)
+            ))
 
         return c.json({ ok: true })
     } catch (e) {
+        console.error("[Delete Permission] Error:", e)
         return c.json({ error: "Failed to remove permission" }, 500)
     }
 })
@@ -173,52 +177,50 @@ spaces.get("/", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
-        const userRef = `user:${userId.split(':').pop()}`
 
         // Fetch spaces where user is owner OR has explicit permission
-        let [results] = await db.query(`
-            SELECT *, 
-                (SELECT role FROM space_permission WHERE space = $parent.id AND user = type::thing('user', $userId))[0] as permission_role
-            FROM data_space 
-            WHERE user = type::thing('user', $userId) 
-               OR (SELECT id FROM space_permission WHERE space = $parent.id AND user = type::thing('user', $userId))
-            ORDER BY created_at DESC
-        `, {
-            userId: userId.split(':').pop()
-        });
+        const userSpaces = await db.select()
+            .from(dataSpaces)
+            .leftJoin(spacePermissions, eq(dataSpaces.id, spacePermissions.spaceId))
+            .where(or(
+                eq(dataSpaces.userId, userId),
+                eq(spacePermissions.userId, userId)
+            ))
+            .orderBy(sql`${dataSpaces.createdAt} DESC`)
+
+        let results = userSpaces.map(row => ({
+            ...row.data_space,
+            permission_role: row.space_permission?.role || (row.data_space.userId === userId ? 'owner' : null)
+        }))
 
         // Auto-provision personal space if empty
-        if (!results || results.length === 0) {
+        if (results.length === 0) {
             console.log(`[Spaces] Provisioning default space for user ${userId}`);
-            const [newSpaceResults] = await db.query(`
-                CREATE data_space CONTENT {
-                    user: type::thing('user', $userId),
+            const [newSpace] = await db.insert(dataSpaces)
+                .values({
+                    userId,
                     name: 'Personal Space',
                     description: 'Your default workspace for data analysis.',
                     icon: 'box',
                     color: '#8B5CF6',
-                    is_default: true,
-                    created_at: time::now(),
-                    updated_at: time::now()
-                }
-            `, { userId: userId.split(':').pop() });
+                    isDefault: true
+                })
+                .returning()
 
-            const newSpace = newSpaceResults[0];
-            results = [newSpace];
+            results = [{ ...newSpace, permission_role: 'owner' }];
 
             // Migration: Link existing connections to this new space
-            if (newSpace) {
-                await db.query(`
-                    UPDATE connection SET space = $spaceId WHERE user = $user AND (space = NONE OR space = NULL)
-                `, {
-                    spaceId: newSpace.id,
-                    user: userRef
-                });
-                console.log(`[Spaces] Migrated existing connections for user ${userId} to new space ${newSpace.id}`);
-            }
+            await db.update(connections)
+                .set({ spaceId: newSpace.id })
+                .where(and(
+                    eq(connections.userId, userId),
+                    or(sql`${connections.spaceId} IS NULL`)
+                ))
+
+            console.log(`[Spaces] Migrated existing connections for user ${userId} to new space ${newSpace.id}`);
         }
 
-        return c.json({ spaces: results || [] });
+        return c.json({ spaces: results });
     } catch (e) {
         console.error("[Spaces] Fetch failed:", e);
         return c.json({ error: e.message }, 500);
@@ -235,26 +237,18 @@ spaces.post("/", async (c) => {
         const body = await c.req.json()
         const { name, description, icon, color } = body
 
-        const [result] = await db.query(`
-            CREATE data_space CONTENT {
-                user: type::thing('user', $userId),
-                name: $name,
-                description: $description,
-                icon: $icon,
-                color: $color,
-                is_default: false,
-                created_at: time::now(),
-                updated_at: time::now()
-            }
-        `, {
-            userId: userId.split(':').pop(),
-            name,
-            description,
-            icon: icon || "database",
-            color: color || "#8B5CF6"
-        });
+        const [result] = await db.insert(dataSpaces)
+            .values({
+                userId,
+                name,
+                description,
+                icon: icon || "database",
+                color: color || "#8B5CF6",
+                isDefault: false
+            })
+            .returning()
 
-        return c.json(result[0]);
+        return c.json(result);
     } catch (e) {
         console.error("[Spaces] Failed to create space:", e);
         return c.json({ error: e.message }, 500);
@@ -268,13 +262,17 @@ spaces.put("/:id", async (c) => {
     try {
         const { id } = c.req.param()
         const body = await c.req.json()
-        const spaceId = id.includes(':') ? id : `data_space:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const [result] = await db.query(`
-            UPDATE ${spaceId} MERGE $body
-        `, { body: { ...body, updated_at: new Date() } });
+        const [result] = await db.update(dataSpaces)
+            .set({
+                ...body,
+                updatedAt: new Date()
+            })
+            .where(eq(dataSpaces.id, rawId))
+            .returning()
 
-        return c.json(result[0]);
+        return c.json(result);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -286,9 +284,9 @@ spaces.delete("/:id", async (c) => {
 
     try {
         const { id } = c.req.param()
-        const spaceId = id.includes(':') ? id : `data_space:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        await db.query(`DELETE ${spaceId}`);
+        await db.delete(dataSpaces).where(eq(dataSpaces.id, rawId))
         return c.json({ success: true });
     } catch (e) {
         return c.json({ error: e.message }, 500);
@@ -301,11 +299,12 @@ spaces.get("/:id/sources", async (c) => {
 
     try {
         const { id } = c.req.param()
-        const spaceIdPart = id.includes(':') ? id.split(':').pop() : id
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const [results] = await db.query("SELECT * FROM space_source WHERE space = type::thing('data_space', $spaceId) ORDER BY created_at DESC", {
-            spaceId: spaceIdPart
-        });
+        const results = await db.select()
+            .from(spaceSources)
+            .where(eq(spaceSources.spaceId, rawId))
+            .orderBy(sql`${spaceSources.createdAt} DESC`)
 
         return c.json({ sources: results || [] });
     } catch (e) {
@@ -320,11 +319,19 @@ spaces.get("/:id/files", async (c) => {
 
     try {
         const { id } = c.req.param()
-        const spaceIdPart = id.includes(':') ? id.split(':').pop() : id
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const [results] = await db.query("SELECT id, filename, file_type, storage_path, file_size_bytes, created_at FROM space_file WHERE space = type::thing('data_space', $spaceId) ORDER BY created_at DESC", {
-            spaceId: spaceIdPart
-        });
+        const results = await db.select({
+            id: spaceFiles.id,
+            filename: spaceFiles.filename,
+            fileType: spaceFiles.fileType,
+            storagePath: spaceFiles.storagePath,
+            fileSizeBytes: spaceFiles.fileSizeBytes,
+            createdAt: spaceFiles.createdAt
+        })
+            .from(spaceFiles)
+            .where(eq(spaceFiles.spaceId, rawId))
+            .orderBy(sql`${spaceFiles.createdAt} DESC`)
 
         return c.json({ files: results || [] });
     } catch (e) {
@@ -338,30 +345,22 @@ spaces.post("/:id/files", async (c) => {
 
     try {
         const { id } = c.req.param()
-        const spaceId = id.includes(':') ? id : `data_space:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
         const body = await c.req.json()
         const { filename, file_type, storage_path, file_size_bytes, parsed_schema } = body
 
-        const [result] = await db.query(`
-            CREATE space_file CONTENT {
-                space: type::thing('data_space', $spaceId),
-                filename: $filename,
-                file_type: $file_type,
-                storage_path: $storage_path,
-                file_size_bytes: $file_size_bytes,
-                parsed_schema: $parsed_schema,
-                created_at: time::now()
-            }
-        `, {
-            spaceId: spaceId.split(':').pop(),
-            filename,
-            file_type,
-            storage_path,
-            file_size_bytes: file_size_bytes || 0,
-            parsed_schema: parsed_schema || {}
-        });
+        const [result] = await db.insert(spaceFiles)
+            .values({
+                spaceId: rawId,
+                filename,
+                fileType: file_type,
+                storagePath: storage_path,
+                fileSizeBytes: file_size_bytes || 0,
+                parsedSchema: parsed_schema || {}
+            })
+            .returning()
 
-        return c.json(result[0]);
+        return c.json(result);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -374,11 +373,12 @@ spaces.get("/:id/notes", async (c) => {
 
     try {
         const { id } = c.req.param()
-        const spaceIdPart = id.includes(':') ? id.split(':').pop() : id
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const [results] = await db.query("SELECT * FROM space_note WHERE space = type::thing('data_space', $spaceId) ORDER BY created_at DESC", {
-            spaceId: spaceIdPart
-        });
+        const results = await db.select()
+            .from(spaceNotes)
+            .where(eq(spaceNotes.spaceId, rawId))
+            .orderBy(sql`${spaceNotes.createdAt} DESC`)
 
         return c.json({ notes: results || [] });
     } catch (e) {
@@ -392,27 +392,20 @@ spaces.post("/:id/notes", async (c) => {
 
     try {
         const { id } = c.req.param()
-        const spaceId = id.includes(':') ? id : `data_space:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
         const body = await c.req.json()
         const { title, content, note_type } = body
 
-        const [result] = await db.query(`
-            CREATE space_note CONTENT {
-                space: type::thing('data_space', $spaceId),
-                title: $title,
-                content: $content,
-                note_type: $note_type || 'general',
-                created_at: time::now(),
-                updated_at: time::now()
-            }
-        `, {
-            spaceId: spaceId.split(':').pop(),
-            title: title || "Untitled Note",
-            content: content || "",
-            note_type: note_type || "general"
-        });
+        const [result] = await db.insert(spaceNotes)
+            .values({
+                spaceId: rawId,
+                title: title || "Untitled Note",
+                content: content || "",
+                noteType: note_type || "general"
+            })
+            .returning()
 
-        return c.json(result[0]);
+        return c.json(result);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -425,13 +418,17 @@ spaces.put("/notes/:noteId", async (c) => {
     try {
         const { noteId } = c.req.param()
         const body = await c.req.json()
-        const id = noteId.includes(':') ? noteId : `space_note:${noteId}`
+        const rawId = noteId.includes(':') ? noteId.split(':')[1] : noteId
 
-        const [result] = await db.query(`
-            UPDATE ${id} MERGE $body
-        `, { body: { ...body, updated_at: new Date() } });
+        const [result] = await db.update(spaceNotes)
+            .set({
+                ...body,
+                updatedAt: new Date()
+            })
+            .where(eq(spaceNotes.id, rawId))
+            .returning()
 
-        return c.json(result[0]);
+        return c.json(result);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -443,9 +440,9 @@ spaces.delete("/notes/:noteId", async (c) => {
 
     try {
         const { noteId } = c.req.param()
-        const id = noteId.includes(':') ? noteId : `space_note:${noteId}`
+        const rawId = noteId.includes(':') ? noteId.split(':')[1] : noteId
 
-        await db.query(`DELETE ${id}`);
+        await db.delete(spaceNotes).where(eq(spaceNotes.id, rawId))
         return c.json({ success: true });
     } catch (e) {
         return c.json({ error: e.message }, 500);

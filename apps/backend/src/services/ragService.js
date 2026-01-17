@@ -1,5 +1,7 @@
-import { db } from '../../db/surreal.js';
+import { db } from '../db/index.js';
+import { knowledgeChunks } from '../db/schema.js';
 import { aiClient } from '../../ai/AIClient.js';
+import { eq, and, sql } from 'drizzle-orm';
 
 export class RAGService {
     /**
@@ -49,7 +51,7 @@ export class RAGService {
     }
 
     /**
-     * Indexes text chunks into SurrealDB.
+     * Indexes text chunks into Neon/PostgreSQL.
      */
     static async indexChunks(chunks, metadata, userId, modelId = 'openai') {
         if (!db) return;
@@ -61,16 +63,15 @@ export class RAGService {
                 // 1. Generate Embedding
                 const embedding = await aiClient.generateEmbedding(content, modelId);
 
-                // 2. Store in SurrealDB
-                await db.create('knowledge_chunk', {
+                // 2. Store in Neon
+                await db.insert(knowledgeChunks).values({
                     content,
                     embedding,
                     metadata: {
                         ...metadata,
                         indexed_at: new Date().toISOString()
                     },
-                    user: `user:${userId}`,
-                    created_at: new Date().toISOString()
+                    userId: userId,
                 });
             } catch (e) {
                 console.error(`[RAG] Failed to index chunk:`, e.message);
@@ -79,7 +80,7 @@ export class RAGService {
     }
 
     /**
-     * Hybrid Search: Combines Vector (Semantic) and FTS (Keyword)
+     * Hybrid Search: Combines Vector (Semantic) and Keyword
      */
     static async hybridSearch(query, userId, limit = 5, modelId = 'openai') {
         if (!db) return [];
@@ -88,29 +89,23 @@ export class RAGService {
             // 1. Vectorize Query
             const queryVector = await aiClient.generateEmbedding(query, modelId);
 
-            // 2. Perform Hybrid Search in SurrealDB
-            // We use SurrealQL to combine vector similarity and BM25 ranking
-            const results = await db.query(`
-                SELECT 
-                    *,
-                    vector::similarity::cosine(embedding, $vector) AS score
-                FROM knowledge_chunk
-                WHERE 
-                    user = $user
-                    AND (
-                        embedding <|1536|> $vector  -- Vector similarity
-                        OR string::lowercase(content) CONTAINS string::lowercase($query) -- Keyword fallback
-                    )
-                ORDER BY score DESC
-                LIMIT $limit
-            `, {
-                vector: queryVector,
-                user: `user:${userId}`,
-                query: query,
-                limit: limit
-            });
+            // 2. Perform Hybrid Search in Neon
+            // Using pgvector's cosine distance operator <=> (or cosine similarity 1 - (embedding <=> $1))
+            const results = await db.select({
+                id: knowledgeChunks.id,
+                content: knowledgeChunks.content,
+                metadata: knowledgeChunks.metadata,
+                score: sql < number > `1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector)`
+            })
+                .from(knowledgeChunks)
+                .where(and(
+                    eq(knowledgeChunks.userId, userId),
+                    sql`${knowledgeChunks.content} ILIKE ${'%' + query + '%'}` // Keyword fallback
+                ))
+                .orderBy(sql`${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector`)
+                .limit(limit);
 
-            return results[0] || [];
+            return results || [];
         } catch (e) {
             console.error(`[RAG] Search failed: `, e.message);
             return [];
@@ -121,13 +116,13 @@ export class RAGService {
      * Deletes existing chunks for a specific source to allow re-indexing.
      */
     static async clearSource(sourceId, userId) {
-        await db.query(`
-            DELETE knowledge_chunk 
-            WHERE user = $user AND metadata.source_id = $sourceId
-                `, {
-            user: `user:${userId} `,
-            sourceId: sourceId
-        });
+        // Drizzle doesn't support deep JSON filtering easily in all abstraction levels, 
+        // so we use a raw where condition for depth or exact match if structure allows.
+        await db.delete(knowledgeChunks)
+            .where(and(
+                eq(knowledgeChunks.userId, userId),
+                sql`${knowledgeChunks.metadata}->>'source_id' = ${sourceId}`
+            ));
     }
 
     /**

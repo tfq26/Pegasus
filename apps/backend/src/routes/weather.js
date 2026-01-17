@@ -1,5 +1,7 @@
 import { Hono } from "hono"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { weatherCache } from "../db/schema.js"
+import { eq, gt } from "drizzle-orm"
 import { APIService, API_DEFAULTS } from "../services/APIService.js"
 import { getAuthToken } from "../../lib/auth.js"
 
@@ -10,7 +12,9 @@ export const weatherService = new APIService(API_DEFAULTS.WEATHER);
 
 weather.get("/", async (c) => {
     try {
-        const [results] = await db.query("SELECT * FROM weather_data ORDER BY updated_at DESC");
+        const results = await db.query.weatherCache.findMany({
+            orderBy: (weather, { desc }) => [desc(weather.cachedAt)]
+        });
         return c.json({ weather: results });
     } catch (e) {
         return c.json({ error: e.message }, 500);
@@ -18,7 +22,7 @@ weather.get("/", async (c) => {
 });
 
 /**
- * Sync weather data for a location and cache in SurrealDB
+ * Sync weather data for a location and cache in Neon
  * Used by weather widgets to ensure fresh data
  */
 weather.post("/sync/:location", async (c) => {
@@ -32,29 +36,30 @@ weather.post("/sync/:location", async (c) => {
         console.log(`[Weather] Syncing data for location: ${location}`);
 
         // Check if we have valid cached data
-        const [cached] = await db.query(`
-            SELECT * FROM weather_cache 
-            WHERE location = $loc AND expires_at > time::now()
-            LIMIT 1;
-        `, { loc: location });
+        const cached = await db.query.weatherCache.findFirst({
+            where: and(
+                eq(weatherCache.location, location),
+                gt(weatherCache.expiresAt, new Date())
+            )
+        });
 
-        if (cached && cached[0]) {
+        if (cached) {
             console.log(`[Weather] Using cached data for ${location}`);
-            return c.json({ cached: true, data: cached[0] });
+            return c.json({ cached: true, data: cached });
         }
 
         // Fetch fresh data from API
         let apiKey = process.env.OPENWEATHER_API_KEY;
         const elementId = c.req.query("elementId");
 
-        if (elementId) {
-            const { SecretService } = await import("../services/SecretService.js");
-            const customKey = await SecretService.getSecret(payload.sub, `widget_secret_${elementId}`);
-            if (customKey) {
-                console.log(`[Weather] Using custom API key for widget ${elementId}`);
-                apiKey = customKey;
-            }
-        }
+        // if (elementId) {
+        //     const { SecretService } = await import("../services/SecretService.js");
+        //     const customKey = await SecretService.getSecret(payload.sub, `widget_secret_${elementId}`);
+        //     if (customKey) {
+        //         console.log(`[Weather] Using custom API key for widget ${elementId}`);
+        //         apiKey = customKey;
+        //     }
+        // }
 
         if (!apiKey) {
             return c.json({ error: "Weather API key not configured" }, 500);
@@ -94,51 +99,32 @@ weather.post("/sync/:location", async (c) => {
         }
 
         // Cache the data (expires in 10 minutes)
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-        await db.query(`
-            INSERT INTO weather_cache (
-                location, 
-                temp, 
-                feels_like, 
-                condition, 
-                icon, 
-                humidity, 
-                wind_speed, 
-                forecast, 
-                expires_at
-            )
-            VALUES (
-                $location, 
-                $temp, 
-                $feels_like, 
-                $condition, 
-                $icon, 
-                $humidity, 
-                $wind_speed, 
-                $forecast, 
-                $expires_at
-            )
-            ON DUPLICATE KEY UPDATE
-                temp = $temp,
-                feels_like = $feels_like,
-                condition = $condition,
-                icon = $icon,
-                humidity = $humidity,
-                wind_speed = $wind_speed,
-                forecast = $forecast,
-                cached_at = time::now(),
-                expires_at = $expires_at;
-        `, {
+        await db.insert(weatherCache).values({
             location,
             temp: data.main.temp,
-            feels_like: data.main.feels_like,
+            feelsLike: data.main.feels_like,
             condition: data.weather[0].main,
             icon: `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`,
             humidity: data.main.humidity,
-            wind_speed: data.wind.speed,
+            windSpeed: data.wind.speed,
             forecast,
-            expires_at: expiresAt
+            expiresAt,
+            cachedAt: new Date()
+        }).onConflictDoUpdate({
+            target: weatherCache.location,
+            set: {
+                temp: data.main.temp,
+                feelsLike: data.main.feels_like,
+                condition: data.weather[0].main,
+                icon: `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`,
+                humidity: data.main.humidity,
+                windSpeed: data.wind.speed,
+                forecast,
+                expiresAt,
+                cachedAt: new Date()
+            }
         });
 
         console.log(`[Weather] Cached fresh data for ${location}`);

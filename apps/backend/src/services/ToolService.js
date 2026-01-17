@@ -1,4 +1,6 @@
-import { db } from "../../db/surreal.js";
+import { db } from "../db/index.js";
+import { stocksTable, customTools } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
 /**
  * ToolService manages external API integrations and tool definitions for the AI.
@@ -22,16 +24,15 @@ export class ToolService {
                 required: ["symbol"]
             },
             handler: async ({ symbol }) => {
-                // In a real app, we'd call Alpha Vantage or Yahoo Finance
-                // For now, we'll interface with our StockService's simulated data in SurrealDB
-                const id = `stock:${symbol.toUpperCase()}`;
-                const [results] = await db.query(`SELECT * FROM ${id}`);
+                const result = await db.query.stocksTable.findFirst({
+                    where: eq(stocksTable.symbol, symbol.toUpperCase())
+                });
 
-                if (!results || results.length === 0) {
+                if (!result) {
                     return { error: `Stock symbol ${symbol} not found.` };
                 }
 
-                return results[0];
+                return result;
             }
         });
 
@@ -47,10 +48,8 @@ export class ToolService {
                 required: ["city"]
             },
             handler: async ({ city }) => {
-                // Check if OPENWEATHER_API_KEY is available
                 const apiKey = process.env.OPENWEATHER_API_KEY;
                 if (!apiKey) {
-                    // Fallback simulation if no API key
                     return {
                         city,
                         temperature: "22°C",
@@ -101,36 +100,31 @@ export class ToolService {
 
     /**
      * Allows users to register their own custom API tools.
-     * This would ideally persist in the database linked to the user.
      */
     async registerCustomTool(userId, config) {
-        // Validation: Ensure URL is provided and safe
         if (!config.url || !config.url.startsWith('https://')) {
             throw new Error("Custom tool URL must use HTTPS.");
         }
 
-        const toolId = `tool_${crypto.randomUUID().replace(/-/g, '')}`;
-
-        await db.create('custom_tool', {
-            id: toolId,
-            user: `user:${userId}`,
+        const [result] = await db.insert(customTools).values({
+            userId,
             name: config.name,
             description: config.description,
             url: config.url,
             method: config.method || 'GET',
             headers: config.headers || {},
             parameters: config.parameters || {},
-            created_at: new Date().toISOString()
-        });
+            createdAt: new Date()
+        }).returning();
 
-        return { toolId, name: config.name };
+        return { toolId: result.id, name: result.name };
     }
 
     async getCustomTools(userId) {
-        const [tools] = await db.query(`SELECT * FROM custom_tool WHERE user = $user`, {
-            user: `user:${userId}`
+        const results = await db.query.customTools.findMany({
+            where: eq(customTools.userId, userId)
         });
-        return tools || [];
+        return results || [];
     }
 }
 

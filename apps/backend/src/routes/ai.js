@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { aiClient } from '../../ai/AIClient.js';
 import { EntitlementService } from '../services/EntitlementService.js';
-import { db } from '../../db/surreal.js';
+import { db } from '../db/index.js';
 import { secretService } from '../services/SecretService.js';
 
 const aiRoutes = new Hono();
@@ -76,7 +76,6 @@ aiRoutes.get('/models', async (c) => {
         const models = await aiClient.listModels(userId);
 
         // Filter based on entitlement
-        // If NOT enterprise, filter out ANY model that starts with aws:, azure:, gcp:
         const hasByomAccess = await entitlementService.hasFeature(userId, 'byom_models');
 
         const visibleModels = models.map(m => {

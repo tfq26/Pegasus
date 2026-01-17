@@ -1,11 +1,12 @@
-import { Hono } from "hono"
-import { verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { stocksTable, stockHistory, stockTransactions, users } from "../db/schema.js"
+import { eq, inArray, and, asc, desc } from "drizzle-orm"
 import { stockService } from "../services/StockService.js"
 import { getAuthToken } from "../../lib/auth.js"
+import { ConfigService } from "../services/ConfigService.js"
 
 const stocks = new Hono()
-const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production"
+const jwtSecret = ConfigService.getJwtSecret()
 
 // Tracking manual refresh cooldowns per user
 const userRefreshCooldowns = new Map();
@@ -43,11 +44,8 @@ stocks.post("/cleanup", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
-        // Reset the market data by deleting records, not the table itself
-        await db.query(`
-            DELETE stock;
-            DELETE stock_history;
-        `);
+        await db.delete(stocksTable);
+        await db.delete(stockHistory);
 
         return c.json({ ok: true, message: "Market data reset. Click SYNC again to repopulate." });
     } catch (e) {
@@ -57,7 +55,9 @@ stocks.post("/cleanup", async (c) => {
 
 stocks.get("/", async (c) => {
     try {
-        const [results] = await db.query("SELECT * FROM stock ORDER BY symbol ASC");
+        const results = await db.query.stocksTable.findMany({
+            orderBy: [asc(stocksTable.symbol)]
+        });
         return c.json({ stocks: results });
     } catch (e) {
         return c.json({ error: e.message }, 500);
@@ -80,8 +80,11 @@ stocks.post("/refresh", async (c) => {
         const userId = payload.sub;
 
         // Determine user tier
-        const [user] = await db.query(`SELECT subscription_tier FROM user:${userId}`);
-        const tier = user[0]?.subscription_tier || 'free';
+        const user = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { subscriptionTier: true }
+        });
+        const tier = user?.subscriptionTier || 'free';
         const cooldown = tier === 'pro' ? COOLDOWN_PRO : COOLDOWN_FREE;
 
         const now = Date.now();
@@ -108,18 +111,19 @@ stocks.get("/portfolio", async (c) => {
 
     try {
         const payload = await verify(token, jwtSecret)
-        const userId = `user:${payload.sub}`
+        const userId = payload.sub
 
         // 1. Get all transactions for this user
-        const [transactions] = await db.query(`
-            SELECT * FROM stock_transaction 
-            WHERE user = $user 
-            ORDER BY date ASC
-        `, { user: userId });
+        const transactions = await db.query.stockTransactions.findMany({
+            where: eq(stockTransactions.userId, userId),
+            orderBy: [asc(stockTransactions.date)]
+        });
 
         // 2. Fetch all unique stocks involved to get current prices
         const symbols = [...new Set(transactions.map(t => t.symbol))];
-        const [currentStocks] = await db.query(`SELECT * FROM stock WHERE symbol IN $symbols`, { symbols });
+        const currentStocks = await db.query.stocksTable.findMany({
+            where: inArray(stocksTable.symbol, symbols)
+        });
         const stockMap = currentStocks.reduce((map, s) => {
             map[s.symbol] = s;
             return map;
@@ -203,20 +207,19 @@ stocks.get("/history/:symbol", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
-        // Sanitize for query
-        const safeId = symbol.replace(/\./g, '_');
-
         // Fetch real history
-        const [history] = await db.query(`
-            SELECT date, price FROM stock_history 
-            WHERE symbol = $symbol 
-            ORDER BY date ASC
-        `, { symbol });
+        const history = await db.query.stockHistory.findMany({
+            where: eq(stockHistory.symbol, symbol),
+            orderBy: [asc(stockHistory.date)]
+        });
 
         // If no history exists, generate an estimated trend based on current price
         if (!history || history.length === 0) {
-            const [stock] = await db.query(`SELECT price FROM stock:${safeId}`);
-            const currentPrice = stock?.[0]?.price || 100;
+            const stock = await db.query.stocksTable.findFirst({
+                where: eq(stocksTable.symbol, symbol),
+                columns: { price: true }
+            });
+            const currentPrice = stock?.price || 100;
 
             // Generate 30 points of realistic noise
             const estimatedHistory = [];
@@ -246,11 +249,12 @@ stocks.get("/history/:symbol", async (c) => {
 
 stocks.get("/:symbol", async (c) => {
     const symbol = c.req.param("symbol");
-    const safeId = symbol.replace(/\./g, '_');
     try {
-        const [results] = await db.query(`SELECT * FROM stock:${safeId}`);
-        if (!results || results.length === 0) return c.json({ error: "Stock not found" }, 404);
-        return c.json(results[0]);
+        const result = await db.query.stocksTable.findFirst({
+            where: eq(stocksTable.symbol, symbol)
+        });
+        if (!result) return c.json({ error: "Stock not found" }, 404);
+        return c.json(result);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -263,34 +267,27 @@ stocks.post("/transaction", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const { symbol, quantity, price, type, date } = await c.req.json()
-        const userId = `user:${payload.sub}`
+        const userId = payload.sub
 
-        const [stock] = await db.query(`SELECT name FROM stock WHERE symbol = $symbol`, { symbol });
-        const stockName = stock[0]?.name || symbol;
+        const stock = await db.query.stocksTable.findFirst({
+            where: eq(stocksTable.symbol, symbol),
+            columns: { name: true }
+        });
+        const stockName = stock?.name || symbol;
 
         // Record the transaction
-        const result = await db.query(`
-            CREATE stock_transaction CONTENT {
-                user: $user,
-                symbol: $symbol,
-                name: $name,
-                quantity: $quantity,
-                price: $price,
-                type: $type,
-                date: $date || time::now(),
-                created_at: time::now()
-            }
-        `, {
-            user: userId,
+        const [result] = await db.insert(stockTransactions).values({
+            userId,
             symbol,
             name: stockName,
             quantity,
             price,
             type, // BUY or SELL
-            date
-        });
+            date: date ? new Date(date) : new Date(),
+            createdAt: new Date()
+        }).returning();
 
-        return c.json({ ok: true, transaction: result[0] });
+        return c.json({ ok: true, transaction: result });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }

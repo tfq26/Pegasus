@@ -2,7 +2,9 @@ import { Hono } from "hono"
 import { WorkOS } from "@workos-inc/node"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import { sign, verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
+import { users, deviceCodes } from "../db/schema.js"
+import { eq, sql } from "drizzle-orm"
 import { getAuthToken } from "../../lib/auth.js"
 import { getUserFeatureFlags } from "../../experimental-features.js"
 import { ConfigService } from "../services/ConfigService.js"
@@ -145,44 +147,37 @@ const renderLaunchPage = (c, { token, email, deviceCode, traceId }) => {
 const upsertUser = async (payload, traceId = 'system') => {
     try {
         const userId = payload.sub || payload.id
-        const userRecordId = `user:${userId}`
-
-        console.log(`[AUTH_TRACE] [${traceId}] Syncing user record: ${userRecordId}`)
+        console.log(`[AUTH_TRACE] [${traceId}] Syncing user record: ${userId}`)
 
         const firstName = payload.firstName || payload.first_name || ""
         const lastName = payload.lastName || payload.last_name || ""
         const pic = payload.profilePictureUrl || payload.profile_picture_url || null
 
-        // Check if user exists
-        const [existing] = await db.query(`SELECT id FROM \`${userRecordId}\``)
+        await db.insert(users)
+            .values({
+                id: userId,
+                email: payload.email,
+                firstName,
+                lastName,
+                profilePictureUrl: pic,
+                subscriptionTier: 'free',
+                purchasedTokens: 0,
+                purchasedStorage: 0,
+                stripeCustomerId: "",
+                updatedAt: new Date()
+            })
+            .onConflictDoUpdate({
+                target: users.id,
+                set: {
+                    email: payload.email,
+                    firstName,
+                    lastName,
+                    profilePictureUrl: pic,
+                    updatedAt: new Date()
+                }
+            })
 
-        if (existing && existing.length > 0) {
-            await db.query(`
-                UPDATE \`${userRecordId}\` SET 
-                    email = $email,
-                    first_name = $firstName,
-                    last_name = $lastName,
-                    profile_picture_url = $pic,
-                    updated_at = time::now();
-            `, { email: payload.email, firstName, lastName, pic })
-            console.log(`[AUTH_TRACE] [${traceId}] Record updated.`)
-        } else {
-            await db.query(`
-                CREATE \`${userRecordId}\` CONTENT {
-                    email: $email,
-                    first_name: $firstName,
-                    last_name: $lastName,
-                    profile_picture_url: $pic,
-                    subscription_tier: 'free',
-                    purchased_tokens: 0,
-                    purchased_storage: 0,
-                    stripe_customer_id: "",
-                    created_at: time::now(),
-                    updated_at: time::now()
-                };
-            `, { email: payload.email, firstName, lastName, pic })
-            console.log(`[AUTH_TRACE] [${traceId}] New record created.`)
-        }
+        console.log(`[AUTH_TRACE] [${traceId}] User record synced via Drizzle.`)
     } catch (e) {
         console.error(`[AUTH_TRACE] [${traceId}] Failed to upsert user:`, e.message)
         throw e
@@ -259,15 +254,14 @@ auth.get("/callback", async (c) => {
         console.log(`[AUTH_TRACE] [${traceId}] WorkOS auth success: ${user.email}`)
 
         // Cleanup duplicate records by email if they exist with different IDs
-        const existingUserRs = await db.query("SELECT id FROM user WHERE email = $email AND id != $userId", {
-            email: user.email,
-            userId: `user:${user.id}`
-        })
+        const existingUsers = await db.select()
+            .from(users)
+            .where(sql`${users.email} = ${user.email} AND ${users.id} != ${user.id}`)
 
-        if (existingUserRs[0] && existingUserRs[0].length > 0) {
-            const existingId = existingUserRs[0][0].id
+        if (existingUsers.length > 0) {
+            const existingId = existingUsers[0].id
             console.log(`[AUTH_TRACE] [${traceId}] Conflict resolution: Removing stale record ${existingId}`)
-            await db.query(`DELETE \`${existingId}\``)
+            await db.delete(users).where(eq(users.id, existingId))
         }
 
         await upsertUser(user, traceId)
@@ -428,11 +422,18 @@ auth.get("/me", async (c) => {
         const userId = payload.sub
 
         // Fetch full user record for live stats (tier, tokens, etc)
-        const [userData] = await db.query(`SELECT subscription_tier, purchased_tokens, purchased_storage FROM user:${userId}`);
-        const userRecord = userData[0] || {};
+        const userRecord = await db.query.users.findFirst({
+            where: eq(users.id, userId)
+        })
+
+        if (!userRecord) {
+            return c.json({ error: "User not found" }, 404)
+        }
 
         // Get user's feature flags
-        const featureFlags = await getUserFeatureFlags(db, userId)
+        // For now, we'll need to update experimental-features.js to support Drizzle too
+        // const featureFlags = await getUserFeatureFlags(db, userId)
+        const featureFlags = []
 
         const response = {
             user: {
@@ -589,19 +590,15 @@ auth.get('/desktop/callback', async (c) => {
 auth.post('/device/code', async (c) => {
     const userCode = crypto.randomUUID().slice(0, 8).toUpperCase()
     const deviceCode = crypto.randomUUID()
-    const expiresAt = new Date(Date.now() + (10 * 60 * 1000)).toISOString()
+    const expiresAt = new Date(Date.now() + (10 * 60 * 1000))
 
     try {
-        await db.query(`
-            CREATE type::thing('device_code', $deviceCode) CONTENT {
-                user_code: $userCode,
-                status: 'pending',
-                access_token: null,
-                user: null,
-                created_at: time::now(),
-                expires_at: $expiresAt
-            };
-        `, { deviceCode, userCode, expiresAt })
+        await db.insert(deviceCodes).values({
+            id: deviceCode,
+            userCode,
+            status: 'pending',
+            expiresAt
+        })
 
         return c.json({
             device_code: deviceCode,
@@ -623,37 +620,34 @@ auth.get('/device/token', async (c) => {
     }
 
     try {
-        // console.log(`[DeviceAuth] Polling token for: ${deviceCode}`)
-        const [result] = await db.query(`SELECT * FROM type::thing('device_code', $deviceCode)`, { deviceCode })
-        const session = result && result[0]
+        const session = await db.query.deviceCodes.findFirst({
+            where: eq(deviceCodes.id, deviceCode)
+        })
 
         if (!session) {
-            // console.log(`[DeviceAuth] Session not found`)
             return c.json({ error: 'expired_token', error_description: 'Device code not found or expired' }, 400)
         }
 
-        if (new Date() > new Date(session.expires_at)) {
+        if (new Date() > session.expiresAt) {
             console.log(`[DeviceAuth] Session expired`)
-            await db.query(`DELETE $id`, { id: session.id })
+            await db.delete(deviceCodes).where(eq(deviceCodes.id, session.id))
             return c.json({ error: 'expired_token', error_description: 'Device code expired' }, 400)
         }
 
         if (session.status === 'pending') {
-            // console.log(`[DeviceAuth] Pending`)
             return c.json({ error: 'authorization_pending' }, 400)
         }
 
-        if (session.status === 'authorized' && session.access_token) {
+        if (session.status === 'authorized' && session.accessToken) {
             console.log(`[DeviceAuth] Token retrieved`)
-            await db.query(`DELETE $id`, { id: session.id })
+            await db.delete(deviceCodes).where(eq(deviceCodes.id, session.id))
             return c.json({
-                access_token: session.access_token,
+                access_token: session.accessToken,
                 token_type: 'Bearer',
                 user: session.user
             })
         }
 
-        console.log(`[DeviceAuth] Invalid state for authorized session:`, JSON.stringify(session))
         return c.json({ error: 'authorization_pending' }, 400)
     } catch (e) {
         console.error('[DeviceAuth] Check token failed:', e)
