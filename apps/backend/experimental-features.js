@@ -41,7 +41,13 @@ export const EXPERIMENTAL_FEATURES = {
     }
 }
 
-// Get user's experimental status
+// Initialize experimental tables
+export async function initExperimentalTables(database) {
+    // This function can be expanded to run migrations or seed data
+    console.log('[Experimental] Tables initialized');
+    return true;
+}
+
 export async function getExperimentalStatus(database, userId, jwtPayload = null) {
     try {
         // 1. Check WorkOS user metadata first

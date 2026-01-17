@@ -9,7 +9,7 @@ import { canCreateConnection } from "../../lib/tierLimits.js"
 import { ConfigService } from "../services/ConfigService.js"
 import { SyncService } from "../services/SyncService.js"
 
-const connections = new Hono()
+const router = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
 
 // Helper
@@ -43,7 +43,7 @@ const upsertUser = async (payload) => {
     }
 }
 
-connections.get("/", async (c) => {
+router.get("/", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -81,7 +81,7 @@ connections.get("/", async (c) => {
     }
 });
 
-connections.post("/", async (c) => {
+router.post("/", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -155,7 +155,7 @@ connections.post("/", async (c) => {
     }
 });
 
-connections.put("/:id", async (c) => {
+router.put("/:id", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
     const id = c.req.param("id")
@@ -213,7 +213,7 @@ connections.put("/:id", async (c) => {
     }
 });
 
-connections.delete("/:id", async (c) => {
+router.delete("/:id", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -230,4 +230,4 @@ connections.delete("/:id", async (c) => {
     }
 });
 
-export { connections as connectionRoutes }
+export { router as connectionRoutes }
