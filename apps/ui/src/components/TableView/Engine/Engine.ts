@@ -2,7 +2,7 @@ import type { CellPosition, CellData, EngineConfig, Note, NoteEntityType, UserPr
 import { CellType, posToKey } from './types';
 import { DependencyGraph } from './DependencyGraph';
 import { FormulaParser } from './FormulaParser';
-import { UndoManager } from './UndoManager';
+import { UndoManager, SetValueCommand } from './UndoManager';
 import { ChangeTracker } from './ChangeTracker';
 import { buildConnectionPayload } from '../../../lib/db-connections';
 import { ColumnStore } from './ColumnStore';
@@ -65,6 +65,7 @@ export class Engine {
     public editOverlay: EditOverlay;
     private virtualProvider: VirtualDataProvider;
     private syncManager: SyncManager | null = null;
+    private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Core Data Stores
     public isVirtualized: boolean = false;
@@ -740,6 +741,38 @@ export class Engine {
     }
 
     /**
+     * Schedule an auto-save after a debounce period
+     */
+    private scheduleAutoSave() {
+        if (this.autoSaveTimer) {
+            clearTimeout(this.autoSaveTimer);
+        }
+
+        // Debounce: wait 2 seconds of inactivity before saving
+        this.autoSaveTimer = setTimeout(() => {
+            this.autoSave();
+        }, 2000);
+    }
+
+    /**
+     * Perform auto-save (background, non-blocking)
+     */
+    private async autoSave() {
+        if (!this.hasSource() || !this.hasPendingModifications()) {
+            return;
+        }
+
+        console.log('[Engine] Auto-saving...');
+        try {
+            await this.commit();
+            console.log('[Engine] Auto-save complete');
+        } catch (e) {
+            console.error('[Engine] Auto-save failed:', e);
+            // Don't throw - auto-save is silent
+        }
+    }
+
+    /**
      * Check if the engine has a backing database source
      */
     public hasSource(): boolean {
@@ -994,7 +1027,8 @@ export class Engine {
      * @param silent - If true, don't trigger onChange callbacks (useful during editing)
      * @param source - Source of the edit ('local' or 'remote')
      */
-    public async setValue(pos: CellPosition, input: string, silent: boolean = false, source: 'local' | 'remote' = 'local') {
+    public setValue(pos: CellPosition, input: string, silent: boolean = false, source: 'local' | 'remote' = 'local') {
+        console.log('[Engine.setValue] pos:', pos, 'input:', input, 'silent:', silent);
         const key = posToKey(pos);
 
         // Record undo command (unless this is an undo/redo operation itself)
@@ -1006,10 +1040,15 @@ export class Engine {
             }
 
             const oldValue = this.getCell(pos)?.rawInput || '';
-            const { SetValueCommand } = await import('./UndoManager');
             const command = new SetValueCommand(this, pos, input, oldValue);
             this.undoManager.execute(command);
-            return; // Command.execute() will call setValue again with silent=true
+
+            // Notify change after the command executes to trigger re-render
+            this.notifyChange();
+
+            // Auto-save after a short delay
+            this.scheduleAutoSave();
+            return;
         }
 
         // 1. Clear old dependencies
@@ -1056,7 +1095,7 @@ export class Engine {
         // 4. Recalculate Dependents
         const dependents = this.graph.getDependents(pos);
         for (const dep of dependents) {
-            await this.recalculate(dep);
+            this.recalculate(dep);
         }
 
         // 5. Notify change
@@ -1102,7 +1141,7 @@ export class Engine {
         return rowData;
     }
 
-    private async recalculate(pos: CellPosition) {
+    private recalculate(pos: CellPosition) {
         const key = posToKey(pos);
         const cell = this.cells.get(key);
         if (!cell || cell.type !== CellType.FORMULA) return;

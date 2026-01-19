@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { verify } from "hono/jwt"
-import { db } from "../../db/surreal.js"
+import { db } from "../db/index.js"
 import { aiClient } from "../../ai/AIClient.js"
 import { toolService } from "../services/ToolService.js"
 import { getUserFeatureFlags } from "../../experimental-features.js"

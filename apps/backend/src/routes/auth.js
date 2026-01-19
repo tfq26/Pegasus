@@ -298,66 +298,6 @@ auth.get("/callback", async (c) => {
     } catch (error) {
         console.error(`[AUTH_TRACE] [${traceId}] Auth failure:`, error.message)
 
-        // Check if this is a database token expiration error
-        const isDatabaseError = error.message?.toLowerCase().includes('token has expired') ||
-            error.message?.toLowerCase().includes('token expired');
-
-        if (isDatabaseError) {
-            console.log(`[AUTH_TRACE] [${traceId}] Database token expired, attempting recovery...`);
-            try {
-                // Import and use ensureConnection to re-authenticate
-                const { ensureConnection } = await import('../../db/surreal.js');
-                await ensureConnection();
-
-                // Retry the user creation once after reconnection
-                console.log(`[AUTH_TRACE] [${traceId}] Retrying after database reconnection...`);
-                const { user } = await workos.userManagement.authenticateWithCode({
-                    code,
-                    clientId,
-                    redirectUri,
-                });
-
-                // Process the user again
-                const existingUserRs = await db.query("SELECT id FROM user WHERE email = $email AND id != $userId", {
-                    email: user.email,
-                    userId: `user:${user.id}`
-                });
-
-                if (existingUserRs[0] && existingUserRs[0].length > 0) {
-                    const existingId = existingUserRs[0][0].id;
-                    console.log(`[AUTH_TRACE] [${traceId}] Conflict resolution: Removing stale record ${existingId}`);
-                    await db.query(`DELETE ${existingId}`);
-                }
-
-                await upsertUser(user, traceId);
-
-                const payload = {
-                    sub: user.id,
-                    email: user.email,
-                    firstName: user.firstName,
-                    lastName: user.lastName,
-                    profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null,
-                    organizationName: user.organizationName || user.organization?.name || null,
-                    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 Days
-                };
-
-                const token = await sign(payload, jwtSecret);
-
-                const returnTo = getCookie(c, "auth_return_to");
-                if (returnTo) {
-                    deleteCookie(c, "auth_return_to", { path: '/', secure: isProduction });
-                }
-
-                return finalizeLogin(c, { token, user, traceId, returnTo });
-            } catch (retryError) {
-                console.error(`[AUTH_TRACE] [${traceId}] Retry failed:`, retryError.message);
-                const frontendUrl = ConfigService.getFrontendUrl();
-                return c.redirect(`${frontendUrl}/login?error=${encodeURIComponent('Authentication failed after database recovery. Please try again.')}`);
-            }
-        }
-
-        // For non-database errors, redirect with the original error
-        const frontendUrl = ConfigService.getFrontendUrl();
         return c.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error.message)}`);
     }
 })
@@ -666,13 +606,9 @@ auth.post('/device/authorize', async (c) => {
     }
 
     try {
-        // Find session by device code (the record ID)
-        console.log(`[DeviceAuth] Looking up record for code: ${device_code}`)
-
-        const [result] = await db.query(`SELECT * FROM type::thing('device_code', $deviceCode)`, { deviceCode: device_code })
-        console.log(`[DeviceAuth] Query result:`, JSON.stringify(result))
-
-        const session = result && result[0]
+        const session = await db.query.deviceCodes.findFirst({
+            where: eq(deviceCodes.id, device_code)
+        });
 
         if (!session) {
             console.log('[DeviceAuth] Session not found')
@@ -686,11 +622,13 @@ auth.post('/device/authorize', async (c) => {
 
         // Update session
         console.log(`[DeviceAuth] Authorizing session: ${session.id}`)
-        await db.query(`UPDATE $id SET status = 'authorized', access_token = $accessToken, user = $user`, {
-            id: session.id,
-            accessToken: token,
-            user
-        })
+        await db.update(deviceCodes)
+            .set({
+                status: 'authorized',
+                accessToken: token,
+                user
+            })
+            .where(eq(deviceCodes.id, session.id));
 
         console.log('[DeviceAuth] Session authorized successfully')
         return c.json({ success: true, message: 'Device authorized! You can close this window.' })
@@ -705,11 +643,11 @@ auth.get('/device/verify', async (c) => {
 
     if (code) {
         try {
-            const [result] = await db.query(`SELECT * FROM device_code WHERE user_code = $code AND status = 'pending'`, {
-                code: code.toUpperCase()
+            const result = await db.query.deviceCodes.findFirst({
+                where: and(eq(deviceCodes.userCode, code.toUpperCase()), eq(deviceCodes.status, 'pending'))
             })
 
-            if (result && result.length > 0) {
+            if (result) {
                 return c.json({ valid: true, code: code.toUpperCase() })
             }
         } catch (e) {

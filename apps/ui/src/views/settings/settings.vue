@@ -31,6 +31,10 @@
 
     <main class="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
       <div class="flex-1 overflow-y-auto p-10 pb-24">
+        <section v-if="activeTab === 'profile'" class="fade-section">
+          <ProfileTab :preloaded-payments="profilePayments" />
+        </section>
+
         <section v-if="activeTab === 'general'" class="fade-section">
           <GeneralTab 
             :settings="settings" 
@@ -112,6 +116,7 @@ import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useColorMode } from '@vueuse/core'
 import { toast } from '@/composables/useNotifications'
 import GeneralTab from './GeneralTab.vue'
+import ProfileTab from './ProfileTab.vue'
 import AITab from './AITab.vue'
 import CloudTab from './CloudTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
@@ -136,6 +141,7 @@ const { subscriptionTier } = useEntitlements()
 
 const tabs = computed(() => {
   const list = [
+    { id: 'profile', label: 'Profile' },
     { id: 'general', label: 'General' },
     { id: 'ai', label: 'AI' },
     { id: 'database', label: 'Database Connections' },
@@ -154,7 +160,7 @@ const tabs = computed(() => {
   return list
 })
 
-const activeTab = ref('general')
+const activeTab = ref('profile')
 const isInitializing = ref(true)
 
 // Redirect if active tab becomes invalid (e.g. on plan downgrade)
@@ -238,6 +244,8 @@ const connectionForm = reactive<ConnectionFormState>({
   },
   isLocked: false
 })
+
+const profilePayments = ref<any[]>([])
 
 const canAddConnection = computed(() => connectionForm.nickname.trim().length > 0)
 const isEditMode = computed(() => editingConnectionId.value !== null)
@@ -545,11 +553,30 @@ onMounted(async () => {
     // Wait for auth to complete and token to be stored
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Load connections and settings in parallel
+    // Load connections, settings, and profile data in parallel
     // settingsStore.loadSettings handles loading and merging
     await Promise.all([
       loadConnections(),
-      settingsStore.loadSettings()
+      settingsStore.loadSettings(),
+      // Pre-load profile data
+      (async () => {
+         try {
+           // We use the global entitlements composable to fetch tiers/usage
+           const { fetchEntitlements } = useEntitlements()
+           await fetchEntitlements(true)
+           
+           // We fetch payments for the profile tab
+           // Using getPayments is fast (DB only). We skip syncPayments() here to avoid slowing down Settings load too much.
+           // ProfileTab can background sync if needed.
+           const { getPayments } = await import('@/lib/api') 
+           const res = await getPayments()
+           if (res.success) {
+             profilePayments.value = res.payments
+           }
+         } catch (err) {
+           console.error('[Settings] Failed to preload profile data:', err)
+         }
+      })()
     ])
 
     window.addEventListener('pegasus:connections-updated', connectionUpdateHandler)

@@ -38,6 +38,7 @@
     "azure-kusto-data": "^7.0.3",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.1",
+    "duckdb": "^1.4.3",
     "duckdb-async": "^1.4.2",
     "exceljs": "^4.4.0",
     "hono": "^4.10.6",

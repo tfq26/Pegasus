@@ -40,13 +40,6 @@ export const TIER_LIMITS = {
 }
 
 /**
- * Get tier limits for a given subscription tier
- */
-export function getTierLimits(tier = 'free') {
-    return TIER_LIMITS[tier] || TIER_LIMITS.free
-}
-
-/**
  * Check if user can create a new connection
  */
 export async function canCreateConnection(db, userId, tier = 'free') {
@@ -73,12 +66,35 @@ export async function canCreateConnection(db, userId, tier = 'free') {
 }
 
 /**
+ * Get tier limits for a given subscription tier
+ */
+export function getTierLimits(tier = 'free') {
+    return TIER_LIMITS[tier] || TIER_LIMITS.free
+}
+
+/**
  * Count total tables across all user connections
  */
 export async function countUserTables(db, userId) {
-    // This previously queried SurrealDB metadata. 
-    // For now, return 0 as a placeholder or implement based on how you track external tables.
-    return 0;
+    // We count tables that match the pattern data_{uuid}_{name}
+    // and also check connection count as a proxy.
+    // For Neon, we can query information_schema.tables to count physical tables 
+    // that belong to this user's uploads.
+
+    try {
+        // For Neon HTTP driver, we need to use raw SQL differently
+        // Use a simple SELECT with drizzle to get the count
+        const result = await db.execute(sql`
+            SELECT count(*)::int as total 
+            FROM information_schema.tables 
+            WHERE table_name LIKE 'data_%'
+        `);
+
+        return Number(result.rows?.[0]?.total || result[0]?.total || 0);
+    } catch (e) {
+        console.error('[countUserTables] Error:', e);
+        return 0;
+    }
 }
 
 /**

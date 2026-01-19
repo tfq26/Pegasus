@@ -1,4 +1,4 @@
-import { db } from "../../db/surreal.js";
+import { db } from "../db/index.js";
 import crypto from "crypto";
 
 export class ProvisioningService {

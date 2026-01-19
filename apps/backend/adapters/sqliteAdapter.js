@@ -54,6 +54,86 @@ export class SQLiteAdapter extends DatabaseAdapter {
     }
   }
 
+  /**
+   * Apply a batch of atomic operations (Spreadsheet delta updates)
+   */
+  async applyOperations(tableName, operations) {
+    console.log(`[SQLite] Applying ${operations.length} operations to ${tableName}`);
+    const queries = [];
+
+    for (const op of operations) {
+      switch (op.type) {
+        case 'full_replacement': {
+          queries.push(`DELETE FROM "${tableName}"`);
+          if (op.rows && op.rows.length > 0) {
+            for (const row of op.rows) {
+              const keys = Object.keys(row).filter(k => k !== '__id' && k !== '_rowid_');
+              const cols = keys.map(k => `"${k}"`).join(', ');
+              const vals = keys.map(k => row[k] === null ? 'NULL' : `'${String(row[k]).replace(/'/g, "''")}'`).join(', ');
+              queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`);
+            }
+          }
+          break;
+        }
+
+        case 'create': {
+          const data = op.data || {};
+          const keys = Object.keys(data).filter(k => k !== '__id' && k !== '_rowid_');
+          if (keys.length > 0) {
+            const cols = keys.map(k => `"${k}"`).join(', ');
+            const vals = keys.map(k => data[k] === null ? 'NULL' : `'${String(data[k]).replace(/'/g, "''")}'`).join(', ');
+            queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`);
+          }
+          break;
+        }
+
+        case 'update': {
+          const id = op.id;
+          const changes = op.changes || {};
+          const setClause = Object.keys(changes)
+            .filter(k => k !== '__id' && k !== '_rowid_')
+            .map(k => `"${k}" = ${changes[k] === null ? 'NULL' : `'${String(changes[k]).replace(/'/g, "''")}'`}`)
+            .join(', ');
+
+          if (setClause && id) {
+            // Check if id is number (rowid) or string (UUID)
+            const idValue = typeof id === 'number' ? id : `'${String(id).replace(/'/g, "''")}'`;
+            const idCol = typeof id === 'number' ? 'rowid' : 'id'; // Heuristic
+            queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE ${idCol} = ${idValue}`);
+          }
+          break;
+        }
+
+        case 'delete': {
+          if (op.id) {
+            const idValue = typeof op.id === 'number' ? op.id : `'${String(op.id).replace(/'/g, "''")}'`;
+            const idCol = typeof op.id === 'number' ? 'rowid' : 'id';
+            queries.push(`DELETE FROM "${tableName}" WHERE ${idCol} = ${idValue}`);
+          }
+          break;
+        }
+
+        case 'add_column': {
+          if (op.column) {
+            queries.push(`ALTER TABLE "${tableName}" ADD COLUMN "${op.column}" TEXT`);
+          }
+          break;
+        }
+
+        case 'drop_column': {
+          if (op.column) {
+            queries.push(`ALTER TABLE "${tableName}" DROP COLUMN "${op.column}"`);
+          }
+          break;
+        }
+      }
+    }
+
+    if (queries.length > 0) {
+      await this.batch(queries);
+    }
+  }
+
   async listCollections() {
     try {
       const result = await this.db.execute(

@@ -1,6 +1,8 @@
 import { Server } from "socket.io";
 import { verify, decode } from "hono/jwt";
-import { db } from "../db/surreal.js";
+import { db } from "./db/index.js";
+import { dashboards, notifications } from "./db/schema.js";
+import { eq, sql, and } from "drizzle-orm";
 import { createHmac } from "crypto";
 
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
@@ -8,7 +10,6 @@ const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_produ
 // Helper to normalize dashboard ID and room name
 export const getRoom = (id) => {
     if (!id) return null;
-    // Always take the last part of a colon-separated ID (handles dashboard:UUID or just UUID)
     const cleanId = id.toString().split(':').pop();
     return `dashboard:${cleanId}`;
 };
@@ -46,17 +47,14 @@ export function initSocketServer(server, allowedOrigins) {
 
     ioInstance = io;
 
-
     io.use(async (socket, next) => {
         let token = socket.handshake.auth.token || socket.handshake.query.token;
 
-        // Fallback to cookie if token is missing (useful for browser clients)
         if (!token && socket.handshake.headers.cookie) {
             const cookies = socket.handshake.headers.cookie.split(';');
             const sessionCookie = cookies.find(c => c.trim().startsWith('session='));
             if (sessionCookie) {
                 token = sessionCookie.split('=')[1].trim();
-                // console.log('[Socket.io] Using token from session cookie');
             }
         }
 
@@ -66,7 +64,6 @@ export function initSocketServer(server, allowedOrigins) {
         }
 
         try {
-            // First try standard verification
             const payload = await verify(token, jwtSecret);
             socket.user = {
                 id: payload.sub,
@@ -77,12 +74,9 @@ export function initSocketServer(server, allowedOrigins) {
             };
             next();
         } catch (err) {
-            // Handle expired tokens gracefully for WebSockets
             if (err.message.includes("expired") || err.name === "JwtTokenExpired") {
                 try {
                     const { payload } = decode(token);
-
-                    // CRITICAL: Manually verify signature before trusting the expired payload
                     const parts = token.split('.');
                     if (parts.length === 3) {
                         const hmac = createHmac('sha256', jwtSecret);
@@ -90,12 +84,10 @@ export function initSocketServer(server, allowedOrigins) {
                         const expectedSignature = hmac.digest('base64url');
 
                         if (expectedSignature === parts[2]) {
-                            // Signature matches! Allow a 24-hour grace period for WebSockets
                             const now = Math.floor(Date.now() / 1000);
                             const gracePeriod = 24 * 60 * 60; // 24 hours
 
                             if (now < (payload.exp || 0) + gracePeriod) {
-                                // console.log(`[Socket.io] Grace period allowed for: ${payload.email}`);
                                 socket.user = {
                                     id: payload.sub,
                                     email: payload.email,
@@ -111,7 +103,6 @@ export function initSocketServer(server, allowedOrigins) {
                     console.error("[Socket.io] Manual verification failed:", decodeErr.message);
                 }
             }
-
             console.error("[Socket.io] Auth failed:", err.message);
             next(new Error("Authentication error"));
         }
@@ -125,15 +116,12 @@ export function initSocketServer(server, allowedOrigins) {
             if (!room) return;
 
             socket.join(room);
-            // console.log(`[Socket.io] User ${socket.user.email} joined ${room}`);
 
-            // Broadcast presence to others in the room
             socket.to(room).emit("user_joined", {
                 user: socket.user,
                 socketId: socket.id
             });
 
-            // Send list of current users in room to the new user
             const sockets = await io.in(room).fetchSockets();
             const users = sockets.map(s => ({
                 user: s.user,
@@ -141,26 +129,16 @@ export function initSocketServer(server, allowedOrigins) {
             }));
             socket.emit("current_users", users);
 
-            // Fetch and emit chat history from dashboard.messages array
             try {
-                // Normalize dashboard ID for DB query
-                const dashId = dashboardId.includes(':') ? dashboardId : `dashboard:${dashboardId}`;
+                const dashId = dashboardId.includes(':') ? dashboardId.split(':').pop() : dashboardId;
+                const dash = await db.query.dashboards.findFirst({
+                    where: eq(dashboards.id, dashId),
+                    columns: { messages: true }
+                });
 
-                // Fetch messages directly from dashboard document
-                const [dashboards] = await db.query(`SELECT messages FROM ${dashId}`);
-
-                if (dashboards && dashboards[0] && dashboards[0].messages) {
-                    // console.log('[Socket.io] Chat history found:', dashboards[0].messages.length, 'messages');
-                    socket.emit("chat_history", dashboards[0].messages);
-                } else {
-                    socket.emit("chat_history", []);
-                }
+                socket.emit("chat_history", dash?.messages || []);
             } catch (e) {
-                if (e.message?.includes('not found')) {
-                    console.warn(`[Socket.io] Dashboard ${dashId} not found, skipping history`);
-                } else {
-                    console.error("[Socket.io] Failed to fetch chat history:", e);
-                }
+                console.error("[Socket.io] Failed to fetch chat history:", e);
                 socket.emit("chat_history", []);
             }
         });
@@ -168,18 +146,13 @@ export function initSocketServer(server, allowedOrigins) {
         socket.on("leave_dashboard", (dashboardId) => {
             const room = getRoom(dashboardId);
             if (!room) return;
-
             socket.leave(room);
-            // console.log(`[Socket.io] User ${socket.user.email} left ${room}`);
             socket.to(room).emit("user_left", { socketId: socket.id });
         });
 
         socket.on("cursor_move", (data) => {
-            // data: { dashboardId, x, y }
             const room = getRoom(data.dashboardId);
             if (!room) return;
-
-            // Volatile means it can be dropped if network is busy (perfect for cursors)
             socket.to(room).volatile.emit("cursor_update", {
                 socketId: socket.id,
                 user: socket.user,
@@ -189,22 +162,14 @@ export function initSocketServer(server, allowedOrigins) {
         });
 
         socket.on("chat_message", async (data) => {
-            // data: { dashboardId, content, mentions?, images?, parentId? }
             const room = getRoom(data.dashboardId);
             if (!room) return;
 
-            // console.log(`[Socket.io] Received chat_message from ${socket.user.email} in room ${room}`);
+            const dashId = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId;
 
-            // Create message object with all user data embedded
             const message = {
                 id: crypto.randomUUID(),
-                user: {
-                    id: socket.user.id,
-                    email: socket.user.email,
-                    firstName: socket.user.firstName,
-                    lastName: socket.user.lastName,
-                    profilePictureUrl: socket.user.profilePictureUrl
-                },
+                user: socket.user,
                 content: data.content,
                 mentions: data.mentions || [],
                 images: data.images || [],
@@ -212,289 +177,202 @@ export function initSocketServer(server, allowedOrigins) {
                 parentId: data.parentId || null,
             };
 
-            // Save to dashboard.messages array
             try {
-                const dashId = data.dashboardId.includes(':')
-                    ? data.dashboardId
-                    : `dashboard:${data.dashboardId}`;
+                // Update messages array in Postgres using JSONB concat or fetch-and-update
+                // For simplicity and since these are often small, fetch and update is safer via Drizzle
+                const dash = await db.query.dashboards.findFirst({
+                    where: eq(dashboards.id, dashId),
+                    columns: { messages: true, title: true }
+                });
 
-                console.log('[Socket.io] Saving message to dashboard:', dashId);
+                if (dash) {
+                    const updatedMessages = [...(dash.messages || []), message];
+                    await db.update(dashboards)
+                        .set({
+                            messages: updatedMessages,
+                            updatedAt: new Date()
+                        })
+                        .where(eq(dashboards.id, dashId));
 
-                await db.query(`
-                    UPDATE ${dashId} SET 
-                        messages = array::append(messages ?? [], $message),
-                        updated_at = time::now();
-                `, { message });
-
-                console.log('[Socket.io] Message saved successfully');
-            } catch (e) {
-                if (e.message?.includes('not found')) {
-                    console.warn(`[Socket.io] Cannot save message: Dashboard ${dashId} deleted`);
-                } else {
-                    console.error("[Socket.io] Failed to save message:", e);
-                }
-            }
-
-            // Handle @user mentions - notify and persist
-            if (data.mentions?.length) {
-                // Fetch dashboard title for notification context
-                let dashboardTitle = 'Dashboard';
-                try {
-                    const [d] = await db.query(`SELECT title FROM ${dashId}`);
-                    if (d && d[0]) dashboardTitle = d[0].title;
-                } catch (e) {
-                    // Ignore title fetch error
-                }
-
-                for (const mention of data.mentions) {
-                    if (mention.type === 'user' && mention.id) {
-                        const targetUserId = mention.id;
-
-                        try {
-                            // Persist notification
-                            await db.query(`
-                                CREATE notification CONTENT {
-                                    user: type::thing('user', $userId),
+                    // Handle mentions
+                    if (data.mentions?.length) {
+                        for (const mention of data.mentions) {
+                            if (mention.type === 'user' && mention.id) {
+                                await db.insert(notifications).values({
+                                    userId: mention.id,
                                     type: 'mention',
-                                    dashboard: type::thing('dashboard', $dashId),
-                                    dashboard_title: $title,
-                                    message: $preview,
-                                    sender: $senderName,
-                                    is_read: false,
-                                    created_at: time::now()
-                                };
-                            `, {
-                                userId: targetUserId,
-                                dashId: data.dashboardId,
-                                title: dashboardTitle,
-                                preview: data.content.substring(0, 100),
-                                senderName: socket.user.firstName || 'Someone'
-                            });
-                        } catch (err) {
-                            console.error(`[Socket.io] Failed to create notification for ${targetUserId}:`, err);
-                        }
+                                    dashboardId: dashId,
+                                    dashboardTitle: dash.title,
+                                    message: data.content.substring(0, 100),
+                                    sender: socket.user.firstName || 'Someone',
+                                    isRead: false
+                                });
 
-                        // Real-time delivery
-                        const allSockets = await io.fetchSockets();
-                        const targetSocket = allSockets.find(s =>
-                            s.user?.id === mention.id || s.user?.email === mention.email
-                        );
-
-                        if (targetSocket) {
-                            targetSocket.emit("user_mentioned", {
-                                dashboardId: data.dashboardId,
-                                dashboardTitle,
-                                senderName: socket.user.firstName || socket.user.email?.split('@')[0],
-                                preview: data.content.substring(0, 100),
-                                timestamp: message.timestamp
-                            });
-
-                            // Also emit general notification event for counters
-                            targetSocket.emit("notification_new", {
-                                type: 'mention',
-                                dashboardId: data.dashboardId
-                            });
+                                // Real-time delivery
+                                const allSockets = await io.fetchSockets();
+                                const targetSocket = allSockets.find(s => s.user?.id === mention.id);
+                                if (targetSocket) {
+                                    targetSocket.emit("user_mentioned", {
+                                        dashboardId: dashId,
+                                        dashboardTitle: dash.title,
+                                        senderName: socket.user.firstName,
+                                        preview: data.content.substring(0, 100),
+                                        timestamp: message.timestamp
+                                    });
+                                }
+                            }
                         }
                     }
                 }
+            } catch (e) {
+                console.error("[Socket.io] Failed to save message:", e);
             }
 
-            // Broadcast to room
-            console.log(`[Socket.io] Broadcasting message to room ${room}`);
             io.to(room).emit("new_message", message);
-            console.log(`[Socket.io] Message broadcasted successfully`);
         });
 
         socket.on("edit_message", async (data) => {
-            // data: { dashboardId, messageId, content }
             const room = getRoom(data.dashboardId);
             if (!room) return;
-            const dashId = data.dashboardId.includes(':') ? data.dashboardId : `dashboard:${data.dashboardId}`;
+            const dashId = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId;
 
             try {
-                // Update message in dashboard.messages array
-                await db.query(`
-                    UPDATE ${dashId} SET 
-                        messages = messages.map(|$m| 
-                            if ($m.id == $messageId) {
-                                $m.content = $content,
-                                $m.updated_at = time::now(),
-                                $m.isEdited = true
-                            }
-                            return $m
-                        ),
-                        updated_at = time::now();
-                `, { messageId: data.messageId, content: data.content });
-
-                // Broadcast update to room
-                io.to(room).emit("message_updated", {
-                    id: data.messageId,
-                    content: data.content,
-                    isEdited: true
+                const dash = await db.query.dashboards.findFirst({
+                    where: eq(dashboards.id, dashId),
+                    columns: { messages: true }
                 });
-                console.log('[Socket.io] Message edited successfully');
+
+                if (dash && dash.messages) {
+                    const updatedMessages = dash.messages.map(m =>
+                        m.id === data.messageId
+                            ? { ...m, content: data.content, updatedAt: new Date().toISOString(), isEdited: true }
+                            : m
+                    );
+
+                    await db.update(dashboards)
+                        .set({ messages: updatedMessages, updatedAt: new Date() })
+                        .where(eq(dashboards.id, dashId));
+
+                    io.to(room).emit("message_updated", {
+                        id: data.messageId,
+                        content: data.content,
+                        isEdited: true
+                    });
+                }
             } catch (e) {
                 console.error("[Socket.io] Failed to edit message:", e);
             }
         });
 
         socket.on("delete_message", async (data) => {
-            // data: { dashboardId, messageId }
             const room = getRoom(data.dashboardId);
             if (!room) return;
-            const dashId = data.dashboardId.includes(':') ? data.dashboardId : `dashboard:${data.dashboardId}`;
+            const dashId = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId;
 
             try {
-                // Remove message from dashboard.messages array
-                await db.query(`
-                    UPDATE ${dashId} SET 
-                        messages = messages.filter(|$m| $m.id != $messageId),
-                        updated_at = time::now();
-                `, { messageId: data.messageId });
+                const dash = await db.query.dashboards.findFirst({
+                    where: eq(dashboards.id, dashId),
+                    columns: { messages: true }
+                });
 
-                // Broadcast deletion to room
-                io.to(room).emit("message_deleted", { id: data.messageId });
-                console.log('[Socket.io] Message deleted successfully');
+                if (dash && dash.messages) {
+                    const updatedMessages = dash.messages.filter(m => m.id !== data.messageId);
+                    await db.update(dashboards)
+                        .set({ messages: updatedMessages, updatedAt: new Date() })
+                        .where(eq(dashboards.id, dashId));
+
+                    io.to(room).emit("message_deleted", { id: data.messageId });
+                }
             } catch (e) {
                 console.error("[Socket.io] Failed to delete message:", e);
             }
         });
 
-        // Typing Indicators
         socket.on("typing_start", (dashboardId) => {
             const room = getRoom(dashboardId);
-            if (!room) return;
-
-            socket.to(room).emit("user_typing_start", {
-                socketId: socket.id,
-                user: socket.user
-            });
+            if (room) socket.to(room).emit("user_typing_start", { socketId: socket.id, user: socket.user });
         });
 
         socket.on("typing_end", (dashboardId) => {
             const room = getRoom(dashboardId);
-            if (!room) return;
-
-            socket.to(room).emit("user_typing_end", {
-                socketId: socket.id
-            });
+            if (room) socket.to(room).emit("user_typing_end", { socketId: socket.id });
         });
 
-        // @Pegasus AI Query
         socket.on("pegasus_query", async (data) => {
-            // data: { dashboardId, query, context? }
             const room = getRoom(data.dashboardId);
             if (!room) return;
 
             try {
-                // Notify room that AI is thinking
                 io.to(room).emit("pegasus_thinking", { thinking: true });
 
-                // Get dashboard title
-                const dashId = data.dashboardId.includes(':')
-                    ? data.dashboardId
-                    : `dashboard:${data.dashboardId}`;
+                const dashId = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId;
+                const dash = await db.query.dashboards.findFirst({
+                    where: eq(dashboards.id, dashId),
+                    columns: { title: true, messages: true }
+                });
 
-                const [dashboards] = await db.query(`SELECT title FROM ${dashId}`);
-                const dashboard = dashboards?.[0];
-
-                // Call AI via the consolidated chat route
                 const response = await fetch(`http://localhost:${process.env.PORT || 3000}/ai/dashboard-query`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': socket.handshake.auth.token ? `Bearer ${socket.handshake.auth.token}` : ''
+                        'Authorization': `Bearer ${socket.handshake.auth.token || ''}`
                     },
                     body: JSON.stringify({
                         query: data.query,
-                        dashboardTitle: dashboard?.title || 'Unknown',
-                        elements: data.context || [] // Use rich context from frontend if available
+                        dashboardTitle: dash?.title || 'Unknown',
+                        elements: data.context || []
                     })
                 });
 
-                let aiResponseText = "I couldn't process that request. Please try again.";
+                let aiResponseText = "I couldn't process that request.";
                 if (response.ok) {
                     const result = await response.json();
                     aiResponseText = result.response || result.message || aiResponseText;
                 }
 
-                // Create AI response message
                 const aiMessage = {
                     id: crypto.randomUUID(),
-                    user: {
-                        id: 'pegasus',
-                        email: 'pegasus@ai',
-                        firstName: 'Pegasus',
-                        lastName: 'AI'
-                    },
+                    user: { id: 'pegasus', email: 'pegasus@ai', firstName: 'Pegasus', lastName: 'AI' },
                     content: aiResponseText,
                     isAIResponse: true,
                     timestamp: new Date().toISOString(),
                     parentId: data.parentId || null,
                 };
 
-                // Save AI response to dashboard
-                await db.query(`
-                    UPDATE ${dashId} SET 
-                        messages = array::append(messages ?? [], $message),
-                        updated_at = time::now();
-                `, { message: aiMessage });
+                if (dash) {
+                    const updatedMessages = [...(dash.messages || []), aiMessage];
+                    await db.update(dashboards)
+                        .set({ messages: updatedMessages, updatedAt: new Date() })
+                        .where(eq(dashboards.id, dashId));
+                }
 
-                // Broadcast AI response
                 io.to(room).emit("pegasus_thinking", { thinking: false });
                 io.to(room).emit("new_message", aiMessage);
 
             } catch (e) {
                 console.error("[Socket.io] Pegasus query failed:", e);
                 io.to(room).emit("pegasus_thinking", { thinking: false });
-                io.to(room).emit("pegasus_error", { error: "Failed to process AI query" });
             }
         });
 
-        // Live Dashboard Updates
         socket.on("dashboard_update", (data) => {
             const room = getRoom(data.dashboardId);
-            if (!room) return;
-
-            // Broadcast the update to everyone else in the room
-            // data structure: { dashboardId, type: 'element_update'|'element_delete'|'settings', payload: ... }
-            socket.to(room).emit("dashboard_updated", data);
+            if (room) socket.to(room).emit("dashboard_updated", data);
         });
 
-        // Handle disconnect
         socket.on("disconnecting", () => {
-            // socket.rooms is a Set containing the socket ID and the rooms
             for (const room of socket.rooms) {
-                if (room.startsWith("dashboard:")) {
-                    socket.to(room).emit("user_left", { socketId: socket.id });
-                }
+                if (room.startsWith("dashboard:")) socket.to(room).emit("user_left", { socketId: socket.id });
+                if (room.startsWith("spreadsheet:")) socket.to(room).emit("spreadsheet_user_left", { socketId: socket.id });
             }
         });
-
-        socket.on("disconnect", () => {
-            console.log(`[Socket.io] User disconnected: ${socket.user.email}`);
-        });
-
-        // ========================================
-        // SPREADSHEET COLLABORATION EVENTS
-        // ========================================
-
-        // spreadsheet handlers helper
-        // (already defined globally)
 
         socket.on("join_spreadsheet", async (spreadsheetId) => {
             const room = getSpreadsheetRoom(spreadsheetId);
             if (!room) return;
             socket.join(room);
-            console.log(`[Socket.io] User ${socket.user.email} joined ${room}`);
+            socket.to(room).emit("spreadsheet_user_joined", { user: socket.user, socketId: socket.id });
 
-            // Broadcast presence to others in the room
-            socket.to(room).emit("spreadsheet_user_joined", {
-                user: socket.user,
-                socketId: socket.id
-            });
-
-            // Send list of current users in room to the new user
             const sockets = await io.in(room).fetchSockets();
             const users = sockets.map(s => ({
                 user: s.user,
@@ -506,53 +384,31 @@ export function initSocketServer(server, allowedOrigins) {
 
         socket.on("leave_spreadsheet", (spreadsheetId) => {
             const room = getSpreadsheetRoom(spreadsheetId);
-            if (!room) return;
-            socket.leave(room);
-            console.log(`[Socket.io] User ${socket.user.email} left ${room}`);
-            socket.to(room).emit("spreadsheet_user_left", { socketId: socket.id });
+            if (room) {
+                socket.leave(room);
+                socket.to(room).emit("spreadsheet_user_left", { socketId: socket.id });
+            }
         });
 
         socket.on("cell_focus", (data) => {
-            // data: { spreadsheetId, row, col }
             const room = getSpreadsheetRoom(data.spreadsheetId);
-            if (!room) return;
-            socket.activeCell = { row: data.row, col: data.col };
-
-            socket.to(room).emit("cell_focus_update", {
-                socketId: socket.id,
-                user: socket.user,
-                row: data.row,
-                col: data.col
-            });
+            if (room) {
+                socket.activeCell = { row: data.row, col: data.col };
+                socket.to(room).emit("cell_focus_update", { socketId: socket.id, user: socket.user, row: data.row, col: data.col });
+            }
         });
 
         socket.on("cell_edit", (data) => {
-            // data: { spreadsheetId, row, col, value }
             const room = getSpreadsheetRoom(data.spreadsheetId);
-            if (!room) return;
-
-            socket.to(room).emit("cell_edit_update", {
-                socketId: socket.id,
-                user: socket.user,
-                row: data.row,
-                col: data.col,
-                value: data.value
-            });
+            if (room) socket.to(room).emit("cell_edit_update", { socketId: socket.id, user: socket.user, row: data.row, col: data.col, value: data.value });
         });
 
         socket.on("kick_all_collaborators", (spreadsheetId) => {
             const room = getSpreadsheetRoom(spreadsheetId);
-            if (!room) return;
-            console.log(`[Socket.io] Kicking all collaborators from ${room} (Private Mode)`);
-
-            // Emit kick event to all in room except sender
-            socket.to(room).emit("spreadsheet_kicked", {
-                reason: "Owner switched to Private Mode",
-                by: socket.user
-            });
-
-            // Force all sockets in room to leave
-            io.in(room).socketsLeave(room);
+            if (room) {
+                socket.to(room).emit("spreadsheet_kicked", { reason: "Owner switched to Private Mode", by: socket.user });
+                io.in(room).socketsLeave(room);
+            }
         });
     });
 

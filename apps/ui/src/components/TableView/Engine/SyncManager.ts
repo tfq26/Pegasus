@@ -82,12 +82,11 @@ export class SyncManager {
         // Add to queue
         this.pendingOperations.push(...operations);
 
-        // Trigger background sync (Non-blocking)
+        // Trigger background sync
         console.log(`[SyncManager] Queued ${operations.length} operations. Local state updated.`);
-        this.scheduleSync();
 
-        // Return immediately (Optimistic)
-        return Promise.resolve();
+        // Return the sync promise so caller can await actual persistence
+        return this.sync();
     }
 
     private syncTimer: any = null;
@@ -96,34 +95,37 @@ export class SyncManager {
         this.syncTimer = setTimeout(() => this.sync(), 1000); // 1s auto-save
     }
 
+    private currentSyncPromise: Promise<void> | null = null;
+
     public async sync() {
-        if (this.isSyncing) {
-            console.log('[SyncManager] Sync already in progress, skipping');
-            return;
-        }
-        if (this.pendingOperations.length === 0) return;
+        if (this.currentSyncPromise) return this.currentSyncPromise;
+        if (this.pendingOperations.length === 0) return Promise.resolve();
 
-        console.log('[SyncManager] Starting sync batch of size:', this.pendingOperations.length);
-        this.isSyncing = true;
-        const batch = [...this.pendingOperations];
-        this.pendingOperations = [];
+        this.currentSyncPromise = (async () => {
+            console.log('[SyncManager] Starting sync batch of size:', this.pendingOperations.length);
+            this.isSyncing = true;
+            const batch = [...this.pendingOperations];
+            this.pendingOperations = [];
 
-        try {
-            await this.adapter.commit(batch);
-            console.log(`[SyncManager] Synced ${batch.length} operations.`);
-        } catch (e) {
-            console.error('[SyncManager] Sync failed:', e);
-            // Re-queue operations?
-            // In a robust system, we'd prepend them back or notify user.
-            this.pendingOperations.unshift(...batch);
-            this.onError?.(e);
-        } finally {
-            this.isSyncing = false;
-            // If more ops arrived during sync, trigger again
-            if (this.pendingOperations.length > 0) {
-                this.scheduleSync();
+            try {
+                await this.adapter.commit(batch);
+                console.log(`[SyncManager] Synced ${batch.length} operations.`);
+            } catch (e) {
+                console.error('[SyncManager] Sync failed:', e);
+                // Prepend failed batch back to queue
+                this.pendingOperations.unshift(...batch);
+                this.onError?.(e);
+            } finally {
+                this.isSyncing = false;
+                this.currentSyncPromise = null;
+                // If more ops arrived during sync, trigger again
+                if (this.pendingOperations.length > 0) {
+                    this.scheduleSync();
+                }
             }
-        }
+        })();
+
+        return this.currentSyncPromise;
     }
 
     public async save(data: any[]): Promise<void> {

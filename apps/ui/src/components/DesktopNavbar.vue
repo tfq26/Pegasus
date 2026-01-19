@@ -215,7 +215,6 @@ const links = computed(() => {
 })
 
 const dropdownItems = [
-  { to: '/profile', label: 'Profile', icon: User },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/support', label: 'Support', icon: CircleHelp },
   { to: '/docs', label: 'Docs', icon: BookOpen }

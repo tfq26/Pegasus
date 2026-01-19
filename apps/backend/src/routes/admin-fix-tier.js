@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { db } from '../../db/surreal.js';
+import { db } from '../db/index.js';
 import Stripe from 'stripe';
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "sk_test_placeholder";

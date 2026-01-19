@@ -10,6 +10,7 @@ export function useGridEditing(
 ) {
     const editingCell = ref<CellPosition | null>(null);
     const formulaBarValue = ref('');
+    const originalCellValue = ref(''); // Track original value when editing starts
 
     const currentCellRawValue = computed(() => {
         if (!selection.value) return '';
@@ -17,35 +18,49 @@ export function useGridEditing(
         return cell?.rawInput || '';
     });
 
-    const commitEdit = async () => {
+    const commitEdit = () => {
         if (!editingCell.value) return;
 
-        // Only save if value actually changed
-        if (formulaBarValue.value !== currentCellRawValue.value && editingCell.value) {
-            // Save with silent=false to trigger proper change tracking
-            // This is the moment we want to track changes - when user commits the edit
-            await engine.setValue(editingCell.value, formulaBarValue.value, false);
+        const cellPos = editingCell.value;
+        const newValue = formulaBarValue.value;
+        const oldValue = originalCellValue.value;
+
+        console.log('[commitEdit] Cell:', cellPos, 'New:', newValue, 'Old:', oldValue);
+
+        // Always save to ensure the value is persisted
+        if (newValue !== oldValue) {
+            console.log('[commitEdit] Value changed, calling setValue');
+            engine.setValue(cellPos, newValue, false);
+        } else {
+            console.log('[commitEdit] Value unchanged, skipping save');
         }
 
         editingCell.value = null;
+        originalCellValue.value = '';
     };
 
     const startEditing = async (row: number, col: number, initialValue?: string) => {
         // First, commit any pending edit
         if (editingCell.value) {
-            await commitEdit();
+            commitEdit();
         }
 
         selection.value = { row, col };
         editingCell.value = { row, col };
 
+        // Get the current cell value BEFORE setting formulaBarValue
+        const cellValue = engine.getCell({ row, col })?.rawInput || '';
+        originalCellValue.value = cellValue;
+
         // Use initial value if provided (for typing), otherwise use current cell value
         if (initialValue !== undefined) {
             formulaBarValue.value = initialValue;
         } else {
-            formulaBarValue.value = currentCellRawValue.value;
+            formulaBarValue.value = cellValue;
         }
 
+        // Wait for the input to be rendered in the DOM
+        // Two nextTicks: one for Vue to update computed props, one for render
         await nextTick();
         await nextTick();
 
@@ -78,11 +93,9 @@ export function useGridEditing(
         formulaBarValue.value = (e.target as HTMLInputElement).value;
     };
 
-    const onCellBlur = async () => {
+    const onCellBlur = () => {
         // Commit the edit when input loses focus
-        // Small delay to allow other events (like clicking another cell) to fire first handled by startEditing
-        // But basic blur should commit
-        await commitEdit();
+        commitEdit();
     };
 
     const cancelEdit = () => {

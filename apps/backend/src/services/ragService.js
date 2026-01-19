@@ -95,7 +95,7 @@ export class RAGService {
                 id: knowledgeChunks.id,
                 content: knowledgeChunks.content,
                 metadata: knowledgeChunks.metadata,
-                score: sql < number > `1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector)`
+                score: sql`1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector)`
             })
                 .from(knowledgeChunks)
                 .where(and(

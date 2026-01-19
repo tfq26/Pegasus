@@ -241,6 +241,7 @@ dashboard.get("/dashboards", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
+        console.log(`[Get Dashboards] Fetching for user: ${userId}`);
 
         const userDashboards = await db.query.dashboards.findMany({
             where: eq(dashboards.ownerId, userId),
@@ -254,8 +255,8 @@ dashboard.get("/dashboards", async (c) => {
 
         return c.json({ dashboards: dashboardsWithCounts })
     } catch (e) {
-        console.error("[Get Dashboards] Error:", e)
-        return c.json({ error: "Failed to fetch dashboards" }, 500)
+        console.error("[Get Dashboards] Error details:", e)
+        return c.json({ error: "Failed to fetch dashboards", details: e.message }, 500)
     }
 })
 

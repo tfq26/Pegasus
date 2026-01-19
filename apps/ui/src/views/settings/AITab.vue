@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Checkbox } from '@/components/ui/checkbox'
 import { Slider } from '@/components/ui/slider'
+import { Label } from '@/components/ui/label'
 import { computed, ref, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { storeToRefs } from 'pinia'
@@ -12,7 +13,7 @@ import { getAIModels } from '@/lib/api'
 import { localAI, type OllamaStatus } from '@/services/LocalAIService'
 import { useEntitlements } from '@/composables/useEntitlements'
 import UpgradeModal from '@/components/UpgradeModal.vue'
-import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle, Lock } from 'lucide-vue-next'
+import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle, Lock, ChevronDown } from 'lucide-vue-next'
 
 const settingsStore = useSettingsStore()
 const { settings } = storeToRefs(settingsStore)
@@ -24,7 +25,7 @@ const searchQuery = ref('')
 const localStatus = ref<OllamaStatus>({ is_running: false, version: null, models: [] })
 const isStartingLocal = ref(false)
 const pullProgress = ref<any>(null)
-const showUpgradeModal = ref(false)
+
 
 const { subscriptionTier, fetchEntitlements, isPro, isProPlus } = useEntitlements()
 
@@ -177,7 +178,14 @@ const toggleModelEnabled = (id: string, checked: boolean) => {
 const selectModel = (model: any) => {
   // Check if model is locked
   if (model.isLocked) {
-    showUpgradeModal.value = true
+    upgradeModalState.value = {
+      open: true,
+      title: '', // Use limit type default
+      description: '', 
+      benefits: [],
+      targetTier: 'pro',
+      limitType: 'models'
+    }
     return
   }
   
@@ -215,7 +223,14 @@ const isModelActive = (id: string) => {
 }
 
 const handleUpgrade = () => {
-  showUpgradeModal.value = true
+  upgradeModalState.value = {
+    open: true,
+    title: '',
+    description: '',
+    benefits: [],
+    targetTier: 'pro',
+    limitType: 'models'
+  }
 }
 
 const sliderValue = computed({
@@ -232,15 +247,61 @@ const temperatureValue = computed({
   },
 })
 
+// Advanced Settings State
+const showAdvanced = ref(false)
+
+const toggleAdvancedSettings = () => {
+  if (!isPro.value) {
+    upgradeModalState.value = {
+      open: true,
+      title: 'Advanced AI Settings',
+      description: 'Fine-tune your AI experience with temperature control, custom instructions, and more.',
+      benefits: [
+        'Custom System Instructions',
+        'Temperature & Token Limits',
+        'Conversation Memory Control',
+        'Chat Auto-deletion Rules'
+      ],
+      targetTier: 'pro',
+      limitType: undefined
+    }
+    return
+  }
+  showAdvanced.value = !showAdvanced.value
+}
+
 // --- BYOM Logic ---
 const currentProvider = ref('default') // 'default' | 'aws' | 'azure' | 'gcp'
 const canUseByom = computed(() => {
   return ['teams', 'enterprise'].includes(subscriptionTier.value)
 })
 
+// Modular Upgrade Modal State
+const upgradeModalState = ref({
+  open: false,
+  title: '',
+  description: '',
+  benefits: [] as string[],
+  targetTier: 'pro' as 'pro' | 'pro_plus' | 'teams' | 'enterprise',
+  limitType: undefined as 'connections' | 'dashboards' | 'tables' | 'tokens' | 'storage' | 'models' | undefined
+})
+
 const changeProvider = async (provider: string) => {
   if (provider !== 'default' && !canUseByom.value) {
-    showUpgradeModal.value = true
+    upgradeModalState.value = {
+      open: true,
+      title: 'Connect Your Own Cloud',
+      description: 'Connecting external cloud providers like AWS, Azure, and Google Cloud is a Teams+ feature.',
+      benefits: [
+        'Bring Your Own Model (BYOM)',
+        'AWS Bedrock Integration',
+        'Azure OpenAI Integration',
+        'Google Cloud Vertex AI',
+        'Centralized Team Management'
+      ],
+      targetTier: 'teams',
+      limitType: undefined
+    }
     return
   }
   
@@ -263,14 +324,19 @@ const changeProvider = async (provider: string) => {
        // Revert if failed (e.g. entitlement check failed on backend)
        currentProvider.value = 'default'
        if (response.status === 403) {
-         showUpgradeModal.value = true
+          upgradeModalState.value = {
+             open: true,
+             title: 'Access Restricted',
+             description: 'You need a Teams subscription to change providers.',
+             benefits: ['Unlock Cloud Providers', 'Prioritized Inference'],
+             targetTier: 'teams',
+             limitType: undefined
+          }
        }
     } else {
       // Reload models for the new provider
       loading.value = true
-      const newModels = await getAIModels()
-      // ... (logic to update models list - might need refactoring onMounted logic into a function)
-      // For now, let's just reload the page or re-fetch in next step
+      // const newModels = await getAIModels()
       window.location.reload() 
     }
   } catch (e) {
@@ -307,7 +373,7 @@ onMounted(async () => {
       <h3 class="text-foreground font-medium mb-3 flex items-center gap-2">
         Model Provider
         <span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-500 border border-purple-500/20 font-bold uppercase">
-          Enterprise
+          Teams+
         </span>
       </h3>
       
@@ -413,7 +479,7 @@ onMounted(async () => {
       </div>
 
       <!-- Local Model Selector -->
-      <div v-if="localStatus.is_running && localStatus.models.length > 0" class="mb-4 bg-background border border-border rounded-lg p-3 flex items-center justify-between">
+      <div v-if="isTauri && localStatus.is_running && localStatus.models.length > 0" class="mb-4 bg-background border border-border rounded-lg p-3 flex items-center justify-between">
          <div class="text-sm">
            <p class="font-medium text-foreground">Default Local Model</p>
            <p class="text-xs text-muted-foreground">Used for offline tasks across the app</p>
@@ -426,7 +492,7 @@ onMounted(async () => {
          </select>
       </div>
 
-      <div v-if="!localStatus.is_running" class="flex items-center justify-between bg-background border border-border rounded-lg p-3">
+      <div v-if="isTauri && !localStatus.is_running" class="flex items-center justify-between bg-background border border-border rounded-lg p-3">
          <div class="text-sm text-muted-foreground flex items-center gap-2">
             <AlertCircle class="w-4 h-4" />
             Local engine is not active.
@@ -442,7 +508,7 @@ onMounted(async () => {
          </button>
       </div>
 
-      <div v-if="localStatus.is_running && localStatus.models.length === 0" class="mt-4">
+      <div v-if="isTauri && localStatus.is_running && localStatus.models.length === 0" class="mt-4">
          <div class="text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg flex items-start gap-2">
             <Download class="w-4 h-4 shrink-0 mt-0.5" />
             <div>
@@ -452,73 +518,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div>
-      <h3 class="text-foreground font-medium mb-1">Response Detail</h3>
-      <Slider v-model="sliderValue" :min="0" :max="2" class="w-full" />
-      <p class="text-muted-foreground text-sm">Level: <strong>{{ ['Brief', 'Balanced', 'Detailed'][settings.aiDetail] }}</strong></p>
-    </div>
-
-    <div class="grid grid-cols-2 gap-6">
-      <div>
-        <h3 class="text-foreground font-medium mb-1">Temperature</h3>
-        <Slider v-model="temperatureValue" :min="0" :max="1" :step="0.1" class="w-full" />
-        <p class="text-muted-foreground text-sm">Creativity: <strong>{{ settings.temperature ?? 0.7 }}</strong></p>
-      </div>
-      
-      <div>
-        <h3 class="text-foreground font-medium mb-1">Max Tokens</h3>
-        <input 
-          v-model.number="settings.maxTokens"
-          type="number"
-          min="100"
-          max="8000"
-          class="w-full px-3 py-1.5 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:border-primary"
-          placeholder="2000"
-        />
-        <p class="text-muted-foreground text-xs mt-1">Limit response length</p>
-      </div>
-    </div>
-
-    <div>
-      <h3 class="text-foreground font-medium mb-2">Custom Instructions</h3>
-      <textarea
-        v-model="settings.customInstructions"
-        class="w-full h-24 px-3 py-2 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:border-primary resize-none"
-        placeholder="e.g. Always format SQL keywords in uppercase. Be concise."
-      ></textarea>
-      <p class="text-muted-foreground text-xs mt-1">These instructions will be added to the system prompt.</p>
-    </div>
-
-    <label class="flex items-center gap-2 text-sm">
-      <Checkbox v-model="settings.enableContext" class="accent-violet-600" />
-      Enable conversation memory
-    </label>
-
-    <label class="flex items-center gap-2 text-sm">
-      <Checkbox v-model="settings.enableCodeHints" class="accent-violet-600" />
-      Enable AI code suggestions
-    </label>
-
-    <div class="pt-4 border-t border-border">
-      <h3 class="text-foreground font-medium mb-3">Chat History Management</h3>
-      <div class="space-y-3">
-        <div>
-          <label class="text-sm text-foreground mb-2 block">Auto-delete chats after</label>
-          <select 
-            v-model="settings.chatAutoDeleteDays"
-            class="w-full px-3 py-2 text-sm bg-background border border-input rounded-md text-foreground focus:outline-none focus:border-primary"
-          >
-            <option :value="1">1 day</option>
-            <option :value="7">7 days</option>
-            <option :value="30">30 days (default)</option>
-            <option :value="90">90 days</option>
-            <option :value="0">Never</option>
-          </select>
-          <p class="text-muted-foreground text-xs mt-1">
-            Automatically delete chats older than the selected period. Set to "Never" to keep all chats.
-          </p>
-        </div>
-      </div>
     </div>
 
     <div class="pt-6 border-t border-border">
@@ -688,10 +687,125 @@ onMounted(async () => {
       </div>
     </div>
     
+    <!-- Advanced Settings Section -->
+    <div class="mt-8 pt-6 border-t border-border">
+      <button 
+        @click="toggleAdvancedSettings"
+        class="flex items-center justify-between w-full py-2 hover:bg-secondary/50 rounded-lg px-2 -mx-2 transition-colors"
+      >
+        <div class="flex items-center gap-2">
+          <h3 class="text-lg font-medium text-foreground">Advanced Settings</h3>
+          <span v-if="!isPro" class="px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-500 border border-purple-500/20 font-bold uppercase">
+            Pro
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+           <Lock v-if="!isPro" class="h-4 w-4 text-muted-foreground" />
+           <ChevronDown 
+             v-else 
+             class="h-5 w-5 text-muted-foreground transition-transform duration-200"
+             :class="{ 'rotate-180': showAdvanced }"
+           />
+        </div>
+      </button>
+
+      <!-- Advanced Settings Content -->
+      <div 
+        v-if="showAdvanced" 
+        class="mt-6 grid gap-6 animate-in slide-in-from-top-2 duration-200"
+      >
+        <!-- Response Detail -->
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <Label class="text-base font-medium">Response Detail</Label>
+            <span class="text-sm text-muted-foreground">{{ ['Brief', 'Balanced', 'Detailed'][settings.aiDetail] }}</span>
+          </div>
+          <Slider
+            v-model="sliderValue"
+            :max="2"
+            :step="1"
+            class="w-full"
+          />
+        </div>
+
+        <!-- Temperature -->
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <Label class="text-base font-medium">Temperature</Label>
+            <span class="text-sm text-muted-foreground">{{ settings.temperature }}</span>
+          </div>
+          <Slider
+            v-model="temperatureValue" 
+            :max="1" 
+            :step="0.1"
+            class="w-full"
+          />
+        </div>
+
+        <!-- Max Tokens -->
+         <div class="space-y-2">
+          <Label class="text-base font-medium">Max Tokens</Label>
+          <input 
+            v-model.number="settings.maxTokens"
+            type="number"
+            placeholder="2048"
+            class="w-full px-3 py-2 bg-secondary/50 border border-input rounded-md text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+           <p class="text-xs text-muted-foreground">Maximum length of AI response</p>
+        </div>
+
+        <!-- Custom Instructions -->
+        <div class="space-y-2">
+          <Label class="text-base font-medium">Custom Instructions</Label>
+          <textarea
+            v-model="settings.customInstructions"
+            placeholder="e.g., You are a senior data analyst..."
+            class="flex min-h-[100px] w-full rounded-md border border-input bg-secondary/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+          />
+        </div>
+
+        <!-- Conversation Memory -->
+        <div class="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border">
+          <div class="space-y-0.5">
+            <Label class="text-base">Conversation Memory</Label>
+            <p class="text-sm text-muted-foreground">Allow AI to remember previous messages</p>
+          </div>
+          <Checkbox v-model="settings.enableContext" />
+        </div>
+
+         <!-- Code Hints -->
+        <div class="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border">
+          <div class="space-y-0.5">
+            <Label class="text-base">Code Hints</Label>
+            <p class="text-sm text-muted-foreground">Show AI suggestions while typing SQL</p>
+          </div>
+           <Checkbox v-model="settings.enableCodeHints" />
+        </div>
+
+        <!-- Chat Auto-delete -->
+        <div class="space-y-2">
+          <Label class="text-base font-medium">Auto-delete Chats</Label>
+          <select 
+            v-model="settings.chatAutoDeleteDays"
+            class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-secondary/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value="never">Never</option>
+            <option value="30">After 30 days</option>
+            <option value="60">After 60 days</option>
+            <option value="90">After 90 days</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <!-- Upgrade Modal -->
     <UpgradeModal
-      v-model:open="showUpgradeModal"
-      limit-type="models"
+      v-model:open="upgradeModalState.open"
+      :limit-type="upgradeModalState.limitType"
+      :override-title="upgradeModalState.title"
+      :override-description="upgradeModalState.description"
+      :override-benefits="upgradeModalState.benefits"
+      :target-tier="upgradeModalState.targetTier"
       :current-tier="subscriptionTier"
     />
   </div>

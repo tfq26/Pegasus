@@ -9,12 +9,13 @@ export const getAuthToken = (c) => {
     // 1. Primary Source: Authorization Header
     const authHeader = c.req.header("Authorization")
     if (authHeader && authHeader.startsWith("Bearer ")) {
-        return authHeader.substring(7)
+        const token = authHeader.substring(7)
+        if (token && token !== "undefined") return token
     }
 
     // 2. Secondary/Fallback: Session Cookie (for compatibility/handshakes)
     const cookieToken = getCookie(c, "session")
-    if (cookieToken) {
+    if (cookieToken && cookieToken !== "undefined") {
         return cookieToken
     }
 

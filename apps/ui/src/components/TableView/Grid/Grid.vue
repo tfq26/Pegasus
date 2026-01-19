@@ -16,7 +16,7 @@ import { toast } from '@/composables/useNotifications';
 import { api } from '@/lib/apiClient';
 import { useFeatureFlags } from '@/composables/useFeatureFlags';
 import FindDialog from '../FindDialog.vue';
-import CommitBar from './CommitBar.vue';
+// CommitBar removed - changes auto-save now
 import ChangeReviewDialog from './ChangeReviewDialog.vue';
 import type { RowDiff } from '../Engine/types';
 import { SearchEngine } from '../Engine/SearchEngine';
@@ -1881,14 +1881,34 @@ const handleCellDblClick = (row: number, col: number, e: MouseEvent) => {
 };
 
 const onKeyDown = async (e: KeyboardEvent) => {
+  // When editing, only handle specific navigation keys - let everything else go to the input
   if (editingCell.value) {
+    const target = e.target as HTMLElement;
+    const isInInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+    
     if (e.key === 'Enter') {
       e.preventDefault();
-      await commitEdit();
+      commitEdit();
       moveSelection('down');
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       cancelEdit();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      commitEdit();
+      moveSelection(e.shiftKey ? 'left' : 'right');
+    } else if (!isInInput) {
+      // If keystrokes are hitting the grid container instead of the input,
+      // manually update formulaBarValue for printable characters
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        formulaBarValue.value = formulaBarValue.value.slice(0, -1);
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        formulaBarValue.value += e.key;
+      }
     }
+    // For all other keys when in input, let the browser handle it normally
     return;
   }
   
@@ -2521,9 +2541,10 @@ defineExpose({
         ref="canvasEditInputRef"
         v-model="formulaBarValue"
         @blur="onCellBlur"
+        @keydown.stop
         @keydown.enter.prevent="commitEdit(); moveSelection('down')"
         @keydown.tab.prevent="commitEdit(); moveSelection('right')"
-        @keydown.escape="cancelEdit"
+        @keydown.escape.prevent="cancelEdit"
         class="absolute z-30 px-1 text-xs bg-background border-2 border-primary focus:outline-none text-foreground"
         :style="{
             left: `${editingCellPosition.x}px`,
@@ -2899,17 +2920,7 @@ defineExpose({
         />
     </div>
 
-    <!-- Commit Bar & Review Dialog -->
-    <CommitBar
-      v-if="hasUncommittedChanges"
-      :modified-count="modifiedRows.size"
-      :deleted-count="deletedRows.size"
-      :added-count="addedRows.size"
-      :loading="committing"
-      @discard="discardAllChanges"
-      @review="openReviewDialog"
-      @commit="commitChanges"
-    />
+    <!-- Commit Bar removed - auto-save is now enabled -->
 
     <BindCellDialog
       v-if="showBindDialog && bindTarget"

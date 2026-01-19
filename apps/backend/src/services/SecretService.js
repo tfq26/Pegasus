@@ -2,28 +2,28 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { db } from "../../db/surreal.js";
+import { db } from '../db/index.js';
+import { userSecrets } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 
 // Get the directory of this file and resolve .env relative to the backend root
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const envPath = path.resolve(__dirname, '../../.env');
+const envPath = path.resolve(__dirname, '../../../.env');
 dotenv.config({ path: envPath });
 console.log('[SecretService] Loaded .env from:', envPath);
 
 /**
  * SecretService
- * Uses SurrealDB for persistent, secure storage of secrets.
- * This unified service handles both static calls (userId, name, value) 
- * and instance calls (key, value, userId) while providing encryption.
+ * Uses Neon/Postgres via Drizzle for persistent, secure storage of secrets.
  */
 export class SecretService {
     constructor() {
         this.devEncryptionKey = process.env.PEGASUS_DEV_SECRET_KEY || 'dev-secret-key-32-chars-must-be-long!';
-        console.log('[SecretService] Unified Service Initialized (SurrealDB + Encryption)');
+        console.log('[SecretService] Unified Service Initialized (Postgres + Encryption)');
     }
 
-    // --- Core Instance Methods (Matches the interface used by Cloud routes) ---
+    // --- Core Instance Methods ---
 
     async resolveSecret(reference) {
         if (!reference || typeof reference !== 'string') return reference;
@@ -35,7 +35,6 @@ export class SecretService {
     }
 
     async storeSecret(key, value, userId) {
-        // Handle cloud route style or static-style mismatch
         return SecretService.storeSecret(userId, key, value);
     }
 
@@ -47,33 +46,23 @@ export class SecretService {
         return SecretService.deleteSecret(userId, key);
     }
 
-    // --- Static Methods (Matches the interface used by Weather/Dashboard routes) ---
+    // --- Static Methods ---
 
     static async storeSecret(userId, name, value) {
         const idPart = this._getUserIdPart(userId || this._extractUserId(name));
         const encrypted = this._encrypt(value);
 
         try {
-            // Use CREATE/UPDATE pattern for better SurrealDB Cloud compatibility
-            const result = await db.query(`
-                LET $userRecord = type::thing('user', $idPart);
-                LET $existing = (SELECT id FROM user_secret WHERE user = $userRecord AND name = $name LIMIT 1);
-                IF count($existing) > 0 THEN
-                    UPDATE user_secret SET value = $value, updated_at = time::now() WHERE user = $userRecord AND name = $name;
-                ELSE
-                    CREATE user_secret CONTENT {
-                        user: $userRecord,
-                        name: $name,
-                        value: $value,
-                        created_at: time::now(),
-                        updated_at: time::now()
-                    };
-                END;
-            `, {
-                idPart,
-                name: name,
-                value: encrypted
+            await db.insert(userSecrets).values({
+                userId: idPart,
+                name,
+                value: encrypted,
+                updatedAt: new Date()
+            }).onConflictDoUpdate({
+                target: [userSecrets.userId, userSecrets.name],
+                set: { value: encrypted, updatedAt: new Date() }
             });
+
             return `vault://${name}`;
         } catch (e) {
             console.error('[SecretService] Failed to store secret:', e);
@@ -84,19 +73,11 @@ export class SecretService {
     static async getSecret(userId, name) {
         const idPart = this._getUserIdPart(userId || this._extractUserId(name));
         try {
-            const [results] = await db.query(`
-                SELECT * FROM user_secret 
-                WHERE user = type::thing('user', $idPart) 
-                AND name = $name 
-                LIMIT 1
-            `, {
-                idPart,
-                name: name
+            const record = await db.query.userSecrets.findFirst({
+                where: and(eq(userSecrets.userId, idPart), eq(userSecrets.name, name))
             });
 
-            const record = results && results[0];
             if (!record) return null;
-
             return this._decrypt(record.value);
         } catch (e) {
             console.error('[SecretService] Failed to get secret:', e);
@@ -107,14 +88,8 @@ export class SecretService {
     static async deleteSecret(userId, name) {
         const idPart = this._getUserIdPart(userId || this._extractUserId(name));
         try {
-            await db.query(`
-                DELETE FROM user_secret 
-                WHERE user = type::thing('user', $idPart) 
-                AND name = $name
-            `, {
-                idPart,
-                name: name
-            });
+            await db.delete(userSecrets)
+                .where(and(eq(userSecrets.userId, idPart), eq(userSecrets.name, name)));
             return true;
         } catch (e) {
             console.error('[SecretService] Failed to delete secret:', e);
@@ -122,9 +97,6 @@ export class SecretService {
         }
     }
 
-    /**
-     * Mask sensitive config before sending to client
-     */
     static maskConfig(config, isOwner = false) {
         if (!config) return config;
         const sensitiveKeys = ['apiKey', 'api_key', 'token', 'password', 'secret', 'connectionString'];
@@ -168,8 +140,6 @@ export class SecretService {
     static _decrypt(text) {
         try {
             if (!text || typeof text !== 'string') return text;
-
-            // If it doesn't look like our ciphertext format (iv:hex), return as is (legacy support)
             if (!text.includes(':')) return text;
 
             const keyString = process.env.PEGASUS_DEV_SECRET_KEY || 'dev-secret-key-32-chars-must-be-long!';
@@ -185,7 +155,7 @@ export class SecretService {
             return decrypted;
         } catch (e) {
             console.error('[SecretService] Decryption failed:', e);
-            return text; // Fallback to raw text for legacy
+            return text;
         }
     }
 }

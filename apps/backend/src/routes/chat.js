@@ -525,7 +525,7 @@ chat.post("/ai/generate", async (c) => {
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config || {}
         let provider = connRow.type || connRow.provider
         if (!provider && config) {
-            const keys = Object.keys(config).filter(k => ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'surrealdb'].includes(k.toLowerCase()))
+            const keys = Object.keys(config).filter(k => ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'duckdb'].includes(k.toLowerCase()))
             if (keys.length > 0) provider = keys[0]
         }
         const adapterConfig = config[provider] || config[provider?.toLowerCase()]

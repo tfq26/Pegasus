@@ -77,6 +77,86 @@ export class PostgresAdapter extends DatabaseAdapter {
         }
     }
 
+    /**
+     * Apply a batch of atomic operations (Spreadsheet delta updates)
+     */
+    async applyOperations(tableName, operations) {
+        if (!this.client) await this.connect()
+
+        try {
+            await this.client.query('BEGIN');
+
+            for (const op of operations) {
+                switch (op.type) {
+                    case 'full_replacement': {
+                        await this.client.query(`DELETE FROM "${tableName}"`);
+                        if (op.rows && op.rows.length > 0) {
+                            for (const row of op.rows) {
+                                const keys = Object.keys(row).filter(k => k !== '__id' && k !== '_id');
+                                const cols = keys.map(k => `"${k}"`).join(', ');
+                                const vals = keys.map((_, i) => `$${i + 1}`).join(', ');
+                                const values = keys.map(k => row[k]);
+                                await this.client.query(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`, values);
+                            }
+                        }
+                        break;
+                    }
+
+                    case 'create': {
+                        const data = op.data || {};
+                        const keys = Object.keys(data).filter(k => k !== '__id' && k !== '_id');
+                        if (keys.length > 0) {
+                            const cols = keys.map(k => `"${k}"`).join(', ');
+                            const vals = keys.map((_, i) => `$${i + 1}`).join(', ');
+                            const values = keys.map(k => data[k]);
+                            await this.client.query(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`, values);
+                        }
+                        break;
+                    }
+
+                    case 'update': {
+                        const changes = op.changes || {};
+                        const keys = Object.keys(changes).filter(k => k !== '__id' && k !== '_id');
+                        const setClause = keys.map((k, i) => `"${k}" = $${i + 2}`).join(', ');
+                        const values = [op.id, ...keys.map(k => changes[k])];
+
+                        if (setClause && op.id) {
+                            // Postgres doesn't have a universal rowid, assume 'id' or provided '__id'
+                            await this.client.query(`UPDATE "${tableName}" SET ${setClause} WHERE id = $1`, values);
+                        }
+                        break;
+                    }
+
+                    case 'delete': {
+                        if (op.id) {
+                            await this.client.query(`DELETE FROM "${tableName}" WHERE id = $1`, [op.id]);
+                        }
+                        break;
+                    }
+
+                    case 'add_column': {
+                        if (op.column) {
+                            await this.client.query(`ALTER TABLE "${tableName}" ADD COLUMN "${op.column}" TEXT`);
+                        }
+                        break;
+                    }
+
+                    case 'drop_column': {
+                        if (op.column) {
+                            await this.client.query(`ALTER TABLE "${tableName}" DROP COLUMN "${op.column}"`);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            await this.client.query('COMMIT');
+        } catch (e) {
+            await this.client.query('ROLLBACK');
+            throw e;
+        }
+    }
+
     async getSchema() {
         if (!this.client) await this.connect()
 

@@ -21,11 +21,16 @@ export const getPayments = async (c) => {
 
         const userId = payload.sub;
 
-        const results = await db.query.userPayments.findMany({
-            where: eq(userPayments.userId, userId),
-            orderBy: [desc(userPayments.createdAt)],
-            limit: 50
-        });
+        console.log('[Payments API] Fetching payments for user:', userId);
+
+        // Use standard select query instead of relational query
+        const results = await db.select()
+            .from(userPayments)
+            .where(eq(userPayments.userId, userId))
+            .orderBy(desc(userPayments.createdAt))
+            .limit(50);
+
+        console.log('[Payments API] Found', results.length, 'payments');
 
         return c.json({
             success: true,
@@ -33,6 +38,7 @@ export const getPayments = async (c) => {
         });
     } catch (err) {
         console.error('[Payments API] Error:', err.message);
+        console.error('[Payments API] Stack:', err.stack);
         return c.json({ error: 'Failed to fetch payments' }, 500);
     }
 };

@@ -1,4 +1,4 @@
-import { db } from "../../db/surreal.js";
+import { db } from "../db/index.js";
 
 /**
  * Service for generating SQL queries for API-sourced dashboard widgets

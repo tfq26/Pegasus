@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, primaryKey, vector, unique, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, uuid, integer, jsonb, primaryKey, vector, unique, doublePrecision, bigint } from "drizzle-orm/pg-core";
 
 // --- Users ---
 export const users = pgTable("pegasus_user", {
@@ -11,6 +11,7 @@ export const users = pgTable("pegasus_user", {
     purchasedTokens: integer("purchased_tokens").default(0),
     purchasedStorage: integer("purchased_storage").default(0),
     stripeCustomerId: text("stripe_customer_id").default(""),
+    config: jsonb("config").default({}),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -45,6 +46,7 @@ export const dashboards = pgTable("dashboard", {
     isPublic: boolean("is_public").default(false),
     coverImage: text("cover_image"),
     config: jsonb("config"),
+    messages: jsonb("messages").default([]),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -169,8 +171,10 @@ export const notifications = pgTable("notification", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
     dashboardId: uuid("dashboard_id").references(() => dashboards.id, { onDelete: 'cascade' }),
+    dashboardTitle: text("dashboard_title"),
     type: text("type"), // 'permission_change', 'mention', etc.
     message: text("message"),
+    sender: text("sender"),
     isRead: boolean("is_read").default(false),
     createdAt: timestamp("created_at").defaultNow(),
 });
@@ -236,6 +240,9 @@ export const dataSources = pgTable("data_source", {
     config: jsonb("config").notNull(),
     pollingInterval: integer("polling_interval").default(300),
     isActive: boolean("is_active").default(true),
+    lastResult: jsonb("last_result"),
+    lastFetched: timestamp("last_fetched"),
+    error: text("error"),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -247,6 +254,7 @@ export const cellBindings = pgTable("cell_binding", {
     cellId: text("cell_id").notNull(),
     dataSourceId: uuid("data_source_id").references(() => dataSources.id, { onDelete: 'cascade' }),
     fieldPath: text("field_path"),
+    lastValue: text("last_value"),
     updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({
     unq: unique().on(t.spreadsheetId, t.cellId),
@@ -260,8 +268,10 @@ export const userPayments = pgTable("user_payment", {
     currency: text("currency").default('usd'),
     tokens: integer("tokens").default(0),
     storageBytes: integer("storage_bytes").default(0),
+    description: text("description"),
     status: text("status"), // 'succeeded', 'pending', 'failed'
     stripePaymentIntentId: text("stripe_payment_intent_id"),
+    stripeSessionId: text("stripe_session_id"),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -296,6 +306,9 @@ export const stocksTable = pgTable("stock", {
     price: doublePrecision("price").default(0),
     change: doublePrecision("change").default(0),
     changePercent: doublePrecision("change_percent").default(0),
+    volume: bigint("volume", { mode: 'number' }).default(0),
+    marketCap: bigint("market_cap", { mode: 'number' }).default(0),
+    isRealData: boolean("is_real_data").default(false),
     lastUpdated: timestamp("last_updated").defaultNow(),
 });
 
@@ -304,6 +317,7 @@ export const stockHistory = pgTable("stock_history", {
     symbol: text("symbol").references(() => stocksTable.symbol, { onDelete: 'cascade' }),
     date: text("date").notNull(),
     price: doublePrecision("price").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const stockTransactions = pgTable("stock_transaction", {
@@ -344,3 +358,39 @@ export const customTools = pgTable("custom_tool", {
     parameters: jsonb("parameters").default({}),
     createdAt: timestamp("created_at").defaultNow(),
 });
+
+// --- User Secrets ---
+export const userSecrets = pgTable("user_secret", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    name: text("name").notNull(),
+    value: text("value").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+    unq: unique().on(t.userId, t.name),
+}));
+
+// --- Sanitization Metadata ---
+export const sanitizationMetadata = pgTable("sanitization_metadata", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    originalTable: text("original_table").notNull(),
+    logicalName: text("logical_name"),
+    uploadId: text("upload_id"),
+    currentVersion: integer("current_version").default(1),
+    versions: jsonb("versions").default([]),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// --- Spreadsheet Permissions ---
+export const spreadsheetPermissions = pgTable("spreadsheet_permission", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spreadsheet: text("spreadsheet").notNull(),
+    userEmail: text("user_email").notNull(),
+    accessLevel: text("access_level").notNull(), // 'view', 'edit'
+    grantedBy: text("granted_by").references(() => users.id),
+    grantedAt: timestamp("granted_at").defaultNow(),
+}, (t) => ({
+    unq: unique().on(t.spreadsheet, t.userEmail),
+}));

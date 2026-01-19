@@ -1,7 +1,8 @@
-import { db, isConnected } from "../../db/surreal.js";
+import { db } from "../db/index.js";
+import { sql } from "drizzle-orm";
 
 /**
- * Generic API Service for fetching external data and syncing it to SurrealDB.
+ * Generic API Service for fetching external data and syncing it to Neon/Postgres.
  * Supports polling, custom mappers, and persistent storage.
  */
 export class APIService {
@@ -9,7 +10,8 @@ export class APIService {
         this.name = config.name || 'GenericAPI';
         this.url = config.url;
         this.table = config.table;
-        this.interval = config.interval || 60000; // Default 1 minute
+        this.pk = config.pk || 'id'; // Primary key field
+        this.interval = config.interval || 60000;
         this.mapper = config.mapper || ((data) => data);
         this.isRunning = false;
         this.intervalId = null;
@@ -38,14 +40,11 @@ export class APIService {
     }
 
     /**
-     * Fetches data from the API and syncs it to the configured SurrealDB table.
+     * Fetches data from the API and syncs it to the configured table.
      */
     async sync() {
         try {
-            // Wait for DB to be fully ready (connected and authenticated)
-            if (!isConnected) {
-                return;
-            }
+            if (!db) return;
 
             if (!this.url) {
                 // If no URL and no override sync (like StockService), it's a no-op generic
@@ -59,7 +58,6 @@ export class APIService {
 
             const data = await response.json();
             const mappedData = await this.mapper(data);
-            // console.log(`[${this.name}] Successfully fetched and mapped data.`);
 
             if (Array.isArray(mappedData)) {
                 for (const item of mappedData) {
@@ -70,30 +68,49 @@ export class APIService {
             }
 
         } catch (e) {
-            if (e.message && e.message.includes('NoActiveSocket')) {
-                // Graceful ignore during startup/disconnection
-            } else {
-                console.error(`[${this.name}] Sync failed:`, e.message);
-            }
+            console.error(`[${this.name}] Sync failed:`, e.message);
         }
     }
 
     async upsert(item) {
-        if (!this.table) return;
+        if (!this.table || !db) return;
 
-        const id = item.id || `${this.table}:${item.symbol || item.uuid || crypto.randomUUID().replace(/-/g, '')}`;
+        // Determine primary key name and value
+        const pkField = this.pk || 'id';
+        const pkValue = item[pkField] || item.id || item.symbol || item.uuid || (pkField === 'id' ? crypto.randomUUID() : null);
+
+        if (!pkValue && pkField !== 'id') {
+            console.warn(`[${this.name}] Skipping upsert: Missing primary key '${pkField}'`);
+            return;
+        }
 
         const content = {
             ...item,
-            updated_at: new Date().toISOString()
+            [pkField]: pkValue
         };
-        delete content.id;
 
-        await db.query(`
-            INSERT INTO ${this.table} ($content) 
-            ON DUPLICATE KEY UPDATE 
-                updated_at = time::now();
-        `, { content: { ...content, id } });
+        // Only add updated_at if it's a common field or explicitly requested
+        // For weather_cache we use cached_at/expiresAt already in the mapper
+        if (!content.updatedAt && !content.updated_at && !content.cached_at && !content.cachedAt) {
+            content.updated_at = new Date();
+        }
+
+        const keys = Object.keys(content);
+        const columnNames = keys.map(k => `"${k}"`).join(', ');
+        const updates = keys.filter(k => k !== pkField).map(k => `"${k}" = EXCLUDED."${k}"`).join(', ');
+
+        const query = sql`
+            INSERT INTO "${sql.raw(this.table)}" (${sql.raw(columnNames)})
+            VALUES (${sql.join(keys.map(k => sql`${content[k]}`), sql`, `)})
+            ON CONFLICT ("${sql.raw(pkField)}") DO UPDATE SET ${sql.raw(updates)}
+        `;
+
+        try {
+            await db.execute(query);
+        } catch (e) {
+            console.error(`[${this.name}] Upsert failed for table ${this.table}:`, e.message);
+            // console.debug(`[${this.name}] Failed query with keys:`, keys);
+        }
     }
 }
 
@@ -109,16 +126,17 @@ export const API_DEFAULTS = {
     },
     WEATHER: {
         name: 'WeatherService',
-        table: 'weather_data',
+        table: 'weather_cache',
+        pk: 'location',
         interval: 300000, // 5 minutes
         url: 'https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.01&current_weather=true',
         mapper: (data) => ({
-            id: 'weather_data:nyc',
             location: 'New York',
             temp: data.current_weather.temperature,
-            windspeed: data.current_weather.windspeed,
-            condition: data.current_weather.weathercode,
-            unit: 'celsius'
+            wind_speed: data.current_weather.windspeed,
+            condition: String(data.current_weather.weathercode),
+            cached_at: new Date(),
+            expires_at: new Date(Date.now() + 300000)
         })
     }
 };
