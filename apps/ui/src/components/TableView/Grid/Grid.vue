@@ -1,27 +1,22 @@
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef, unref } from 'vue';
+import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef } from 'vue';
 import { Engine } from '../Engine/Engine';
-import { CanvasRenderer } from '../Engine/CanvasRenderer';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
 import { useGridScroll } from '../../../composables/grid/useGridScroll';
 import { useGridSelection } from '../../../composables/grid/useGridSelection';
-import { useGridCanvas } from '@/composables/grid/useGridCanvas';
-import { useGridColumnResize } from '@/composables/grid/useGridColumnResize';
 import { useRealtimeCursor } from '../../../composables/grid/useRealtimeCursor';
 import { useGridEditing } from '../../../composables/grid/useGridEditing';
 import type { CellPosition } from '../Engine/types';
 import { CellType } from '../Engine/types';
 import { toast } from '@/composables/useNotifications';
-import { api } from '@/lib/apiClient';
 import { useFeatureFlags } from '@/composables/useFeatureFlags';
 import FindDialog from '../FindDialog.vue';
-// CommitBar removed - changes auto-save now
-import ChangeReviewDialog from './ChangeReviewDialog.vue';
+// CommitBar removed - cells persist immediately
+// ChangeReviewDialog removed - no commit flow
 import type { RowDiff } from '../Engine/types';
 import { SearchEngine } from '../Engine/SearchEngine';
 import ProviderBadge from '../ProviderBadge.vue';
-import { ColorPicker } from '@/components/ColorPicker';
 import { 
   ChevronDown, 
   Sparkles, 
@@ -36,13 +31,8 @@ import {
   ArrowRight,
   Trash2,
   Download,
-  MessageSquare,
-  Activity,
-  Database,
-  Copy,
-  Cloud
+  MessageSquare
 } from 'lucide-vue-next';
-import BindCellDialog from './BindCellDialog.vue';
 import { CSVExporter, ExcelExporter } from '../Engine/Exporters';
 import {
   ContextMenu,
@@ -57,21 +47,6 @@ import PresenceOverlay from '../PresenceOverlay.vue';
 import { connectToSurreal } from '@/lib/surreal';
 import { RealtimeSync } from '../Engine/RealtimeSync';
 import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration';
-import { useConnectionStore } from '@/stores/connection';
-import SaveSnapshotDialog from './SaveSnapshotDialog.vue';
-
-const BUILT_IN_FUNCTIONS = [
-  'SUM', 'AVERAGE', 'COUNT', 'MIN', 'MAX', 
-  'IF', 'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'CEILING', 'FLOOR', 
-  'ABS', 'POWER', 'SQRT'
-];
-
-const REFERENCE_COLORS = [
-  'ring-2 ring-blue-500 ring-inset',
-  'ring-2 ring-green-500 ring-inset',
-  'ring-2 ring-purple-500 ring-inset',
-  'ring-2 ring-orange-500 ring-inset',
-];
 
 const props = defineProps<{
   engine: Engine;
@@ -86,7 +61,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   'save-query': [query: string, type: 'formula'];
   'version-change': [version: number];
-  'persist-table': [];
   'ai-response': [response: { 
     type: string; 
     task?: string; 
@@ -122,9 +96,6 @@ const {
   textWrap
 } = useGridScroll(props.engine);
 
-
-const showGridlines = ref(true);
-
 // Force re-render trigger
 const renderKey = ref(0);
 
@@ -138,6 +109,7 @@ const {
   lastSelectedColumn,
   lastSelectedRow,
   selectColumn,
+  selectRow,
   clearColumnRowSelection,
   deleteSelectedColumn,
   deleteSelectedRow,
@@ -145,34 +117,8 @@ const {
   fillSelectedRow,
   isColumnSelected,
   isRowSelected,
-  focusGrid,
-  selectRow
+  focusGrid
 } = useGridSelection(props.engine, gridContainer, rowCount, colCount, renderKey);
-
-// --- Canvas Rendering (useGridCanvas) ---
-const {
-    useCanvas,
-    canvasRef,
-    updateCanvas,
-    handleCanvasMouseDown,
-    handleCanvasDblClick,
-    getCellFromEvent: getCanvasCellFromEvent
-} = useGridCanvas(
-    props.engine,
-    gridContainer,
-    virtualState,
-    ref(rowHeight), // Static config from useGridScroll
-    ref(rowCount),
-    ref(colCount),
-    selection,
-    rangeSelection,
-    getColWidth,
-    {
-        selectRow,
-        onCellMouseDown: (r: number, c: number, e: MouseEvent) => onMouseDown(r, c, e),
-        onCellDblClick: (r: number, c: number, e: MouseEvent) => handleCellDblClick(r, c, e)
-    }
-);
 
 
 // --- Realtime & Follow Me (useRealtimeCursor) ---
@@ -192,25 +138,8 @@ const {
     activeCells,
     incomingCellEdit,
     broadcastCellFocus: broadcastFocusSocket,
-    broadcastCellEdit: broadcastEditSocket,
-    incomingBindingUpdate
+    broadcastCellEdit: broadcastEditSocket
 } = useSpreadsheetCollaboration(tableName, isLive);
-
-watch(incomingBindingUpdate, (update) => {
-    if (update && update.spreadsheetId === (props.engine['storageKey'] || 'default')) {
-        const parts = update.cellId.split(',');
-        const rStr = parts[0];
-        const cStr = parts[1];
-        if (rStr !== undefined && cStr !== undefined) {
-            const row = parseInt(rStr);
-            const col = parseInt(cStr);
-            if (!isNaN(row) && !isNaN(col)) {
-                props.engine.setValue({ row, col }, String(update.value), true, 'remote');
-                renderKey.value++; // Force canvas redraw
-            }
-        }
-    }
-});
 
 // Sync remote presence to engine
 watch(activeCells, (newCells) => {
@@ -242,13 +171,9 @@ onMounted(() => {
             broadcastEditSocket(pos.row, pos.col, val);
         }
     });
-
-    fetchCellBindings();
     onUnmounted(cleanup);
 });
 
-// --- Canvas Edit Input Ref (must be defined before useGridEditing to pass it as parameter) ---
-const canvasEditInputRef = ref<HTMLInputElement | null>(null);
 
 // --- Editing (useGridEditing) ---
 const {
@@ -260,7 +185,7 @@ const {
   cancelEdit,
   onCellInputChange,
   onCellBlur
-} = useGridEditing(props.engine, gridContainer, selection, canvasEditInputRef);
+} = useGridEditing(props.engine, gridContainer, selection);
 
 
 // Subscribe to engine changes
@@ -317,19 +242,12 @@ watch(formulaBarValue, (val) => {
     
     // Extract references for highlighting
     const { cells, ranges } = props.engine.parser.extractReferences(val);
-    
-    // Only update if changed to avoid unnecessary re-renders (which can kill input focus)
-    if (JSON.stringify(cells) !== JSON.stringify(formulaReferences.value)) {
-      formulaReferences.value = cells;
-    }
-    if (JSON.stringify(ranges) !== JSON.stringify(formulaRanges.value)) {
-      formulaRanges.value = ranges;
-    }
+    formulaReferences.value = cells;
+    formulaRanges.value = ranges;
   } else {
     showSuggestions.value = false;
-    // Only clear if not already empty
-    if (formulaReferences.value.length > 0) formulaReferences.value = [];
-    if (formulaRanges.value.length > 0) formulaRanges.value = [];
+    formulaReferences.value = [];
+    formulaRanges.value = [];
   }
 });
 
@@ -338,35 +256,45 @@ const isFillDragging = ref(false);
 const fillStart = ref<CellPosition | null>(null);
 const fillRange = ref<{ start: CellPosition, end: CellPosition } | null>(null);
 
-// --- Column Resize State (useGridColumnResize) ---
-const {
-    resizingColumn,
-    startColResize,
-    handleHeaderDblClick
-} = useGridColumnResize(getColWidth, setColWidth, autoFitColumn);
+// --- Column Resize State ---
+const resizingColumn = ref<number | null>(null);
+const resizeStartX = ref(0);
+const resizeStartWidth = ref(0);
 
-// Computed position for the floating edit input in canvas mode
-const editingCellPosition = computed(() => {
-    if (!editingCell.value || !useCanvas.value) return null;
-    
-    const { row, col } = editingCell.value;
-    
-    // Calculate X position (sum of all previous column widths + row header)
-    let x = 40; // Row header width
-    for (let c = 0; c < col; c++) {
-        x += getColWidth(c);
-    }
-    
-    // Calculate Y position (row * rowHeight + header height)
-    const y = row * rowHeight + 24; // 24px for column header height
-    
-    return {
-        x: x - virtualState.value.scrollLeft,
-        y: y - virtualState.value.scrollTop,
-        width: getColWidth(col),
-        height: rowHeight
-    };
-});
+const startColResize = (col: number, e: MouseEvent) => {
+  e.stopPropagation();
+  e.preventDefault();
+  resizingColumn.value = col;
+  resizeStartX.value = e.clientX;
+  resizeStartWidth.value = getColWidth(col);
+  
+  document.addEventListener('mousemove', onColResizeMove);
+  document.addEventListener('mouseup', stopColResize);
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+};
+
+const onColResizeMove = (e: MouseEvent) => {
+  if (resizingColumn.value === null) return;
+  
+  const delta = e.clientX - resizeStartX.value;
+  const newWidth = Math.max(40, Math.min(500, resizeStartWidth.value + delta));
+  setColWidth(resizingColumn.value, newWidth);
+};
+
+const stopColResize = () => {
+  resizingColumn.value = null;
+  document.removeEventListener('mousemove', onColResizeMove);
+  document.removeEventListener('mouseup', stopColResize);
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+};
+
+const handleHeaderDblClick = (col: number, e: MouseEvent) => {
+  // Auto-fit column on double-click
+  e.stopPropagation();
+  autoFitColumn(col);
+};
 
 // --- Selection State (useGridSelection) ---
 
@@ -407,40 +335,6 @@ const formulaErrorData = ref<any>(null);
 const popoverPosition = ref({ x: 0, y: 0 });
 const isAnalyzingFormula = ref(false);
 
-// --- Cloud Snapshot Logic ---
-const connectionStore = useConnectionStore();
-const showSnapshotDialog = ref(false);
-const cloudConnections = computed(() => 
-    (unref(connectionStore.connections) || []).filter((c: any) => c.provider === 'cloud_storage')
-);
-
-const handleCloudSnapshot = async (config: any) => {
-    if (config.provider === 'internal') {
-        toast.promise(
-            props.engine.saveToUserStorage(),
-            {
-                loading: 'Saving to Pegasus storage...',
-                success: 'Saved successfully!',
-                error: (e: any) => `Save failed: ${e.message}`
-            }
-        );
-        return;
-    }
-
-    toast.promise(
-        props.engine.saveSnapshot(config),
-        {
-            loading: 'Uploading snapshot to cloud...',
-            success: 'Snapshot uploaded successfully!',
-            error: (e: any) => `Upload failed: ${e.message}`
-        }
-    );
-};
-
-onMounted(() => {
-    connectionStore.loadConnections();
-});
-
 // --- Context Menu State ---
 export interface GridContextMenuItem {
     label?: string;
@@ -455,31 +349,6 @@ const showContextMenu = ref(false);
 const contextMenuPos = ref({ x: 0, y: 0 });
 const contextMenuOptions = ref<GridContextMenuItem[]>([]);
 const contextTarget = ref<{ type: 'cell' | 'row-header' | 'col-header', row?: number, col?: number } | null>(null);
-
-// Live Data State
-const showBindDialog = ref(false);
-const bindTarget = ref<{ row: number, col: number, label: string } | null>(null);
-const cellBindings = ref<Record<string, any>>({}); // key: "row,col"
-
-const fetchCellBindings = async () => {
-    try {
-        const spreadsheetId = props.engine['storageKey'] || 'default';
-        const resp = await api.get<any[]>(`/data-sources/bindings?spreadsheetId=${spreadsheetId}`);
-        const map: Record<string, any> = {};
-        props.engine.cellBindings.clear();
-        resp.forEach((b: any) => {
-            map[b.cell_id] = b;
-            props.engine.cellBindings.set(b.cell_id, b);
-        });
-        cellBindings.value = map;
-        renderKey.value++;
-    } catch (e) {}
-};
-
-const onBindingSaved = () => {
-    fetchCellBindings();
-    showBindDialog.value = false;
-};
 
 // Note State
 const activeNoteCell = ref<{row: number, col: number} | null>(null);
@@ -568,8 +437,6 @@ const onContextMenu = (e: MouseEvent) => {
                 { type: 'divider' },
                 { label: 'Insert Note', action: 'insert_note', icon: MessageSquare },
                 { type: 'divider' },
-                { label: 'Bind to Live Data', action: 'bind_live_data', icon: Activity },
-                { type: 'divider' },
                 { label: 'Toggle Simulation (Demo)', action: 'toggle_simulation', icon: Sparkles },
                 { type: 'divider' },
                 { label: 'Export Selection (CSV)', action: 'export_selection_csv', icon: Download },
@@ -618,14 +485,6 @@ const handleContextMenuAction = async (action: string) => {
                 activeNoteCell.value = { row: r, col: c };
                 activeNotePos.value = { x: contextMenuPos.value.x, y: contextMenuPos.value.y };
                 break;
-            case 'bind_live_data':
-                bindTarget.value = { 
-                    row: r, 
-                    col: c, 
-                    label: `${colIndexToLabel(c)}${r + 1}` 
-                };
-                showBindDialog.value = true;
-                break;
             case 'toggle_simulation':
                 if (props.engine['simulationInterval']) {
                     props.engine.stopSimulation();
@@ -667,6 +526,10 @@ const handleContextMenuAction = async (action: string) => {
 const { hasManualFormulas } = useFeatureFlags();
 
 // --- Formula Autocomplete State ---
+const BUILT_IN_FUNCTIONS = [
+  'SUM', 'AVERAGE', 'COUNT', 'MIN', 'MAX', 
+  'IF', 'ROUND', 'ABS', 'SQRT'
+];
 const formulaSuggestions = ref<string[]>([]);
 const showSuggestions = ref(false);
 const selectedSuggestionIndex = ref(0);
@@ -686,6 +549,13 @@ const showManualFormulaFeatures = computed(() => {
 });
 
 
+// Reference colors for highlighting
+const REFERENCE_COLORS = [
+  'ring-2 ring-blue-500 ring-inset',
+  'ring-2 ring-green-500 ring-inset',
+  'ring-2 ring-purple-500 ring-inset',
+  'ring-2 ring-orange-500 ring-inset',
+];
 
 // --- Computed ---
 const selectedCellLabel = computed(() => {
@@ -735,10 +605,6 @@ const isCellModified = (row: number, col: number) => {
   return props.engine.changeTracker.getModifiedCellKeys().has(key);
 };
 
-const hasUncommittedChanges = computed(() => {
-  return modifiedRows.value.size > 0 || deletedRows.value.size > 0 || addedRows.value.size > 0;
-});
-
 // Helper for display value (direct engine access for performance)
 const getDisplayValue = (row: number, col: number) => {
   // Use renderKey to force update when engine changes
@@ -750,19 +616,6 @@ const getDisplayValue = (row: number, col: number) => {
 // --- Helpers ---
 const getCellFromEvent = (e: MouseEvent): CellPosition | null => {
   const target = e.target as HTMLElement;
-
-  // Use Composable for Canvas events
-  if (useCanvas.value && canvasRef.value && (target === canvasRef.value || target.classList.contains('sticky-canvas'))) {
-      const pos = getCanvasCellFromEvent(e);
-      // Row is handled inside dispatch, but if we are here, we might just return pos
-      // useGridCanvas's getCanvasCellFromEvent returns null if it's a row header?
-      // No, let's check useGridCanvas implementation.
-      // It returns null for row header! 
-      // But getCellFromEvent is expected to return the cell under cursor.
-      // If it's a row header, it's NOT a cell.
-      return pos;
-  }
-
   const cell = target.closest('td');
   if (!cell) return null;
   
@@ -869,10 +722,6 @@ const onMouseDown = (row: number, col: number, e: MouseEvent) => {
   document.addEventListener('mousemove', onGlobalMouseMove);
   document.addEventListener('mouseup', onGlobalMouseUp);
 };
-
-
-// handleCanvasMouseDown is now from composable
-// handleCanvasDblClick is now from composable
 
 const onGlobalMouseMove = (e: MouseEvent) => {
   if (!isDragging.value || !dragStart.value) return;
@@ -985,14 +834,13 @@ const adjustFormulaReferences = (formula: string, rowOffset: number, colOffset: 
 };
 
 // --- Styling ---
-const getCellStyle = (row: number, col: number): any => {
+const getCellStyle = (row: number, col: number) => {
     const cell = props.engine.getCell({ row, col });
-    if (!cell || !cell.style) return {};
+    if (!cell?.style) return {};
     return {
         fontWeight: cell.style.bold ? 'bold' : 'normal',
         fontStyle: cell.style.italic ? 'italic' : 'normal',
         textDecoration: cell.style.underline ? 'underline' : 'none',
-        textAlign: cell.style.align || 'left',
         color: cell.style.color || 'inherit',
         backgroundColor: cell.style.background || 'inherit',
     };
@@ -1349,16 +1197,6 @@ const generateAIFormula = async (userRequest: string) => {
             }
             break;
             
-          case 'live_data_binding_request':
-            // AI wants to bind a column to live data
-            await executeLiveDataBindingRequest(
-              toolResult.sourceColumn,
-              toolResult.targetColumn,
-              toolResult.providerType,
-              toolResult.fieldPath
-            );
-            break;
-            
           default:
             console.warn(`Unknown tool result type: ${toolResult.type}`);
         }
@@ -1375,89 +1213,6 @@ const generateAIFormula = async (userRequest: string) => {
   } finally {
     isProcessingAI.value = false;
   }
-};
-
-// Helper: AI-driven batch live data binding
-const executeLiveDataBindingRequest = async (sourceCol: number, targetCol: number, providerType: string, fieldPath: string) => {
-    const rowCountVal = rowCount;
-    let boundCount = 0;
-    let errorCount = 0;
-
-    toast.info(`Configuring live data for ${providerType}...`);
-
-    try {
-        const spreadsheetId = (props.engine as any).storageKey || 'default';
-        
-        // 1. Fetch existing data sources to avoid duplicates
-        const existingSources = await api.get<any[]>('/data-sources');
-        
-        // 2. Iterate through rows (skipping header row 0)
-        for (let r = 1; r < rowCountVal; r++) {
-            const identifier = props.engine.getDisplayValue({ row: r, col: sourceCol })?.toString().trim();
-            if (!identifier) continue;
-
-            try {
-                // Find or create data source for this identifier
-                let source = existingSources.find((s: any) => 
-                    s.type === providerType && 
-                    (providerType === 'stock' ? s.config.symbol === identifier : 
-                     providerType === 'crypto' ? s.config.coinId === identifier.toLowerCase() : 
-                     s.config.city === identifier)
-                );
-
-                if (!source) {
-                    // Create new source
-                    const config: any = {};
-                    if (providerType === 'stock') config.symbol = identifier;
-                    else if (providerType === 'crypto') config.coinId = identifier.toLowerCase();
-                    else if (providerType === 'weather') config.city = identifier;
-
-                    source = await api.post<any>('/data-sources', {
-                        name: `${identifier} (${providerType})`,
-                        type: providerType,
-                        config: config,
-                        polling_interval: providerType === 'weather' ? 1800 : 3600 // 30m for weather, 1h for stocks/crypto
-                    });
-                    
-                    // Add to our local list so we don't recreate it for the same identifier in another row
-                    existingSources.push(source);
-                }
-
-                // 3. Bind the cell in target column
-                await api.post('/data-sources/bindings', {
-                    spreadsheetId,
-                    cellId: `${r},${targetCol}`,
-                    dataSourceId: source.id,
-                    fieldPath: fieldPath || (providerType === 'weather' ? 'temp' : 'price')
-                });
-
-                // Update engine's local binding map so UI shows indicators immediately
-                props.engine.cellBindings.set(`${r},${targetCol}`, {
-                    data_source: source.id,
-                    field_path: fieldPath || (providerType === 'weather' ? 'temp' : 'price')
-                });
-
-                boundCount++;
-            } catch (err) {
-                console.error(`Failed to bind row ${r}:`, err);
-                errorCount++;
-            }
-        }
-
-        if (boundCount > 0) {
-            toast.success(`Successfully bound ${boundCount} cells to live ${providerType} data.`);
-            // Trigger UI refresh
-            if (typeof (props.engine as any).notifyChange === 'function') {
-                (props.engine as any).notifyChange();
-            }
-        } else if (errorCount > 0) {
-            toast.error(`Binding failed for ${errorCount} cells.`);
-        } else {
-            toast.info("No valid identifiers found to bind.");
-        }
-    } catch (e: any) {
-        toast.error(`Failed to execute batch binding: ${e.message}`);
-    }
 };
 
 // Helper to apply calculation to column
@@ -2153,10 +1908,9 @@ const executeForecastRequest = async (column: number, algorithm: string, periods
   const n = values.length;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   for (let i = 0; i < n; i++) {
-    const val = values[i] ?? 0;
     sumX += i;
-    sumY += val;
-    sumXY += i * val;
+    sumY += values[i];
+    sumXY += i * values[i];
     sumX2 += i * i;
   }
   
@@ -2277,55 +2031,9 @@ const commitChanges = async () => {
     committing.value = false;
   }
 };
-
-const saving = ref(false);
-const saveChanges = async () => {
-  saving.value = true;
-  try {
-    await props.engine.saveToUserStorage();
-    renderKey.value++; // Refresh view even though it's a save
-    toast.success('Spreadsheet saved to your Pegasus storage');
-  } catch (err: any) {
-    console.error('Save failed:', err);
-    toast.error(`Save failed: ${err.message}`);
-  } finally {
-    saving.value = false;
-  }
-};
-
-const handleUndo = () => {
-    if (props.engine.undoManager.undo()) {
-        props.engine.notifyChange();
-    }
-};
-
-const handleRedo = () => {
-    if (props.engine.undoManager.redo()) {
-        props.engine.notifyChange();
-    }
-};
-
-defineExpose({
-    handleFormat: toggleStyle,
-    textWrap,
-    showGridlines,
-    autoFitAllColumns,
-    handleUndo,
-    handleRedo,
-    commitChanges,
-    saveChanges,
-    hasUncommittedChanges
-});
 </script>
 
 <template>
-  <SaveSnapshotDialog 
-      :open="showSnapshotDialog"
-      :connections="cloudConnections"
-      @update:open="showSnapshotDialog = $event"
-      @confirm="handleCloudSnapshot"
-  />
-
   <ContextMenu>
     <ContextMenuTrigger as-child>
       <div 
@@ -2344,18 +2052,6 @@ defineExpose({
         v-if="props.engine.sourceProvider" 
         :provider="props.engine.sourceProvider" 
       />
-      
-      <!-- Local Data Indicator (Re-enabled) -->
-      <div 
-        v-if="props.engine.hasSource() && props.engine.sourceProvider === 'local'" 
-        class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 cursor-help shrink-0"
-        title="This tab is stored locally. Save to database to enable persistence."
-        @click="emit('persist-table')"
-      >
-        <Database class="w-3 h-3" />
-        LOCAL
-        <button class="ml-1 hover:underline text-amber-700">Persist</button>
-      </div>
       
       <div class="flex-1">
         <input
@@ -2395,42 +2091,10 @@ defineExpose({
       </div>
       
       <!-- Provider Badge -->
-      <div class="flex items-center gap-1.5" v-if="props.engine.sourceProvider">
-          <ProviderBadge :provider="props.engine.sourceProvider" />
-          
-          <!-- Save a Copy Action -->
-           <button 
-            v-if="props.engine.sourceProvider !== 'surrealdb' || props.engine.sourceTable?.includes('local')"
-            class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
-            title="Save a copy of this table to your account"
-            @click="emit('persist-table')"
-          >
-            <Copy class="w-2.5 h-2.5" />
-            Save Copy
-          </button>
-
-          <!-- Cloud Snapshot Action -->
-          <button 
-            class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/20 text-[10px] font-medium text-sky-600 hover:bg-sky-500/20 transition-colors"
-            title="Back up to Cloud Storage (S3/Azure/GCS)"
-            @click="showSnapshotDialog = true"
-          >
-            <Cloud class="w-2.5 h-2.5" />
-            Snapshot
-          </button>
-      </div>
-      
-      <!-- Local Data Indicator (Re-enabled) -->
-      <div 
-        v-if="props.engine.sourceProvider === 'local-file' || props.engine.sourceTable === 'local-file'" 
-        class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 cursor-help shrink-0"
-        title="This tab is stored locally. Save to database to enable persistence."
-        @click="emit('persist-table')"
-      >
-        <Database class="w-3 h-3" />
-        LOCAL
-        <button class="ml-1 hover:underline text-amber-700">Persist</button>
-      </div>
+      <ProviderBadge 
+        v-if="props.engine.sourceProvider" 
+        :provider="props.engine.sourceProvider" 
+      />
       
       <div class="flex-1 relative">
         <input
@@ -2474,6 +2138,61 @@ defineExpose({
       </div>
     </div>
     
+    <!-- Toolbar -->
+    <div class="flex items-center gap-1 px-3 py-1 border-b border-border bg-muted/30">
+        <!-- Version Dropdown -->
+        <div v-if="props.versions && props.versions.length > 0" class="flex items-center gap-2 mr-4 border-r pr-4 border-border/50">
+            <span class="text-xs text-muted-foreground font-medium">Version:</span>
+            <select 
+                :value="props.currentVersion" 
+                @change="(e) => emit('version-change', Number((e.target as HTMLSelectElement).value))"
+                class="h-7 text-xs bg-background border border-border rounded px-2 min-w-[100px] outline-none focus:ring-1 focus:ring-primary"
+            >
+                <!-- Original is implicit if not in versions array, but we assume versions array contains all selectable options or we handle it -->
+                <option v-for="v in props.versions" :key="v.version" :value="v.version">
+                    v{{ v.version }} ({{ new Date(v.created_at).toLocaleDateString() }})
+                </option>
+            </select>
+             <span v-if="props.currentVersion" class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Active
+            </span>
+        </div>
+
+        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent font-bold text-foreground" @click="toggleStyle('bold')" title="Bold">B</button>
+        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent italic text-foreground" @click="toggleStyle('italic')" title="Italic">I</button>
+        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent underline text-foreground" @click="toggleStyle('underline')" title="Underline">U</button>
+        <div class="w-px h-4 bg-border mx-2"></div>
+        <div class="flex items-center gap-1" title="Text Color">
+            <span class="text-xs text-muted-foreground">A</span>
+            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('color', (e.target as HTMLInputElement).value)" />
+        </div>
+        <div class="flex items-center gap-1" title="Background Color">
+            <span class="text-xs text-muted-foreground bg-accent px-1 rounded">Bg</span>
+            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('background', (e.target as HTMLInputElement).value)" />
+        </div>
+        <div class="w-px h-4 bg-border mx-2"></div>
+        <!-- Text Wrap Toggle -->
+        <button 
+          class="w-8 h-8 flex items-center justify-center rounded transition-colors"
+          :class="textWrap ? 'bg-primary/20 text-primary' : 'hover:bg-accent text-foreground'"
+          @click="textWrap = !textWrap"
+          title="Toggle text wrapping"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M3 12h15a3 3 0 110 6h-4l2-2m0 4l-2-2M3 18h7"/>
+          </svg>
+        </button>
+        <!-- Auto-fit Columns -->
+        <button 
+          class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent text-foreground"
+          @click="autoFitAllColumns"
+          title="Auto-fit all column widths"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3v18M16 3v18M3 12h18M3 6h4M17 6h4M3 18h4M17 18h4"/>
+          </svg>
+        </button>
+    </div>
 
     <!-- Grid Body with Sticky Header -->
     <div 
@@ -2521,38 +2240,6 @@ defineExpose({
 
       <!-- Phantom spacer to set scroll height (adjusted for header) -->
       <div :style="{ height: `${rowCount * rowHeight}px`, width: `${totalWidth}px` }"></div>
-
-      <!-- Canvas Layer -->
-      <canvas 
-        v-if="useCanvas"
-        ref="canvasRef"
-        class="absolute top-0 left-0 z-10 sticky-canvas outline-none"
-        :style="{ 
-            top: `${rowHeight}px`,
-            transform: `translate(${Math.floor(virtualState.scrollLeft)}px, ${Math.floor(virtualState.scrollTop)}px)`
-        }"
-        @mousedown="handleCanvasMouseDown"
-        @dblclick="handleCanvasDblClick"
-      ></canvas>
-      
-      <!-- Canvas Edit Input Overlay - Floating input for editing in canvas mode -->
-      <input
-        v-if="useCanvas && editingCell && editingCellPosition"
-        ref="canvasEditInputRef"
-        v-model="formulaBarValue"
-        @blur="onCellBlur"
-        @keydown.stop
-        @keydown.enter.prevent="commitEdit(); moveSelection('down')"
-        @keydown.tab.prevent="commitEdit(); moveSelection('right')"
-        @keydown.escape.prevent="cancelEdit"
-        class="absolute z-30 px-1 text-xs bg-background border-2 border-primary focus:outline-none text-foreground"
-        :style="{
-            left: `${editingCellPosition.x}px`,
-            top: `${editingCellPosition.y}px`,
-            width: `${editingCellPosition.width}px`,
-            height: `${editingCellPosition.height}px`
-        }"
-      />
       
       <!-- Live Cursors Overlay -->
       <PresenceOverlay 
@@ -2575,9 +2262,8 @@ defineExpose({
         <X class="w-4 h-4 ml-1" />
       </div>
 
-      <!-- Virtualized Table Body (DOM Fallback) -->
+      <!-- Virtualized Table Body -->
       <table 
-        v-show="!useCanvas"
         class="border-collapse table-fixed bg-background absolute left-0"
         :style="{ top: '24px', transform: `translateY(${virtualState.startRow * rowHeight}px)` }"
       >
@@ -2607,14 +2293,13 @@ defineExpose({
             <td
               v-for="col in colCount"
               :key="col"
-              class="px-1 text-xs relative cursor-cell overflow-hidden"
+              class="border-r border-b border-border px-1 text-xs relative cursor-cell overflow-hidden"
               :class="[
-                showGridlines ? 'border-r border-b border-border' : 'border-none',
                 textWrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
                 {
-                  'bg-violet-50/50 dark:bg-violet-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
+                  'bg-blue-50/50 dark:bg-blue-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),
                   'ring-2 ring-primary ring-inset z-10 bg-background': selection?.row === (virtualState.startRow + rowOffset) && selection?.col === col - 1 && !editingCell,
-                  'bg-violet-500/15 dark:bg-violet-500/25': isInSelection(virtualState.startRow + rowOffset, col - 1),
+                  'bg-primary/15': isInSelection(virtualState.startRow + rowOffset, col - 1),
                   'border-r-2 border-r-primary': fillRange && col - 1 === fillRange.end.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
                   'border-l-2 border-l-primary': fillRange && col - 1 === fillRange.start.col && virtualState.startRow + rowOffset >= fillRange.start.row && virtualState.startRow + rowOffset <= fillRange.end.row,
                   'border-t-2 border-t-primary': fillRange && virtualState.startRow + rowOffset === fillRange.start.row && col - 1 >= fillRange.start.col && col - 1 <= fillRange.end.col,
@@ -2656,15 +2341,10 @@ defineExpose({
                 class="absolute top-0 left-0 w-0 h-0 border-r-[6px] border-r-transparent border-t-[6px] border-t-blue-500 pointer-events-none z-20"
               ></div>
 
+              <!-- Note Indicator (Top Right) -->
               <div 
                 v-if="props.engine.hasNotes(`${virtualState.startRow + rowOffset},${col - 1}`)" 
                 class="absolute top-0 right-0 w-0 h-0 border-l-[6px] border-l-transparent border-t-[6px] border-t-amber-500 pointer-events-none"
-              ></div>
-
-              <!-- Live Data Indicator (Bottom Left) -->
-              <div 
-                v-if="cellBindings[`${virtualState.startRow + rowOffset},${col - 1}`]" 
-                class="absolute bottom-0 left-0 w-0 h-0 border-r-[6px] border-r-transparent border-b-[6px] border-b-green-500 pointer-events-none z-20"
               ></div>
 
               <!-- Fill Handle (only on active cell) -->
@@ -2918,96 +2598,50 @@ defineExpose({
             @delete="(id) => engine.deleteNote(activeNoteKey!, id)"
             @close="closeNotePopover"
         />
+
+        <!-- CommitBar removed - spreadsheet auto-saves -->
     </div>
-
-    <!-- Commit Bar removed - auto-save is now enabled -->
-
-    <BindCellDialog
-      v-if="showBindDialog && bindTarget"
-      :spreadsheetId="props.engine['storageKey'] || 'default'"
-      :row="bindTarget.row"
-      :col="bindTarget.col"
-      :cellLabel="bindTarget.label"
-      @saved="onBindingSaved"
-      @closed="showBindDialog = false"
-    />
 </template>
 
 <style scoped>
-.row-modified {
-  background-color: color-mix(in srgb, var(--color-violet-500) 30%, transparent);
-}
+@reference "../../../styles.css";
 
-.dark .row-modified {
-  background-color: color-mix(in srgb, var(--color-violet-900) 10%, transparent);
+.row-modified {
+  @apply bg-violet-50/30 dark:bg-violet-900/10;
 }
 
 .row-modified td:first-child {
-  border-left-width: 2px;
-  border-left-color: var(--color-violet-500);
-  box-shadow: inset 4px 0 0 -2px rgba(139, 92, 246, 0.3);
+  @apply border-l-2 border-l-violet-500 shadow-[inset_4px_0_0_-2px_rgba(139,92,246,0.3)];
 }
 
 .row-deleted {
-  background-color: color-mix(in srgb, var(--destructive) 10%, transparent);
-  opacity: 0.7;
-  filter: grayscale(0.5);
-}
-
-.dark .row-deleted {
-  background-color: color-mix(in srgb, var(--destructive) 20%, transparent);
+  @apply bg-destructive/10 dark:bg-destructive/20 opacity-70 grayscale-[0.5];
 }
 
 .row-deleted td {
-  text-decoration-line: line-through;
-  color: var(--muted-foreground);
-  transition-property: all;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 300ms;
+  @apply line-through text-muted-foreground transition-all duration-300;
 }
 
 .cell-dirty {
-  position: relative;
+  @apply relative;
 }
 
 /* Red dot for deleted rows in header */
 .row-deleted td:first-child {
-  position: relative;
+  @apply relative;
 }
 .row-deleted td:first-child::after {
   content: '';
-  position: absolute;
-  top: 0.25rem;
-  left: 0.25rem;
-  width: 0.375rem;
-  height: 0.375rem;
-  background-color: var(--destructive);
-  border-radius: 9999px;
+  @apply absolute top-1 left-1 w-1.5 h-1.5 bg-destructive rounded-full;
 }
 
 /* Blue dot for modified rows in header */
 .row-modified:not(.row-deleted) td:first-child {
-  position: relative;
+  @apply relative;
 }
 .row-modified:not(.row-deleted) td:first-child::after {
   content: '';
-  position: absolute;
-  top: 0.25rem;
-  left: 0.25rem;
-  width: 0.375rem;
-  height: 0.375rem;
-  background-color: var(--color-violet-500);
-  border-radius: 9999px;
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: .5;
-  }
+  @apply absolute top-1 left-1 w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse;
 }
 </style>
 ```

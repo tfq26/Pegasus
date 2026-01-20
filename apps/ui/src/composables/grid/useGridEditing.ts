@@ -25,14 +25,9 @@ export function useGridEditing(
         const newValue = formulaBarValue.value;
         const oldValue = originalCellValue.value;
 
-        console.log('[commitEdit] Cell:', cellPos, 'New:', newValue, 'Old:', oldValue);
-
-        // Always save to ensure the value is persisted
+        // Save if value changed
         if (newValue !== oldValue) {
-            console.log('[commitEdit] Value changed, calling setValue');
             engine.setValue(cellPos, newValue, false);
-        } else {
-            console.log('[commitEdit] Value unchanged, skipping save');
         }
 
         editingCell.value = null;
@@ -100,12 +95,9 @@ export function useGridEditing(
 
     const cancelEdit = () => {
         editingCell.value = null;
+        originalCellValue.value = '';
         formulaBarValue.value = currentCellRawValue.value;
     };
-
-    // Helper to sync formula bar with selection when NOT editing
-    // Grid.vue normally watches selection to update formulaBarValue if not editing
-    // But here we expose formulaBarValue
 
     return {
         editingCell,

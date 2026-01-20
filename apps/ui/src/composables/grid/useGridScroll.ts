@@ -1,5 +1,5 @@
 import { ref, computed, reactive } from 'vue';
-import type { Engine } from '../../components/TableView/Engine/Engine';
+import type { Engine } from '../../../Engine/Engine';
 
 export function useGridScroll(engine: Engine) {
     // Configuration
@@ -76,79 +76,27 @@ export function useGridScroll(engine: Engine) {
     // Virtualization State
     const virtualState = ref({
         startRow: 0,
-        endRow: 60,
-        visibleRowCount: 60, // Buffer
-        startCol: 0,
-        endCol: 20,
-        startColLeft: 0,
-        scrollTop: 0,
-        scrollLeft: 0
+        visibleRowCount: 40 // Initial buffer
     });
 
     const onScroll = (e: Event) => {
         const target = e.target as HTMLElement;
         const scrollTop = target.scrollTop;
-        const scrollLeft = target.scrollLeft;
-        const clientHeight = target.clientHeight;
-        const clientWidth = target.clientWidth;
 
         // Update engine view state
         engine.viewState.scrollTop = scrollTop;
 
-        // Sync horizontal scroll (if header exists separately)
+        // Sync horizontal scroll (header container is now inside grid, but keep for compatibility)
         if (headerContainer.value) {
-            headerContainer.value.scrollLeft = scrollLeft;
+            headerContainer.value.scrollLeft = target.scrollLeft;
         }
 
-        // --- ROW VIRTUALIZATION ---
+        // Calculate start row based on scroll position
         const startRow = Math.floor(scrollTop / rowHeight);
-        // Calculate visible count dynamically + buffer
-        const visibleCount = Math.ceil(clientHeight / rowHeight) + 20;
-        const endRow = startRow + visibleCount;
 
-        // --- COLUMN VIRTUALIZATION ---
-        let currentX = 0;
-        let startCol = 0;
-
-        // Find start column (linear scan is fast enough for <1000 cols, typically <50)
-        // Optimization: Could use binary search if accumulated widths were cached
-        while (startCol < colCount && currentX + getColWidth(startCol) < scrollLeft) {
-            currentX += getColWidth(startCol);
-            startCol++;
-        }
-
-        const startColLeft = currentX;
-
-        // Find end column
-        let endCol = startCol;
-        let endX = currentX;
-        while (endCol < colCount && endX < scrollLeft + clientWidth + 200) { // +200px buffer
-            endX += getColWidth(endCol);
-            endCol++;
-        }
-
-        // Update state
-        if (
-            startRow !== virtualState.value.startRow ||
-            endRow !== virtualState.value.endRow ||
-            startCol !== virtualState.value.startCol ||
-            endCol !== virtualState.value.endCol ||
-            scrollLeft !== virtualState.value.scrollLeft ||
-            scrollTop !== virtualState.value.scrollTop
-        ) {
-            virtualState.value = {
-                startRow,
-                endRow,
-                visibleRowCount: visibleCount,
-                startCol,
-                endCol,
-                startColLeft,
-                scrollLeft,
-                scrollTop
-            };
-
-            // Notify engine for data loading
-            engine.setViewport(startRow, endRow);
+        // Update state if changed
+        if (startRow !== virtualState.value.startRow) {
+            virtualState.value.startRow = startRow;
         }
     };
 

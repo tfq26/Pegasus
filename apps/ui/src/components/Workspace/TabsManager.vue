@@ -108,11 +108,7 @@ const getTabTooltip = (tab: Tab) => {
               
               <span class="truncate font-medium">{{ tab.label }}</span>
               
-              <!-- Minimal dirty indicator (small dot) -->
-              <span 
-                v-if="tab.isDirty" 
-                class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
-              ></span>
+              <!-- Minimal dirty indicator removed for simplicity -->
               
               <!-- Close Button (visible on hover or active) -->
               <button 

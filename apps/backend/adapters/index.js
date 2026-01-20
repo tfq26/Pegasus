@@ -11,5 +11,7 @@ export const adapters = {
   kusto: KustoAdapter,
   sqlite: SQLiteAdapter,
   postgres: PostgresAdapter,
-  duckdb: DuckDBAdapter
+  duckdb: DuckDBAdapter,
+  local: DuckDBAdapter,
+  surrealdb: PostgresAdapter
 }

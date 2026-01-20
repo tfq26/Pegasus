@@ -54,7 +54,8 @@ const upsertUser = async (payload) => {
 
 table.post("/rename-table", async (c) => {
     try {
-        const { connection, oldTableName, newTableName, provider } = await c.req.json()
+        let { connection, oldTableName, newTableName, provider } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
 
         console.log(`[Rename] Received rename request:`, { oldTableName, newTableName, provider })
 
@@ -145,7 +146,8 @@ table.post("/rename-table", async (c) => {
 
 table.post("/delete-table", async (c) => {
     try {
-        const { connection, tableName, provider } = await c.req.json()
+        let { connection, tableName, provider } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -215,7 +217,8 @@ table.post("/delete-table", async (c) => {
 
 table.post("/save-table-data", async (c) => {
     try {
-        const { tableName, updates, deletedRowIds = [], deletedColumns = [], connection, provider } = await c.req.json()
+        let { tableName, updates, deletedRowIds = [], deletedColumns = [], connection, provider } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -317,7 +320,8 @@ table.post("/save-table-data", async (c) => {
 
 table.post("/copy-table", async (c) => {
     try {
-        const { sourceTableName, newTableName, connection, provider } = await c.req.json()
+        let { sourceTableName, newTableName, connection, provider } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
@@ -346,7 +350,8 @@ table.post("/copy-table", async (c) => {
 table.post("/table/:tableName/schema", async (c) => {
     try {
         const tableName = c.req.param("tableName")
-        const { connection, provider } = await c.req.json()
+        let { connection, provider } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
@@ -371,7 +376,8 @@ table.post("/table/:tableName/schema", async (c) => {
 table.post("/table/:tableName/query", async (c) => {
     try {
         const tableName = c.req.param("tableName")
-        const { connection, provider, limit = 100, offset = 0 } = await c.req.json()
+        let { connection, provider, limit = 100, offset = 0 } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
@@ -409,7 +415,8 @@ table.post("/table/:tableName/query", async (c) => {
 table.post("/table/:tableName/operations", async (c) => {
     try {
         const tableName = c.req.param("tableName")
-        const { connection, provider, operations } = await c.req.json()
+        let { connection, provider, operations } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
 
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -540,7 +547,8 @@ table.get("/table/:tableName/versions", async (c) => {
 table.get('/:tableName/interpret', async (c) => {
     try {
         const { tableName } = c.req.param()
-        const { connection, provider } = await c.req.query() // Actually it's a GET, so query params or defaults
+        let { connection, provider } = await c.req.query() // Actually it's a GET, so query params or defaults
+        if (provider === 'surrealdb') provider = 'postgres';
 
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -628,7 +636,8 @@ table.delete("/:tableName/share/:email", async (c) => {
 table.post("/table/:tableName/load", async (c) => {
     try {
         const tableName = c.req.param("tableName")
-        const { connection, provider, limit = 2000, offset = 0 } = await c.req.json()
+        let { connection, provider, limit = 2000, offset = 0 } = await c.req.json()
+        if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }

@@ -37,23 +37,3 @@ export { CSVExporter, ExcelExporter } from './Exporters';
 
 // Search
 export { SearchEngine } from './SearchEngine';
-
-// === High-Performance Engine (Phase 1) ===
-// Columnar data storage with TypedArrays
-export { ColumnStore, type ColumnSchema, type ColumnData, type ColumnStoreConfig } from './ColumnStore';
-
-// Sparse edit tracking
-export { EditOverlay, type EditRecord, type RowChange } from './EditOverlay';
-
-// Virtualized data loading
-export {
-    VirtualDataProvider,
-    createDefaultFetcher,
-    type DataFetcher,
-    type Viewport,
-    type VirtualDataProviderConfig,
-    type VirtualDataProviderEvents
-} from './VirtualDataProvider';
-
-// LRU Cache for chunk management
-export { LRUCache } from './LRUCache';

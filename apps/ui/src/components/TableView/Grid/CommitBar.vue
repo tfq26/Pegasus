@@ -91,7 +91,7 @@ const totalChanges = computed(() => {
             <button 
               @click="emit('commit')"
               :disabled="loading"
-              class="group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-xl overflow-hidden bg-violet-200 text-violet-950 font-black text-[10px] uppercase tracking-widest hover:bg-violet-100 transition-all shadow-2xl shadow-violet-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              class="group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-xl overflow-hidden bg-stone-100 text-stone-950 font-black text-[10px] uppercase tracking-widest hover:bg-white transition-all shadow-2xl shadow-stone-950/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span v-if="loading" class="absolute inset-0 flex items-center justify-center bg-stone-100">
                 <div class="w-4 h-4 border-2 border-stone-400 border-t-stone-950 rounded-full animate-spin"></div>

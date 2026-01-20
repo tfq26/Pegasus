@@ -1,20 +1,11 @@
+
+
 import type { CellPosition, CellData, EngineConfig, Note, NoteEntityType, UserPresence, RowDiff } from './types';
 import { CellType, posToKey } from './types';
 import { DependencyGraph } from './DependencyGraph';
 import { FormulaParser } from './FormulaParser';
 import { UndoManager, SetValueCommand } from './UndoManager';
 import { ChangeTracker } from './ChangeTracker';
-import { buildConnectionPayload } from '../../../lib/db-connections';
-import { ColumnStore } from './ColumnStore';
-import type { ColumnSchema } from './ColumnStore';
-import { EditOverlay } from './EditOverlay';
-import { SyncManager } from './SyncManager';
-import type { Operation } from './SyncManager';
-import { RestAdapter } from './RestAdapter';
-import { LocalFileAdapter } from './LocalFileAdapter';
-import { FileUploadAdapter } from './FileUploadAdapter';
-import type { Operation as EditOperation } from './EditOverlay';
-import { VirtualDataProvider, createDefaultFetcher } from './VirtualDataProvider';
 
 export class Engine {
     private cells: Map<string, CellData> = new Map();
@@ -23,6 +14,9 @@ export class Engine {
     public config: EngineConfig;
     private changeCallbacks: Set<() => void> = new Set();
     private valueChangeCallbacks: Set<(pos: CellPosition, value: string, source: 'local' | 'remote') => void> = new Set();
+
+    // Auto-save timer
+    private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
     private storageKey: string;
     public sourceTable: string | null = null;
     public sourceConnection: any | null = null; // Full connection config
@@ -37,9 +31,6 @@ export class Engine {
     // Presence System
     public presence: Map<string, UserPresence> = new Map();
 
-    // Live Data Bindings
-    public cellBindings: Map<string, any> = new Map();
-
     public saveStatus: 'saved' | 'saving' | 'error' = 'saved';
 
     // Branching state
@@ -53,66 +44,26 @@ export class Engine {
     // Header row tracking - row 0 is always the header row for database tables
     public headerRowIndex = 0;
 
-    // Data Source Metadata
+    // Schema mode - determines how columns are named
     public schemaMode: 'named-headers' | 'column-letters' = 'column-letters';
     public hasDetectedHeaders: boolean = false;
 
     // Change Tracking System
     public changeTracker: ChangeTracker;
 
-    // High-Performance Data Storage
-    public columnStore: ColumnStore;
-    public editOverlay: EditOverlay;
-    private virtualProvider: VirtualDataProvider;
-    private syncManager: SyncManager | null = null;
-    private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-    // Core Data Stores
-    public isVirtualized: boolean = false;
-
     // Transient view state (preserved in memory for tab switching)
-    public viewState: {
-        scrollTop: number;
-        selection: CellPosition | null;
-        viewport: { startRow: number; endRow: number };
-    } = {
-            scrollTop: 0,
-            selection: null as CellPosition | null,
-            viewport: { startRow: 0, endRow: 100 }
-        };
+    public viewState = {
+        scrollTop: 0,
+        selection: null as CellPosition | null,
+    };
 
     constructor(config: EngineConfig, storageKey = 'spreadsheet-data') {
         this.config = config;
         this.graph = new DependencyGraph();
         this.parser = new FormulaParser();
         this.changeTracker = new ChangeTracker();
-
-        // Initialize high-performance components
-        this.columnStore = new ColumnStore();
-        this.editOverlay = new EditOverlay();
-        this.virtualProvider = new VirtualDataProvider(this.columnStore);
-
-        // Connect data provider to engine events
-        // (If VirtualDataProvider emits events, check signature)
-
         this.storageKey = storageKey;
-        console.log(`[Engine] Initialized with key: ${storageKey}, config:`, config);
         this.loadFromStorage();
-    }
-
-    /**
-     * Update viewport for virtualized loading
-     */
-    public setViewport(startRow: number, endRow: number) {
-        if (this.viewState.viewport.startRow === startRow && this.viewState.viewport.endRow === endRow) {
-            return;
-        }
-
-        this.viewState.viewport = { startRow, endRow };
-
-        if (this.isVirtualized) {
-            this.virtualProvider.setViewport(startRow, endRow);
-        }
     }
 
     /**
@@ -121,87 +72,52 @@ export class Engine {
      * values match the backend source exactly (e.g. preserving nulls), 
      * which might differ from the stringified values in the grid.
      */
-    public setOriginalData(rows: any[]) {
-        // Load into ColumnStore
-        // Assuming chunk 0 for now. In virtual mode, this might be partial.
-        this.columnStore.loadChunk(0, rows);
-        this.columnStore.setRowCount(rows.length);
+    public setOriginalData(data: Record<string, any>[]) {
+        this.originalData.clear();
+        this.rowIdMap.clear();
 
-        // If LocalFileAdapter, update its data source too so fetching works
-        if (this.syncManager && (this.syncManager as any).adapter instanceof LocalFileAdapter) {
-            ((this.syncManager as any).adapter as LocalFileAdapter).setData(rows);
-        }
+        // rows are 0...N-1 in array, but 1...N in grid
+        // cols are 0...M in array/grid
 
-        this.changeTracker.clear();
-        this.editOverlay.clear(); // Clear sparse edits on reload
+        data.forEach((row, rowIndex) => {
+            const gridRow = rowIndex + 1; // 1-based rows
+
+            // Store hidden ID
+            if ('__id' in row) {
+                this.rowIdMap.set(gridRow, row.__id);
+            } else if ('_rowid_' in row) {
+                this.rowIdMap.set(gridRow, row._rowid_);
+            }
+
+            this.columnNames.forEach((colName, colIndex) => {
+                const val = row[colName];
+                const key = `${gridRow},${colIndex}`;
+
+                // Store as a mock CellData used for original value retrieval
+                this.originalData.set(key, {
+                    rawInput: String(val ?? ''),
+                    value: val, // Store raw value (e.g. null, number)
+                    type: typeof val === 'number' ? CellType.NUMBER : CellType.TEXT
+                });
+            });
+        });
     }
 
     /**
      * Set the source table for database persistence
      */
-    public setSource(tableName: string, connection: any, columns: string[] = [], provider: string = 'postgres', schemaMode?: 'named-headers' | 'column-letters') {
+    public setSource(tableName: string, connection: any, columns: string[], provider?: string, schemaMode?: 'named-headers' | 'column-letters') {
         this.sourceTable = tableName;
         this.sourceConnection = connection;
-        this.sourceProvider = provider;
-        this.columnNames = columns;
-
-        // Initialize Schema from sourceColumns if provided
-        if (columns.length > 0) {
-            this.columnStore.setSchema(columns.map(name => ({ name, type: 'string', nullable: true })));
-        }
-
-        // Initialize Sync & Data Provider
-        let adapter;
-        if (tableName === 'local-file' || provider === 'local-file') {
-            // Local in-memory adapter
-            adapter = new LocalFileAdapter([], columns.map(c => ({ name: c })));
-        } else if (provider === 'file-upload') {
-            // File Upload / Preview Adapter
-            // connection should object { file: File, config?: any }
-            const file = connection.file;
-            const config = connection.config || {};
-            if (!file) throw new Error('File object required for file-upload provider');
-            adapter = new FileUploadAdapter(file, config);
-        } else {
-            // Use RestAdapter for remote DBs
-            let baseUrl = '';
-            try {
-                if (typeof window !== 'undefined' && (window as any).VITE_QUERY_API_URL) {
-                    baseUrl = (window as any).VITE_QUERY_API_URL;
-                } else if (import.meta && import.meta.env && import.meta.env.VITE_QUERY_API_URL) {
-                    baseUrl = import.meta.env.VITE_QUERY_API_URL;
-                }
-            } catch (e) {
-                console.warn('[Engine] Failed to resolve API URL', e);
-            }
-
-            adapter = new RestAdapter(baseUrl, tableName, connection, provider);
-        }
-
-        this.syncManager = new SyncManager(adapter, (err) => {
-            console.error('Sync Error:', err);
-            // handle error
-        });
-
-        // Configure Virtual Data Provider to use SyncManager (Adapter) for fetching
-        this.virtualProvider.setDataSource(
-            tableName,
-            connection,
-            async (_t: string, _c: any, offset: number, limit: number) => {
-                if (!this.syncManager) return { rows: [], totalCount: 0 };
-                const res = await this.syncManager.fetchRows(offset, offset + limit);
-                return res as { rows: Record<string, any>[]; totalCount: number };
-            }
-        );
-        this.isVirtualized = true;
+        this.sourceProvider = provider || 'sqlite'; // Default if missing
+        this.columnNames = columns; // visible columns only
 
         // Set schema mode if provided, otherwise auto-detect
         if (schemaMode) {
             this.schemaMode = schemaMode;
-        } else if (this.columnNames.length > 0) { // Use sourceColumns for schema mode detection
-            this.schemaMode = this.detectSchemaMode(this.columnNames);
         } else {
-            this.schemaMode = 'column-letters'; // Default if no columns provided
+            // Auto-detect based on column names
+            this.schemaMode = this.detectSchemaMode(columns);
         }
 
         // Take snapshot of current data as "original" (if not set by setOriginalData)
@@ -210,7 +126,7 @@ export class Engine {
         }
         this.clearModifiedTracking();
         this.changeTracker.clear();
-        this.changeTracker.setColumnNames(this.columnNames);
+        this.changeTracker.setColumnNames(columns);
     }
 
     /**
@@ -228,30 +144,11 @@ export class Engine {
 
     /**
      * Get the serializable state of the engine
-     * 
-     * IMPORTANT: Version 3 format now includes all cells from both the sparse map AND columnStore
-     * to fix the bug where data stored only in columnStore was lost on refresh.
      */
     public getState() {
-        // Build complete cells array from both sources
-        const allCells: [string, CellData][] = [];
-        const totalRows = this.config.rowCount || 0;
-        const totalCols = this.config.colCount || this.columnNames.length || 26;
-
-        // Iterate over all cells using getCell which checks both sources
-        for (let row = 0; row < totalRows; row++) {
-            for (let col = 0; col < totalCols; col++) {
-                const cell = this.getCell({ row, col });
-                if (cell && cell.value !== null && cell.value !== undefined && cell.value !== '') {
-                    const key = `${row},${col}`;
-                    allCells.push([key, cell]);
-                }
-            }
-        }
-
         return {
-            version: 3,
-            cells: allCells,
+            version: 2,
+            cells: Array.from(this.cells.entries()),
             rowCount: this.config.rowCount,
             colCount: this.config.colCount,
             source: {
@@ -274,8 +171,8 @@ export class Engine {
         if (Array.isArray(state)) {
             // V1 format: just cells
             this.cells = new Map(state as [string, CellData][]);
-        } else if (state.version === 2 || state.version === 3) {
-            // V2/V3 format: cells + source metadata
+        } else if (state.version === 2) {
+            // V2 format: cells + source metadata
             this.cells = new Map(state.cells);
             if (state.rowCount) this.config.rowCount = state.rowCount;
             if (state.colCount) this.config.colCount = state.colCount;
@@ -575,169 +472,23 @@ export class Engine {
      * Determine the optimal save strategy based on table size and change volume
      */
     public getSaveStrategy(): 'full_replacement' | 'delta_operations' {
-        // CRITICAL FIX: Always use delta operations to prevent data loss
-        // The previous logic triggered full_replacement for small tables (<10k), which caused
-        // catastrophic data loss if the replacement payload was incomplete or failed.
-        // We now enforce delta updates unless schema changes require a heavier approach.
-
+        const totalRows = this.getNonEmptyRowCount();
+        const modifiedCount = this.changeTracker.getModifiedCellKeys().size;
+        const deletedCount = this.changeTracker.getDeletedRows().length;
         const deletedColsCount = this.changeTracker.getDeletedColumns().length;
         const addedColsCount = this.changeTracker.getAddedColumns().length;
 
-        // Only use full replacement if strictly necessary (e.g. massive schema re-structuring)
-        // For now, even schema changes should ideally be handled via specific ops if possible
-        // but keeping it restrictive.
+        // Use full replacement if:
+        // 1. Table is small (< 10k rows)
+        // 2. More than 30% of rows changed
+        // 3. Schema changed (columns added/deleted)
+        const changeRatio = (modifiedCount + deletedCount) / Math.max(totalRows, 1);
         const schemaChanged = deletedColsCount > 0 || addedColsCount > 0;
 
-        if (schemaChanged) {
-            // Even with schema changes, we might want to be careful, but for now 
-            // if columns are added/removed we might need to restructure.
-            // However, to be SAFE for MongoDB, let's stick to operations if possible.
-            // But if the backend requires full replacement for schema changes:
-            // return 'full_replacement'; 
-
-            // Re-evaluating: 'add_column' and 'drop_column' are supported ops now.
-            // So we can stick to delta_operations even for schema changes.
-            return 'delta_operations';
+        if (totalRows < 10000 || changeRatio > 0.3 || schemaChanged) {
+            return 'full_replacement';
         }
-
-        // Default to delta operations for everything, including regular updates
         return 'delta_operations';
-    }
-
-    /**
-     * Save current spreadsheet state to local storage (Snapshots)
-     * This creates a full "Save Point" in the user's local session/browser storage
-     */
-    /**
-     * Save current spreadsheet state to User's Pegasus Storage (Full Sync)
-     * This creates a full "Save Point" in the user's internal database (SurrealDB)
-     * regardless of the external source.
-     */
-    public async saveToUserStorage(): Promise<void> {
-        console.log('[Engine] Saving snapshot to user storage...');
-        const allRows = this.getAllNonEmptyRows();
-
-        if (this.syncManager && this.syncManager.save) {
-            await this.syncManager.save(allRows);
-        } else {
-            // Fallback to local storage if no backend connection
-            if (this.sourceTable) {
-                localStorage.setItem(`pegasus_snapshot_${this.sourceTable}`, JSON.stringify(allRows));
-            }
-        }
-
-        this.saveStatus = 'saved';
-        this.notifyChange();
-    }
-
-    /**
-     * Save snapshot to External Cloud Provider (S3/Azure/GCP)
-     */
-    public async saveSnapshot(storageConfig: any): Promise<string> {
-        console.log('[Engine] Saving snapshot to external cloud...', storageConfig);
-
-        if (!this.syncManager) {
-            throw new Error('SyncManager not initialized');
-        }
-
-        const allRows = this.getAllNonEmptyRows();
-
-        // Create a special Full Replacement operation with storage config
-        const op: Operation = {
-            type: 'full_replacement',
-            rows: allRows,
-            timestamp: Date.now(),
-            storage_config: storageConfig // Pass config to backend
-        };
-
-        // We use commit() to send this operation. 
-        // The backend intercepts 'full_replacement' + 'storage_config' to trigger cloud upload.
-        await this.syncManager.commit([op]);
-
-        return 'Snapshot upload initiated';
-    }
-
-    /**
-     * Commit all pending changes to the database (Delta Sync)
-     */
-    public async commit(): Promise<void> {
-        if (!this.hasSource()) {
-            // If local-only, "Commit" just means Save Snapshot
-            return this.saveToUserStorage();
-        }
-
-        if (!this.hasPendingModifications()) {
-            console.log('[Engine] No pending modifications to commit');
-            return;
-        }
-
-        this.saveStatus = 'saving';
-        this.notifyChange();
-
-        try {
-            let ops: Operation[] = [];
-            const strategy = this.getSaveStrategy();
-
-            if (strategy === 'full_replacement') {
-                console.log('[Engine] Using full replacement strategy');
-                const allRows = this.getAllNonEmptyRows();
-                ops.push({
-                    type: 'full_replacement',
-                    rows: allRows,
-                    timestamp: Date.now()
-                });
-            } else {
-                const pending = this.getPendingOperations();
-                // Convert to typed Operation[]
-                ops = pending.map((p: any) => {
-                    // Determine operation type
-                    // Default to UPDATE
-
-                    // Inject column name if missing
-                    let name = p.name;
-                    if (!name && p.col !== undefined && this.columnNames[p.col]) {
-                        name = this.columnNames[p.col];
-                    }
-
-                    return {
-                        ...p,
-                        type: p.type, // Pass through 'update', 'create', 'delete' directly
-                        id: p.rowId || p.id, // Ensure ID is passed for delta ops
-                        name,
-                        timestamp: Date.now()
-                    } as Operation;
-                });
-
-                // Schema changes (mapped from ChangeTracker)
-                this.changeTracker.getDeletedColumns().forEach(colName => {
-                    // Match backend expectation: 'drop_column'
-                    ops.push({ type: 'drop_column', column: colName, timestamp: Date.now() });
-                });
-                this.changeTracker.getAddedColumns().forEach(colName => {
-                    // Match backend expectation: 'add_column'
-                    ops.push({ type: 'add_column', column: colName, timestamp: Date.now() });
-                });
-            }
-
-            if (this.syncManager) {
-                // Optimistic Commit:
-                // SyncManager.commit returns immediately (queueing background sync).
-                // We assume success and update UI state.
-                await this.syncManager.commit(ops as Operation[]);
-            } else {
-                throw new Error('SyncManager not initialized');
-            }
-
-            // Success: clear tracking and update original state
-            this.clearModifiedTracking();
-            this.saveStatus = 'saved';
-            this.notifyChange();
-        } catch (e) {
-            console.error('[Engine] Commit failed:', e);
-            this.saveStatus = 'error';
-            this.notifyChange();
-            throw e;
-        }
     }
 
     /**
@@ -773,10 +524,71 @@ export class Engine {
     }
 
     /**
-     * Check if the engine has a backing database source
+     * Persist current state to source (SQLite/Postgres)
      */
-    public hasSource(): boolean {
-        return !!(this.sourceTable && this.sourceConnection && this.sourceProvider);
+    public async commit(): Promise<void> {
+        if (!this.sourceTable || !this.sourceConnection || !this.sourceProvider) {
+            throw new Error('Cannot commit: Missing source metadata (table, connection, or provider)');
+        }
+
+        if (!this.hasPendingModifications()) {
+            console.log('[Engine] No pending modifications to commit');
+            return;
+        }
+
+        this.saveStatus = 'saving';
+        this.notifyChange();
+
+        try {
+            const strategy = this.getSaveStrategy();
+            let ops: any[] = [];
+
+            if (strategy === 'full_replacement') {
+                const allRows = this.getAllNonEmptyRows();
+
+                // Add schema change operations first
+                this.changeTracker.getDeletedColumns().forEach(col => {
+                    ops.push({ type: 'drop_column', column: col });
+                });
+                this.changeTracker.getAddedColumns().forEach(col => {
+                    ops.push({ type: 'add_column', column: col });
+                });
+
+                ops.push({ type: 'full_replacement', rows: allRows });
+            } else {
+                ops = this.getPendingOperations();
+                // Add schema change operations
+                this.changeTracker.getDeletedColumns().forEach(col => {
+                    ops.push({ type: 'drop_column', column: col });
+                });
+            }
+
+            const response = await fetch(`${(window as any).VITE_QUERY_API_URL || import.meta.env.VITE_QUERY_API_URL}/api/table/${this.sourceTable}/operations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    connection: this.sourceConnection,
+                    provider: this.sourceProvider,
+                    operations: ops
+                })
+            });
+
+            if (!response.ok) {
+                const body = await response.json();
+                throw new Error(body.error || 'Save failed');
+            }
+
+            // Success: clear tracking and update original state
+            this.clearModifiedTracking();
+            this.saveStatus = 'saved';
+            this.notifyChange();
+        } catch (e) {
+            console.error('[Engine] Commit failed:', e);
+            this.saveStatus = 'error';
+            this.notifyChange();
+            throw e;
+        }
     }
 
     /**
@@ -841,41 +653,42 @@ export class Engine {
     /**
      * Get all non-empty rows for full replacement save
      * Uses smart field naming: actual column names for named-headers mode, letters for column-letters mode
-     * 
-     * IMPORTANT: This now uses getCell() which checks both the sparse cells map AND the columnStore,
-     * fixing the bug where data stored only in columnStore was being ignored.
      */
     public getAllNonEmptyRows(): Array<Record<string, any>> {
-        const result: Array<Record<string, any>> = [];
+        const rowsMap = new Map<number, Record<string, any>>();
 
         // Determine starting row based on schema mode
         const startRow = this.schemaMode === 'named-headers' ? 1 : 0;
 
-        // Get actual row count from config
-        const totalRows = this.config.rowCount || 0;
-        const totalCols = this.config.colCount || this.columnNames.length || 26;
+        // Collect all rows using smart field names
+        for (const [key, cell] of this.cells.entries()) {
+            const parts = key.split(',');
+            if (parts.length < 2) continue;
+            const rowStr = parts[0];
+            const colStr = parts[1];
+            if (rowStr === undefined || colStr === undefined) continue;
+            const row = parseInt(rowStr);
+            const col = parseInt(colStr);
 
-        // Iterate over all rows and columns, using getCell to check both cells map and columnStore
-        for (let row = startRow; row < totalRows; row++) {
-            const rowData: Record<string, any> = {};
-            let hasData = false;
+            // Skip header row in named-headers mode
+            if (row < startRow) continue;
 
-            for (let col = 0; col < totalCols; col++) {
-                // Use getCell which properly checks both cells map and columnStore
-                const cell = this.getCell({ row, col });
-                const value = cell?.value;
-
-                if (value !== null && value !== undefined && value !== '') {
-                    hasData = true;
-                }
-
-                // Use smart field name (either actual column name or letter)
-                const fieldName = this.getFieldName(col);
-                rowData[fieldName] = value ?? null;
+            if (!rowsMap.has(row)) {
+                rowsMap.set(row, {});
             }
 
-            // Only include rows that have at least some data
-            if (hasData) {
+            // Use smart field name (either actual column name or letter)
+            const fieldName = this.getFieldName(col);
+            rowsMap.get(row)![fieldName] = cell.value ?? null;
+        }
+
+        // Filter out completely empty rows
+        const result: Array<Record<string, any>> = [];
+        for (const rowData of rowsMap.values()) {
+            const isEmpty = Object.values(rowData).every(val =>
+                val === null || val === undefined || val === ''
+            );
+            if (!isEmpty) {
                 result.push(rowData);
             }
         }
@@ -957,26 +770,22 @@ export class Engine {
      */
     public notifyChange() {
         if (this.isBatching) return; // Skip if batching
-        // console.log('[Engine] notifyChange triggered'); // Commented out to reduce noise, enable if needed
         this.changeCallbacks.forEach(cb => cb());
         this.saveToStorage();
     }
 
     private saveToStorage() {
         try {
-            // Check actual data presence using config, not just sparse cells map
-            // This fixes the bug where data in columnStore was being ignored
-            const hasData = (this.config.rowCount || 0) > 0 && (this.config.colCount || 0) > 0;
+            const data = Array.from(this.cells.entries());
 
-            // If no data configured, remove the localStorage item entirely
-            if (!hasData) {
+            // If cells map is empty, remove the localStorage item entirely
+            if (data.length === 0) {
                 localStorage.removeItem(this.storageKey);
                 return;
             }
 
             // For large datasets without database backing, skip localStorage persistence
-            const estimatedCellCount = (this.config.rowCount || 0) * (this.config.colCount || 0);
-            if (estimatedCellCount > 50000 && !this.sourceTable) {
+            if (data.length > 5000 && !this.sourceTable) {
                 console.warn('[Storage] Skipping localStorage for large non-database sheet');
                 return;
             }
@@ -1028,17 +837,10 @@ export class Engine {
      * @param source - Source of the edit ('local' or 'remote')
      */
     public setValue(pos: CellPosition, input: string, silent: boolean = false, source: 'local' | 'remote' = 'local') {
-        console.log('[Engine.setValue] pos:', pos, 'input:', input, 'silent:', silent);
         const key = posToKey(pos);
 
         // Record undo command (unless this is an undo/redo operation itself)
         if (!this.isUndoRedoOperation && !silent) {
-            // Track change here - at the entry point when user commits an edit
-            // This is the right place because silent=false means user is committing
-            if (source === 'local') {
-                this.changeTracker.markCellModified(pos);
-            }
-
             const oldValue = this.getCell(pos)?.rawInput || '';
             const command = new SetValueCommand(this, pos, input, oldValue);
             this.undoManager.execute(command);
@@ -1046,7 +848,7 @@ export class Engine {
             // Notify change after the command executes to trigger re-render
             this.notifyChange();
 
-            // Auto-save after a short delay
+            // Trigger auto-save
             this.scheduleAutoSave();
             return;
         }
@@ -1080,17 +882,7 @@ export class Engine {
         }
 
         // 3. Store
-        if (cellData.type === CellType.FORMULA) {
-            this.cells.set(key, cellData); // Store formulas in sparse map
-            this.columnStore.setValue(pos.row, pos.col, cellData.value); // Sync result to column store for display
-        } else {
-            // Simple value - optimize memory by storing only in ColumnStore
-            this.columnStore.setValue(pos.row, pos.col, cellData.value);
-            this.columnStore.setStyle(pos.row, pos.col, cellData.style || {});
-
-            // Remove from sparse map if it exists (memory optimization)
-            this.cells.delete(key);
-        }
+        this.cells.set(key, cellData);
 
         // 4. Recalculate Dependents
         const dependents = this.graph.getDependents(pos);
@@ -1098,10 +890,9 @@ export class Engine {
             this.recalculate(dep);
         }
 
-        // 5. Notify change
-        // Change tracking is done at the entry point (when silent=false)
-        // Here we just notify callbacks if not in silent mode
+        // 5. Notify change (unless silent mode)
         if (!silent) {
+            this.changeTracker.markCellModified(pos);
             this.notifyChange();
         }
 
@@ -1110,15 +901,7 @@ export class Engine {
     }
 
     public getCell(pos: CellPosition): CellData | null {
-        const key = posToKey(pos);
-
-        // 1. Check sparse map (formulas, complex state)
-        if (this.cells.has(key)) {
-            return this.cells.get(key)!;
-        }
-
-        // 2. Check high-performance column store
-        return this.columnStore.getCellData(pos.row, pos.col);
+        return this.cells.get(posToKey(pos)) || null;
     }
 
     public getCells(): Map<string, CellData> {
@@ -1149,10 +932,6 @@ export class Engine {
         const parsed = this.parser.parse(cell.rawInput);
         cell.value = this.evaluateParsed(parsed);
         this.cells.set(key, { ...cell });
-
-        // Sync calculated value to ColumnStore for display
-        this.columnStore.setValue(pos.row, pos.col, cell.value);
-
         this.changeTracker.markKeyModified(key);
     }
 
@@ -1166,25 +945,26 @@ export class Engine {
 
     public setCellStyle(pos: CellPosition, style: Partial<import('./types').CellStyle>) {
         const key = posToKey(pos);
+        let cell = this.cells.get(key);
 
-        // 1. Check sparse map (formulas)
-        if (this.cells.has(key)) {
-            const cell = this.cells.get(key)!;
-            if (!cell.style) cell.style = {};
-            Object.assign(cell.style, style);
-            // Sync to ColumnStore
-            this.columnStore.setStyle(pos.row, pos.col, cell.style);
-        } else {
-            // 2. Simple value (ColumnStore)
-            // Just update style in ColumnStore
-            this.columnStore.setStyle(pos.row, pos.col, style);
+        if (!cell) {
+            cell = {
+                rawInput: '',
+                value: '',
+                type: CellType.TEXT,
+                style: {}
+            };
+            this.cells.set(key, cell);
         }
+
+        if (!cell.style) cell.style = {};
+        Object.assign(cell.style, style);
 
         this.changeTracker.markKeyModified(key);
         this.notifyChange();
     }
 
-    public clear(options: { keepStyles?: boolean, silent?: boolean } = {}) {
+    public clear(options: { keepStyles?: boolean } = {}) {
         if (options.keepStyles) {
             // Only clear values/rawInput, keep style objects
             for (const [key, cell] of this.cells.entries()) {
@@ -1202,10 +982,7 @@ export class Engine {
                 console.error('Failed to clear localStorage:', e);
             }
         }
-
-        if (!options.silent) {
-            this.notifyChange();
-        }
+        this.notifyChange();
     }
 
     /**
@@ -1398,6 +1175,13 @@ export class Engine {
             }
             this.notifyChange();
         }
+    }
+
+    /**
+     * Check if the engine has a backing database source
+     */
+    public hasSource(): boolean {
+        return !!(this.sourceTable && this.sourceConnection && this.sourceProvider);
     }
 
     public resolveNote(entityId: string, noteId: string, resolved: boolean) {

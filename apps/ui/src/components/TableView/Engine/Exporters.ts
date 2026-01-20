@@ -8,7 +8,18 @@ import { toast } from '@/composables/useNotifications';
  */
 export class CSVExporter {
     static async export(engine: Engine, filename: string = 'export.csv', range?: { start: CellPosition, end: CellPosition }) {
-        const csvContent = this.getContent(engine, range);
+        const data = this.getData(engine, range);
+
+        const csvContent = data.map(row =>
+            row.map(cell => {
+                const val = String(cell ?? '');
+                // Escape quotes and wrap in quotes if contains comma, quote or newline
+                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+                    return `"${val.replace(/"/g, '""')}"`;
+                }
+                return val;
+            }).join(',')
+        ).join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
@@ -21,21 +32,6 @@ export class CSVExporter {
             link.click();
             document.body.removeChild(link);
         }
-    }
-
-    static getContent(engine: Engine, range?: { start: CellPosition, end: CellPosition }): string {
-        const data = this.getData(engine, range);
-
-        return data.map(row =>
-            row.map(cell => {
-                const val = String(cell ?? '');
-                // Escape quotes and wrap in quotes if contains comma, quote or newline
-                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-                    return `"${val.replace(/"/g, '""')}"`;
-                }
-                return val;
-            }).join(',')
-        ).join('\n');
     }
 
     private static getData(engine: Engine, range?: { start: CellPosition, end: CellPosition }): any[][] {

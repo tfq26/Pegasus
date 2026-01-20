@@ -159,7 +159,7 @@ export class FormulaParser {
      * Replace one level of function calls, handling nested parentheses correctly
      */
     private replaceFunctionCalls(expr: string, getValue: (pos: CellPosition) => any): string {
-        const funcNames = 'SUM|AVERAGE|COUNT|MIN|MAX|ROUND|ROUNDUP|ROUNDDOWN|CEILING|FLOOR|IF|ABS|POWER|SQRT';
+        const funcNames = 'SUM|AVERAGE|COUNT|MIN|MAX|ROUND|ROUNDUP|ROUNDDOWN|CEILING|FLOOR|ABS|POWER|SQRT';
         const funcPattern = new RegExp(`(${funcNames})\\(`, 'g');
 
         let result = expr;
