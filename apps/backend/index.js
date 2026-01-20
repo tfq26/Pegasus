@@ -43,6 +43,7 @@ import { getAuthToken } from "./lib/auth.js"
 import { getPayments } from "./src/routes/payments.js"
 import adminFixTier from "./src/routes/admin-fix-tier.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
+import { storageRoutes } from "./src/routes/storage.js"
 import {
   EXPERIMENTAL_FEATURES,
   initExperimentalTables,
@@ -283,6 +284,7 @@ app.route('/data-sources', dataSourceRoutes)
 app.route('/api/cloud-auth', cloudAuth)
 app.route('/api/cloud-provision', cloudProvision)
 app.route('/spaces', spaceRoutes)
+app.route('/storage', storageRoutes) // Modular Storage (Upload/Download/Config)
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -352,48 +354,18 @@ app.post("/upload", async (c) => {
     const fileSize = file.size
     const fileType = fileName.split('.').pop().toLowerCase()
 
-    // Check if we're adding to an existing connection
-    let uploadUuid
-    let uploadId
-    let existingUpload = null
+    // Generate upload UUID
+    const uploadUuid = crypto.randomUUID().replace(/-/g, '')
+    const uploadId = `uploads:${uploadUuid}`
 
-    if (connectionId) {
-      // Fetch the existing connection to get its upload ID
-      const connIdPart = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
-      const connection = await db.query.connections.findFirst({
-        where: eq(connections.id, connIdPart)
-      })
+    // Create DuckDB storage directory (will move to cloud storage later)
+    const duckdbDir = path.join(process.cwd(), 'data', 'duckdb')
+    await fs.mkdir(duckdbDir, { recursive: true })
 
-      console.log(`[Upload] Looking up connection ${connectionId}:`, connection ? 'found' : 'not found')
+    // DuckDB file path for this upload
+    const duckdbPath = path.join(duckdbDir, `upload_${uploadUuid}.duckdb`)
 
-      if (connection) {
-        // Parse the config (may be string or object)
-        let config = connection.config
-        if (typeof config === 'string') {
-          try { config = JSON.parse(config) } catch (e) { config = {} }
-        }
-
-        // Check for uploadId in surrealdb config
-        const uploadIdFromConfig = config?.surrealdb?.uploadId
-
-        if (uploadIdFromConfig) {
-          // Extract the UUID from the existing upload ID (format: "uploads:uuid")
-          uploadUuid = uploadIdFromConfig.replace('uploads:', '')
-          uploadId = uploadIdFromConfig
-          existingUpload = connection
-          console.log(`[Upload] Adding table to existing connection ${connectionId}, uploadId: ${uploadId}`)
-        } else {
-          console.log(`[Upload] Connection found but no uploadId. Config:`, config)
-          return c.json({ error: "Connection not found or not a file-based connection" }, 400)
-        }
-      } else {
-        return c.json({ error: "Connection not found" }, 400)
-      }
-    } else {
-      // Create new upload ID
-      uploadUuid = crypto.randomUUID().replace(/-/g, '')
-      uploadId = `uploads:${uploadUuid}`
-    }
+    console.log(`[Upload] Creating DuckDB database at: ${duckdbPath}`)
 
     const uploadDir = path.join(os.tmpdir(), "uploads")
     const tempFilePath = path.join(uploadDir, `${uploadUuid}_${fileName}`)
@@ -405,157 +377,156 @@ app.post("/upload", async (c) => {
     await fs.writeFile(tempFilePath, Buffer.from(await file.arrayBuffer()))
 
     let data = {}
-    let excelMapping = null; // Store AI interpretation for later use
+    let excelMapping = null
 
     try {
       if (fileType === 'xlsx') {
-        // Use XML-based AI interpretation for robust Excel parsing
-        console.log('[Upload] Using XML-based AI Excel interpretation...');
+        console.log('[Upload] Parsing Excel file...');
         try {
           const { interpretExcelFromXML } = await import('./ai/xmlExcelInterpreter.js');
           const xmlResult = await interpretExcelFromXML(tempFilePath);
 
           if (xmlResult && xmlResult.data && xmlResult.data.length > 0) {
             console.log(`[Upload] XML AI interpretation successful: ${xmlResult.data.length} rows`);
-            // Get sheet name from original parser or use default
             const parseResult = await parseExcel(tempFilePath);
             const sheetName = Object.keys(parseResult.sheets)[0] || 'Sheet1';
             data = { [sheetName]: xmlResult.data };
             excelMapping = xmlResult.mapping;
           } else {
-            // Fallback to original parser if XML interpretation fails
             console.warn('[Upload] XML interpretation returned no data, using original parser');
             const parseResult = await parseExcel(tempFilePath);
             data = parseResult.sheets;
-            console.log(`[Upload] Fallback parser returned ${Object.keys(data).length} sheets:`, Object.keys(data));
-            Object.entries(data).forEach(([sheet, rows]) => {
-              console.log(`[Upload] Sheet "${sheet}": ${rows?.length || 0} rows`);
-            });
-            // Log confidence scores
-            Object.entries(parseResult.metadata || {}).forEach(([sheet, meta]) => {
-              console.log(`[Upload] Sheet "${sheet}" confidence: ${meta.confidence?.toFixed(2) || 'N/A'} (${meta.method || 'unknown'})`);
-              if (meta.warnings) console.warn(`[Upload] Warnings:`, meta.warnings);
-            });
           }
         } catch (xmlError) {
           console.error('[Upload] XML interpretation error:', xmlError.message);
-          console.warn('[Upload] Falling back to original parser');
           const parseResult = await parseExcel(tempFilePath);
           data = parseResult.sheets;
-          // Log confidence scores
-          Object.entries(parseResult.metadata).forEach(([sheet, meta]) => {
-            console.log(`[Upload] Sheet "${sheet}" confidence: ${meta.confidence.toFixed(2)} (${meta.method})`);
-            if (meta.warnings) console.warn(`[Upload] Warnings:`, meta.warnings);
-          });
         }
+      } else if (fileType === 'csv') {
+        // Parse CSV
+        const csvContent = await fs.readFile(tempFilePath, 'utf-8')
+        const Papa = (await import('papaparse')).default
+        const parsed = Papa.parse(csvContent, { header: true, skipEmptyLines: true })
+        data = { "Data": parsed.data }
       } else if (fileType === 'xml') {
         const xmlContent = await fs.readFile(tempFilePath, 'utf-8')
         const parsed = parseXML(xmlContent)
         const flat = flattenXML(parsed)
-        if (flat.length > 0) {
-          data = { "Data": flat }
-        } else {
-          data = { "Data": [parsed] }
-        }
+        data = { "Data": flat.length > 0 ? flat : [parsed] }
       } else if (fileType === 'json') {
         const jsonContent = await fs.readFile(tempFilePath, 'utf-8')
         const parsed = JSON.parse(jsonContent)
-        if (Array.isArray(parsed)) {
-          data = { "Data": parsed }
-        } else {
-          data = { "Data": [parsed] }
-        }
+        data = { "Data": Array.isArray(parsed) ? parsed : [parsed] }
       } else {
-        throw new Error("Unsupported file type")
+        throw new Error(`Unsupported file type: ${fileType}`)
       }
     } finally {
-      // Delete the original uploaded file
+      // Delete the temp file
       await fs.unlink(tempFilePath).catch(e => console.error("Failed to delete temp file:", e))
     }
 
+    // Create DuckDB database and insert data
+    const { DuckDBAdapter } = await import('./adapters/duckdbAdapter.js')
+    const duckdb = new DuckDBAdapter({ path: duckdbPath })
 
-    // 1. Insert Metadata into Uploads DB (SurrealDB) - only for NEW uploads
-    // We explicitly define `id` to ensure we can reference it easily
-    // We store the RAW file content as base64 to keep it in the single DB.
-    if (!existingUpload) {
-      const fileBuffer = await file.arrayBuffer();
-      const base64Content = Buffer.from(fileBuffer).toString('base64');
+    try {
+      await duckdb.connect()
+      console.log(`[Upload] Connected to DuckDB at ${duckdbPath}`)
 
-      // Identify the user's default space for file categorization
-      let targetSpaceId = null;
+      const createdTables = []
+
+      for (const [rawTableName, rows] of Object.entries(data)) {
+        if (!rows || rows.length === 0) continue
+
+        // Sanitize table name
+        const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_')
+        const tableName = `${fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '')}${uploadUuid.substring(0, 8)}_${safeTableName}`
+
+        console.log(`[Upload] Creating DuckDB table: ${tableName} with ${rows.length} rows`)
+
+        // Get column names and types
+        const columnNames = new Set()
+        rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)))
+
+        // Create table with columns
+        const columns = Array.from(columnNames).map(col => `"${col}" VARCHAR`).join(', ')
+        await duckdb.execute(`CREATE TABLE "${tableName}" (${columns})`)
+
+        // Insert data in batches
+        const batchSize = 1000
+        for (let i = 0; i < rows.length; i += batchSize) {
+          const batch = rows.slice(i, i + batchSize)
+
+          for (const row of batch) {
+            const keys = Object.keys(row)
+            const values = keys.map(k => {
+              const val = row[k]
+              if (val === null || val === undefined) return 'NULL'
+              return `'${String(val).replace(/'/g, "''")}'`
+            })
+
+            const keysStr = keys.map(k => `"${k}"`).join(', ')
+            const valuesStr = values.join(', ')
+
+            await duckdb.execute(`INSERT INTO "${tableName}" (${keysStr}) VALUES (${valuesStr})`)
+          }
+        }
+
+        createdTables.push(tableName)
+        console.log(`[Upload] Created table ${tableName} with ${rows.length} rows`)
+      }
+
+      await duckdb.disconnect()
+
+      // Store metadata in Postgres
+      let targetSpaceId = null
       if (userId) {
         const userSpace = await db.query.dataSpaces.findFirst({
           where: eq(dataSpaces.userId, userId),
           orderBy: [desc(dataSpaces.isDefault), desc(dataSpaces.createdAt)]
-        });
-        targetSpaceId = userSpace?.id;
+        })
+        targetSpaceId = userSpace?.id
       }
 
-      // Using spaceFiles as a fallback for metadata storage since no dedicated 'uploads' table exists
-      // In a real migration, we'd add an exports.uploads table.
+      // Store upload metadata
       await db.insert(spaceFiles).values({
-        id: uploadUuid, // reusing uuid
+        id: uploadUuid,
         spaceId: targetSpaceId,
         filename: fileName,
         fileType,
         fileSizeBytes: fileSize,
-        storagePath: base64Content, // storing data directly for now as per legacy logic
-        parsedSchema: excelMapping ? { excel_mapping: excelMapping } : null,
-      });
-    } else {
-      console.log(`[Upload] Skipping metadata creation - adding to existing upload ${uploadId}`)
-    }
+        storagePath: duckdbPath, // Store DuckDB file path
+        parsedSchema: {
+          provider: 'duckdb',
+          duckdb_path: duckdbPath,
+          tables: createdTables,
+          excel_mapping: excelMapping
+        },
+      })
 
-    // 2. Create tables and insert data into SurrealDB
-    const createdTables = [];
-    for (const [rawTableName, rows] of Object.entries(data)) {
-      if (!rows || rows.length === 0) continue
+      console.log(`[Upload] Upload complete. DuckDB: ${duckdbPath}, Tables: ${createdTables.join(', ')}`)
 
-      // Sanitize table name for SurrealDB
-      const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-      // Base ID: uploads:uuid_tablename
-      const baseTableId = `data_${uploadUuid}_${safeTableName}`;
-
-      // --- A. Create ORIGINAL Table ---
-      console.log(`[Upload] Creating original table: ${baseTableId}`);
-      await createTableAndInsertData(baseTableId, rows);
-
-      // --- B. Auto-Sanitize ---
-
-
-      createdTables.push(baseTableId);
-    }
-
-    // --- C. Auto-Index for RAG (Experimental) ---
-    if (userId) {
-      try {
-        const enabledFeatures = await getUserFeatureFlags(db, userId);
-        if (enabledFeatures.includes('rag-pipeline')) {
-          console.log(`[RAG] Auto-indexing ${createdTables.length} tables for user ${userId}...`);
-          // Background task
-          (async () => {
-            for (const [rawTableName, rows] of Object.entries(data)) {
-              if (!rows || rows.length === 0) continue;
-              const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-              const sourceId = `upload_${uploadUuid}_${safeTableName}`;
-              await RAGService.indexTableData(rows, rawTableName, sourceId, userId);
-            }
-          })().catch(err => console.error('[RAG] Auto-indexing failed:', err));
+      return c.json({
+        success: true,
+        provider: 'duckdb',
+        duckdbPath: duckdbPath,
+        uploadId: uploadId,
+        tables: createdTables,
+        connection: {
+          provider: 'duckdb',
+          path: duckdbPath
         }
-      } catch (err) {
-        console.error('[RAG] Auto-indexing feature check failed:', err);
-      }
-    }
+      })
 
-    return c.json({
-      success: true,
-      provider: 'neon-http',
-      uploadId: uploadId,
-      tables: createdTables
-    })
+    } catch (error) {
+      await duckdb.disconnect().catch(() => { })
+      // Clean up DuckDB file on error
+      await fs.unlink(duckdbPath).catch(() => { })
+      throw error
+    }
 
   } catch (e) {
-    console.error("Upload failed:", e)
+    console.error("[Upload] Upload failed:", e)
     return c.json({ error: e.message }, 500)
   }
 })

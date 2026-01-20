@@ -13,6 +13,7 @@ import { getUserFeatureFlags } from "../../experimental-features.js"
 import { filterModelsByTier, calculateUserLimits } from "../../lib/tierLimits.js"
 import { ConfigService } from "../services/ConfigService.js"
 import { SchemaTranslator } from "../services/SchemaTranslator.js"
+import { StorageManager } from "../../services/storage/StorageManager.js"
 
 const chat = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -191,7 +192,26 @@ chat.get("/chats/:id", async (c) => {
         });
 
         if (!result) return c.json({ error: "Chat not found" }, 404)
-        return c.json({ chat: result, messages: result.messages || [] })
+
+        let messages = result.messages || [];
+
+        // Hybrid Storage Check
+        if (result.storageId) {
+            try {
+                const provider = await StorageManager.getProvider(payload.sub);
+                const url = await provider.getPresignedUrl(result.storageId, 60);
+                const response = await fetch(url);
+                if (response.ok) {
+                    messages = await response.json();
+                } else {
+                    console.error(`[Chat] Failed to fetch storage messages: ${response.statusText}`);
+                }
+            } catch (err) {
+                console.error(`[Chat] Storage fetch error for ${result.id}:`, err);
+            }
+        }
+
+        return c.json({ chat: result, messages })
     } catch (e) {
         console.error("[Chat] Fetch failed:", e);
         return c.json({ error: "Failed to fetch chat" }, 500)
@@ -217,14 +237,52 @@ chat.post("/chats/:id/messages", async (c) => {
 
         if (!existingChat) return c.json({ error: "Chat not found" }, 404)
 
-        const updatedMessages = [...(existingChat.messages || []), newMessage];
+        let existingMessages = existingChat.messages || [];
 
-        await db.update(chats)
-            .set({
-                messages: updatedMessages,
-                updatedAt: new Date()
-            })
-            .where(eq(chats.id, rawChatId));
+        // Hybrid Storage: Fetch history if offloaded
+        if (existingChat.storageId) {
+            try {
+                const provider = await StorageManager.getProvider(userId);
+                const url = await provider.getPresignedUrl(existingChat.storageId, 60);
+                const response = await fetch(url);
+                if (response.ok) {
+                    existingMessages = await response.json();
+                }
+            } catch (err) {
+                console.error(`[Chat] Failed to fetch storage context for append:`, err);
+                // Cannot proceed safely if history is missing in a context-dependent chat?
+                // We fallback to empty and hope for the best or error out.
+                // For now, allow append to empty.
+            }
+        }
+
+        const updatedMessages = [...existingMessages, newMessage];
+
+        if (existingChat.storageId) {
+            // Write back to Storage
+            try {
+                const provider = await StorageManager.getProvider(userId);
+                await provider.upload(existingChat.storageId, JSON.stringify(updatedMessages), 'application/json');
+
+                // Update DB timestamp only
+                await db.update(chats)
+                    .set({
+                        updatedAt: new Date()
+                    })
+                    .where(eq(chats.id, rawChatId));
+            } catch (err) {
+                console.error(`[Chat] Failed to upload updated messages:`, err);
+                return c.json({ error: "Failed to save message to storage" }, 500)
+            }
+        } else {
+            // Standard DB Update
+            await db.update(chats)
+                .set({
+                    messages: updatedMessages,
+                    updatedAt: new Date()
+                })
+                .where(eq(chats.id, rawChatId));
+        }
 
         if (existingChat.title === 'New Chat' && updatedMessages.length >= 2) {
             setImmediate(async () => {

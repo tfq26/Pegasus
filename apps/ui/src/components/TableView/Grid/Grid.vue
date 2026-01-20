@@ -98,6 +98,7 @@ const {
 
 // Force re-render trigger
 const renderKey = ref(0);
+const showGridlines = ref(true);
 
 // --- Realtime & Follow Me (useRealtimeCursor) ---
 // --- Selection State (useGridSelection) ---
@@ -867,6 +868,10 @@ const toggleStyle = async (styleKey: string, value?: any) => {
     props.engine.endBatch();
 };
 
+const handleFormat = (type: string, value?: any) => {
+   toggleStyle(type, value);
+};
+
 
 
 // Watch selection to act as "formula bar sync" when not editing
@@ -1591,11 +1596,7 @@ const handleDelete = async () => {
   props.engine.endBatch();
   props.engine.notifyChange();
   
-  if (clearedCount > 0) {
-    toast.success(`Cleared ${clearedCount} cell(s)`);
-  } else {
-    toast.info('No cells with content to clear');
-  }
+  // Silently clear cells without toast notification
 };
 
 const handlePaste = async () => {
@@ -2031,6 +2032,13 @@ const commitChanges = async () => {
     committing.value = false;
   }
 };
+
+defineExpose({
+    handleFormat,
+    textWrap,
+    showGridlines,
+    commitChanges
+});
 </script>
 
 <template>
@@ -2158,30 +2166,7 @@ const commitChanges = async () => {
             </span>
         </div>
 
-        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent font-bold text-foreground" @click="toggleStyle('bold')" title="Bold">B</button>
-        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent italic text-foreground" @click="toggleStyle('italic')" title="Italic">I</button>
-        <button class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent underline text-foreground" @click="toggleStyle('underline')" title="Underline">U</button>
-        <div class="w-px h-4 bg-border mx-2"></div>
-        <div class="flex items-center gap-1" title="Text Color">
-            <span class="text-xs text-muted-foreground">A</span>
-            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('color', (e.target as HTMLInputElement).value)" />
-        </div>
-        <div class="flex items-center gap-1" title="Background Color">
-            <span class="text-xs text-muted-foreground bg-accent px-1 rounded">Bg</span>
-            <input type="color" class="w-6 h-6 p-0 border-0 rounded cursor-pointer bg-transparent" @input="(e) => toggleStyle('background', (e.target as HTMLInputElement).value)" />
-        </div>
-        <div class="w-px h-4 bg-border mx-2"></div>
-        <!-- Text Wrap Toggle -->
-        <button 
-          class="w-8 h-8 flex items-center justify-center rounded transition-colors"
-          :class="textWrap ? 'bg-primary/20 text-primary' : 'hover:bg-accent text-foreground'"
-          @click="textWrap = !textWrap"
-          title="Toggle text wrapping"
-        >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 6h18M3 12h15a3 3 0 110 6h-4l2-2m0 4l-2-2M3 18h7"/>
-          </svg>
-        </button>
+        <!-- Formatting toolbar moved to Workspace Toolbar -->
         <!-- Auto-fit Columns -->
         <button 
           class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent text-foreground"
@@ -2196,7 +2181,7 @@ const commitChanges = async () => {
 
     <!-- Grid Body with Sticky Header -->
     <div 
-      class="flex-1 overflow-auto relative select-none outline-none"
+      class="flex-1 overflow-auto relative select-none outline-none spreadsheet-scrollbar"
       ref="gridContainer"
       @scroll="onScroll"
       @keydown="onKeyDown"
@@ -2293,8 +2278,9 @@ const commitChanges = async () => {
             <td
               v-for="col in colCount"
               :key="col"
-              class="border-r border-b border-border px-1 text-xs relative cursor-cell overflow-hidden"
+              class="border-r border-b px-1 text-xs relative cursor-cell overflow-hidden"
               :class="[
+                showGridlines ? 'border-border' : 'border-transparent',
                 textWrap ? 'whitespace-normal break-words' : 'whitespace-nowrap',
                 {
                   'bg-blue-50/50 dark:bg-blue-900/10': isColumnSelected(col - 1) && !isInSelection(virtualState.startRow + rowOffset, col - 1),

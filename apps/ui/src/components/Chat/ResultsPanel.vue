@@ -52,7 +52,6 @@ const isResizing = ref(false)
 const isMaximized = ref(false)
 const activeTab = ref<'output' | 'insights' | 'problems' | 'execution' | 'versioning'>('output')
 import { defineAsyncComponent, unref } from 'vue'
-const ExcelEditor = defineAsyncComponent(() => import('@/components/Excel/ExcelEditor.vue'))
 import { AlertCircle, Activity, GitBranch, Terminal as TerminalIcon, History, Command, Info, Gauge, Brain, Sparkles, Trash2, Eye, RotateCcw } from 'lucide-vue-next'
 import { useLocalStorage } from '@vueuse/core'
 
@@ -371,7 +370,7 @@ const copyToClipboard = async (text: string) => {
           <RotateCcw class="w-3.5 h-3.5" />
           <span>Reset Top Bar Controls</span>
         </ContextMenuItem>
-        <ContextMenuItem v-if="hiddenItems.value.length > 0" @click="resetTopBar" class="flex items-center gap-2">
+        <ContextMenuItem v-if="hiddenItems.length > 0" @click="resetTopBar" class="flex items-center gap-2">
           <Eye class="w-3.5 h-3.5" />
           <span>Show All Hidden Items</span>
         </ContextMenuItem>

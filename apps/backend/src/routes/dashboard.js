@@ -11,6 +11,7 @@ import { canCreateDashboard } from "../../lib/tierLimits.js"
 import { getIO, getRoom } from "../socket.js"
 
 import { ConfigService } from "../services/ConfigService.js"
+import { StorageManager } from "../../services/storage/StorageManager.js"
 
 const dashboard = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -460,57 +461,72 @@ dashboard.get("/dashboards/:id", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const [result] = await db.query(`
-            SELECT *,
-                (owner = type::thing('user', $userId)) as is_owner,
-                (SELECT role FROM dashboard_permission WHERE user = type::thing('user', $userId) AND dashboard = $parent.id)[0] as permission_role
-            FROM ${id};
-        `, { userId });
+        // 1. Fetch Dashboard Metadata (Drizzle)
+        const dashboard = await db.query.dashboards.findFirst({
+            where: eq(dashboards.id, rawId),
+            with: {
+                permissions: true,
+                owner: true
+            }
+        });
 
-        if (!result || result.length === 0) return c.json({ error: "Dashboard not found" }, 404)
-        const dashboard = result[0]
+        if (!dashboard) return c.json({ error: "Dashboard not found" }, 404)
 
+        // 2. Check Permissions
         let role = null;
-        if (dashboard.is_owner) role = 'owner';
-        else if (dashboard.permission_role) role = dashboard.permission_role;
+        if (dashboard.ownerId === userId) {
+            role = 'owner';
+        } else {
+            // Check direct permission in the 'permissions' relation
+            const perm = dashboard.permissions.find(p => p.userId === userId);
+            if (perm) role = perm.role;
+        }
 
-        if (!role && !dashboard.is_public) return c.json({ error: "Unauthorized" }, 403)
+        if (!role && !dashboard.isPublic) return c.json({ error: "Unauthorized" }, 403)
 
-        const cleanId = (rid) => rid.toString().split(':')[1] || rid.toString();
-        let elements = dashboard.data?.elements || [];
+        // 3. Hybrid Storage Resolution
+        let fullConfig = dashboard.config || {};
 
-        // Enrich elements with creator names if missing and we have IDs
-        // This handles cases where elements were created before we started storing names
-        const enrichedElements = await Promise.all(elements.map(async (el) => {
-            if (!el.created_by_name && !el.created_by_name_filled && el.created_by && el.created_by.includes(':')) {
-                try {
-                    const [userResult] = await db.query(`SELECT first_name, last_name, email FROM ${el.created_by}`);
-                    if (userResult && userResult[0]) {
-                        const name = `${userResult[0].first_name || ''} ${userResult[0].last_name || ''}`.trim() || userResult[0].email;
-                        return { ...el, created_by_name: name, created_by_name_filled: true };
-                    }
-                } catch (err) {
-                    console.warn(`[Dashboard] Failed to fetch user details for ${el.created_by}:`, err.message);
+        if (dashboard.storageId) {
+            try {
+                // Offloaded to Storage. Fetch it.
+                // We use the Owner's provider context for the dashboard file
+                const provider = await StorageManager.getProvider(dashboard.ownerId);
+                const url = await provider.getPresignedUrl(dashboard.storageId, 60); // 60s is enough for backend to fetch
+
+                const response = await fetch(url);
+                if (response.ok) {
+                    const storageData = await response.json();
+                    // Merge storage data (priority)
+                    fullConfig = { ...fullConfig, ...storageData };
+                } else {
+                    console.error(`[Dashboard] Failed to fetch storage content: ${response.statusText}`);
                 }
+            } catch (err) {
+                console.error(`[Dashboard] Storage fetch error for ${dashboard.id}:`, err);
+                // Fallback to existing config if possible, or partial load
             }
-            return el;
-        }));
+        }
 
-        // Return dashboard with embedded data
+        // 4. Construct Response (Legacy Shape Compatibility)
+        // Frontend expects 'data' property with layout/elements
         const responseDashboard = {
-            ...dashboard,
-            id: cleanId(dashboard.id),
-            access_level: role || (dashboard.is_public ? 'viewer' : null),
-            data: {
-                ...(dashboard.data || {}),
-                layout: dashboard.data?.layout || [],
-                elements: enrichedElements
-            }
+            id: dashboard.id,
+            title: dashboard.title,
+            cover_image: dashboard.coverImage,
+            is_public: dashboard.isPublic,
+            updated_at: dashboard.updatedAt,
+            owner_id: dashboard.ownerId,
+            access_level: role || (dashboard.isPublic ? 'viewer' : null),
+            is_owner: dashboard.ownerId === userId,
+            data: fullConfig // Map 'config' to 'data' for frontend compatibility
         };
+
         return c.json({ dashboard: responseDashboard })
     } catch (e) {
+        console.error("[Get Dashboard] Error:", e);
         return c.json({ error: "Failed to fetch dashboard" }, 500)
     }
 })
@@ -522,26 +538,36 @@ dashboard.put("/dashboards/:id", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
         const { title, data } = await c.req.json()
 
-        // 1. Check Permissions First (Two-step is more stable in SurrealDB JS)
-        const role = await getDashboardRole(userId, id);
+        // 1. Check Permissions
+        const role = await getDashboardRole(userId, rawId);
         if (role !== 'owner' && role !== 'editor' && role !== 'write') {
             return c.json({ error: "Unauthorized access or insufficient permissions" }, 403)
         }
 
-        const updates = []
-        const params = { userId, id }
-        if (title) { updates.push('title = $title'); params.title = title; }
-        if (data?.cover_image !== undefined) { updates.push('cover_image = $cover_image'); params.cover_image = data.cover_image; }
-        if (data) { updates.push('data = $data'); params.data = data; }
-        updates.push('updated_at = time::now()')
+        const updates = { updatedAt: new Date() };
+        if (title) updates.title = title;
+        if (data?.cover_image !== undefined) updates.coverImage = data.cover_image;
 
-        if (updates.length > 1) { // More than just updated_at
-            const query = `UPDATE ${id} SET ${updates.join(', ')}`;
-            await db.query(query, params);
+        // 2. Hybrid Storage Offloading
+        if (data) {
+            // Upload 'data' to Storage
+            const provider = await StorageManager.getProvider(userId);
+            const key = `dashboards/${rawId}/data.json`;
+            const content = JSON.stringify(data);
+
+            await provider.upload(key, content, 'application/json');
+
+            updates.storageId = key;
+            updates.config = null; // Clear local config to save space
         }
+
+        // 3. Update Database
+        await db.update(dashboards)
+            .set(updates)
+            .where(eq(dashboards.id, rawId));
 
         return c.json({ ok: true })
     } catch (e) {

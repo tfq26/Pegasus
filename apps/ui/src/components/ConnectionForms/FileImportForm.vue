@@ -39,11 +39,19 @@ const processFile = async (file: File) => {
   try {
     const result = await uploadFile(file)
     if (result.success) {
-      if (result.provider === 'surrealdb') {
+      if (result.provider === 'duckdb') {
+        // DuckDB upload (new system)
+        props.connectionForm.provider = 'file' // Frontend uses 'file', converts to 'duckdb' in api.ts
+        if (!props.connectionForm.sqlite) props.connectionForm.sqlite = { path: '' }
+        props.connectionForm.sqlite.path = result.duckdbPath
+        props.connectionForm.sqlite.tables = result.tables
+      } else if (result.provider === 'surrealdb') {
+        // Legacy SurrealDB upload
         props.connectionForm.provider = 'surrealdb'
         if (!props.connectionForm.surrealdb) props.connectionForm.surrealdb = {}
         props.connectionForm.surrealdb.uploadId = result.uploadId
       } else {
+        // Legacy SQLite/Turso upload
         props.connectionForm.sqlite.path = result.dbPath || ''
         props.connectionForm.sqlite.authToken = result.authToken
         props.connectionForm.sqlite.tables = result.tables

@@ -14,9 +14,9 @@ export class DuckDBAdapter {
     async connect() {
         return new Promise((resolve, reject) => {
             try {
-                // Create database instance
+                // Create database instance with READ_ONLY mode to allow concurrent access
                 this.db = new duckdb.Database(this.dbPath, {
-                    access_mode: 'READ_WRITE'
+                    access_mode: 'READ_ONLY'
                 }, (err) => {
                     if (err) {
                         console.error('[DuckDB] Database creation error:', err);

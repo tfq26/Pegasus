@@ -10,7 +10,7 @@ import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
-import { fetchTableSchema, fetchTableQuery, getAIModels } from '@/lib/api';
+import { fetchTableSchema, fetchTableQuery, getAIModels, QUERY_API_URL, getAuthHeaders } from '@/lib/api';
 import { buildConnectionPayload } from '@/lib/db-connections';
 import { localAI } from '@/services/LocalAIService';
 import { useSettingsStore } from '@/stores/settings';
@@ -657,13 +657,13 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
 
         // 1. Fetch Schema and Data in parallel (OPTIMIZATION)
-        console.log('[Workspace] Fetching schema and data in parallel...');
+        console.log('[Workspace] Fetching schema and data in parallel...')
         
         // Use API client to ensure correct headers and auth
         const [schemaBody, queryBody] = await Promise.all([
              fetchTableSchema(connection, tableName) as Promise<any>,
              fetchTableQuery(connection, tableName, 2000) as Promise<any>
-        ]);
+        ])
 
         // Helpers will throw if error, or return body
         if (schemaBody.error) throw new Error(schemaBody.error);
@@ -1097,18 +1097,42 @@ const handleNoteSave = async (tabId: string, content: string) => {
     }
 };
 
-const handleFileDownload = (fileData: any) => {
-    if (!fileData?.filename || !fileData?.content) {
-        toast.error('File data not available');
+const handleFileDownload = async (fileData: any) => {
+    console.log('[Workspace] handleFileDownload called with data:', fileData);
+    
+    if (!fileData?.filename) {
+        toast.error('File name missing');
         return;
     }
 
+    let blob: Blob | null = null;
+
     try {
-        // Convert content to blob if needed
-        const blob = fileData.content instanceof Blob 
-            ? fileData.content 
-            : new Blob([fileData.content]);
-        
+        if (fileData.content !== undefined && fileData.content !== null) {
+            // Use existing content
+             blob = fileData.content instanceof Blob 
+                ? fileData.content 
+                : new Blob([fileData.content]);
+        } else if (fileData.itemId) {
+            // Fetch from backend
+            const id = fileData.itemId.includes(':') ? fileData.itemId.split(':')[1] : fileData.itemId;
+            toast.info('Downloading file...');
+            
+            const headers = getAuthHeaders() as Record<string, string>;
+            const res = await fetch(`${QUERY_API_URL}/files/${id}`, {
+                headers
+            });
+
+            if (!res.ok) {
+                throw new Error(`Download failed: ${res.statusText}`);
+            }
+            blob = await res.blob();
+        } else {
+            throw new Error('No content or file ID available');
+        }
+
+        if (!blob) throw new Error('Failed to create blob');
+
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -1118,10 +1142,10 @@ const handleFileDownload = (fileData: any) => {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        toast.success('File download started');
+        toast.success('File downloaded successfully');
     } catch (e: any) {
         console.error('[Workspace] File download failed:', e);
-        toast.error('Failed to download file');
+        toast.error('Failed to download file', { description: e.message });
     }
 };
 

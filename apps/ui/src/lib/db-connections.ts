@@ -159,6 +159,10 @@ export const buildConnectionPayload = (
     case 'sqlite':
       basePayload = { provider: 'sqlite', ...entry.sqlite }
       break
+    case 'file':
+      // File uploads use DuckDB, path is stored in sqlite.path
+      basePayload = { provider: 'file', ...entry.sqlite }
+      break
     case 'surrealdb':
       basePayload = { provider: 'surrealdb', ...entry.surrealdb }
       break

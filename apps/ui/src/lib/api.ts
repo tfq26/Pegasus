@@ -447,10 +447,10 @@ export async function createPortalSession() {
   return api.post('/create-portal-session')
 }
 export async function saveConnection(connection: any) {
-  // Convert 'file' provider to 'sqlite' for backend compatibility
+  // Convert 'file' provider to 'duckdb' for backend compatibility and performance
   const connectionToSave = { ...connection }
   if (connectionToSave.provider === 'file') {
-    connectionToSave.provider = 'sqlite'
+    connectionToSave.provider = 'duckdb'
   }
 
   console.log('[API] Saving connection:', connectionToSave)
@@ -458,10 +458,10 @@ export async function saveConnection(connection: any) {
 }
 
 export async function updateConnection(connection: any) {
-  // Convert 'file' provider to 'sqlite' for backend compatibility
+  // Convert 'file' provider to 'duckdb' for backend compatibility and performance
   const connectionToSave = { ...connection }
   if (connectionToSave.provider === 'file') {
-    connectionToSave.provider = 'sqlite'
+    connectionToSave.provider = 'duckdb'
   }
 
   return api.put(`/connections/${connection.id}`, connectionToSave)
@@ -602,9 +602,22 @@ export async function runQuery(connection: ConnectionEntry, query: string) {
 
 export async function fetchTableQuery(connection: any, tableName: string, limit = 100, offset = 0) {
   const payload = buildConnectionPayload(connection)
+  // Try multiple sources for provider:
+  // 1. connection.provider (if it's a ConnectionEntry)
+  // 2. payload.provider (if buildConnectionPayload added it)
+  // 3. Default to 'duckdb' for uploaded files (faster than sqlite)
+  let provider = connection.provider || payload.provider || 'duckdb'
+
+  // Convert 'file' provider to 'duckdb' for backend compatibility and performance
+  if (provider === 'file') {
+    provider = 'duckdb'
+  }
+
+  console.log('[API] fetchTableQuery:', { tableName, provider, originalProvider: connection.provider, hasConnectionProvider: !!connection.provider, hasPayloadProvider: !!payload.provider })
+
   return api.post(`/api/table/${tableName}/query`, {
     connection: payload,
-    provider: connection.provider,
+    provider,
     limit,
     offset
   })
@@ -612,9 +625,22 @@ export async function fetchTableQuery(connection: any, tableName: string, limit 
 
 export async function fetchTableSchema(connection: any, tableName: string) {
   const payload = buildConnectionPayload(connection)
+  // Try multiple sources for provider:
+  // 1. connection.provider (if it's a ConnectionEntry)
+  // 2. payload.provider (if buildConnectionPayload added it)
+  // 3. Default to 'duckdb' for uploaded files (faster than sqlite)
+  let provider = connection.provider || payload.provider || 'duckdb'
+
+  // Convert 'file' provider to 'duckdb' for backend compatibility and performance
+  if (provider === 'file') {
+    provider = 'duckdb'
+  }
+
+  console.log('[API] fetchTableSchema:', { tableName, provider, originalProvider: connection.provider, hasConnectionProvider: !!connection.provider, hasPayloadProvider: !!payload.provider })
+
   return api.post(`/api/table/${tableName}/schema`, {
     connection: payload,
-    provider: connection.provider
+    provider
   })
 }
 

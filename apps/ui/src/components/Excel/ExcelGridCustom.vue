@@ -159,7 +159,7 @@ const fillHandlePosition = computed(() => {
 </script>
 
 <template>
-  <div class="overflow-auto relative select-none w-full h-full">
+  <div class="overflow-auto relative select-none w-full h-full spreadsheet-scrollbar">
     <table 
       class="border-collapse w-full table-fixed"
       @mousedown="onMouseDown"

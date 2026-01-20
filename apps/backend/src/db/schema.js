@@ -47,6 +47,7 @@ export const dashboards = pgTable("dashboard", {
     coverImage: text("cover_image"),
     config: jsonb("config"),
     messages: jsonb("messages").default([]),
+    storageId: text("storage_id"), // Hybrid Storage
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -138,6 +139,7 @@ export const spaceNotes = pgTable("space_note", {
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
     title: text("title").notNull(),
     content: text("content"),
+    storageId: text("storage_id"), // Hybrid Storage
     noteType: text("note_type").default("general"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
@@ -214,6 +216,7 @@ export const chats = pgTable("chat", {
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
     title: text("title").default('New Chat'),
     messages: jsonb("messages").default([]),
+    storageId: text("storage_id"), // Hybrid Storage
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -393,4 +396,29 @@ export const spreadsheetPermissions = pgTable("spreadsheet_permission", {
     grantedAt: timestamp("granted_at").defaultNow(),
 }, (t) => ({
     unq: unique().on(t.spreadsheet, t.userEmail),
+}));
+
+// --- Storage ---
+export const files = pgTable("file", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    storageId: text("storage_id").notNull(),
+    filename: text("filename").notNull(),
+    size: bigint("size", { mode: "number" }),
+    mimeType: text("mime_type"),
+    provider: text("provider").default('default'), // 'default' or 'custom'
+    createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const storageCredentials = pgTable("storage_credential", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    providerType: text("provider_type").notNull(), // 's3', 'azure', 'gcp'
+    name: text("name").notNull(),
+    config: jsonb("config").notNull(),
+    isEnabled: boolean("is_enabled").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+    unq: unique().on(t.userId, t.name),
 }));

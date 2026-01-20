@@ -328,7 +328,10 @@ const confirmDeleteConnection = async () => {
     await apiDeleteConnection(connectionToDelete.value.id)
     toast.success('Connection removed')
     deleteConnectionDialogOpen.value = false
-    window.location.reload()
+    
+    // Reactively update the connection store instead of full page reload
+    const connStore = useConnectionStore()
+    await connStore.loadConnections(true) // Force refresh from backend
   } catch (err: any) {
     toast.error('Failed to remove connection', { description: err.message })
   }
@@ -350,7 +353,8 @@ const confirmDeleteChat = async () => {
     await deleteChat(chatToDelete.value.id)
     toast.success('Deleted session')
     deleteChatDialogOpen.value = false
-    window.location.reload()
+    // Emit event to parent to refresh chat list
+    window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
   } catch (err: any) {
     toast.error('Failed to delete session', { description: err.message })
   }
@@ -361,7 +365,8 @@ const confirmClearAllChats = async () => {
     await clearAllChats()
     toast.success('History cleared')
     clearAllChatsDialogOpen.value = false
-    window.location.reload()
+    // Emit event to parent to refresh chat list
+    window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
   } catch (err: any) {
     toast.error('Failed to clear history', { description: err.message })
   }
@@ -391,7 +396,8 @@ const confirmDeleteQuery = async () => {
     await apiDeleteQuery(queryToDelete.value)
     toast.success('Query deleted')
     deleteQueryDialogOpen.value = false
-    window.location.reload()
+    // Emit event to parent to refresh query list
+    window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
   } catch (err: any) {
     toast.error('Failed to delete query', { description: err.message })
   }
@@ -406,7 +412,8 @@ const confirmClearQueries = async () => {
     await apiClearAllQueries()
     toast.success('Query history cleared')
     clearQueriesDialogOpen.value = false
-    window.location.reload()
+    // Emit event to parent to refresh query list
+    window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
   } catch (err: any) {
     toast.error('Failed to clear queries', { description: err.message })
   }

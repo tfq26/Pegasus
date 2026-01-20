@@ -351,21 +351,44 @@ table.post("/table/:tableName/schema", async (c) => {
     try {
         const tableName = c.req.param("tableName")
         let { connection, provider } = await c.req.json()
+
+        console.log('[Table Schema] Request:', { tableName, provider, hasConnection: !!connection })
+
+        // Fallback to 'duckdb' if provider is undefined (faster for uploaded files/spreadsheets)
+        if (!provider) {
+            provider = 'duckdb'
+            console.log('[Table Schema] Provider was undefined, defaulting to duckdb')
+        }
+
         if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
         const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
+        if (!Adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
+
+        console.log('[Table Schema] Connection object:', JSON.stringify(connection, null, 2))
         const adapter = new Adapter(connection)
 
         try {
             await adapter.connect()
+
+            // For DuckDB file uploads, map the requested table name to the actual table name
+            let actualTableName = tableName
+            if ((provider === 'duckdb' || provider === 'file') && connection.tables && Array.isArray(connection.tables)) {
+                const matchedTable = connection.tables.find(t => t.toLowerCase().startsWith(tableName.toLowerCase()))
+                if (matchedTable) {
+                    actualTableName = matchedTable
+                    console.log(`[Table Schema] Mapped table name: ${tableName} -> ${actualTableName}`)
+                }
+            }
+
             const fullSchema = await adapter.getSchema()
             await adapter.disconnect()
-            return c.json({ columns: fullSchema[tableName] || [] })
+            return c.json({ columns: fullSchema[actualTableName] || [] })
         } catch (e) {
+            await adapter.disconnect().catch(() => { })
             return c.json({ error: e.message }, 500)
         }
     } catch (e) {
@@ -377,33 +400,67 @@ table.post("/table/:tableName/query", async (c) => {
     try {
         const tableName = c.req.param("tableName")
         let { connection, provider, limit = 100, offset = 0 } = await c.req.json()
+
+        console.log('[Table Query] Request:', { tableName, provider, hasConnection: !!connection, limit, offset })
+
+        // Fallback to 'duckdb' if provider is undefined (faster for uploaded files/spreadsheets)
+        if (!provider) {
+            provider = 'duckdb'
+            console.log('[Table Query] Provider was undefined, defaulting to duckdb')
+        }
+
         if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
         const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
+        if (!Adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
+
+        console.log('[Table Query] Connection object:', JSON.stringify(connection, null, 2))
         const adapter = new Adapter(connection)
 
         try {
             await adapter.connect()
+
+            // For DuckDB file uploads, map the requested table name to the actual table name
+            let actualTableName = tableName
+            if ((provider === 'duckdb' || provider === 'file') && connection.tables && Array.isArray(connection.tables)) {
+                // Find the actual table name that starts with the requested name
+                const matchedTable = connection.tables.find(t => t.toLowerCase().startsWith(tableName.toLowerCase()))
+                if (matchedTable) {
+                    actualTableName = matchedTable
+                    console.log(`[Table Query] Mapped table name: ${tableName} -> ${actualTableName}`)
+                }
+            }
+
             let query
             if (provider === 'surrealdb') {
-                query = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+                query = `SELECT *, meta::id(id) as __id FROM ${actualTableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
             } else if (provider === 'mongodb') {
-                query = { collection: tableName, limit: Number(limit), skip: Number(offset) }
+                query = { collection: actualTableName, limit: Number(limit), skip: Number(offset) }
             } else if (provider === 'postgres' || provider === 'mysql') {
                 const q = provider === 'mysql' ? '`' : '"'
-                query = `SELECT * FROM ${q}${tableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                query = `SELECT * FROM ${q}${actualTableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             } else {
-                query = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                query = `SELECT rowid as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             }
 
             const rows = await adapter.query(query)
             await adapter.disconnect()
-            return c.json({ rows: Array.isArray(rows) ? rows : [] })
+
+            // Convert BigInt values to regular numbers for JSON serialization
+            const serializedRows = Array.isArray(rows) ? rows.map(row => {
+                const newRow = {}
+                for (const [key, value] of Object.entries(row)) {
+                    newRow[key] = typeof value === 'bigint' ? Number(value) : value
+                }
+                return newRow
+            }) : []
+
+            return c.json({ rows: serializedRows })
         } catch (e) {
+            await adapter.disconnect().catch(() => { })
             return c.json({ error: e.message }, 500)
         }
     } catch (e) {

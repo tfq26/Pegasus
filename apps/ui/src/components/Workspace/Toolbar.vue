@@ -51,7 +51,6 @@ const emit = defineEmits<{
   'stop': []
   'ai-generate': []
   'clear': []
-  'open-excel-editor': []
   'format': [type: string, value?: any]
   'toggle-ai-mode': []
   'visualize': []
