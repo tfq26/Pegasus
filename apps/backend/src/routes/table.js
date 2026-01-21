@@ -55,7 +55,9 @@ const upsertUser = async (payload) => {
 table.post("/rename-table", async (c) => {
     try {
         let { connection, oldTableName, newTableName, provider } = await c.req.json()
-        if (provider === 'surrealdb') provider = 'postgres';
+        if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
+            provider = 'postgres';
+        }
 
         console.log(`[Rename] Received rename request:`, { oldTableName, newTableName, provider })
 
@@ -147,7 +149,9 @@ table.post("/rename-table", async (c) => {
 table.post("/delete-table", async (c) => {
     try {
         let { connection, tableName, provider } = await c.req.json()
-        if (provider === 'surrealdb') provider = 'postgres';
+        if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
+            provider = 'postgres';
+        }
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -218,7 +222,9 @@ table.post("/delete-table", async (c) => {
 table.post("/save-table-data", async (c) => {
     try {
         let { tableName, updates, deletedRowIds = [], deletedColumns = [], connection, provider } = await c.req.json()
-        if (provider === 'surrealdb') provider = 'postgres';
+        if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
+            provider = 'postgres';
+        }
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
 
@@ -264,17 +270,45 @@ table.post("/save-table-data", async (c) => {
 
         try {
             await adapter.connect()
+
+            // For DuckDB file uploads, map the requested table name to the actual table name
+            let actualTableName = tableName
+            if ((provider === 'duckdb' || provider === 'file')) {
+                console.log(`[Table Save] Mapping table. Requested: ${tableName}. Connection tables:`, connection?.tables ? JSON.stringify(connection.tables) : 'undefined');
+
+                if (connection && connection.tables && Array.isArray(connection.tables)) {
+                    // Strategy 1: Fuzzy Match
+                    const sanitize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                    const targetSanitized = sanitize(tableName)
+
+                    const matchedTable = connection.tables.find(t => {
+                        const tSanitized = sanitize(t)
+                        return tSanitized === targetSanitized || tSanitized.includes(targetSanitized) || targetSanitized.includes(tSanitized)
+                    })
+
+                    if (matchedTable) {
+                        actualTableName = matchedTable
+                        console.log(`[Table Save] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`)
+                    }
+                    // Strategy 2: Single Table Fallback
+                    else if (connection.tables.length === 1) {
+                        actualTableName = connection.tables[0]
+                        console.log(`[Table Save] Fallback to single available table: ${actualTableName}`)
+                    }
+                }
+            }
+
             if (typeof adapter.saveData === 'function') {
-                await adapter.saveData(tableName, updates, deletedRowIds, deletedColumns)
+                await adapter.saveData(actualTableName, updates, deletedRowIds, deletedColumns)
                 return c.json({ ok: true, saved: updates?.length || 0 })
             }
 
             const queries = []
             for (const rowid of deletedRowIds) {
-                if (rowid) queries.push(`DELETE FROM "${tableName}" WHERE rowid = ${Number(rowid)}`)
+                if (rowid) queries.push(`DELETE FROM "${actualTableName}" WHERE rowid = ${Number(rowid)}`)
             }
             for (const col of deletedColumns) {
-                if (col && col !== '_rowid_') queries.push(`ALTER TABLE "${tableName}" DROP COLUMN "${col}"`)
+                if (col && col !== '_rowid_') queries.push(`ALTER TABLE "${actualTableName}" DROP COLUMN "${col}"`)
             }
 
             for (const update of updates) {
@@ -286,17 +320,17 @@ table.post("/save-table-data", async (c) => {
 
                 if (idKey && rowData[idKey] !== undefined) {
                     const setClause = Object.keys(rowData).filter(k => k !== idKey).map(k => `"${k}" = ${rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`}`).join(', ')
-                    if (setClause) queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE "${idKey}" = '${String(rowData[idKey]).replace(/'/g, "''")}'`)
+                    if (setClause) queries.push(`UPDATE "${actualTableName}" SET ${setClause} WHERE "${idKey}" = '${String(rowData[idKey]).replace(/'/g, "''")}'`)
                 } else if (originalData) {
                     const setClause = Object.keys(rowData).filter(k => k !== '_rowid_').map(k => `"${k}" = ${rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`}`).join(', ')
                     const whereClause = Object.keys(originalData).filter(k => k !== '_rowid_').map(k => `"${k}" ${originalData[k] === null ? 'IS NULL' : `= '${String(originalData[k]).replace(/'/g, "''")}'`}`).join(' AND ')
-                    if (setClause && whereClause) queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE ${whereClause}`)
+                    if (setClause && whereClause) queries.push(`UPDATE "${actualTableName}" SET ${setClause} WHERE ${whereClause}`)
                 } else {
                     const keys = Object.keys(rowData).filter(k => k !== '_rowid_')
                     if (keys.length) {
                         const cols = keys.map(k => `"${k}"`).join(', ')
                         const vals = keys.map(k => rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`).join(', ')
-                        queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+                        queries.push(`INSERT INTO "${actualTableName}" (${cols}) VALUES (${vals})`)
                     }
                 }
             }
@@ -321,7 +355,9 @@ table.post("/save-table-data", async (c) => {
 table.post("/copy-table", async (c) => {
     try {
         let { sourceTableName, newTableName, connection, provider } = await c.req.json()
-        if (provider === 'surrealdb') provider = 'postgres';
+        if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
+            provider = 'postgres';
+        }
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
@@ -376,11 +412,28 @@ table.post("/table/:tableName/schema", async (c) => {
 
             // For DuckDB file uploads, map the requested table name to the actual table name
             let actualTableName = tableName
-            if ((provider === 'duckdb' || provider === 'file') && connection.tables && Array.isArray(connection.tables)) {
-                const matchedTable = connection.tables.find(t => t.toLowerCase().startsWith(tableName.toLowerCase()))
-                if (matchedTable) {
-                    actualTableName = matchedTable
-                    console.log(`[Table Schema] Mapped table name: ${tableName} -> ${actualTableName}`)
+            if ((provider === 'duckdb' || provider === 'file')) {
+                console.log(`[Table Schema] Mapping table. Requested: ${tableName}. Connection tables:`, connection?.tables ? JSON.stringify(connection.tables) : 'undefined');
+
+                if (connection && connection.tables && Array.isArray(connection.tables)) {
+                    // Strategy 1: Fuzzy Match
+                    const sanitize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                    const targetSanitized = sanitize(tableName)
+
+                    const matchedTable = connection.tables.find(t => {
+                        const tSanitized = sanitize(t)
+                        return tSanitized === targetSanitized || tSanitized.includes(targetSanitized) || targetSanitized.includes(tSanitized)
+                    })
+
+                    if (matchedTable) {
+                        actualTableName = matchedTable
+                        console.log(`[Table Schema] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`)
+                    }
+                    // Strategy 2: Single Table Fallback
+                    else if (connection.tables.length === 1) {
+                        actualTableName = connection.tables[0]
+                        console.log(`[Table Schema] Fallback to single available table: ${actualTableName}`)
+                    }
                 }
             }
 
@@ -425,12 +478,28 @@ table.post("/table/:tableName/query", async (c) => {
 
             // For DuckDB file uploads, map the requested table name to the actual table name
             let actualTableName = tableName
-            if ((provider === 'duckdb' || provider === 'file') && connection.tables && Array.isArray(connection.tables)) {
-                // Find the actual table name that starts with the requested name
-                const matchedTable = connection.tables.find(t => t.toLowerCase().startsWith(tableName.toLowerCase()))
-                if (matchedTable) {
-                    actualTableName = matchedTable
-                    console.log(`[Table Query] Mapped table name: ${tableName} -> ${actualTableName}`)
+            if ((provider === 'duckdb' || provider === 'file')) {
+                console.log(`[Table Query] Mapping table. Requested: ${tableName}. Connection tables:`, connection?.tables ? JSON.stringify(connection.tables) : 'undefined');
+
+                if (connection && connection.tables && Array.isArray(connection.tables)) {
+                    // Strategy 1: Fuzzy Match
+                    const sanitize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                    const targetSanitized = sanitize(tableName)
+
+                    const matchedTable = connection.tables.find(t => {
+                        const tSanitized = sanitize(t)
+                        return tSanitized === targetSanitized || tSanitized.includes(targetSanitized) || targetSanitized.includes(tSanitized)
+                    })
+
+                    if (matchedTable) {
+                        actualTableName = matchedTable
+                        console.log(`[Table Query] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`)
+                    }
+                    // Strategy 2: Single Table Fallback
+                    else if (connection.tables.length === 1) {
+                        actualTableName = connection.tables[0]
+                        console.log(`[Table Query] Fallback to single available table: ${actualTableName}`)
+                    }
                 }
             }
 
@@ -616,13 +685,41 @@ table.get('/:tableName/interpret', async (c) => {
 
         try {
             await adapter.connect()
-            const rows = await adapter.query(`SELECT * FROM "${tableName}" LIMIT 100`)
+
+            // For DuckDB file uploads, map the requested table name to the actual table name
+            let actualTableName = tableName
+            if ((provider === 'duckdb' || provider === 'file')) {
+                console.log(`[Table Interpret] Mapping table. Requested: ${tableName}. Connection tables:`, connection?.tables ? JSON.stringify(connection.tables) : 'undefined');
+
+                if (connection && connection.tables && Array.isArray(connection.tables)) {
+                    // Strategy 1: Fuzzy Match
+                    const sanitize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                    const targetSanitized = sanitize(tableName)
+
+                    const matchedTable = connection.tables.find(t => {
+                        const tSanitized = sanitize(t)
+                        return tSanitized === targetSanitized || tSanitized.includes(targetSanitized) || targetSanitized.includes(tSanitized)
+                    })
+
+                    if (matchedTable) {
+                        actualTableName = matchedTable
+                        console.log(`[Table Interpret] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`)
+                    }
+                    // Strategy 2: Single Table Fallback
+                    else if (connection.tables.length === 1) {
+                        actualTableName = connection.tables[0]
+                        console.log(`[Table Interpret] Fallback to single available table: ${actualTableName}`)
+                    }
+                }
+            }
+
+            const rows = await adapter.query(`SELECT * FROM "${actualTableName}" LIMIT 100`)
             await adapter.disconnect()
 
             if (!rows?.length) return c.json({ message: "No data to interpret" })
 
-            const interpretation = await interpretDataset(tableName, rows)
-            return c.json({ table: tableName, interpretation })
+            const interpretation = await interpretDataset(actualTableName, rows)
+            return c.json({ table: actualTableName, interpretation })
         } catch (e) {
             await adapter.disconnect().catch(() => { })
             return c.json({ error: e.message }, 500)
@@ -694,7 +791,9 @@ table.post("/table/:tableName/load", async (c) => {
     try {
         const tableName = c.req.param("tableName")
         let { connection, provider, limit = 2000, offset = 0 } = await c.req.json()
-        if (provider === 'surrealdb') provider = 'postgres';
+        if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
+            provider = 'postgres';
+        }
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
@@ -705,25 +804,53 @@ table.post("/table/:tableName/load", async (c) => {
 
         try {
             await adapter.connect()
+
+            // For DuckDB file uploads, map the requested table name to the actual table name
+            let actualTableName = tableName
+            if ((provider === 'duckdb' || provider === 'file')) {
+                console.log(`[Table Load] Mapping table. Requested: ${tableName}. Connection tables:`, connection?.tables ? JSON.stringify(connection.tables) : 'undefined');
+
+                if (connection && connection.tables && Array.isArray(connection.tables)) {
+                    // Strategy 1: Fuzzy Match
+                    const sanitize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                    const targetSanitized = sanitize(tableName)
+
+                    const matchedTable = connection.tables.find(t => {
+                        const tSanitized = sanitize(t)
+                        return tSanitized === targetSanitized || tSanitized.includes(targetSanitized) || targetSanitized.includes(tSanitized)
+                    })
+
+                    if (matchedTable) {
+                        actualTableName = matchedTable
+                        console.log(`[Table Load] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`)
+                    }
+                    // Strategy 2: Single Table Fallback
+                    else if (connection.tables.length === 1) {
+                        actualTableName = connection.tables[0]
+                        console.log(`[Table Load] Fallback to single available table: ${actualTableName}`)
+                    }
+                }
+            }
+
             const [fullSchema, rows] = await Promise.all([
                 adapter.getSchema(),
                 (async () => {
                     let sqlStr
                     if (provider === 'surrealdb') {
-                        sqlStr = `SELECT *, meta::id(id) as __id FROM ${tableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+                        sqlStr = `SELECT *, meta::id(id) as __id FROM ${actualTableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
                     } else if (provider === 'mongodb') {
-                        sqlStr = { collection: tableName, limit: Number(limit), skip: Number(offset) }
+                        sqlStr = { collection: actualTableName, limit: Number(limit), skip: Number(offset) }
                     } else if (provider === 'postgres' || provider === 'mysql') {
                         const q = provider === 'mysql' ? '`' : '"'
-                        sqlStr = `SELECT * FROM ${q}${tableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                        sqlStr = `SELECT * FROM ${q}${actualTableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
                     } else {
-                        sqlStr = `SELECT rowid as __id, * FROM "${tableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                        sqlStr = `SELECT rowid as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
                     }
                     return adapter.query(sqlStr)
                 })()
             ])
             await adapter.disconnect()
-            return c.json({ columns: fullSchema[tableName] || [], rows: Array.isArray(rows) ? rows : [] })
+            return c.json({ columns: fullSchema[actualTableName] || [], rows: Array.isArray(rows) ? rows : [] })
         } catch (e) {
             await adapter.disconnect().catch(() => { })
             return c.json({ error: e.message }, 500)

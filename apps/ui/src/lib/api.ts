@@ -418,16 +418,19 @@ export async function submitFeedback(feedback: FeedbackData) {
   return api.post('/feedback', feedback)
 }
 
-export async function uploadFile(file: File) {
+export async function uploadFile(file: File, spaceId?: string | null, autoCreateConnection: boolean = false) {
   const formData = new FormData()
   formData.append('file', file)
+  if (spaceId) formData.append('spaceId', spaceId)
+  if (autoCreateConnection) formData.append('autoCreateConnection', 'true')
   return api.upload<any>('/upload', formData)
 }
 
-export async function uploadFileToConnection(file: File, connectionId: string) {
+export async function uploadFileToConnection(file: File, connectionId: string, spaceId?: string | null) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('connectionId', connectionId)
+  if (spaceId) formData.append('spaceId', spaceId)
   return api.upload<any>('/upload', formData)
 }
 
@@ -709,6 +712,10 @@ export async function createSpaceNote(spaceId: string, noteData: any) {
 
 export async function updateSpaceNote(noteId: string, updates: any) {
   return api.put(`/spaces/notes/${noteId}`, updates)
+}
+
+export async function deleteSpaceFile(fileId: string) {
+  return api.delete(`/spaces/files/${fileId}`)
 }
 
 export async function deleteSpaceNote(noteId: string) {

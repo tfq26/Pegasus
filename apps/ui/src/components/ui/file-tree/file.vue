@@ -23,9 +23,9 @@ const isSelected = computed<boolean>(() => {
   return isSelect?.value || selectedId.value === id.value;
 });
 
-function onClickHandler() {
+function onClickHandler(event: MouseEvent) {
   if (!isSelectable.value) return;
-  selectItem(id.value);
+  selectItem(id.value, event);
 }
 </script>
 

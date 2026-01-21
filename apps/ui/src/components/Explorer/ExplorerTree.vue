@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { Tree, Folder, File } from '@/components/ui/file-tree'
 import { 
   ContextMenu,
@@ -56,14 +56,19 @@ const emit = defineEmits<{
   'health-check': [connection: ConnectionEntry]
   'update:context': [context: string]
   'move-connection': [connection: ConnectionEntry, spaceId: string]
+  'delete-file': [file: any]
+  'delete-note': [note: any]
+  'selection-change': [items: { type: string, id: string }[]]
 }>()
 
 const { schemaFor } = useExplorerSchema(computed(() => props.connections))
 
+const selectedIds = ref<string[]>([])
+const lastSelectedId = ref<string | null>(null)
+
 function getTables(connId: string) {
   return schemaFor(connId).tables || []
 }
-
 
 function getDisplayName(connId: string, table: string) {
   return schemaFor(connId).tableMetadata?.[table]?.displayName || table
@@ -78,7 +83,56 @@ function getTableId(connId: string, table: string) {
   return `${connId}::${table}`
 }
 
-function handleSelect(id: string) {
+// Flatten all IDs for range selection
+const allSelectableIds = computed(() => {
+  const ids: string[] = []
+  ids.push('root:db')
+  props.connections.forEach(conn => {
+    ids.push(conn.id)
+    getTables(conn.id).forEach(table => ids.push(getTableId(conn.id, table)))
+  })
+  ids.push('root:files')
+  props.files?.forEach(f => ids.push(`file:${f.id}`))
+  ids.push('root:notes')
+  props.notes?.forEach(n => ids.push(`note:${n.id}`))
+  return ids
+})
+
+function handleSelect(id: string, event?: MouseEvent) {
+  if (event?.shiftKey && lastSelectedId.value) {
+    const all = allSelectableIds.value
+    const start = all.indexOf(lastSelectedId.value)
+    const end = all.indexOf(id)
+    if (start !== -1 && end !== -1) {
+      const range = all.slice(Math.min(start, end), Math.max(start, end) + 1)
+      selectedIds.value = Array.from(new Set([...selectedIds.value, ...range]))
+    }
+  } else if (event?.ctrlKey || event?.metaKey) {
+    if (selectedIds.value.includes(id)) {
+      selectedIds.value = selectedIds.value.filter(i => i !== id)
+    } else {
+      selectedIds.value.push(id)
+    }
+  } else {
+    selectedIds.value = [id]
+  }
+  
+  lastSelectedId.value = id
+
+  // Emit selection change
+  const selectedItems = selectedIds.value.map(sid => {
+    if (sid.startsWith('file:')) return { type: 'file', id: sid.replace('file:', '') }
+    if (sid.startsWith('note:')) return { type: 'note', id: sid.replace('note:', '') }
+    if (sid.includes('::')) {
+       const [connId, ...tableParts] = sid.split('::')
+       return { type: 'table', id: sid, connectionId: connId, tableName: tableParts.join('::') }
+    }
+    if (props.connections.some(c => c.id === sid)) return { type: 'connection', id: sid }
+    return null
+  }).filter(Boolean) as any[]
+  
+  emit('selection-change', selectedItems)
+
   // Determine context based on selection
   let context = 'db'
   if (id.startsWith('root:files') || id.startsWith('file:')) context = 'files'
@@ -130,7 +184,7 @@ const initialExpanded = computed(() => [
       :initial-selected-id="selectedTable ? getTableId(selectedTable.connectionId, selectedTable.tableName) : ''"
       :initial-expanded-items="initialExpanded"
       class="h-full w-full"
-      @select="handleSelect"
+      @select="(id, ev) => handleSelect(id, ev)"
     >
       <!-- DATABASES ROOT -->
       <ContextMenu>
@@ -166,6 +220,7 @@ const initialExpanded = computed(() => [
                     :name="conn.nickname"
                     open-icon="lucide:database"
                     close-icon="lucide:database"
+                    :is-select="selectedIds.includes(conn.id)"
                     class="group/folder ml-0"
                   >
                     <template #label>
@@ -183,6 +238,7 @@ const initialExpanded = computed(() => [
                           :id="getTableId(conn.id, table)"
                           :name="table"
                           file-icon="lucide:table"
+                          :is-select="selectedIds.includes(getTableId(conn.id, table))"
                           class="group"
                         >
                           <div class="flex items-center justify-between w-full pr-2 overflow-hidden">
@@ -281,6 +337,7 @@ const initialExpanded = computed(() => [
                 name="Files" 
                 open-icon="lucide:folder-open" 
                 close-icon="lucide:folder"
+                :is-select="selectedIds.includes('root:files')"
                 class="font-medium group"
             >
                 <template #label>
@@ -298,23 +355,32 @@ const initialExpanded = computed(() => [
                 <div v-if="!files?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
                     No files
                 </div>
-                <File 
-                    v-for="file in files" 
-                    :key="file.id"
-                    :id="`file:${file.id}`" 
-                    :name="file.filename"
-                    file-icon="lucide:file-text"
-                >
-                    <div class="flex items-center justify-between w-full pr-2 overflow-hidden">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <span class="truncate">{{ file.filename }}</span>
-                            <CheckCircle2 class="w-3 h-3 text-emerald-500/50" />
-                        </div>
-                        <span class="text-[9px] text-muted-foreground ml-2">
-                             {{ (file.file_size_bytes / 1024).toFixed(0) }} KB
-                        </span>
-                    </div>
-                </File>
+                <ContextMenu v-for="file in files" :key="file.id">
+                    <ContextMenuTrigger as-child>
+                        <File 
+                            :id="`file:${file.id}`" 
+                            :name="file.filename"
+                            file-icon="lucide:file-text"
+                            :is-select="selectedIds.includes(`file:${file.id}`)"
+                        >
+                            <div class="flex items-center justify-between w-full pr-2 overflow-hidden">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <span class="truncate">{{ file.filename }}</span>
+                                    <CheckCircle2 class="w-3 h-3 text-emerald-500/50" />
+                                </div>
+                                <span class="text-[9px] text-muted-foreground ml-2">
+                                     {{ (file.file_size_bytes / 1024).toFixed(0) }} KB
+                                </span>
+                            </div>
+                        </File>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+                        <ContextMenuItem @select="emit('delete-file', file)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                            <Trash class="w-3.5 h-3.5 mr-2" />
+                            Delete File
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
             </Folder>
         </ContextMenuTrigger>
         <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
@@ -333,6 +399,7 @@ const initialExpanded = computed(() => [
                 name="Notes" 
                 open-icon="lucide:notebook" 
                 close-icon="lucide:notebook"
+                :is-select="selectedIds.includes('root:notes')"
                 class="font-medium group"
             >
                 <template #label>
@@ -347,21 +414,30 @@ const initialExpanded = computed(() => [
                      </button>
                   </div>
                </template>
-                 <div v-if="!notes?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
+                <div v-if="!notes?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
                     No notes
                  </div>
-                 <File 
-                    v-for="note in notes" 
-                    :key="note.id" 
-                    :id="`note:${note.id}`" 
-                    :name="note.title"
-                    file-icon="lucide:sticky-note"
-                 >
-                    <div class="flex items-center gap-1.5 min-w-0">
-                        <span class="truncate">{{ note.title }}</span>
-                        <CheckCircle2 class="w-3 h-3 text-emerald-500/50" />
-                    </div>
-                 </File>
+                 <ContextMenu v-for="note in notes" :key="note.id">
+                    <ContextMenuTrigger as-child>
+                        <File 
+                            :id="`note:${note.id}`" 
+                            :name="note.title"
+                            file-icon="lucide:sticky-note"
+                            :is-select="selectedIds.includes(`note:${note.id}`)"
+                        >
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="truncate">{{ note.title }}</span>
+                                <CheckCircle2 class="w-3 h-3 text-emerald-500/50" />
+                            </div>
+                        </File>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+                        <ContextMenuItem @select="emit('delete-note', note)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                            <Trash class="w-3.5 h-3.5 mr-2" />
+                            Delete Note
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                 </ContextMenu>
             </Folder>
         </ContextMenuTrigger>
         <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">

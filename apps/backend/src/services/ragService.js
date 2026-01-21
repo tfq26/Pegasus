@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { knowledgeChunks } from '../db/schema.js';
 import { aiClient } from '../../ai/AIClient.js';
 import { eq, and, sql } from 'drizzle-orm';
+import { StorageManager } from './storage/StorageManager.js';
 
 export class RAGService {
     /**
@@ -72,6 +73,8 @@ export class RAGService {
                         indexed_at: new Date().toISOString()
                     },
                     userId: userId,
+                    fileId: metadata.fileId,
+                    noteId: metadata.noteId
                 });
             } catch (e) {
                 console.error(`[RAG] Failed to index chunk:`, e.message);
@@ -172,5 +175,66 @@ export class RAGService {
             source_id: sourceId,
             type: 'table_data'
         }, userId, modelId);
+    }
+
+    /**
+     * Index a file directly from Object Storage.
+     * Fetches content -> Chunks -> Indexes.
+     */
+    static async indexFileFromStorage(storageId, filename, userId, modelId = 'openai') {
+        try {
+            const provider = await StorageManager.getProvider(userId);
+            const url = await provider.getPresignedUrl(storageId);
+
+            // Fetch content
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Failed to fetch file content from storage: ${response.statusText}`);
+
+            // Determine parsing strategy based on extension
+            const text = await response.text();
+            // TODO: Add PDF/Doc parsing here if needed. For now assuming text/markdown/json/csv.
+
+            const chunks = this.chunkMarkdown(text); // Basic text chunking
+
+            const sourceId = `file_${storageId}`;
+            await this.clearSource(sourceId, userId);
+
+            await this.indexChunks(chunks, {
+                source: `File: ${filename}`,
+                source_id: sourceId,
+                type: 'file_content',
+                storage_id: storageId
+            }, userId, modelId);
+
+            return { success: true, chunks: chunks.length };
+
+        } catch (e) {
+            console.error("[RAG] File Indexing Error:", e);
+            throw e;
+        }
+    }
+
+    /**
+     * Index a note directly.
+     */
+    static async indexNote(noteId, title, content, userId, modelId = 'openai') {
+        try {
+            const chunks = this.chunkMarkdown(content);
+            const sourceId = `note_${noteId}`;
+
+            await this.clearSource(sourceId, userId);
+
+            await this.indexChunks(chunks, {
+                source: `Note: ${title}`,
+                source_id: sourceId,
+                type: 'note',
+                noteId: noteId
+            }, userId, modelId);
+
+            return { success: true, chunks: chunks.length };
+        } catch (e) {
+            console.error("[RAG] Note Indexing Error:", e);
+            throw e;
+        }
     }
 }

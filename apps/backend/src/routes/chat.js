@@ -13,7 +13,8 @@ import { getUserFeatureFlags } from "../../experimental-features.js"
 import { filterModelsByTier, calculateUserLimits } from "../../lib/tierLimits.js"
 import { ConfigService } from "../services/ConfigService.js"
 import { SchemaTranslator } from "../services/SchemaTranslator.js"
-import { StorageManager } from "../../services/storage/StorageManager.js"
+import { StorageManager } from "../services/storage/StorageManager.js"
+import { OneContext } from "../services/OneContext.js"
 
 const chat = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -529,8 +530,25 @@ chat.post("/ai/generate", async (c) => {
         if (!quota.allowed) return c.json(quota, 403);
         const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = await c.req.json()
 
-        // Handle connection ID
-        const connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
+        // Handle connexion ID
+        let connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
+
+        // --- OneContext Integration ---
+        console.log(`[OneContext] Resolving context for prompt: "${prompt.substring(0, 50)}..."`);
+        const resolvedResources = await OneContext.resolveContext(prompt, userId);
+        const contextBlock = OneContext.buildContextBlock(resolvedResources);
+
+        if (contextBlock) {
+            console.log(`[OneContext] Injected ${resolvedResources.length} resources.`);
+        }
+
+        // Auto-select DB if mentioned and no explicit connection selected
+        const dbResource = resolvedResources.find(r => r.type === 'database');
+        if (!connectionId && dbResource) {
+            console.log(`[OneContext] Auto-selecting DB: ${dbResource.name} (${dbResource.id})`);
+            connectionId = dbResource.id;
+        }
+        // -----------------------------
 
         console.log(`[AI Generate] User: ${userId}, ConnectionId: ${connectionId || 'none'}, ActiveTable: ${activeTable || 'none'}`)
 
@@ -659,7 +677,11 @@ chat.post("/ai/generate", async (c) => {
         aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
 
         // Send normalized schema to AI
-        const result = await aiClient.generateQuery(prompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
+        // Send normalized schema to AI
+        // Append OneContext block to prompt
+        const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
+
+        const result = await aiClient.generateQuery(finalPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
         let generatedQuery = typeof result === 'string' ? result : result.text
 
         console.log(`[AI Generate] Raw AI response:`, JSON.stringify(result).substring(0, 500))
@@ -687,7 +709,7 @@ chat.post("/ai/generate", async (c) => {
             console.log(`  After:  ${generatedQuery}`)
         }
 
-        return c.json({ query: generatedQuery, usage: result.usage })
+        return c.json({ query: generatedQuery, usage: result.usage, contextUsed: resolvedResources })
     } catch (e) { return c.json({ error: e.message }, 500) }
 
 })

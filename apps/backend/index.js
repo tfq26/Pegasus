@@ -11,7 +11,7 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import aiRoutes from "./src/routes/ai.js"
 import { sign, verify } from "hono/jwt"
 import { db } from "./src/db/index.js"
-import { users, connections, userPayments, transactionMaster, dataSources, cellBindings, queryHistory, spaceFiles, dataSpaces } from "./src/db/schema.js"
+import { users, connections, userPayments, transactionMaster, dataSources, cellBindings, queryHistory, spaceFiles, dataSpaces, files } from "./src/db/schema.js"
 import { eq, and, or, sql, desc, asc, like, gte, lte, isNull } from "drizzle-orm"
 
 
@@ -35,7 +35,6 @@ import { dataSourceRoutes } from "./src/routes/data-sources.js"
 import { spaceRoutes } from "./src/routes/space.js"
 import { startPollingService } from "./src/services/polling-service.js"
 import { aiClient } from "./ai/AIClient.js"
-import { initializeWeeklyDigest } from "./src/jobs/weeklyDigest.js"
 import { parseExcel } from "./lib/excelParser.js"
 import { parseXML, flattenXML } from "./lib/xmlParser.js"
 import { authRoutes } from "./src/routes/auth.js"
@@ -64,6 +63,10 @@ import os from "node:os"
 import crypto from "node:crypto"
 
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
+
+// Initialize Jobs
+import { startAllJobs } from "./src/jobs/index.js";
+startAllJobs();
 
 const port = process.env.PORT || 3000;
 const jwtSecret = ConfigService.getJwtSecret();
@@ -343,8 +346,10 @@ app.post("/upload", async (c) => {
     const body = await c.req.parseBody()
     const file = body['file']
     const connectionId = body['connectionId'] // Optional: add to existing connection
+    const spaceId = body['spaceId'] // Optional: target space
+    const autoCreateConnection = body['autoCreateConnection'] === 'true' || body['autoCreateConnection'] === true
 
-    console.log(`[Upload] Received upload request. File: ${file?.name || 'none'}, ConnectionId: ${connectionId || 'new connection'}`)
+    console.log(`[Upload] Received upload request. File: ${file?.name || 'none'}, SpaceId: ${spaceId || 'default'}, AutoConnect: ${autoCreateConnection}`)
 
     if (!file || !(file instanceof File)) {
       return c.json({ error: "No file uploaded" }, 400)
@@ -440,7 +445,10 @@ app.post("/upload", async (c) => {
 
         // Sanitize table name
         const safeTableName = rawTableName.replace(/[^a-zA-Z0-9_]/g, '_')
-        const tableName = `${fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '')}${uploadUuid.substring(0, 8)}_${safeTableName}`
+        // Simplify table name generation to avoid mismatch.
+        // Format: [SanitizedFileName]_[ShortUUID]_[SanitizedSheetName]
+        const simpleFileName = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9]/g, '')
+        const tableName = `${simpleFileName}_${uploadUuid.substring(0, 8)}_${safeTableName}`
 
         console.log(`[Upload] Creating DuckDB table: ${tableName} with ${rows.length} rows`)
 
@@ -479,8 +487,8 @@ app.post("/upload", async (c) => {
       await duckdb.disconnect()
 
       // Store metadata in Postgres
-      let targetSpaceId = null
-      if (userId) {
+      let targetSpaceId = spaceId || null
+      if (!targetSpaceId && userId) {
         const userSpace = await db.query.dataSpaces.findFirst({
           where: eq(dataSpaces.userId, userId),
           orderBy: [desc(dataSpaces.isDefault), desc(dataSpaces.createdAt)]
@@ -506,15 +514,40 @@ app.post("/upload", async (c) => {
 
       console.log(`[Upload] Upload complete. DuckDB: ${duckdbPath}, Tables: ${createdTables.join(', ')}`)
 
+      let autoConnectionId = null
+      if (autoCreateConnection && userId) {
+        try {
+          const [conn] = await db.insert(connections).values({
+            userId,
+            spaceId: targetSpaceId,
+            name: fileName.split('.')[0] || 'New Upload',
+            type: 'duckdb',
+            config: {
+              path: duckdbPath,
+              tables: createdTables
+            },
+            isVirtual: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }).returning()
+          autoConnectionId = conn.id
+          console.log(`[Upload] Auto-created connection ${autoConnectionId} for file ${fileName}`)
+        } catch (connErr) {
+          console.error('[Upload] Failed to auto-create connection:', connErr)
+        }
+      }
+
       return c.json({
         success: true,
         provider: 'duckdb',
         duckdbPath: duckdbPath,
         uploadId: uploadId,
         tables: createdTables,
+        connectionId: autoConnectionId,
         connection: {
           provider: 'duckdb',
-          path: duckdbPath
+          path: duckdbPath,
+          tables: createdTables
         }
       })
 
@@ -1471,7 +1504,12 @@ app.post("/settings", async (c) => {
 })
 
 app.post("/query", async (c) => {
-  const { provider, connection, query, source = 'user', model = null, tokens_used = 0 } = await c.req.json()
+  let { provider, connection, query, source = 'user', model = null, tokens_used = 0 } = await c.req.json()
+
+  if (provider === 'file') provider = 'duckdb'
+  if (provider === 'surrealdb') provider = 'postgres'
+  if (connection && connection.provider === 'surrealdb') connection.provider = 'postgres'
+
   console.log(`[Backend] Received query request for provider: ${provider}`)
 
   // Try to get user session for history
@@ -1639,8 +1677,10 @@ app.post("/api/query-by-id", async (c) => {
 app.post("/schema", async (c) => {
   try {
     const body = await c.req.json()
-    // console.log('[Backend] Schema request:', JSON.stringify(body, null, 2))
-    const { provider, connection } = body
+    let { provider, connection } = body
+
+    if (provider === 'file') provider = 'duckdb'
+    if (provider === 'surrealdb') provider = 'postgres'
 
     const Adapter = adapters[provider]
 
@@ -1655,32 +1695,53 @@ app.post("/schema", async (c) => {
       const tables = await adapter.listCollections()
       console.log(`[/schema] ${provider} returned ${tables.length} tables for database ${connection.database ?? 'unknown'}`)
 
-      // For SurrealDB, fetch display names from uploads metadata
+      // For SurrealDB and DuckDB, fetch display names from uploads metadata
       let tableDisplayNames = {}
-      if (provider === 'surrealdb') {
+      const tableMetadata = {}
+
+      if (provider === 'postgres' || provider === 'duckdb') {
+        const isDuckDB = provider === 'duckdb'
+
+        // Find the space_file entry to get original sheet names
+        let uploadFile = null
+        if (isDuckDB && connection.path) {
+          uploadFile = await db.query.spaceFiles.findFirst({
+            where: eq(spaceFiles.storagePath, connection.path)
+          })
+        }
+
         for (const tableName of tables) {
-          // Extract UUID from table name
+          // 1. Try SurrealDB style (data_[uuid]_[name])
           const uuidMatch = tableName.match(/^data_([a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12})_/i)
+
           if (uuidMatch) {
             const uuid = uuidMatch[1]
-            // Note: SurrealDB uploads are stored without hyphens
-            const uploadId = `uploads:${uuid}`
-
             try {
-              console.log(`[Rename] Fetching display name for upload ID: ${uuid}`)
-              const uploadFile = await db.query.spaceFiles.findFirst({
-                where: eq(spaceFiles.id, uuid)
+              const sf = await db.query.spaceFiles.findFirst({
+                where: eq(spaceFiles.id, uuid.length > 8 ? uuid : undefined) // Only if full UUID
               });
-              if (uploadFile?.filename) {
-                console.log(`[/schema] Found display name for ${tableName}: ${uploadFile.filename}`)
-                tableDisplayNames[tableName] = uploadFile.filename
+              if (sf?.filename) {
+                tableDisplayNames[tableName] = sf.filename
+                tableMetadata[tableName] = { displayName: sf.filename, actualName: tableName }
               }
-            } catch (e) {
-              // If no display_name found, fall back to extracting from table name
-              const displayNameMatch = tableName.match(/^data_[a-f0-9]{32}_(.+)$/i)
-              if (displayNameMatch) {
-                tableDisplayNames[tableName] = displayNameMatch[1]
-              }
+            } catch (e) { }
+          }
+
+          // 2. Try DuckDB style mapping from parsedSchema
+          if (isDuckDB && uploadFile && uploadFile.parsedSchema) {
+            const schema = uploadFile.parsedSchema
+            // If it's a single table (CSV), use filename
+            if (tables.length === 1) {
+              tableDisplayNames[tableName] = uploadFile.filename
+              tableMetadata[tableName] = { displayName: uploadFile.filename, actualName: tableName }
+            } else {
+              // If Excel, we might need to match the sanitized name back to the sheet name
+              // This is tricky if we don't store the explicit mapping.
+              // But usually the sanitized name contains the sheet name at the end.
+              const parts = tableName.split('_')
+              const lastPart = parts[parts.length - 1]
+              tableDisplayNames[tableName] = lastPart
+              tableMetadata[tableName] = { displayName: lastPart, actualName: tableName }
             }
           }
         }
@@ -1735,12 +1796,13 @@ app.post("/schema", async (c) => {
         }),
       )
 
-      // Create metadata map for display names
-      const tableMetadata = {}
+      // Create metadata map for display names (if not already found)
       tables.forEach(t => {
-        tableMetadata[t] = {
-          displayName: cleanTableName(t),
-          actualName: t
+        if (!tableMetadata[t]) {
+          tableMetadata[t] = {
+            displayName: cleanTableName(t),
+            actualName: t
+          }
         }
       })
 
@@ -1966,37 +2028,46 @@ app.get("/usage", async (c) => {
 
     let totalStorage = 0
 
+    // 1. Local SQLite storage (legacy)
     for (const row of connResult) {
       try {
         const config = JSON.parse(row.config)
-        // Check for sqlite path in config
-        // Config structure is usually {sqlite: {path: '...' } } based on other endpoints
         const sqliteConfig = config.sqlite
 
         if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {
           const filePath = sqliteConfig.path.replace('file:', '')
           try {
-            // Check if file is in our uploads directory to avoid reading system files
             if (filePath.includes('/uploads/')) {
               try {
                 const stats = await fs.stat(filePath)
                 totalStorage += stats.size
               } catch (e) {
-                // If fs.stat fails (maybe it's a Bun file path), try Bun.file as fallback if available
                 if (typeof Bun !== 'undefined') {
                   const file = Bun.file(filePath)
                   totalStorage += await file.size()
                 }
               }
             }
-          } catch (e) {
-            // Ignore missing files
-          }
+          } catch (e) { }
         }
-      } catch (e) {
-        // Ignore parsing errors
-      }
+      } catch (e) { }
     }
+
+    // 2. Cloud Storage from 'files' table
+    const [fileResult] = await db.select({ total: sql`sum(${files.size})` })
+      .from(files)
+      .where(eq(files.userId, userId));
+    totalStorage += Number(fileResult?.total || 0);
+
+    // 3. Cloud Storage from 'spaceFiles' table
+
+    const [spaceFileSum] = await db.select({ total: sql`sum(${spaceFiles.fileSizeBytes})` })
+      .from(spaceFiles)
+      .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+      .where(eq(dataSpaces.userId, userId));
+
+    totalStorage += Number(spaceFileSum?.total || 0);
+
 
     // Get tier-based usage summary
     const tierUsage = await getUserUsageSummary(db, userId, tier)
@@ -2208,10 +2279,7 @@ const startServer = async () => {
     // 3. Background services
     weatherService.start();
 
-    if (process.env.NEON_DATABASE_URL) {
-      initializeWeeklyDigest()
-      console.log('[Main] Weekly digest cron initialized');
-    }
+
 
     startPollingService();
     console.log('[Main] Data source polling service active');

@@ -370,10 +370,7 @@ auth.get("/me", async (c) => {
             return c.json({ error: "User not found" }, 404)
         }
 
-        // Get user's feature flags
-        // For now, we'll need to update experimental-features.js to support Drizzle too
-        // const featureFlags = await getUserFeatureFlags(db, userId)
-        const featureFlags = []
+        const featureFlags = await getUserFeatureFlags(db, userId)
 
         const response = {
             user: {

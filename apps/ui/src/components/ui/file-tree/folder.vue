@@ -27,10 +27,10 @@ const isExpanded = computed<boolean>(() => {
 const currentOpenIcon = computed(() => propOpenIcon?.value || ctxOpenIcon);
 const currentCloseIcon = computed(() => propCloseIcon?.value || ctxCloseIcon);
 
-function onTriggerClick() {
+function onTriggerClick(event: MouseEvent) {
   if (!isSelectable.value || !treeContext) return;
   handleExpand(id.value);
-  treeContext.selectItem(id.value);
+  treeContext.selectItem(id.value, event);
 }
 </script>
 

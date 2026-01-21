@@ -13,5 +13,6 @@ export const adapters = {
   postgres: PostgresAdapter,
   duckdb: DuckDBAdapter,
   local: DuckDBAdapter,
+  file: DuckDBAdapter,
   surrealdb: PostgresAdapter
 }

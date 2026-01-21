@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { Upload } from 'lucide-vue-next'
 import { uploadFile } from '@/lib/api'
+import { useSpaceStore } from '@/stores/space'
 import type { ConnectionFormState } from '@/views/settings/types'
 
 const props = defineProps<{
@@ -11,6 +12,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'upload-success': []
 }>()
+
+const spaceStore = useSpaceStore()
 
 const isUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -37,7 +40,8 @@ const processFile = async (file: File) => {
   tempError.value = null
 
   try {
-    const result = await uploadFile(file)
+    // Pass current spaceId for Smart Ingestion (auto-connect)
+    const result = await uploadFile(file, spaceStore.currentSpaceId as string, true)
     if (result.success) {
       if (result.provider === 'duckdb') {
         // DuckDB upload (new system)

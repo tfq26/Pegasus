@@ -18,10 +18,11 @@ import SpaceSelector from './Explorer/SpaceSelector.vue'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
 
-// ... (keep imports)
+const connectionStore = useConnectionStore()
 
 // Add state for selected table
 const selectedTable = ref<{ connectionId: string; tableName: string } | null>(null)
+const selectedItems = ref<{ type: string, id: string, connectionId?: string, tableName?: string }[]>([])
 
 const handleHealthCheck = async (conn: ConnectionEntry) => {
    try {
@@ -36,7 +37,6 @@ import DataViewerModal from './Explorer/DataViewerModal.vue'
 import RenameTableDialog from './Explorer/RenameTableDialog.vue'
 import AIReportDialog from './Explorer/AIReportDialog.vue'
 import GenerateTestDataDialog from '@/components/GenerateTestDataDialog.vue' // Import Dialog
-import { explainTable } from '@/lib/api'
 import { useLocalFile } from '@/composables/useLocalFile'
 
 // UI Parts
@@ -60,9 +60,14 @@ import {
   deleteTable as apiDeleteTable,
   deleteQuery as apiDeleteQuery,
   clearAllQueries as apiClearAllQueries,
+  explainTable,
   createSpaceNote,
   createSpaceFile,
-  updateConnection
+  uploadFile,
+  deleteSpaceFile,
+  deleteSpaceNote,
+  updateConnection,
+  api
 } from '@/lib/api'
 
 const props = defineProps<{
@@ -93,8 +98,7 @@ onMounted(() => {
   spaceStore.loadSpaces()
   
   // Force refresh connections to ensure we have latest space assignments
-  const connStore = useConnectionStore()
-  connStore.loadConnections(true)
+  connectionStore.loadConnections(true)
 
   console.log('[Explorer] Mounted. Current Space:', spaceStore.currentSpaceId)
   watch(() => connections.value, (val) => {
@@ -269,16 +273,116 @@ const handleAddNote = async () => {
     }
 }
 
+const fileInput = ref<HTMLInputElement | null>(null)
+
 const handleUploadFile = () => {
-    toast.info('File upload coming soon', { description: 'Integration with storage service in progress' })
+    fileInput.value?.click()
+}
+
+const onFileSelected = async (event: Event) => {
+    const target = event.target as HTMLInputElement
+    const file = target.files?.[0]
+    if (!file || !spaceStore.currentSpaceId) return
+
+    try {
+        toast.info(`Ingesting ${file.name}...`)
+        
+        const spaceId = (spaceStore.currentSpaceId as unknown) as string
+        const result = await uploadFile(file, spaceId, true)
+        
+        if (result.success) {
+            toast.success('File ingested and connection created')
+            // Refresh both contexts
+            await Promise.all([
+                spaceStore.fetchSpaceContext(),
+                connectionStore.loadConnections(true)
+            ])
+        } else {
+            toast.error('Ingestion failed', { description: result.error })
+        }
+
+    } catch (e: any) {
+        toast.error('Upload error', { description: e.message })
+    } finally {
+        target.value = '' // Reset
+    }
 }
 
 const handleSelectNote = (note: any) => {
     emit('select-note', note)
 }
 
+const handleBulkDelete = async () => {
+    if (!selectedItems.value.length) return
+    
+    if (!window.confirm(`Are you sure you want to delete ${selectedItems.value.length} items?`)) return
+
+    try {
+        toast.info(`Deleting ${selectedItems.value.length} items...`)
+        const res = await api.post<any>('/spaces/bulk-delete', { items: selectedItems.value })
+        
+        if (res.success && res.success.length > 0) {
+            toast.success(`Deleted ${res.success.length} items`)
+        }
+        
+        if (res.failed && res.failed.length > 0) {
+            toast.error(`Failed to delete ${res.failed.length} items`)
+        }
+
+        // Refresh everything
+        await Promise.all([
+            spaceStore.fetchSpaceContext(),
+            connectionStore.loadConnections(true)
+        ])
+        
+        selectedItems.value = []
+    } catch (e: any) {
+        toast.error('Bulk delete failed', { description: e.message })
+    }
+}
+
 const handleSelectFile = (file: any) => {
     emit('select-file', file)
+}
+
+// --- Delete File/Note Logic ---
+const deleteFileConfirmationOpen = ref(false)
+const fileToDelete = ref<any>(null)
+const deleteNoteConfirmationOpen = ref(false)
+const noteToDelete = ref<any>(null)
+
+const handleDeleteFile = (file: any) => {
+    fileToDelete.value = file
+    deleteFileConfirmationOpen.value = true
+}
+
+const confirmDeleteFile = async () => {
+    if (!fileToDelete.value) return
+    try {
+        await deleteSpaceFile(fileToDelete.value.id)
+        toast.success('File deleted')
+        await spaceStore.fetchSpaceContext()
+        deleteFileConfirmationOpen.value = false
+    } catch (err: any) {
+        toast.error('Failed to delete file', { description: err.message })
+    }
+}
+
+const handleDeleteNote = (note: any) => {
+    noteToDelete.value = note
+    deleteNoteConfirmationOpen.value = true
+}
+
+const confirmDeleteNote = async () => {
+    if (!noteToDelete.value) return
+    try {
+        await deleteSpaceNote(noteToDelete.value.id)
+        toast.success('Note deleted')
+        await spaceStore.fetchSpaceContext()
+        deleteNoteConfirmationOpen.value = false
+    } catch (err: any) {
+        toast.error('Failed to delete note', { description: err.message })
+    }
 }
 
 // --- Delete Table Logic ---
@@ -473,6 +577,16 @@ const onTestDataGenerated = (sql: string) => {
             <Unlock v-if="!isPinned" class="w-3.5 h-3.5" />
             <Lock v-else class="w-3.5 h-3.5 text-purple-500" />
           </button>
+
+          <button
+              v-if="selectedItems.length > 0"
+              @click="handleBulkDelete"
+              class="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all active:scale-95 flex items-center gap-1.5"
+              title="Delete Selected Items"
+          >
+              <Trash class="w-3.5 h-3.5" />
+              <span class="text-[10px] font-bold">{{ selectedItems.length }}</span>
+          </button>
         </div>
       </div>
     </header>
@@ -503,9 +617,12 @@ const onTestDataGenerated = (sql: string) => {
                 @select-note="handleSelectNote"
                 @add-connection="addConnectionModalOpen = true"
                 @upload-file="handleUploadFile"
+                @add-file="handleUploadFile"
                 @add-note="handleAddNote"
                 @update:context="(c) => currentContext = c"
                 @move-connection="handleMoveConnection"
+                @delete-file="handleDeleteFile"
+                @delete-note="handleDeleteNote"
               />
          </div>
       </section>
@@ -782,6 +899,66 @@ const onTestDataGenerated = (sql: string) => {
         @update:open="(v) => addConnectionModalOpen = v"
         @connection-added="refreshSchemas"
       />
+
+      <!-- Hidden File Input -->
+      <input 
+        type="file" 
+        ref="fileInput" 
+        class="hidden" 
+        @change="onFileSelected"
+      />
+
+       <!-- Delete File Confirmation -->
+       <Dialog :open="deleteFileConfirmationOpen" @update:open="(v) => !v && (deleteFileConfirmationOpen = false)">
+        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
+           <div class="p-6 space-y-4">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
+                <Trash class="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle class="text-lg font-semibold leading-none">Delete File</DialogTitle>
+                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
+                  This file will be permanently deleted.
+                </DialogDescription>
+              </div>
+            </div>
+            <p class="text-sm text-muted-foreground leading-relaxed">
+              Are you sure you want to delete <span class="font-bold text-foreground">{{ fileToDelete?.filename }}</span>?
+            </p>
+          </div>
+          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
+            <button @click="deleteFileConfirmationOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
+            <button @click="confirmDeleteFile" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Delete File</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <!-- Delete Note Confirmation -->
+      <Dialog :open="deleteNoteConfirmationOpen" @update:open="(v) => !v && (deleteNoteConfirmationOpen = false)">
+        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
+           <div class="p-6 space-y-4">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
+                <Trash class="w-5 h-5" />
+              </div>
+              <div>
+                <DialogTitle class="text-lg font-semibold leading-none">Delete Note</DialogTitle>
+                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
+                  This note will be permanently deleted.
+                </DialogDescription>
+              </div>
+            </div>
+            <p class="text-sm text-muted-foreground leading-relaxed">
+              Are you sure you want to delete <span class="font-bold text-foreground">{{ noteToDelete?.title }}</span>?
+            </p>
+          </div>
+          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
+            <button @click="deleteNoteConfirmationOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
+            <button @click="confirmDeleteNote" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Delete Note</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Teleport>
   </aside>
 </template>

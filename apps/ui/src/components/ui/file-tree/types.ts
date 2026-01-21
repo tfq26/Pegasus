@@ -28,7 +28,7 @@ export interface TreeContextProps {
     fileIcon: string;
     direction: "rtl" | "ltr";
     handleExpand: (id: string) => void;
-    selectItem: (id: string) => void;
+    selectItem: (id: string, event?: MouseEvent) => void;
     setExpandedItems: (items: string[] | undefined) => void;
 }
 

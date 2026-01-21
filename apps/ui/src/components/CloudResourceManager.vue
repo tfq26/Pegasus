@@ -28,6 +28,66 @@ const showAddResourceWizard = ref(false)
 const currentSubId = ref<string>('')
 const currentLocation = ref<string>('')
 
+const provisionKusto = async () => {
+    if (!confirm('Provision Azure Data Explorer (Kusto) cluster? This will incur costs.')) return
+    creatingKusto.value = true
+    try {
+         const subData = await api.get<any>(`/api/cloud-provision/${props.providerId}/subscriptions?user_id=${props.userId}`)
+         const subList = Array.isArray(subData) ? subData : (subData.subscriptions || [])
+         const subId = subList.length > 0 ? subList[0].id : null
+         
+         if (!subId) throw new Error('No subscription found')
+
+        await api.post(`/api/cloud-provision/${props.providerId}/provision-kusto`, {
+            user_id: props.userId,
+            subscription_id: subId,
+            resource_group: selectedRg.value,
+            cluster_name: `pegasuskusto${Math.floor(Math.random() * 10000)}`, // Random name
+            location: 'eastus'
+        })
+        alert('Kusto provisioning started! It may take 15-30 minutes.')
+        fetchResources() // It shows up as "Creating"
+    } catch (e) {
+        console.error('Failed to provision Kusto', e)
+        alert('Failed to start provisioning.')
+    } finally {
+        creatingKusto.value = false
+    }
+}
+
+const currentStorageBucket = ref<string | null>(null)
+
+const setAsStorage = async (res: any) => {
+    if (!confirm(`Use ${res.name} as your primary storage for Pegasus?`)) return
+    
+    actionInProgress.value = res.id
+    try {
+        await api.post(`/api/cloud-provision/${props.providerId}/config`, {
+            user_id: props.userId,
+            storage_bucket: res.name,
+            // Preserve other config if needed? 
+            // The backend implementation of POST /config overwrites? 
+            // Previous cloud-provision.js implementation: await secretService.storeSecret(..., JSON.stringify(config));
+            // It overwrites. So we should ideally merge.
+            // But we don't have the old config here easily unless we fetched it.
+            // fetchResourceGroups fetched it but didn't store it all.
+            // Let's rely on backend or fetch it again.
+            // Optimistically, we fetched config in fetchResourceGroups. let's store it in a ref.
+            ...currentConfig.value
+        })
+        
+        currentStorageBucket.value = res.name
+        // alert(`Primary storage set to ${res.name}`)
+    } catch (e) {
+        console.error('Failed to set storage bucket', e)
+        alert('Failed to update configuration.')
+    } finally {
+        actionInProgress.value = null
+    }
+}
+
+const currentConfig = ref<any>({})
+
 // Fetch Resource Groups
 const fetchResourceGroups = async () => {
     console.log('[ResourceManager] Fetching RGs for user:', props.userId)
@@ -47,9 +107,11 @@ const fetchResourceGroups = async () => {
             try {
                  const config = await api.get<any>(`/api/cloud-provision/${props.providerId}/config?user_id=${props.userId}`)
                  console.log('[ResourceManager] Saved config:', config)
-                 if (config && config.resource_group) {
+                 currentConfig.value = config || {}
+                 if (config) {
                      savedRgName = config.resource_group
                      savedSubId = config.subscription_id
+                     currentStorageBucket.value = config.storage_bucket
                  }
             } catch (e) { console.warn('No saved config found') }
 
@@ -154,44 +216,33 @@ const deleteResource = async (res: any) => {
     }
 }
 
-const provisionKusto = async () => {
-    if (!confirm('Provision Azure Data Explorer (Kusto) cluster? This will incur costs.')) return
-    creatingKusto.value = true
-    try {
-         const subData = await api.get<any>(`/api/cloud-provision/${props.providerId}/subscriptions?user_id=${props.userId}`)
-         const subList = Array.isArray(subData) ? subData : (subData.subscriptions || [])
-         const subId = subList.length > 0 ? subList[0].id : null
-         
-         if (!subId) throw new Error('No subscription found')
-
-        await api.post(`/api/cloud-provision/${props.providerId}/provision-kusto`, {
-            user_id: props.userId,
-            subscription_id: subId,
-            resource_group: selectedRg.value,
-            cluster_name: `pegasuskusto${Math.floor(Math.random() * 10000)}`, // Random name
-            location: 'eastus'
-        })
-        alert('Kusto provisioning started! It may take 15-30 minutes.')
-        fetchResources() // It shows up as "Creating"
-    } catch (e) {
-        console.error('Failed to provision Kusto', e)
-        alert('Failed to start provisioning.')
-    } finally {
-        creatingKusto.value = false
-    }
-}
-
 // Watchers
 watch(() => props.userId, (newVal) => {
     if (newVal) fetchResourceGroups()
 })
 
-watch(selectedRg, (newVal) => {
+watch(selectedRg, async (newVal) => {
     if (newVal) {
         const rg = resourceGroups.value.find(r => r.name === newVal)
         if (rg) {
             currentLocation.value = rg.location
             console.log('[ResourceManager] Updated location to:', rg.location)
+            
+            // Auto-save RG preference
+            if (currentConfig.value.resource_group !== newVal) {
+                try {
+                    await api.post(`/api/cloud-provision/${props.providerId}/config`, {
+                        user_id: props.userId,
+                        ...currentConfig.value,
+                        resource_group: newVal,
+                        subscription_id: currentSubId.value
+                    })
+                    currentConfig.value.resource_group = newVal
+                    currentConfig.value.subscription_id = currentSubId.value
+                } catch (e) {
+                    console.warn('Failed to auto-save RG preference')
+                }
+            }
         }
         fetchResources()
     }
@@ -293,6 +344,9 @@ onMounted(() => {
                         <div class="col-span-5 overflow-hidden">
                             <div class="font-medium truncate flex items-center gap-2">
                                 {{ res.name }}
+                                <span v-if="currentStorageBucket === res.name" class="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 font-bold uppercase tracking-wider">
+                                    Active Storage
+                                </span>
                             </div>
                             <div class="text-xs text-muted-foreground truncate" :title="res.type">{{ res.type.split('/').pop() }}</div>
                         </div>
@@ -300,6 +354,17 @@ onMounted(() => {
                             {{ res.location }}
                         </div>
                         <div class="col-span-4 flex items-center justify-end gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                             <!-- Set as Storage Button -->
+                             <button
+                                v-if="(res.type.includes('S3') || res.type.includes('Storage') || res.type.includes('Bucket')) && currentStorageBucket !== res.name"
+                                @click="setAsStorage(res)"
+                                :disabled="actionInProgress === res.id"
+                                class="p-1.5 hover:bg-emerald-100 hover:text-emerald-600 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
+                                title="Use as Primary Storage"
+                            >
+                                <Database class="w-4 h-4" />
+                            </button>
+
                              <button 
                                 @click="openInPortal(res)"
                                 class="p-1.5 hover:bg-sky-100 hover:text-sky-600 dark:hover:bg-sky-900/30 rounded-md transition-colors"

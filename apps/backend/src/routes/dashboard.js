@@ -11,7 +11,8 @@ import { canCreateDashboard } from "../../lib/tierLimits.js"
 import { getIO, getRoom } from "../socket.js"
 
 import { ConfigService } from "../services/ConfigService.js"
-import { StorageManager } from "../../services/storage/StorageManager.js"
+import { StorageManager } from "../services/storage/StorageManager.js"
+import { SnapshotService } from "../services/SnapshotService.js"
 
 const dashboard = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -564,15 +565,54 @@ dashboard.put("/dashboards/:id", async (c) => {
             updates.config = null; // Clear local config to save space
         }
 
+        if (data?.snapshot_config) {
+            updates.snapshotConfig = data.snapshot_config;
+        }
+
         // 3. Update Database
         await db.update(dashboards)
             .set(updates)
             .where(eq(dashboards.id, rawId));
 
+        // 4. Trigger Snapshot if Configured ('on_save')
+        // We fetch the latest config to check rule if not passed
+        const snapshotConfig = data?.snapshot_config || (await db.query.dashboards.findFirst({
+            where: eq(dashboards.id, rawId),
+            columns: { snapshotConfig: true }
+        }))?.snapshotConfig;
+
+        if (snapshotConfig?.mode === 'on_save') {
+            // Run asynchronously to not block response
+            SnapshotService.createDashboardSnapshot(rawId, 'save').catch(err => console.error("Async snapshot failed", err));
+        }
+
         return c.json({ ok: true })
     } catch (e) {
         console.error("[Dashboard] Update error:", e);
         return c.json({ error: "Failed to update dashboard: " + e.message }, 500)
+    }
+})
+
+dashboard.post("/dashboards/:id/snapshot", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let id = c.req.param("id")
+        const rawId = id.includes(':') ? id.split(':')[1] : id
+
+        // Check permissions
+        const role = await getDashboardRole(userId, rawId);
+        if (role !== 'owner' && role !== 'editor') {
+            return c.json({ error: "Unauthorized" }, 403)
+        }
+
+        // Trigger Snapshot
+        const result = await SnapshotService.createDashboardSnapshot(rawId, 'manual');
+        return c.json(result);
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
     }
 })
 

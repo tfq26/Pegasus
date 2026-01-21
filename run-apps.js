@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 // Script to run Pegasus apps with different modes
+// Checks connections for Neon (Postgres), DuckDB, and Storage before starting.
 // Usage:
 //   bun run run-apps.js         # Run web version (db + backend + ui)
 //   bun run run-apps.js --web   # Run web version (db + backend + ui)
@@ -7,6 +8,7 @@
 //   bun run run-apps.js --all   # Run everything (db + backend + ui + tauri)
 
 import { spawn, execSync } from "child_process";
+import { Socket } from "net";
 import { join } from "path";
 import { readFileSync } from "fs";
 
@@ -150,23 +152,61 @@ async function runCommand(command, args, cwd, label, ignoreError = false) {
     });
 }
 
-async function startSurrealDB(rootDir) {
-    killPort(8000); // Ensure port is free
+async function checkServiceConnections() {
+    console.log("\n🔍 Checking service connections...\n");
 
-    console.log("Starting SurrealDB...");
-    const dbPath = join(rootDir, "pegasus.db");
-    const args = ["start", "--user", "root", "--pass", "root", "--bind", "127.0.0.1:8000", `file:${dbPath}`];
+    // 1. Neon / Postgres Check
+    const dbUrl = process.env.DATABASE_URL || process.env.NEON_DATABASE_URL;
+    if (dbUrl) {
+        try {
+            // new URL supports postgresql:// protocol
+            const url = new URL(dbUrl);
+            const host = url.hostname;
+            const port = parseInt(url.port) || 5432;
 
-    const proc = spawn("surreal", args, {
-        cwd: rootDir,
-        stdio: "inherit",
-        shell: true
-    });
+            await new Promise((resolve) => {
+                const socket = new Socket();
+                socket.setTimeout(3000); // 3s timeout
 
-    processes.push(proc);
+                socket.on('connect', () => {
+                    console.log(`✅  Neon Database: Connected to ${host}`);
+                    socket.destroy();
+                    resolve();
+                });
 
-    // Give it a moment to start
-    return new Promise(resolve => setTimeout(resolve, 2000));
+                socket.on('timeout', () => {
+                    console.log(`⚠️   Neon Database: Timeout checking ${host}`);
+                    socket.destroy();
+                    resolve();
+                });
+
+                socket.on('error', (e) => {
+                    console.log(`⚠️   Neon Database: Connection failed - ${e.message}`);
+                    resolve();
+                });
+
+                socket.connect(port, host);
+            });
+        } catch (e) {
+            console.log(`⚠️   Neon Database: Invalid URL format in .env`);
+        }
+    } else {
+        console.log("⚠️   Neon Database: DATABASE_URL not found in .env");
+    }
+
+    // 2. DuckDB Check
+    // DuckDB is embedded (in-memory or local file), so we just confirm the intent.
+    console.log("✅  DuckDB: Ready (Embedded/In-Memory)");
+
+    // 3. Storage Check
+    const hasAws = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
+    if (hasAws) {
+        console.log("✅  Storage: AWS Credentials found");
+    } else {
+        console.log("⚠️   Storage: No AWS credentials found");
+    }
+
+    console.log(""); // Spacer
 }
 
 async function main() {
@@ -182,26 +222,8 @@ async function main() {
     console.log("Installing dependencies...");
     await runCommand("bun", ["install"], rootDir, "Root Install");
 
-    // Check if using cloud database
-    const surrealUrl = process.env.SURREAL_URL || 'ws://127.0.0.1:8000/rpc';
-    const isCloudDatabase = surrealUrl.startsWith('wss://');
-
-    if (isCloudDatabase) {
-        console.log("\n🌐 ========================================");
-        console.log("🌐  USING SURREAL CLOUD DATABASE");
-        console.log("🌐  URL:", surrealUrl);
-        console.log("🌐  Skipping local SurrealDB startup");
-        console.log("🌐 ========================================\n");
-    } else {
-        console.log("\n⚠️  ========================================");
-        console.log("⚠️   WARNING: USING LOCAL DATABASE");
-        console.log("⚠️   URL:", surrealUrl);
-        console.log("⚠️   Data is stored locally, not in cloud");
-        console.log("⚠️  ========================================\n");
-
-        // Start local DB only if not using cloud
-        await startSurrealDB(rootDir);
-    }
+    // Check service connections
+    await checkServiceConnections();
 
     const backendDir = join(rootDir, "apps", "backend");
     const uiDir = join(rootDir, "apps", "ui");

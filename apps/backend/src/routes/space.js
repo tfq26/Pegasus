@@ -5,6 +5,11 @@ import { db } from "../db/index.js"
 import { dataSpaces, spacePermissions, users, connections, spaceSources, spaceFiles, spaceNotes } from "../db/schema.js"
 import { eq, and, or, sql } from "drizzle-orm"
 import { ConfigService } from "../services/ConfigService.js"
+import { StorageManager } from "../services/storage/StorageManager.js"
+import { SnapshotService } from "../services/SnapshotService.js"
+
+import { RAGService } from "../services/ragService.js"
+import { canUploadFile } from "../../lib/tierLimits.js"
 
 const spaces = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -42,6 +47,64 @@ const getSpaceRole = async (userId, spaceId) => {
 
     return null;
 };
+
+// --- ROUTES ---
+
+spaces.delete("/files/:fileId", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const fileId = c.req.param("fileId")
+        // Safer ID parsing: only split if it starts with 'file:'
+        const rawId = fileId.startsWith('file:') ? fileId.split(':')[1] : fileId
+
+        // 1. Fetch File
+        const rows = await db.select().from(spaceFiles)
+            .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+            .where(eq(spaceFiles.id, rawId));
+
+        const file = rows[0];
+
+        if (!file) {
+            return c.json({ error: "File not found" }, 404);
+        }
+
+        // 2. Permission Check
+        const spaceId = file.space_file.spaceId;
+        const role = await getSpaceRole(userId, spaceId);
+
+        if (role !== 'owner' && role !== 'editor') {
+            return c.json({ error: "Unauthorized" }, 403);
+        }
+
+        // 3. Delete from Storage
+        if (file.space_file.storagePath) {
+            try {
+                // Get provider for the space owner
+                const ownerId = file.data_space.userId;
+                const provider = await StorageManager.getProvider(ownerId);
+                await provider.delete(file.space_file.storagePath);
+
+                // Update quota
+                await db.execute(sql`UPDATE pegasus_user SET storage_used = GREATEST(0, storage_used - ${file.space_file.fileSizeBytes}) WHERE id = ${ownerId}`);
+
+            } catch (err) {
+                console.warn("Failed to delete file from storage:", err);
+            }
+        }
+
+        // 4. Delete from DB
+        await db.delete(spaceFiles).where(eq(spaceFiles.id, rawId));
+
+        return c.json({ success: true });
+    } catch (e) {
+        console.error("Delete file failed:", e);
+        return c.json({ error: e.message }, 500);
+    }
+});
 
 spaces.get("/:id/permissions", async (c) => {
     const token = getAuthToken(c)
@@ -347,21 +410,94 @@ spaces.post("/:id/files", async (c) => {
         const { id } = c.req.param()
         const rawId = id.includes(':') ? id.split(':')[1] : id
         const body = await c.req.json()
-        const { filename, file_type, storage_path, file_size_bytes, parsed_schema } = body
+        const { filename, file_type, storage_path, file_size_bytes, parsed_schema, content_buffer_base64 } = body
 
-        const [result] = await db.insert(spaceFiles)
-            .values({
-                spaceId: rawId,
-                filename,
-                fileType: file_type,
-                storagePath: storage_path,
-                fileSizeBytes: file_size_bytes || 0,
-                parsedSchema: parsed_schema || {}
-            })
-            .returning()
+        // 1. Get User ID
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+
+        // 2. Determine File ID (New or Update)
+        // Check if file with same name exists in space?
+        const [existing] = await db.select().from(spaceFiles)
+            .where(and(eq(spaceFiles.spaceId, rawId), eq(spaceFiles.filename, filename))) // Simple check
+            .limit(1);
+
+        let fileId = existing ? existing.id : crypto.randomUUID();
+        let result;
+
+        if (existing) {
+            // UPDATE VERSION
+            if (content_buffer_base64) {
+                const buffer = Buffer.from(content_buffer_base64, 'base64');
+                const uploadRes = await SnapshotService.uploadFileVersion(existing.id, userId, buffer, file_type, filename);
+
+                // Re-index RAG?
+                try {
+                    await RAGService.indexFileFromStorage(uploadRes.key, filename, userId);
+                } catch (idxErr) {
+                    console.warn("RAG Indexing failed triggered from upload:", idxErr);
+                }
+
+                // Update DB record with new result is handled inside uploadFileVersion but we need to return something
+                // We should just return the updated file record
+                [result] = await db.select().from(spaceFiles).where(eq(spaceFiles.id, existing.id));
+            } else {
+                // Metadata update only?
+                // For now, assume upload always has content.
+                result = existing;
+            }
+        } else {
+            // NEW FILE
+            // Upload to S3 first
+            let key = storage_path; // If provided by frontend direct upload?
+
+            // If frontend sends content, we upload.
+            if (content_buffer_base64) {
+                const buffer = Buffer.from(content_buffer_base64, 'base64');
+                const fileBytes = buffer.length;
+
+                // QUOTA CHECK
+                const quotaCheck = await canUploadFile(db, userId, fileBytes);
+                if (!quotaCheck.allowed) {
+                    return c.json({ error: quotaCheck.message }, 403);
+                }
+
+                const safeFilename = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+                key = `files/${userId}/${fileId}_v1_${safeFilename}`;
+
+                const provider = await StorageManager.getProvider(userId);
+                await provider.upload(key, buffer, file_type);
+
+                // Update Storage Usage
+                await db.execute(sql`UPDATE pegasus_user SET storage_used = storage_used + ${fileBytes} WHERE id = ${userId}`);
+
+                // RAG Index
+                try {
+                    await RAGService.indexFileFromStorage(key, filename, userId);
+                } catch (idxErr) {
+                    console.warn("RAG Indexing failed triggered from upload:", idxErr);
+                }
+            }
+
+            [result] = await db.insert(spaceFiles)
+                .values({
+                    id: fileId,
+                    spaceId: rawId,
+                    filename,
+                    fileType: file_type,
+                    storagePath: key,
+                    fileSizeBytes: file_size_bytes || 0,
+                    parsedSchema: parsed_schema || {},
+                    storageId: key, // Hybrid Storage ID
+                    version: 1,
+                    isRagIndexed: true // Optimistically true if we ran indexFileFromStorage
+                })
+                .returning()
+        }
 
         return c.json(result);
     } catch (e) {
+        console.error("File upload failed:", e);
         return c.json({ error: e.message }, 500);
     }
 });
@@ -380,7 +516,56 @@ spaces.get("/:id/notes", async (c) => {
             .where(eq(spaceNotes.spaceId, rawId))
             .orderBy(sql`${spaceNotes.createdAt} DESC`)
 
-        return c.json({ notes: results || [] });
+        // For list view, we prefer the 'preview' or truncated content.
+        // We DO NOT hydrate from S3 here to keep it fast.
+        const mapped = results.map(n => ({
+            ...n,
+            content: n.preview || n.content // fallback if old note
+        }));
+
+        return c.json({ notes: mapped });
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
+spaces.get("/notes/:noteId", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const { noteId } = c.req.param()
+        const rawId = noteId.includes(':') ? noteId.split(':')[1] : noteId
+
+        // 1. Fetch DB Record
+        const [note] = await db.select().from(spaceNotes).where(eq(spaceNotes.id, rawId)).limit(1);
+
+        if (!note) return c.json({ error: "Note not found" }, 404);
+
+        // 2. Hydrate content if in storage
+        if (note.storageId) {
+            try {
+                const remote = await StorageManager.getProvider(note.spaceId); // Using space owner? No, stick to current logic.
+                // Actually StorageManager.getProvider takes userId. We need the space owner userId.
+                // For now, let's assume the current user has access to read the S3 object if they have access to the note.
+                // However, the BUCKET is configured per user. So we need the space owner's ID.
+
+                // Let's resolve Space Owner
+                const [space] = await db.select().from(dataSpaces).where(eq(dataSpaces.id, note.spaceId));
+                const provider = await StorageManager.getProvider(space.userId);
+
+                // Get Presigned URL and fetch? Or fetch server-side?
+                // Server-side fetch simplifies CORS/Auth for now.
+                const url = await provider.getPresignedUrl(note.storageId);
+                const response = await fetch(url);
+                const json = await response.json();
+                note.content = json.content;
+            } catch (err) {
+                console.error("Failed to hydrate note:", err);
+                note.content = "Error loading content.";
+            }
+        }
+
+        return c.json(note);
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
@@ -393,20 +578,52 @@ spaces.post("/:id/notes", async (c) => {
     try {
         const { id } = c.req.param()
         const rawId = id.includes(':') ? id.split(':')[1] : id
-        const body = await c.req.json()
         const { title, content, note_type } = body
+        const contentStr = content || "";
+
+        let storageId = null;
+        let finalContent = contentStr;
+        let preview = contentStr.substring(0, 200);
+
+        // Check for Offload
+        if (contentStr.length > 2000) {
+            // Get User ID for storage path
+            const [space] = await db.select().from(dataSpaces).where(eq(dataSpaces.id, rawId));
+            const ownerId = space.userId;
+
+            const contentBytes = Buffer.byteLength(contentStr, 'utf8');
+
+            // Quota Check
+            const quotaCheck = await canUploadFile(db, ownerId, contentBytes);
+            if (!quotaCheck.allowed) return c.json({ error: quotaCheck.message }, 403);
+
+            const noteUuid = crypto.randomUUID();
+            const key = `notes/${ownerId}/${noteUuid}.json`;
+            const provider = await StorageManager.getProvider(ownerId);
+
+            await provider.upload(key, JSON.stringify({ content: contentStr }), "application/json");
+
+            // Update Usage
+            await db.execute(sql`UPDATE pegasus_user SET storage_used = storage_used + ${contentBytes} WHERE id = ${ownerId}`);
+
+            storageId = key;
+            finalContent = null; // Clear from DB
+        }
 
         const [result] = await db.insert(spaceNotes)
             .values({
                 spaceId: rawId,
                 title: title || "Untitled Note",
-                content: content || "",
+                content: finalContent,
+                preview,
+                storageId,
                 noteType: note_type || "general"
             })
             .returning()
 
         return c.json(result);
     } catch (e) {
+        console.error("Note creation failed", e);
         return c.json({ error: e.message }, 500);
     }
 });
@@ -420,6 +637,43 @@ spaces.put("/notes/:noteId", async (c) => {
         const body = await c.req.json()
         const rawId = noteId.includes(':') ? noteId.split(':')[1] : noteId
 
+        // Handle Content Update
+        if (body.content !== undefined) {
+            const contentStr = body.content || "";
+            body.preview = contentStr.substring(0, 200);
+
+            // Check Offload Logic
+            // Check Offload Logic
+            if (contentStr.length > 2000) {
+                // Fetch existing note to get space/owner
+                const [existing] = await db.select().from(spaceNotes)
+                    .innerJoin(dataSpaces, eq(spaceNotes.spaceId, dataSpaces.id))
+                    .where(eq(spaceNotes.id, rawId));
+
+                const ownerId = existing ? existing.data_space.userId : userId; // Fallback
+
+                const contentBytes = Buffer.byteLength(contentStr, 'utf8');
+                // Quota Check
+                const quotaCheck = await canUploadFile(db, ownerId, contentBytes);
+                if (!quotaCheck.allowed) return c.json({ error: quotaCheck.message }, 403);
+
+                const key = `notes/${ownerId}/${rawId}.json`;
+                const provider = await StorageManager.getProvider(ownerId);
+
+                await provider.upload(key, JSON.stringify({ content: contentStr }), "application/json");
+
+                // Update Usage
+                await db.execute(sql`UPDATE pegasus_user SET storage_used = storage_used + ${contentBytes} WHERE id = ${ownerId}`);
+
+                body.storageId = key;
+                body.content = null;
+            } else {
+                // If it shrunk, clear storageId? 
+                // Optionally clear old file, but for now just update DB.
+                body.storageId = null;
+            }
+        }
+
         const [result] = await db.update(spaceNotes)
             .set({
                 ...body,
@@ -430,6 +684,7 @@ spaces.put("/notes/:noteId", async (c) => {
 
         return c.json(result);
     } catch (e) {
+        console.error("Note update failed", e);
         return c.json({ error: e.message }, 500);
     }
 });
@@ -442,11 +697,97 @@ spaces.delete("/notes/:noteId", async (c) => {
         const { noteId } = c.req.param()
         const rawId = noteId.includes(':') ? noteId.split(':')[1] : noteId
 
+        // Cleanup storage if offloaded
+        const note = await db.query.spaceNotes.findFirst({ where: eq(spaceNotes.id, rawId) });
+        if (note && note.storageId) {
+            try {
+                const [space] = await db.select().from(dataSpaces).where(eq(dataSpaces.id, note.spaceId));
+                const provider = await StorageManager.getProvider(space.userId);
+                await provider.delete(note.storageId);
+            } catch (err) {
+                console.warn("Failed to delete note content from storage:", err);
+            }
+        }
+
         await db.delete(spaceNotes).where(eq(spaceNotes.id, rawId))
         return c.json({ success: true });
     } catch (e) {
         return c.json({ error: e.message }, 500);
     }
 });
+
+// Bulk Delete Endpoint
+spaces.post("/bulk-delete", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const { items } = await c.req.json() // [{ type, id }]
+
+        if (!items || !Array.isArray(items)) {
+            return c.json({ error: "Invalid items array" }, 400);
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const item of items) {
+            const { type, id } = item;
+            const rawId = id.includes(':') ? id.split(':')[1] : id;
+
+            try {
+                if (type === 'file') {
+                    // 1. Fetch File and Join Space
+                    const [fileRow] = await db.select().from(spaceFiles)
+                        .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+                        .where(eq(spaceFiles.id, rawId));
+
+                    if (fileRow) {
+                        // 2. Storage Cleanup
+                        if (fileRow.space_file.storagePath) {
+                            try {
+                                const provider = await StorageManager.getProvider(fileRow.data_space.userId || userId);
+                                await provider.delete(fileRow.space_file.storagePath);
+                                // Update Quota
+                                await db.execute(sql`UPDATE pegasus_user SET storage_used = GREATEST(0, storage_used - ${fileRow.space_file.fileSizeBytes}) WHERE id = ${fileRow.data_space.userId}`);
+                            } catch (e) { console.warn("Storage deletion failed:", e) }
+                        }
+                        // 3. Deletion from DB
+                        await db.delete(spaceFiles).where(eq(spaceFiles.id, rawId));
+                    }
+                } else if (type === 'note') {
+                    const note = await db.query.spaceNotes.findFirst({ where: eq(spaceNotes.id, rawId) });
+                    if (note) {
+                        if (note.storageId) {
+                            try {
+                                const [space] = await db.select().from(dataSpaces).where(eq(dataSpaces.id, note.spaceId));
+                                const provider = await StorageManager.getProvider(space.userId);
+                                await provider.delete(note.storageId);
+                            } catch (e) { console.warn("Note storage deletion failed:", e) }
+                        }
+                        await db.delete(spaceNotes).where(eq(spaceNotes.id, rawId));
+                    }
+                } else if (type === 'connection') {
+                    await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, userId)));
+                }
+
+                results.success.push(id);
+            } catch (err) {
+                console.error(`Failed to delete ${type} ${id}:`, err);
+                results.failed.push({ id, error: err.message });
+            }
+        }
+
+        return c.json(results);
+    } catch (e) {
+        return c.json({ error: e.message }, 500);
+    }
+});
+
+
 
 export const spaceRoutes = spaces

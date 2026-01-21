@@ -17,8 +17,7 @@ cloudProvision.get('/azure/subscriptions', async (c) => {
             return c.json({ error: 'User ID required' }, 400);
         }
 
-        // Retrieve OAuth token from Vault
-        const vaultKey = `secret / pegasus / users / ${userId} /cloud/azure / token`;
+        const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 
         if (!tokenData) {
@@ -347,8 +346,8 @@ cloudProvision.post('/azure/provision-kusto', async (c) => {
  */
 cloudProvision.post('/azure/provision', async (c) => {
     try {
-        const userId = c.req.query('user_id');
         const body = await c.req.json();
+        const userId = c.req.query('user_id') || body.user_id;
 
         const { subscriptionId, location, resourceGroupName, resources } = body;
 

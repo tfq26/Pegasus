@@ -107,7 +107,7 @@ router.post("/", async (c) => {
         }
 
         const body = await c.req.json()
-        const { type, provider, name, nickname, config, isLocked, ...rest } = body
+        const { type, provider, name, nickname, config, isLocked, spaceId, ...rest } = body
 
         const finalType = provider || type
         const finalName = nickname || name
@@ -115,6 +115,7 @@ router.post("/", async (c) => {
 
         const [created] = await db.insert(connections).values({
             userId,
+            spaceId: spaceId || null,
             type: finalType,
             name: finalName,
             config: finalConfig,
@@ -163,7 +164,7 @@ router.put("/:id", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const body = await c.req.json()
-        const { type, provider, name, nickname, config, isLocked, ...rest } = body
+        const { type, provider, name, nickname, config, isLocked, spaceId, ...rest } = body
 
         const finalType = provider || type
         const finalName = nickname || name
@@ -174,6 +175,7 @@ router.put("/:id", async (c) => {
                 type: finalType,
                 name: finalName,
                 config: finalConfig,
+                spaceId: spaceId || undefined,
                 isVirtual: !!isLocked,
                 updatedAt: new Date()
             })

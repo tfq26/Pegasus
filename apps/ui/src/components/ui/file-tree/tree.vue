@@ -28,7 +28,7 @@ const selectedId = ref<string | undefined>(initialSelectedId.value);
 const expandedItems = ref<string[] | undefined>(initialExpandedItems.value);
 
 const emit = defineEmits<{
-  'select': [id: string]
+  'select': [id: string, event?: MouseEvent]
 }>()
 
 function handleExpand(id: string) {
@@ -42,9 +42,9 @@ function handleExpand(id: string) {
   }
 }
 
-function selectItem(id: string) {
+function selectItem(id: string, event?: MouseEvent) {
   selectedId.value = id;
-  emit('select', id);
+  emit('select', id, event);
 }
 
 function setExpandedItemsFn(items: string[] | undefined) {

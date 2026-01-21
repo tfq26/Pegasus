@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { db } from "../db/index.js";
 import { files, storageCredentials } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
-import { StorageManager } from "../../services/storage/StorageManager.js";
+import { StorageManager } from "../services/storage/StorageManager.js";
 import { getAuthToken } from "../../lib/auth.js";
 import { verify } from "hono/jwt";
 

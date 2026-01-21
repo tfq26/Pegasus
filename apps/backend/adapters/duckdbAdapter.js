@@ -16,17 +16,26 @@ export class DuckDBAdapter {
             try {
                 // Create database instance with READ_ONLY mode to allow concurrent access
                 this.db = new duckdb.Database(this.dbPath, {
-                    access_mode: 'READ_ONLY'
+                    access_mode: 'READ_WRITE' // Default to READ_WRITE to allow creation
                 }, (err) => {
                     if (err) {
-                        console.error('[DuckDB] Database creation error:', err);
-                        return reject(err);
+                        // If it fails, try without options (default)
+                        this.db = new duckdb.Database(this.dbPath, (err2) => {
+                            if (err2) {
+                                console.error('[DuckDB] Database creation error:', err2);
+                                return reject(err2);
+                            }
+                            // Create connection
+                            this.connection = this.db.connect();
+                            console.log(`[DuckDB] Connected to database: ${this.dbPath}`);
+                            resolve();
+                        });
+                    } else {
+                        // Create connection
+                        this.connection = this.db.connect();
+                        console.log(`[DuckDB] Connected to database: ${this.dbPath}`);
+                        resolve();
                     }
-
-                    // Create connection
-                    this.connection = this.db.connect();
-                    console.log(`[DuckDB] Connected to database: ${this.dbPath}`);
-                    resolve();
                 });
             } catch (e) {
                 console.error('[DuckDB] Connection error:', e);

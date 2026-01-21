@@ -10,6 +10,8 @@ export const users = pgTable("pegasus_user", {
     subscriptionTier: text("subscription_tier").default("free"),
     purchasedTokens: integer("purchased_tokens").default(0),
     purchasedStorage: integer("purchased_storage").default(0),
+    storageUsed: bigint("storage_used", { mode: "number" }).default(0),
+    storageProvider: text("storage_provider").default("system"), // 'system', 'aws', 'gcp', 'azure'
     stripeCustomerId: text("stripe_customer_id").default(""),
     config: jsonb("config").default({}),
     createdAt: timestamp("created_at").defaultNow(),
@@ -48,6 +50,9 @@ export const dashboards = pgTable("dashboard", {
     config: jsonb("config"),
     messages: jsonb("messages").default([]),
     storageId: text("storage_id"), // Hybrid Storage
+    snapshotStorageId: text("snapshot_storage_id"), // Full state snapshot in S3
+    snapshotConfig: jsonb("snapshot_config"), // { mode: 'on_save' | 'scheduled', schedule: '...' }
+    lastSnapshotAt: timestamp("last_snapshot_at"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -92,9 +97,12 @@ export const deviceCodes = pgTable("device_code", {
 export const knowledgeChunks = pgTable("knowledge_chunk", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id").references(() => users.id),
+    fileId: uuid("file_id").references(() => files.id, { onDelete: 'cascade' }),
+    noteId: uuid("note_id").references(() => spaceNotes.id, { onDelete: 'cascade' }),
     content: text("content"),
     embedding: vector("embedding", { dimensions: 1536 }),
     metadata: jsonb("metadata"),
+    chunkHash: text("chunk_hash"),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -130,6 +138,10 @@ export const spaceFiles = pgTable("space_file", {
     storagePath: text("storage_path"),
     fileSizeBytes: integer("file_size_bytes").default(0),
     parsedSchema: jsonb("parsed_schema"),
+    storageId: text("storage_id"), // Hybrid Storage
+    version: integer("version").default(1),
+    versions: jsonb("versions").default([]), // [{ version: 1, storageId: '...', createdAt: ... }]
+    isRagIndexed: boolean("is_rag_indexed").default(false),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -139,7 +151,8 @@ export const spaceNotes = pgTable("space_note", {
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
     title: text("title").notNull(),
     content: text("content"),
-    storageId: text("storage_id"), // Hybrid Storage
+    storageId: text("storage_id"), // Hybrid Storage: S3 Key
+    preview: text("preview"), // First 200 chars for listing
     noteType: text("note_type").default("general"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),

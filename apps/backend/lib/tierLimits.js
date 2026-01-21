@@ -242,6 +242,33 @@ export async function calculateUserLimits(db, userId) {
         purchasedTokens,
         purchasedStorage,
         baseTokenLimit,
-        baseStorageLimit
+        baseStorageLimit,
+        storageUsed: user?.storageUsed || 0,
+        storageProvider: user?.storageProvider || 'system'
+    };
+}
+
+/**
+ * Check if user can upload file (Storage Quota)
+ */
+export async function canUploadFile(db, userId, fileSizeBytes) {
+    const limits = await calculateUserLimits(db, userId);
+
+    if (limits.storageLimit === -1) { // If infinite was represented as -1, but here huge number is better or check tier
+        // Pro Plus might be infinite?
+        // In TIER_LIMITS pro_plus is 10GB, so not infinite.
+        // If we want infinite, we'd handle it here.
+    }
+
+    const projectedUsage = (limits.storageUsed || 0) + fileSizeBytes;
+
+    return {
+        allowed: projectedUsage <= limits.storageLimit,
+        current: limits.storageUsed,
+        limit: limits.storageLimit,
+        projected: projectedUsage,
+        message: projectedUsage > limits.storageLimit
+            ? `Upload failed. This file (${(fileSizeBytes / 1024 / 1024).toFixed(2)} MB) would exceed your storage limit of ${(limits.storageLimit / 1024 / 1024).toFixed(0)} MB.`
+            : null
     };
 }

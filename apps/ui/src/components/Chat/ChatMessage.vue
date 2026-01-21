@@ -6,7 +6,21 @@ import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 const props = defineProps<{
   content: string
   role: string
+  meta?: any
 }>()
+
+import { FileText, Database, StickyNote, Quote } from 'lucide-vue-next'
+import { Badge } from '@/components/ui/badge'
+
+const getIcon = (type: string) => {
+  switch (type) {
+    case 'file': return FileText
+    case 'database': return Database
+    case 'note': return StickyNote
+    case 'chunk': return Quote
+    default: return FileText
+  }
+}
 
 const parsedContent = computed(() => {
   // Check for "Results: [...]" pattern at the end of the string
@@ -119,6 +133,15 @@ const formatValue = (val: any) => {
       <div v-else class="rounded-md border border-border bg-background/50 p-3 overflow-auto max-h-60 shadow-sm">
         <JsonViewer :data="parsedContent.results" />
       </div>
+    </div>
+
+    <!-- Context Chips -->
+    <div v-if="meta?.contextUsed?.length" class="flex flex-wrap gap-2 mt-2 pt-2 border-t border-border/50">
+      <span class="text-[10px] text-muted-foreground self-center mr-1">Sources:</span>
+      <Badge v-for="(ctx, i) in meta.contextUsed" :key="i" variant="outline" class="text-[10px] h-5 px-2 gap-1.5 font-normal bg-background/50 hover:bg-background">
+        <component :is="getIcon(ctx.type)" class="w-3 h-3 text-muted-foreground" />
+        {{ ctx.name || ctx.filename || ctx.title || 'Unknown Source' }}
+      </Badge>
     </div>
   </div>
 </template>

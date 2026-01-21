@@ -188,15 +188,10 @@ async function fetchSubscriptions() {
     error.value = null
     
     try {
-        const response = await fetch(
-            `http://localhost:3000/api/cloud-provision/${props.provider}/subscriptions?user_id=${props.userId}`
+        const data = await api.get<any>(
+            `/api/cloud-provision/${props.provider}/subscriptions?user_id=${props.userId}`
         )
         
-        if (!response.ok) {
-            throw new Error('Failed to fetch subscriptions')
-        }
-        
-        const data = await response.json()
         subscriptions.value = data.subscriptions || []
         
         // Auto-select if only one
@@ -218,15 +213,10 @@ async function fetchLocations() {
     error.value = null
     
     try {
-        const response = await fetch(
-            `http://localhost:3000/api/cloud-provision/${props.provider}/locations?user_id=${props.userId}&subscription_id=${selectedSubscription.value}`
+        const data = await api.get<any>(
+            `/api/cloud-provision/${props.provider}/locations?user_id=${props.userId}&subscription_id=${selectedSubscription.value}`
         )
         
-        if (!response.ok) {
-            throw new Error('Failed to fetch locations')
-        }
-        
-        const data = await response.json()
         locations.value = data.locations || []
         
         // Set default location

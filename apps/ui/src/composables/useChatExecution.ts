@@ -476,15 +476,21 @@ export function useChatExecution(
                 }
 
                 const assistantContent = typeof aiSummary === 'object' ? JSON.stringify(aiSummary) : aiSummary
+
+                const meta = {
+                    ...(prediction ? { prediction } : {}),
+                    contextUsed: (singleAIResponse as any).contextUsed
+                }
+
                 chatHistory.value.push({
                     role: 'assistant',
                     content: assistantContent,
                     timestamp: Date.now(),
-                    meta: prediction ? { prediction } : undefined
+                    meta
                 })
                 if (selectedChatId.value) {
                     try {
-                        await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, prediction ? { prediction } : undefined)
+                        await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, meta)
                     } catch (e) { console.warn(e) }
                 }
             }
