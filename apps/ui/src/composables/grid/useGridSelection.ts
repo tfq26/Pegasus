@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { ref, watch, unref, type Ref } from 'vue';
 import { toast } from '@/composables/useNotifications';
 import { colIndexToLabel } from '../../components/TableView/Engine/FormulaParser';
 import type { Engine } from '../../components/TableView/Engine/Engine';
@@ -7,8 +7,8 @@ import type { CellPosition } from '../../components/TableView/Engine/types';
 export function useGridSelection(
     engine: Engine,
     gridContainer: any,
-    rowCount: number,
-    colCount: number,
+    rowCount: number | Ref<number>,
+    colCount: number | Ref<number>,
     renderKey: any
 ) {
     // Config
@@ -39,7 +39,7 @@ export function useGridSelection(
 
             rangeSelection.value = {
                 start: { row: 0, col: start },
-                end: { row: rowCount - 1, col: end }
+                end: { row: unref(rowCount) - 1, col: end }
             };
             // Keep selectedColumn as the anchor? Or null?
             selectedColumn.value = col;
@@ -48,7 +48,7 @@ export function useGridSelection(
             selectedColumn.value = col;
             rangeSelection.value = {
                 start: { row: 0, col },
-                end: { row: rowCount - 1, col }
+                end: { row: unref(rowCount) - 1, col }
             };
         }
 
@@ -64,7 +64,7 @@ export function useGridSelection(
 
             rangeSelection.value = {
                 start: { row: start, col: 0 },
-                end: { row: end, col: colCount - 1 }
+                end: { row: end, col: unref(colCount) - 1 }
             };
             selectedRow.value = row;
         } else {
@@ -72,7 +72,7 @@ export function useGridSelection(
             selectedRow.value = row;
             rangeSelection.value = {
                 start: { row, col: 0 },
-                end: { row, col: colCount - 1 }
+                end: { row, col: unref(colCount) - 1 }
             };
         }
 
@@ -116,7 +116,8 @@ export function useGridSelection(
         if (selectedColumn.value === null) return;
 
         // Fill all cells in the column with the value
-        for (let row = 0; row < rowCount; row++) {
+        const currentRowCount = unref(rowCount);
+        for (let row = 0; row < currentRowCount; row++) {
             engine.setValue({ row, col: selectedColumn.value }, value);
         }
 
@@ -128,7 +129,8 @@ export function useGridSelection(
         if (selectedRow.value === null) return;
 
         // Fill all cells in the row with the value
-        for (let col = 0; col < colCount; col++) {
+        const currentColCount = unref(colCount);
+        for (let col = 0; col < currentColCount; col++) {
             engine.setValue({ row: selectedRow.value, col }, value);
         }
 

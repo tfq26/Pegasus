@@ -88,7 +88,7 @@ defineEmits<{
 }>()
 
 // Resizing Logic
-const sidebarWidth = ref(260)
+const sidebarWidth = ref(310)
 const isResizing = ref(false)
 
 const startResize = (e: MouseEvent) => {
@@ -116,7 +116,7 @@ const doResize = (e: MouseEvent) => {
     let newWidth = e.clientX
     
     // Constrain width
-    if (newWidth < 180) newWidth = 180
+    if (newWidth < 310) newWidth = 310
     if (newWidth > 600) newWidth = 600
     
     sidebarWidth.value = newWidth

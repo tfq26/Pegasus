@@ -623,6 +623,9 @@ const onTestDataGenerated = (sql: string) => {
                 @move-connection="handleMoveConnection"
                 @delete-file="handleDeleteFile"
                 @delete-note="handleDeleteNote"
+                @selection-change="(items) => selectedItems = items"
+                @delete-files="handleBulkDelete"
+                @delete-notes="handleBulkDelete"
               />
          </div>
       </section>

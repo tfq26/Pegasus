@@ -40,7 +40,12 @@ rag.post("/index", async (c) => {
             // 2. Connect and fetch data
             const Adapter = adapters[provider]
             if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
-            const adapter = new Adapter(adapterConfig)
+
+            let finalAdapterConfig = adapterConfig
+            if (provider === 'duckdb' && finalAdapterConfig) {
+                finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
+            }
+            const adapter = new Adapter(finalAdapterConfig)
 
             try {
                 await adapter.connect()

@@ -4,8 +4,8 @@ import { verify } from "hono/jwt"
 import { WorkOS } from "@workos-inc/node"
 import crypto from "crypto"
 import { db } from "../db/index.js"
-import { dashboards, dashboardPermissions, users, dashboardElements, notifications, recentAccess } from "../db/schema.js"
-import { eq, and, or, sql } from "drizzle-orm"
+import { dashboards, dashboardPermissions, users, dashboardElements, notifications, recentAccess, files } from "../db/schema.js"
+import { eq, and, or, sql, desc } from "drizzle-orm"
 import { SecretService } from "../services/SecretService.js"
 import { canCreateDashboard } from "../../lib/tierLimits.js"
 import { getIO, getRoom } from "../socket.js"
@@ -440,14 +440,14 @@ dashboard.post("/dashboards/:id/read", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        await db.query(`
-            UPDATE notification 
-            SET is_read = true 
-            WHERE user = type::thing('user', $userId) 
-            AND dashboard = type::thing('dashboard', $dashId);
-        `, { userId, dashId: id.split(':')[1] });
+        await db.update(notifications)
+            .set({ isRead: true })
+            .where(and(
+                eq(notifications.userId, userId),
+                eq(notifications.dashboardId, rawId)
+            ));
 
         return c.json({ ok: true })
     } catch (e) {
@@ -623,18 +623,23 @@ dashboard.post("/dashboards/:id/share", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const [existing] = await db.query(`SELECT share_token FROM ${id} WHERE owner = type::thing('user', $userId)`, { userId });
-        let shareToken = (existing && existing[0]) ? existing[0].share_token : crypto.randomUUID();
+        const dash = await db.query.dashboards.findFirst({
+            where: and(eq(dashboards.id, rawId), eq(dashboards.ownerId, userId))
+        });
 
-        await db.query(`
-            UPDATE ${id} SET share_token = $shareToken, is_public = true 
-            WHERE owner = type::thing('user', $userId);
-        `, { shareToken, userId });
+        if (!dash) return c.json({ error: "Unauthorized" }, 403);
+
+        let shareToken = dash.shareToken || crypto.randomUUID();
+
+        await db.update(dashboards)
+            .set({ shareToken, isPublic: true })
+            .where(eq(dashboards.id, rawId));
 
         return c.json({ token: shareToken })
     } catch (e) {
+        console.error("[Share] Error:", e);
         return c.json({ error: "Failed to share dashboard" }, 500)
     }
 })
@@ -647,20 +652,27 @@ dashboard.put("/dashboards/:id/privacy", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
         const { is_public } = await c.req.json()
 
-        const [check] = await db.query(`SELECT 1 FROM ${id} WHERE owner = type::thing('user', $userId)`, { userId })
-        if (!check || check.length === 0) return c.json({ error: "Only the owner can change privacy" }, 403)
+        const dash = await db.query.dashboards.findFirst({
+            where: and(eq(dashboards.id, rawId), eq(dashboards.ownerId, userId))
+        })
+        if (!dash) return c.json({ error: "Only the owner can change privacy" }, 403)
 
         if (!is_public) {
-            await db.query(`DELETE dashboard_permission WHERE dashboard = ${id};`)
-            await db.query(`UPDATE ${id} SET is_public = false, share_token = NONE, updated_at = time::now() WHERE owner = type::thing('user', $userId);`, { userId })
+            await db.delete(dashboardPermissions).where(eq(dashboardPermissions.dashboardId, rawId));
+            await db.update(dashboards)
+                .set({ isPublic: false, shareToken: null, updatedAt: new Date() })
+                .where(eq(dashboards.id, rawId));
         } else {
-            await db.query(`UPDATE ${id} SET is_public = true, updated_at = time::now() WHERE owner = type::thing('user', $userId);`, { userId })
+            await db.update(dashboards)
+                .set({ isPublic: true, updatedAt: new Date() })
+                .where(eq(dashboards.id, rawId));
         }
         return c.json({ ok: true, is_public })
     } catch (e) {
+        console.error("[Privacy] Error:", e);
         return c.json({ error: "Failed to update privacy" }, 500)
     }
 })
@@ -672,23 +684,32 @@ dashboard.delete("/dashboards/:id", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        await db.query(`DELETE ${id} WHERE owner = type::thing('user', $userId);`, { userId });
+        const dash = await db.query.dashboards.findFirst({
+            where: and(eq(dashboards.id, rawId), eq(dashboards.ownerId, userId))
+        });
+
+        if (!dash) return c.json({ error: "Unauthorized" }, 403);
+
+        await db.delete(dashboards).where(eq(dashboards.id, rawId));
 
         const io = getIO();
         if (io) {
-            const room = getRoom(id);
-            io.to(room).emit('dashboard_deleted', { dashboardId: id });
+            const room = getRoom(rawId);
+            io.to(room).emit('dashboard_deleted', { dashboardId: rawId });
             io.in(room).socketsLeave(room);
         }
 
-        await db.query(`DELETE dashboard_element WHERE dashboard = ${id}`);
-        await db.query(`DELETE dashboard_permission WHERE dashboard = ${id}`);
-        await db.query(`DELETE dashboard_message WHERE dashboard = ${id}`);
+        // Drizzle cascade handles element and permission deletion if defined in schema, 
+        // but we explicitly clean up others if needed.
+        await db.delete(dashboardElements).where(eq(dashboardElements.dashboardId, rawId));
+        await db.delete(dashboardPermissions).where(eq(dashboardPermissions.dashboardId, rawId));
+        await db.delete(notifications).where(eq(notifications.dashboardId, rawId));
 
         return c.json({ ok: true })
     } catch (e) {
+        console.error("[Delete Dashboard] Error:", e);
         return c.json({ error: "Failed to delete dashboard" }, 500)
     }
 })
@@ -702,49 +723,43 @@ dashboard.get("/dashboards/:id/permissions", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
-        const currentRole = await getDashboardRole(userId, id);
+        const currentRole = await getDashboardRole(userId, rawId);
         if (!currentRole) return c.json({ error: "Unauthorized" }, 403)
 
-        const rawDashId = id.split(':')[1];
+        // Fetch permissions with users
+        const permissions = await db.query.dashboardPermissions.findMany({
+            where: eq(dashboardPermissions.dashboardId, rawId),
+            with: {
+                user: true
+            }
+        });
 
-        // Fetch permissions with user_id for identification
-        const [permissions] = await db.query(`
-            SELECT 
-                role as access_level,
-                user as user_id,
-                user.email as email,
-                user.first_name as first_name,
-                user.last_name as last_name,
-                user.profile_picture_url as profile_picture_url,
-                alias,
-                created_at 
-            FROM dashboard_permission 
-            WHERE dashboard = type::thing('dashboard', $dashId);
-        `, { dashId: rawDashId });
+        // Fetch dashboard owner
+        const dash = await db.query.dashboards.findFirst({
+            where: eq(dashboards.id, rawId),
+            with: {
+                owner: true
+            }
+        });
 
-        // Fetch owner details
-        const [ownerData] = await db.query(`
-            SELECT 
-                owner as id,
-                owner.email as email,
-                owner.first_name as first_name,
-                owner.last_name as last_name,
-                owner.profile_picture_url as profile_picture_url
-            FROM type::thing('dashboard', $dashId)
-        `, { dashId: rawDashId });
-
-        // Map permissions to ensure IDs are strings
-        const formattedPermissions = (permissions || []).map(p => ({
-            ...p,
-            user_id: p.user_id?.toString() || String(p.user_id)
+        const formattedPermissions = permissions.map(p => ({
+            access_level: p.role,
+            user_id: p.userId,
+            email: p.user.email,
+            first_name: p.user.firstName,
+            last_name: p.user.lastName,
+            profile_picture_url: p.user.profilePictureUrl,
+            created_at: p.createdAt || new Date() // Placeholder if not in schema
         }));
 
-        // Map owner to ensure ID is string
-        const formattedOwner = ownerData?.[0] ? {
-            ...ownerData[0],
-            id: ownerData[0].id?.toString() || String(ownerData[0].id)
+        const formattedOwner = dash?.owner ? {
+            id: dash.owner.id,
+            email: dash.owner.email,
+            first_name: dash.owner.firstName,
+            last_name: dash.owner.lastName,
+            profile_picture_url: dash.owner.profilePictureUrl
         } : null;
 
         return c.json({
@@ -765,35 +780,39 @@ dashboard.post("/dashboards/:id/share/invite", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
-        if (!id.includes(':')) id = `dashboard:${id}`
+        const rawId = id.includes(':') ? id.split(':')[1] : id
 
         const { email, role } = await c.req.json()
         if (!email) return c.json({ error: "Email required" }, 400)
 
-        const currentRole = await getDashboardRole(userId, id);
+        const currentRole = await getDashboardRole(userId, rawId);
         if (currentRole !== 'owner' && currentRole !== 'write') {
             return c.json({ error: "Only owners and editors can invite users" }, 403)
         }
 
-        const [targetUser] = await db.query(`SELECT id FROM user WHERE email = $email LIMIT 1`, { email });
-        if (!targetUser || !targetUser.length) {
+        const targetUser = await db.query.users.findFirst({
+            where: eq(users.email, email)
+        });
+
+        if (!targetUser) {
             return c.json({ error: "User must log in once before being invited." }, 404)
         }
 
-        const rawUserId = targetUser[0].id.toString().split(':')[1];
-        const rawDashId = id.split(':')[1];
+        await db.insert(dashboardPermissions)
+            .values({
+                userId: targetUser.id,
+                dashboardId: rawId,
+                role: role || 'read'
+            })
+            .onConflictDoUpdate({
+                target: [dashboardPermissions.userId, dashboardPermissions.dashboardId],
+                set: { role: role || 'read' }
+            });
 
-        await db.query(`
-            LET $u = type::thing('user', $userId);
-            LET $d = type::thing('dashboard', $dashId);
-            INSERT INTO dashboard_permission (user, dashboard, role, created_at)
-            VALUES ($u, $d, $role, time::now())
-            ON DUPLICATE KEY UPDATE role = $role;
-        `, { userId: rawUserId, dashId: rawDashId, role: role || 'read' });
-
-        await notifyPermissionChange(email, id, role || 'read', 'invite');
+        await notifyPermissionChange(email, rawId, role || 'read', 'invite');
         return c.json({ ok: true })
     } catch (e) {
+        console.error("[Invite] Error:", e);
         return c.json({ error: "Failed to invite user" }, 500)
     }
 })
@@ -805,49 +824,33 @@ dashboard.put("/dashboards/:id/permissions/:email", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
+        const rawId = id.includes(':') ? id.split(':')[1] : id
         const email = decodeURIComponent(c.req.param("email"))
         const { role, alias } = await c.req.json()
-        if (!id.includes(':')) id = `dashboard:${id}`
 
-        console.log(`[Permissions] PUT request for: ${email} on dashboard: ${id}`);
-
-        const currentRole = await getDashboardRole(userId, id);
+        const currentRole = await getDashboardRole(userId, rawId);
         if (currentRole !== 'owner' && currentRole !== 'write') return c.json({ error: "Unauthorized" }, 403)
 
-        // Identify target user by email or raw ID
-        let rawTargetId = null;
-        const [userCheck] = await db.query(`SELECT id FROM user WHERE email = $email LIMIT 1`, { email });
+        const targetUser = await db.query.users.findFirst({
+            where: eq(users.email, email)
+        });
 
-        if (userCheck && userCheck.length > 0) {
-            rawTargetId = userCheck[0].id.toString().split(':')[1];
-        } else if (email.includes('user')) {
-            // Extract ID from strings like "user:abc" or "user_abc" or just use "abc"
-            rawTargetId = email.includes(':') ? email.split(':')[1] : (email.includes('_') ? email.split('_')[1] : email);
-        } else {
-            // Assume the passed parameter is the raw ID
-            rawTargetId = email;
-        }
-
-        if (!rawTargetId) {
-            console.warn(`[Permissions] Could not find user to update: ${email}`);
+        if (!targetUser) {
             return c.json({ error: "User not found" }, 404)
         }
 
-        const rawDashId = id.split(':')[1];
-        console.log(`[Permissions] Updating user:${rawTargetId} on dashboard:${rawDashId}`);
+        await db.update(dashboardPermissions)
+            .set({ role: role || 'read' })
+            .where(and(
+                eq(dashboardPermissions.dashboardId, rawId),
+                eq(dashboardPermissions.userId, targetUser.id)
+            ));
 
-        await db.query(`
-            UPDATE dashboard_permission 
-            SET role = $role, alias = $alias
-            WHERE user = type::thing('user', $targetId) 
-            AND dashboard = type::thing('dashboard', $dashId);
-        `, { role: role || 'read', alias: alias || null, targetId: rawTargetId, dashId: rawDashId });
-
-        await notifyPermissionChange(email.includes('user') ? null : email, id, role || 'read', 'update');
+        await notifyPermissionChange(email, rawId, role || 'read', 'update');
         return c.json({ ok: true })
     } catch (e) {
         console.error(`[Permissions] PUT Error:`, e);
-        return c.json({ error: "Failed to update permission: " + e.message }, 500)
+        return c.json({ error: "Failed to update permission" }, 500)
     }
 })
 
@@ -858,47 +861,31 @@ dashboard.delete("/dashboards/:id/permissions/:email", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         let id = c.req.param("id")
+        const rawId = id.includes(':') ? id.split(':')[1] : id
         const email = decodeURIComponent(c.req.param("email"))
-        if (!id.includes(':')) id = `dashboard:${id}`
 
-        console.log(`[Permissions] DELETE request for: ${email} on dashboard: ${id}`);
-
-        const currentRole = await getDashboardRole(userId, id);
+        const currentRole = await getDashboardRole(userId, rawId);
         if (currentRole !== 'owner' && currentRole !== 'write') return c.json({ error: "Unauthorized" }, 403)
 
-        // Try to resolve target user by email or raw string
-        let rawTargetId = null;
-        const [userCheck] = await db.query(`SELECT id FROM user WHERE email = $email LIMIT 1`, { email });
+        const targetUser = await db.query.users.findFirst({
+            where: eq(users.email, email)
+        });
 
-        if (userCheck && userCheck.length > 0) {
-            rawTargetId = userCheck[0].id.toString().split(':')[1];
-        } else if (email.includes('user')) {
-            // Extract ID from strings like "user:abc" or "user_abc" or just use "abc"
-            rawTargetId = email.includes(':') ? email.split(':')[1] : (email.includes('_') ? email.split('_')[1] : email);
-        } else {
-            // Assume the passed parameter is the raw ID
-            rawTargetId = email;
+        if (!targetUser) {
+            return c.json({ error: "User not found" }, 404)
         }
 
-        if (!rawTargetId) {
-            console.warn(`[Permissions] Could not identify user to remove: ${email}`);
-            return c.json({ error: "Could not identify user to remove" }, 404)
-        }
+        await db.delete(dashboardPermissions)
+            .where(and(
+                eq(dashboardPermissions.dashboardId, rawId),
+                eq(dashboardPermissions.userId, targetUser.id)
+            ));
 
-        const rawDashId = id.split(':')[1];
-        console.log(`[Permissions] Removing user:${rawTargetId} from dashboard:${rawDashId}`);
-
-        await db.query(`
-            DELETE FROM dashboard_permission 
-            WHERE user = type::thing('user', $targetId) 
-            AND dashboard = type::thing('dashboard', $dashId);
-        `, { targetId: rawTargetId, dashId: rawDashId });
-
-        await notifyPermissionChange(email.includes('user') ? null : email, id, 'none', 'remove');
+        await notifyPermissionChange(email, rawId, 'none', 'remove');
         return c.json({ ok: true })
     } catch (e) {
         console.error(`[Permissions] DELETE Error:`, e);
-        return c.json({ error: "Failed to delete permission: " + e.message }, 500)
+        return c.json({ error: "Failed to delete permission" }, 500)
     }
 })
 
@@ -906,13 +893,19 @@ dashboard.delete("/dashboards/:id/permissions/:email", async (c) => {
 dashboard.get("/shared/dashboard/:token", async (c) => {
     try {
         const token = c.req.param("token")
-        const [rs] = await db.query(`SELECT * FROM dashboard WHERE share_token = $token AND is_public = true;`, { token });
-        if (!rs || !rs[0]) return c.json({ error: "Not found" }, 404)
-        const dashboard = rs[0];
-        const [elements] = await db.query(`SELECT * FROM dashboard_element WHERE dashboard = $id`, { id: dashboard.id });
-        const layout = elements.map(el => el.ui_layout ? { ...el.ui_layout, i: el.id } : { i: el.id, x: 0, y: 0, w: 2, h: 2 });
-        return c.json({ dashboard: { ...dashboard, data: { layout, elements } } })
+        const dash = await db.query.dashboards.findFirst({
+            where: and(eq(dashboards.shareToken, token), eq(dashboards.isPublic, true))
+        });
+        if (!dash) return c.json({ error: "Not found" }, 404)
+
+        const elements = await db.query.dashboardElements.findMany({
+            where: eq(dashboardElements.dashboardId, dash.id)
+        });
+
+        const layout = elements.map(el => el.config?.ui_layout ? { ...el.config.ui_layout, i: el.id } : { i: el.id, x: 0, y: 0, w: 2, h: 2 });
+        return c.json({ dashboard: { ...dash, data: { layout, elements } } })
     } catch (e) {
+        console.error("[Shared Dashboard] Error:", e);
         return c.json({ error: "Failed" }, 500)
     }
 })
@@ -925,46 +918,63 @@ dashboard.post("/dashboards/:dashboardId/files", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         const dashboardId = c.req.param("dashboardId")
-        const fullDashboardId = dashboardId.includes(':') ? dashboardId : `dashboard:${dashboardId}`
+        const rawDashId = dashboardId.includes(':') ? dashboardId.split(':')[1] : dashboardId
         const formData = await c.req.formData()
         const file = formData.get('file')
         if (!file || !(file instanceof File)) return c.json({ error: "No file" }, 400)
+
         const arrayBuffer = await file.arrayBuffer()
-        const base64 = Buffer.from(arrayBuffer).toString('base64')
+        const buffer = Buffer.from(arrayBuffer)
         const fileId = crypto.randomUUID()
-        await db.query(`
-            CREATE type::thing('dashboard_file', $fileId) CONTENT {
-                dashboard: ${fullDashboardId},
-                file_name: $fileName,
-                file_size: $fileSize,
-                file_type: $fileType,
-                file_data: $fileData,
-                uploaded_by: type::thing('user', $userId),
-                created_at: time::now()
-            };
-        `, { fileId, fileName: file.name, fileSize: file.size, fileType: file.type, fileData: base64, userId });
-        return c.json({ fileId })
+
+        // Use StorageManager to upload
+        const provider = await StorageManager.getProvider(userId);
+        const safeFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const key = `dashboards/${rawDashId}/files/${fileId}-${safeFilename}`;
+
+        const result = await provider.upload(key, buffer, file.type);
+
+        // Record in DB (files table)
+        const [record] = await db.insert(files).values({
+            id: fileId,
+            userId,
+            storageId: result.key,
+            filename: file.name,
+            size: file.size,
+            mimeType: file.type,
+            provider: provider.providerType || 'default'
+        }).returning();
+
+        return c.json({
+            fileId: record.id,
+            fileName: record.filename,
+            fileSize: record.size,
+            fileType: record.mimeType
+        })
     } catch (e) {
-        return c.json({ error: "Failed" }, 500)
+        console.error("[Dashboard File Upload] Error:", e);
+        return c.json({ error: "Failed to upload file" }, 500)
     }
 })
 
 dashboard.get("/files/:fileId", async (c) => {
     try {
         const fileId = c.req.param("fileId")
-        const [result] = await db.query(`SELECT * FROM type::thing('dashboard_file', $fileId);`, { fileId })
-        if (!result || result.length === 0) return c.json({ error: "Not found" }, 404)
-        const fileRecord = result[0]
-        const buffer = Buffer.from(fileRecord.file_data, 'base64')
-        return new Response(buffer, {
-            headers: {
-                'Content-Type': fileRecord.file_type || 'application/octet-stream',
-                'Content-Disposition': `attachment; filename="${fileRecord.file_name}"`,
-                'Content-Length': buffer.length.toString()
-            }
-        })
+        const rawFileId = fileId.includes(':') ? fileId.split(':')[1] : fileId
+
+        const file = await db.query.files.findFirst({
+            where: eq(files.id, rawFileId)
+        });
+
+        if (!file) return c.json({ error: "File not found" }, 404)
+
+        const provider = await StorageManager.getProvider(file.userId, file.provider);
+        const url = await provider.getPresignedUrl(file.storageId, 3600);
+
+        return c.redirect(url);
     } catch (e) {
-        return c.json({ error: "Failed" }, 500)
+        console.error("[Dashboard File Download] Error:", e);
+        return c.json({ error: "Failed to download file" }, 500)
     }
 })
 

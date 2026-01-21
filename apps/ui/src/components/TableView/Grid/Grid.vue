@@ -1,6 +1,6 @@
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef } from 'vue';
+import { ref, computed, onUnmounted, onMounted, nextTick, watch, toRef, unref } from 'vue';
 import { Engine } from '../Engine/Engine';
 import { colIndexToLabel, colLabelToIndex } from '../Engine/FormulaParser';
 import { useGridScroll } from '../../../composables/grid/useGridScroll';
@@ -501,7 +501,7 @@ const handleContextMenuAction = async (action: string) => {
                  let end = { row: r, col: c };
                  if (target.type === 'col-header' && target.col !== undefined) {
                      start = { row: 0, col: target.col };
-                     end = { row: rowCount - 1, col: target.col };
+                     end = { row: unref(rowCount) - 1, col: target.col };
                  } else if (rangeSelection.value) {
                     start = rangeSelection.value.start;
                     end = rangeSelection.value.end;
@@ -610,7 +610,7 @@ const isCellModified = (row: number, col: number) => {
 const getDisplayValue = (row: number, col: number) => {
   // Use renderKey to force update when engine changes
   const _ = renderKey.value;
-  if (row >= rowCount || col >= colCount) return '';
+  if (row >= unref(rowCount) || col >= unref(colCount)) return '';
   return props.engine.getDisplayValue({ row, col });
 };
 
@@ -950,16 +950,17 @@ const analyzeSpreadsheet = () => {
   const sampleData: any[][] = [];
   
   // Get headers from row 0
-  for (let col = 0; col < colCount; col++) {
+  const currentColCount = unref(colCount);
+  for (let col = 0; col < currentColCount; col++) {
     const cell = props.engine.getCell({ row: 0, col });
     headers.push(cell?.rawInput || colIndexToLabel(col));
   }
   
   // Get a SMALL sample (first 100 rows) for the AI to understand structure
-  const sampleLimit = Math.min(101, rowCount);
+  const sampleLimit = Math.min(101, unref(rowCount));
   for (let row = 1; row < sampleLimit; row++) {
     const rowData: any[] = [];
-    for (let col = 0; col < colCount; col++) {
+    for (let col = 0; col < currentColCount; col++) {
       rowData.push(props.engine.getDisplayValue({ row, col }));
     }
     sampleData.push(rowData);
@@ -968,9 +969,9 @@ const analyzeSpreadsheet = () => {
   return { 
     headers, 
     sampleData, 
-    rowCount, 
-    colCount,
-    isLargeDataset: rowCount > 100
+    rowCount: unref(rowCount), 
+    colCount: unref(colCount),
+    isLargeDataset: unref(rowCount) > 100
   };
 };
 
@@ -1015,16 +1016,18 @@ const generateAIFormula = async (userRequest: string) => {
             let finalResult = toolResult;
             
             // If the dataset is large, we MUST re-calculate locally for 100% accuracy
-            if (rowCount > 100) {
-              console.log(`[Grid] Large dataset (${rowCount} rows). Re-calculating ${toolResult.operation} locally...`);
+            const currentRowCount = unref(rowCount);
+            const currentColCount = unref(colCount);
+            if (currentRowCount > 100) {
+              console.log(`[Grid] Large dataset (${currentRowCount} rows). Re-calculating ${toolResult.operation} locally...`);
               
               const { operation, column, condition, groupByColumn } = toolResult;
               let data: any[][] = [];
               
               // 1. Collect all data from engine
-              for (let r = 1; r < rowCount; r++) {
+              for (let r = 1; r < currentRowCount; r++) {
                 const row: any[] = [];
-                for (let c = 0; c < colCount; c++) {
+                for (let c = 0; c < currentColCount; c++) {
                   row.push(props.engine.getDisplayValue({ row: r, col: c }));
                 }
                 data.push(row);
@@ -1231,7 +1234,8 @@ const applyCalculation = async (calculation: string, targetColumn: number, colum
   
   // Get all headers to map names to labels
   const headers: string[] = [];
-  for (let c = 0; c < colCount; c++) {
+  const currentColCount = unref(colCount);
+  for (let c = 0; c < currentColCount; c++) {
     const cell = props.engine.getCell({ row: 0, col: c });
     headers.push(cell?.rawInput || colIndexToLabel(c));
   }
@@ -1252,7 +1256,8 @@ const applyCalculation = async (calculation: string, targetColumn: number, colum
   }
 
   // Set formula for each data row
-  for (let row = 1; row < rowCount; row++) {
+  const currentRowCount = unref(rowCount);
+  for (let row = 1; row < currentRowCount; row++) {
     // Spreadsheet formulas are 1-based, and row 0 is header, so row 1 is spreadsheet row 2
     let rowFormula = baseFormula.replace(/__COL_([A-Z]+)__/g, (match, col) => `${col}${row + 1}`);
     await props.engine.setValue({ row, col: targetColumn }, rowFormula);
@@ -1266,7 +1271,8 @@ const applyCalculation = async (calculation: string, targetColumn: number, colum
 const applyConditionalFormatting = async (column: number, condition: string, color: string) => {
   props.engine.beginBatch();
   
-  for (let row = 1; row < rowCount; row++) {
+  const currentRowCount = unref(rowCount);
+  for (let row = 1; row < currentRowCount; row++) {
     const cell = props.engine.getCell({ row, col: column });
     if (cell && evaluateCondition(cell.value, condition)) {
       props.engine.setCellStyle({ row, col: column }, { color });
@@ -1358,7 +1364,8 @@ const applyFormulaToAll = async (formula: string, targetColumn: number, columnHe
       });
   };
 
-  for (let row = 1; row < rowCount; row++) {
+  const currentRowCount = unref(rowCount);
+  for (let row = 1; row < currentRowCount; row++) {
       // Check if we should stop? Maybe stop at last meaningful data row?
       // For now, let's just go up to the visible range or a hard limit, 
       // OR maybe analyze where data ends.
@@ -1500,12 +1507,14 @@ const moveSelection = (direction: 'up' | 'down' | 'left' | 'right') => {
   if (!selection.value) return;
   
   let { row, col } = selection.value;
+  const currentRowCount = unref(rowCount);
+  const currentColCount = unref(colCount);
   
   switch (direction) {
     case 'up': row = Math.max(0, row - 1); break;
-    case 'down': row = Math.min(rowCount - 1, row + 1); break;
+    case 'down': row = Math.min(currentRowCount - 1, row + 1); break;
     case 'left': col = Math.max(0, col - 1); break;
-    case 'right': col = Math.min(colCount - 1, col + 1); break;
+    case 'right': col = Math.min(currentColCount - 1, col + 1); break;
   }
   
   selection.value = { row, col };
@@ -1517,12 +1526,14 @@ const extendSelection = (direction: 'up' | 'down' | 'left' | 'right') => {
   if (!selection.value || !rangeSelection.value) return;
   
   let { row, col } = rangeSelection.value.end;
+  const currentRowCount = unref(rowCount);
+  const currentColCount = unref(colCount);
   
   switch (direction) {
     case 'up': row = Math.max(0, row - 1); break;
-    case 'down': row = Math.min(rowCount - 1, row + 1); break;
+    case 'down': row = Math.min(currentRowCount - 1, row + 1); break;
     case 'left': col = Math.max(0, col - 1); break;
-    case 'right': col = Math.min(colCount - 1, col + 1); break;
+    case 'right': col = Math.min(currentColCount - 1, col + 1); break;
   }
   
   rangeSelection.value = { ...rangeSelection.value, end: { row, col } };
@@ -1614,7 +1625,7 @@ const handlePaste = async () => {
       const targetCol = startCol + c;
       const value = rowData[c];
       
-      if (targetRow < rowCount && targetCol < colCount && value !== undefined) {
+      if (targetRow < unref(rowCount) && targetCol < unref(colCount) && value !== undefined) {
         await props.engine.setValue(
           { row: targetRow, col: targetCol },
           value
@@ -1705,7 +1716,7 @@ const onKeyDown = async (e: KeyboardEvent) => {
     if (selection.value) {
       rangeSelection.value = {
         start: { row: 0, col: 0 },
-        end: { row: rowCount - 1, col: colCount - 1 }
+        end: { row: unref(rowCount) - 1, col: unref(colCount) - 1 }
       };
     }
     return;
@@ -1830,7 +1841,8 @@ const executeSummaryRequest = async (columns: number[], metrics: string[]) => {
     summary.metrics[col] = {};
     
     const values: number[] = [];
-    for (let r = 1; r < rowCount; r++) {
+    const currentRowCount = unref(rowCount);
+    for (let r = 1; r < currentRowCount; r++) {
       const val = Number(String(props.engine.getDisplayValue({ row: r, col })).replace(/[^0-9.-]+/g, ''));
       if (!isNaN(val)) values.push(val);
     }
@@ -1861,7 +1873,7 @@ const executeSummaryRequest = async (columns: number[], metrics: string[]) => {
     });
   });
   
-  return { type: 'summary_result', summary, totalRows: rowCount - 1 };
+  return { type: 'summary_result', summary, totalRows: unref(rowCount) - 1 };
 };
 
 // Helper for chart suggestions
@@ -1871,7 +1883,8 @@ const executeChartSuggestionRequest = async (columns: number[]) => {
   columns.forEach(col => {
     const header = props.engine.getCell({ row: 0, col })?.rawInput || colIndexToLabel(col);
     const data: any[] = [];
-    for (let r = 1; r < Math.min(rowCount, 1000); r++) { // Sample for suggestions
+    const currentRowCount = unref(rowCount);
+    for (let r = 1; r < Math.min(currentRowCount, 1000); r++) { // Sample for suggestions
       data.push(props.engine.getDisplayValue({ row: r, col }));
     }
     
@@ -1895,7 +1908,8 @@ const executeForecastRequest = async (column: number, algorithm: string, periods
   toast.info(`Forecasting ${periods} periods using ${algorithm}...`);
   // Simplified linear regression forecast
   const values: number[] = [];
-  for (let r = 1; r < rowCount; r++) {
+  const currentRowCount = unref(rowCount);
+  for (let r = 1; r < currentRowCount; r++) {
     const val = Number(String(props.engine.getDisplayValue({ row: r, col: column })).replace(/[^0-9.-]+/g, ''));
     if (!isNaN(val)) values.push(val);
   }
@@ -1909,9 +1923,10 @@ const executeForecastRequest = async (column: number, algorithm: string, periods
   const n = values.length;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   for (let i = 0; i < n; i++) {
+    const yValue = values[i] as number;
     sumX += i;
-    sumY += values[i];
-    sumXY += i * values[i];
+    sumY += yValue;
+    sumXY += i * yValue;
     sumX2 += i * i;
   }
   
@@ -1919,7 +1934,7 @@ const executeForecastRequest = async (column: number, algorithm: string, periods
   const b = (sumY - m * sumX) / n;
   
   props.engine.beginBatch();
-  const targetCol = colCount; // Add to a new column
+  const targetCol = unref(colCount); // Add to a new column
   await props.engine.setValue({ row: 0, col: targetCol }, 'Forecast');
   
   for (let i = 0; i < periods; i++) {
@@ -1937,14 +1952,16 @@ const executeCleaningRequest = async (operation: string, column?: number) => {
   props.engine.beginBatch();
   
   if (operation === 'trim_whitespace' && column !== undefined) {
-    for (let r = 1; r < rowCount; r++) {
+    const currentRowCount = unref(rowCount);
+    for (let r = 1; r < currentRowCount; r++) {
       const val = props.engine.getDisplayValue({ row: r, col: column });
       if (typeof val === 'string') {
         await props.engine.setValue({ row: r, col: column }, val.trim());
       }
     }
   } else if (operation === 'fix_case' && column !== undefined) {
-    for (let r = 1; r < rowCount; r++) {
+    const currentRowCount = unref(rowCount);
+    for (let r = 1; r < currentRowCount; r++) {
       const val = props.engine.getDisplayValue({ row: r, col: column });
       if (typeof val === 'string') {
         await props.engine.setValue({ row: r, col: column }, val.charAt(0).toUpperCase() + val.slice(1).toLowerCase());
@@ -1954,9 +1971,11 @@ const executeCleaningRequest = async (operation: string, column?: number) => {
     // Basic row-level deduplication
     const seen = new Set();
     const rowsToDelete = [];
-    for (let r = 1; r < rowCount; r++) {
+    const currentRowCount = unref(rowCount);
+    const currentColCount = unref(colCount);
+    for (let r = 1; r < currentRowCount; r++) {
       const rowData = [];
-      for (let c = 0; c < colCount; c++) {
+      for (let c = 0; c < currentColCount; c++) {
         rowData.push(props.engine.getDisplayValue({ row: r, col: c }));
       }
       const rowStr = JSON.stringify(rowData);

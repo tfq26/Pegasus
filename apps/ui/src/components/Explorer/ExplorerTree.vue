@@ -59,6 +59,8 @@ const emit = defineEmits<{
   'delete-file': [file: any]
   'delete-note': [note: any]
   'selection-change': [items: { type: string, id: string }[]]
+  'delete-files': [files: any[]]
+  'delete-notes': [notes: any[]]
 }>()
 
 const { schemaFor } = useExplorerSchema(computed(() => props.connections))
@@ -175,6 +177,39 @@ const initialExpanded = computed(() => [
   'root:notes',
   ...props.connections.map(c => c.id)
 ])
+const handleDeleteFile = (file: any) => {
+  const isSelected = selectedIds.value.includes(`file:${file.id}`)
+  const fileItems = selectedIds.value
+    .filter(id => id.startsWith('file:'))
+    .map(id => {
+       const fid = id.replace('file:', '')
+       return props.files?.find(f => f.id === fid)
+    })
+    .filter(Boolean)
+
+  if (isSelected && fileItems.length > 1) {
+    emit('delete-files', fileItems)
+  } else {
+    emit('delete-file', file)
+  }
+}
+
+const handleDeleteNote = (note: any) => {
+  const isSelected = selectedIds.value.includes(`note:${note.id}`)
+  const noteItems = selectedIds.value
+    .filter(id => id.startsWith('note:'))
+    .map(id => {
+       const nid = id.replace('note:', '')
+       return props.notes?.find(n => n.id === nid)
+    })
+    .filter(Boolean)
+
+  if (isSelected && noteItems.length > 1) {
+    emit('delete-notes', noteItems)
+  } else {
+    emit('delete-note', note)
+  }
+}
 </script>
 
 <template>
@@ -375,7 +410,7 @@ const initialExpanded = computed(() => [
                         </File>
                     </ContextMenuTrigger>
                     <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-                        <ContextMenuItem @select="emit('delete-file', file)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                        <ContextMenuItem @select="handleDeleteFile(file)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
                             <Trash class="w-3.5 h-3.5 mr-2" />
                             Delete File
                         </ContextMenuItem>

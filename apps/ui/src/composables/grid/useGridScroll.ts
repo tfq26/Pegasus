@@ -1,10 +1,10 @@
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch, onUnmounted } from 'vue';
 import type { Engine } from '../../../Engine/Engine';
 
 export function useGridScroll(engine: Engine) {
     // Configuration
-    const rowCount = 1000;
-    const colCount = 26; // Reduced to 26 (A-Z) for better horizontal fit
+    const rowCount = computed(() => engine.config.rowCount || 100);
+    const colCount = computed(() => engine.columnNames.length || 26);
     const rowHeight = 24;
     const defaultColWidth = 100;
 
@@ -54,7 +54,7 @@ export function useGridScroll(engine: Engine) {
     // Calculate total width of all columns
     const totalWidth = computed(() => {
         let total = 40; // Row header width
-        for (let col = 0; col < colCount; col++) {
+        for (let col = 0; col < colCount.value; col++) {
             total += getColWidth(col);
         }
         return total;
@@ -74,9 +74,41 @@ export function useGridScroll(engine: Engine) {
     const headerContainer = ref<HTMLElement | null>(null);
 
     // Virtualization State
-    const virtualState = ref({
+    const virtualState = reactive({
         startRow: 0,
         visibleRowCount: 40 // Initial buffer
+    });
+
+    const updateVisibleRowCount = () => {
+        if (gridContainer.value) {
+            const containerHeight = gridContainer.value.clientHeight;
+            // Calculate how many rows fit in the container, plus a buffer
+            const count = Math.ceil(containerHeight / rowHeight) + 5;
+            virtualState.visibleRowCount = count;
+            console.log(`[useGridScroll] Updated visibleRowCount to ${count} for height ${containerHeight}px`);
+        }
+    };
+
+    let resizeObserver: ResizeObserver | null = null;
+
+    watch(gridContainer, (newVal) => {
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+        }
+
+        if (newVal) {
+            resizeObserver = new ResizeObserver(() => {
+                updateVisibleRowCount();
+            });
+            resizeObserver.observe(newVal);
+            updateVisibleRowCount(); // Initial call
+        }
+    });
+
+    onUnmounted(() => {
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+        }
     });
 
     const onScroll = (e: Event) => {
@@ -95,13 +127,13 @@ export function useGridScroll(engine: Engine) {
         const startRow = Math.floor(scrollTop / rowHeight);
 
         // Update state if changed
-        if (startRow !== virtualState.value.startRow) {
-            virtualState.value.startRow = startRow;
+        if (startRow !== virtualState.startRow) {
+            virtualState.startRow = startRow;
         }
     };
 
     const visibleRows = computed(() => {
-        return Array.from({ length: virtualState.value.visibleRowCount }, (_, i) => i); // 0 to visibleRowCount-1
+        return Array.from({ length: virtualState.visibleRowCount }, (_, i) => i); // 0 to visibleRowCount-1
     });
 
     const scrollToCell = (row: number, col: number) => {

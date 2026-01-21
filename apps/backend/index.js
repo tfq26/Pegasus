@@ -1540,6 +1540,11 @@ app.post("/query", async (c) => {
     return c.json({ error: `Provider '${provider}' not supported` }, 400)
   }
 
+  // Force Read Only for queries (prevents locking)
+  if (provider === 'duckdb' && connection) {
+    connection = { ...connection, readOnly: true }
+  }
+
   const adapter = new Adapter({ ...connection, userId })
   let result = null
   let error = null
@@ -1686,6 +1691,11 @@ app.post("/schema", async (c) => {
 
     if (!Adapter) {
       return c.json({ error: `Provider '${provider}' not supported` }, 400)
+    }
+
+    // Force Read Only for schema fetching (prevents locking)
+    if (provider === 'duckdb' && connection) {
+      connection = { ...connection, readOnly: true }
     }
 
     const adapter = new Adapter(connection)

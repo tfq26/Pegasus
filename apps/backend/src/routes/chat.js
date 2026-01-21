@@ -401,14 +401,23 @@ chat.post("/ai/health-profile", async (c) => {
         const provider = connRow.type
         const Adapter = adapters[provider]
         if (!Adapter) return c.json({ error: "Provider not supported" }, 400)
-        const adapter = new Adapter(config[provider] || config)
-        await adapter.connect()
-        const tables = await adapter.listCollections();
-        const stats = `Provider: ${provider}, Total Tables: ${tables.length}`
-        const prompt = `Database Health Specialist. Analyze: ${stats}. Return JSON: { "status": "...", "summary": "...", "recommendations": [] }`
-        const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model, json: true })
-        if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'health_profile', 'Health Check')
-        return c.json(JSON.parse(response.text.replace(/```json | ```/g, '').trim()))
+
+        let adapterConfig = config[provider] || config
+        if (provider === 'duckdb' && adapterConfig) {
+            adapterConfig = { ...adapterConfig, readOnly: true }
+        }
+        const adapter = new Adapter(adapterConfig)
+        try {
+            await adapter.connect()
+            const tables = await adapter.listCollections();
+            const stats = `Provider: ${provider}, Total Tables: ${tables.length}`
+            const prompt = `Database Health Specialist. Analyze: ${stats}. Return JSON: { "status": "...", "summary": "...", "recommendations": [] }`
+            const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model, json: true })
+            if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'health_profile', 'Health Check')
+            return c.json(JSON.parse(response.text.replace(/```json | ```/g, '').trim()))
+        } finally {
+            await adapter.disconnect().catch(() => { })
+        }
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
 
@@ -428,13 +437,22 @@ chat.post("/ai/explain-table", async (c) => {
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
         const provider = connRow.type
         const Adapter = adapters[provider]
-        const adapter = new Adapter(config[provider] || config)
-        await adapter.connect()
-        const sample = await adapter.query(`SELECT * FROM ${tableName} LIMIT 3`)
-        const prompt = `Explain table "${tableName}" based on sample: ${JSON.stringify(sample)}`
-        const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model })
-        if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'explain_table', 'Explain Table')
-        return c.json({ explanation: response.text })
+
+        let adapterConfig = config[provider] || config
+        if (provider === 'duckdb' && adapterConfig) {
+            adapterConfig = { ...adapterConfig, readOnly: true }
+        }
+        const adapter = new Adapter(adapterConfig)
+        try {
+            await adapter.connect()
+            const sample = await adapter.query(`SELECT * FROM ${tableName} LIMIT 3`)
+            const prompt = `Explain table "${tableName}" based on sample: ${JSON.stringify(sample)}`
+            const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model })
+            if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'explain_table', 'Explain Table')
+            return c.json({ explanation: response.text })
+        } finally {
+            await adapter.disconnect().catch(() => { })
+        }
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
 
@@ -467,13 +485,22 @@ chat.post("/ai/explain-query", async (c) => {
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
         const provider = connRow.type
         const Adapter = adapters[provider]
-        const adapter = new Adapter(config[provider] || config)
-        await adapter.connect()
-        const plan = await captureQueryPlan(adapter, query, provider)
-        const prompt = `Explain query: ${query}. Plan: ${plan}`
-        const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model })
-        if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'query_explain', 'Explain Query')
-        return c.json({ explanation: response.text, plan })
+
+        let adapterConfig = config[provider] || config
+        if (provider === 'duckdb' && adapterConfig) {
+            adapterConfig = { ...adapterConfig, readOnly: true }
+        }
+        const adapter = new Adapter(adapterConfig)
+        try {
+            await adapter.connect()
+            const plan = await captureQueryPlan(adapter, query, provider)
+            const prompt = `Explain query: ${query}. Plan: ${plan}`
+            const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model })
+            if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'query_explain', 'Explain Query')
+            return c.json({ explanation: response.text, plan })
+        } finally {
+            await adapter.disconnect().catch(() => { })
+        }
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
 
@@ -493,13 +520,22 @@ chat.post("/ai/optimize-query", async (c) => {
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
         const provider = connRow.type
         const Adapter = adapters[provider]
-        const adapter = new Adapter(config[provider] || config)
-        await adapter.connect()
-        const plan = await captureQueryPlan(adapter, query, provider)
-        const prompt = `Optimize query: ${query}. Plan: ${plan}. Return JSON: { "optimizedQuery": "...", "explanation": "..." }`
-        const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model, json: true })
-        if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'query_optimize', 'Optimize Query')
-        return c.json(JSON.parse(response.text.replace(/```json | ```/g, '').trim()))
+
+        let adapterConfig = config[provider] || config
+        if (provider === 'duckdb' && adapterConfig) {
+            adapterConfig = { ...adapterConfig, readOnly: true }
+        }
+        const adapter = new Adapter(adapterConfig)
+        try {
+            await adapter.connect()
+            const plan = await captureQueryPlan(adapter, query, provider)
+            const prompt = `Optimize query: ${query}. Plan: ${plan}. Return JSON: { "optimizedQuery": "...", "explanation": "..." }`
+            const response = await aiClient.generateContent([{ role: 'user', content: prompt }], { model, json: true })
+            if (response.usage) await logAiUsage(payload.sub, response.usage.totalTokens, model, 'query_optimize', 'Optimize Query')
+            return c.json(JSON.parse(response.text.replace(/```json | ```/g, '').trim()))
+        } finally {
+            await adapter.disconnect().catch(() => { })
+        }
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
 
@@ -559,10 +595,10 @@ chat.post("/ai/generate", async (c) => {
         // Fetch user first to get settings
         const userRow = await db.query.users.findFirst({
             where: eq(users.id, userId),
-            columns: { settings: true }
+            columns: { config: true }
         });
 
-        userSettings = userRow?.settings || null
+        userSettings = userRow?.config || null
         activeModel = userSettings?.activeModel || null
 
         if (connectionId && connectionId !== 'undefined' && connectionId !== 'null' && connectionId !== 'local') {
@@ -612,55 +648,59 @@ chat.post("/ai/generate", async (c) => {
         } else {
             const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
             if (Adapter) {
-                adapter = new Adapter(adapterConfig)
-                await adapter.connect()
-                const allTables = await adapter.listCollections()
-                schemaInfo.tables = allTables.slice(0, 50)
-                console.log(`[AI Generate] Found ${allTables.length} tables. Active table: ${activeTable || 'none'}`)
+                let finalAdapterConfig = adapterConfig
+                if (provider === 'duckdb' && finalAdapterConfig) {
+                    finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
+                }
+                adapter = new Adapter(finalAdapterConfig)
+                try {
+                    await adapter.connect()
+                    const allTables = await adapter.listCollections()
+                    schemaInfo.tables = allTables.slice(0, 50)
+                    console.log(`[AI Generate] Found ${allTables.length} tables. Active table: ${activeTable || 'none'}`)
 
-                // Get schema for the active table or the first few tables if no active table
-                if (typeof adapter.getOneTableSchema === 'function') {
-                    let tablesToFetch = []
+                    // Get schema for the active table or the first few tables if no active table
+                    if (typeof adapter.getOneTableSchema === 'function') {
+                        let tablesToFetch = []
 
-                    if (activeTable && allTables.includes(activeTable)) {
-                        tablesToFetch = [activeTable]
-                    } else if (!activeTable && allTables.length > 0) {
-                        // Fetch schema for first few tables to give AI context
-                        tablesToFetch = allTables.slice(0, 5)
-                    }
+                        if (activeTable && allTables.includes(activeTable)) {
+                            tablesToFetch = [activeTable]
+                        } else if (!activeTable && allTables.length > 0) {
+                            // Fetch schema for first few tables to give AI context
+                            tablesToFetch = allTables.slice(0, 5)
+                        }
 
-                    // Initialize sample values object
-                    schemaInfo.sampleValues = {}
+                        // Initialize sample values object
+                        schemaInfo.sampleValues = {}
 
-                    for (const t of tablesToFetch) {
-                        schemaInfo.detailedSchema[t] = await adapter.getOneTableSchema(t)
+                        for (const t of tablesToFetch) {
+                            schemaInfo.detailedSchema[t] = await adapter.getOneTableSchema(t)
 
-                        // Fetch sample data to show AI what values look like
-                        if (typeof adapter.sampleCollection === 'function') {
-                            try {
-                                const samples = await adapter.sampleCollection(t, 5)
-                                if (samples && samples.length > 0) {
-                                    schemaInfo.sampleValues[t] = {}
-                                    // Get unique sample values for each column
-                                    for (const col of schemaInfo.detailedSchema[t] || []) {
-                                        const values = samples.map(row => row[col.name]).filter(v => v != null)
-                                        const uniqueValues = [...new Set(values)].slice(0, 3)
-                                        if (uniqueValues.length > 0) {
-                                            schemaInfo.sampleValues[t][col.name] = uniqueValues
+                            // Fetch sample data to show AI what values look like
+                            if (typeof adapter.sampleCollection === 'function') {
+                                try {
+                                    const samples = await adapter.sampleCollection(t, 5)
+                                    if (samples && samples.length > 0) {
+                                        schemaInfo.sampleValues[t] = {}
+                                        // Get unique sample values for each column
+                                        for (const col of schemaInfo.detailedSchema[t] || []) {
+                                            const values = samples.map(row => row[col.name]).filter(v => v != null)
+                                            const uniqueValues = [...new Set(values)].slice(0, 3)
+                                            if (uniqueValues.length > 0) {
+                                                schemaInfo.sampleValues[t][col.name] = uniqueValues
+                                            }
                                         }
                                     }
+                                } catch (e) {
+                                    console.warn(`[AI Generate] Failed to fetch samples for ${t}:`, e.message)
                                 }
-                            } catch (e) {
-                                console.warn(`[AI Generate] Failed to fetch samples for ${t}:`, e.message)
                             }
                         }
-                    }
 
-                    console.log(`[AI Generate] Fetched schema for ${tablesToFetch.length} tables with sample values`)
-                    if (tablesToFetch.length > 0) {
-                        console.log(`[AI Generate] Schema for first table:`, schemaInfo.detailedSchema[tablesToFetch[0]])
-                        console.log(`[AI Generate] Sample values for first table:`, schemaInfo.sampleValues[tablesToFetch[0]])
+                        console.log(`[AI Generate] Fetched schema for ${tablesToFetch.length} tables with sample values`)
                     }
+                } finally {
+                    await adapter.disconnect().catch(() => { })
                 }
             }
         }
@@ -676,16 +716,11 @@ chat.post("/ai/generate", async (c) => {
         const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
         aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
 
-        // Send normalized schema to AI
-        // Send normalized schema to AI
         // Append OneContext block to prompt
         const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
 
         const result = await aiClient.generateQuery(finalPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
         let generatedQuery = typeof result === 'string' ? result : result.text
-
-        console.log(`[AI Generate] Raw AI response:`, JSON.stringify(result).substring(0, 500))
-        console.log(`[AI Generate] Extracted query:`, generatedQuery?.substring(0, 200))
 
         if (result.toolCalls?.length > 0) {
             const tc = result.toolCalls.find(t => t.function.name === 'generate_table')

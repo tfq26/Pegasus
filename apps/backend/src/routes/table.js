@@ -404,6 +404,11 @@ table.post("/table/:tableName/schema", async (c) => {
         const Adapter = adapters[provider]
         if (!Adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
 
+        // Force Read Only for DuckDB schema
+        if (provider === 'duckdb' && connection) {
+            connection = { ...connection, readOnly: true }
+        }
+
         console.log('[Table Schema] Connection object:', JSON.stringify(connection, null, 2))
         const adapter = new Adapter(connection)
 
@@ -469,6 +474,11 @@ table.post("/table/:tableName/query", async (c) => {
 
         const Adapter = adapters[provider]
         if (!Adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
+
+        // Force Read Only for DuckDB query
+        if (provider === 'duckdb' && connection) {
+            connection = { ...connection, readOnly: true }
+        }
 
         console.log('[Table Query] Connection object:', JSON.stringify(connection, null, 2))
         const adapter = new Adapter(connection)
@@ -681,6 +691,11 @@ table.get('/:tableName/interpret', async (c) => {
 
         const Adapter = adapters[provider || 'duckdb']
         if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
+
+        if ((provider === 'duckdb' || provider === 'file') && connection) {
+            connection = { ...connection, readOnly: true }
+        }
+
         const adapter = new Adapter(connection)
 
         try {
@@ -800,6 +815,12 @@ table.post("/table/:tableName/load", async (c) => {
 
         const Adapter = adapters[provider]
         if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
+
+        // Force Read Only for table loading
+        if (provider === 'duckdb' && connection) {
+            connection = { ...connection, readOnly: true }
+        }
+
         const adapter = new Adapter(connection)
 
         try {

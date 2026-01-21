@@ -1,45 +1,86 @@
 import duckdb from 'duckdb';
+import path from 'path';
 
 export class DuckDBAdapter {
+    static dbCache = new Map(); // path -> { db, refCount, mode }
+    static inProgressConnections = new Map(); // path -> Promise
+
     constructor(config) {
         this.config = config;
         this.db = null;
         this.connection = null;
         this.isInternal = config?.isInternal || false;
-        this.dbPath = config?.path || ':memory:';
 
-        console.log(`[DuckDB] Creating adapter. Path: ${this.dbPath}, isInternal: ${this.isInternal}`);
+        // Normalize path to absolute to ensure cache hits work on Windows
+        const rawPath = config?.path || ':memory:';
+        this.dbPath = rawPath === ':memory:' ? rawPath : path.resolve(rawPath);
+
+        console.log(`[DuckDB][PID:${process.pid}] Creating adapter. Path: ${this.dbPath}`);
     }
 
     async connect() {
+        if (this.db) return;
+
+        // If a connection for this path is already in progress, wait for it
+        if (DuckDBAdapter.inProgressConnections.has(this.dbPath)) {
+            console.log(`[DuckDB][PID:${process.pid}] Connection already in progress for ${this.dbPath}, waiting...`);
+            await DuckDBAdapter.inProgressConnections.get(this.dbPath);
+        }
+
+        const useReadOnly = !!this.config?.readOnly;
+        const entry = DuckDBAdapter.dbCache.get(this.dbPath);
+
+        if (entry) {
+            this.db = entry.db;
+            entry.refCount++;
+            console.log(`[DuckDB][PID:${process.pid}] Reusing cached database for ${this.dbPath}. RefCount: ${entry.refCount}, Mode: ${entry.mode}`);
+            return this._finishConnect();
+        }
+
+        // Create a new connection promise
+        const connectionPromise = (async () => {
+            const mode = useReadOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
+            console.log(`[DuckDB][PID:${process.pid}] Opening physical database for ${this.dbPath} (Mode: ${useReadOnly ? 'READ_ONLY' : 'READ_WRITE'})`);
+
+            return new Promise((resolve, reject) => {
+                this.db = new duckdb.Database(this.dbPath, mode, (err) => {
+                    if (err) {
+                        console.error(`[DuckDB][PID:${process.pid}] Failed to open database ${this.dbPath}:`, err.message);
+                        reject(err);
+                        return;
+                    }
+
+                    // Success!
+                    DuckDBAdapter.dbCache.set(this.dbPath, {
+                        db: this.db,
+                        refCount: 1,
+                        mode: useReadOnly ? 'READ_ONLY' : 'READ_WRITE'
+                    });
+
+                    this._finishConnect().then(resolve).catch(reject);
+                });
+            });
+        })();
+
+        DuckDBAdapter.inProgressConnections.set(this.dbPath, connectionPromise);
+
+        try {
+            await connectionPromise;
+        } finally {
+            DuckDBAdapter.inProgressConnections.delete(this.dbPath);
+        }
+    }
+
+    async _finishConnect() {
+        if (!this.db) throw new Error('Database instance not available');
         return new Promise((resolve, reject) => {
             try {
-                // Create database instance with READ_ONLY mode to allow concurrent access
-                this.db = new duckdb.Database(this.dbPath, {
-                    access_mode: 'READ_WRITE' // Default to READ_WRITE to allow creation
-                }, (err) => {
-                    if (err) {
-                        // If it fails, try without options (default)
-                        this.db = new duckdb.Database(this.dbPath, (err2) => {
-                            if (err2) {
-                                console.error('[DuckDB] Database creation error:', err2);
-                                return reject(err2);
-                            }
-                            // Create connection
-                            this.connection = this.db.connect();
-                            console.log(`[DuckDB] Connected to database: ${this.dbPath}`);
-                            resolve();
-                        });
-                    } else {
-                        // Create connection
-                        this.connection = this.db.connect();
-                        console.log(`[DuckDB] Connected to database: ${this.dbPath}`);
-                        resolve();
-                    }
-                });
-            } catch (e) {
-                console.error('[DuckDB] Connection error:', e);
-                reject(e);
+                this.connection = this.db.connect();
+                console.log(`[DuckDB][PID:${process.pid}] Connected to database: ${this.dbPath}`);
+                resolve();
+            } catch (err) {
+                console.error(`[DuckDB][PID:${process.pid}] Connection failed:`, err.message);
+                reject(err);
             }
         });
     }
@@ -48,12 +89,27 @@ export class DuckDBAdapter {
         return new Promise((resolve) => {
             if (this.connection) {
                 this.connection.close(() => {
-                    if (this.db) {
-                        this.db.close(() => {
-                            console.log('[DuckDB] Disconnected');
+                    const cached = DuckDBAdapter.dbCache.get(this.dbPath);
+                    if (cached) {
+                        cached.refCount--;
+                        console.log(`[DuckDB] Decremented refCount for ${this.dbPath}. Current: ${cached.refCount}`);
+
+                        // We keep the database instance open even if refCount is 0 to avoid constant re-opening locks
+                        // but if you want to be strict, you can close it here.
+                        // Given the "already open" issue, it's safer to keep the handle if we might need it again soon.
+                        // However, let's close it if refCount is 0 to be a good citizen, 
+                        // as long as we don't have overlapping requests (which refCount handles).
+                        if (cached.refCount <= 0) {
+                            cached.db.close(() => {
+                                DuckDBAdapter.dbCache.delete(this.dbPath);
+                                console.log(`[DuckDB] Closed and removed from cache: ${this.dbPath}`);
+                                resolve();
+                            });
+                        } else {
                             resolve();
-                        });
+                        }
                     } else {
+                        // Should not happen if everything is balanced
                         resolve();
                     }
                 });
