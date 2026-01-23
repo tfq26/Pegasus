@@ -44,7 +44,7 @@ onMounted(async () => {
 const canAddConnection = computed(() => {
   if (isSaving.value) return false
   const f = form.value
-  if (!f.nickname || !f.provider) return false
+  if (!f.alias || !f.provider) return false
   if (f.provider === 'mysql') return !!(f.mysql.host && f.mysql.user && f.mysql.database)
   if (f.provider === 'postgres') return !!(f.postgres.host && f.postgres.user && f.postgres.database)
   if (f.provider === 'mongodb') return !!f.mongodb.url
@@ -68,6 +68,7 @@ const handleSave = async () => {
   isSaving.value = true
   try {
     // Use connection store instead of direct API call
+    form.value.nickname = form.value.alias
     await connectionStore.saveConnection(form.value as any)
     toast.success('Connection added')
     emit('update:open', false)

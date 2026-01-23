@@ -133,9 +133,11 @@ function statusLabel(state?: ConnectionSchemaState) {
             <Cloud v-else-if="connection.provider === 'cloud_storage'" class="w-4 h-4" />
             <Database v-else class="w-4 h-4" />
           </div>
-          <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5">
-              <p class="font-semibold text-foreground transition-colors truncate">{{ connection.nickname }}</p>
+              <p class="font-semibold text-foreground transition-colors truncate" :title="connection.alias ? `Original: ${connection.nickname}` : connection.nickname">
+                {{ connection.alias || connection.nickname }}
+              </p>
               <Lock v-if="connection.isLocked" class="w-3 h-3 text-amber-500/80 shrink-0" />
             </div>
             <div class="flex items-center gap-2 mt-0.5">

@@ -114,9 +114,20 @@
                 <span>{{ copied === msg.content ? 'Copied' : 'Copy' }}</span>
               </button>
 
-              <!-- Show in Results (Assistant only) -->
+              <!-- Generate Insights Button (Assistant messages with results) -->
               <button 
-                v-if="msg.role === 'assistant'"
+                v-if="msg.role === 'assistant' && (msg as any).meta?.canGenerateInsights"
+                @click="$emit('generate-insights', { query: (msg as any).meta.query, results: (msg as any).meta.resultPreview, messageIndex: idx })" 
+                class="flex items-center space-x-2 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 hover:bg-emerald-500/20 transition-all"
+                title="Generate AI insights for these results"
+              >
+                <Sparkles class="w-3 h-3" />
+                <span>Generate Insights</span>
+              </button>
+
+              <!-- Show in Results (Assistant only - if results exist) -->
+              <button 
+                v-if="msg.role === 'assistant' && (msg as any).meta?.hasResults"
                 @click="$emit('show-results')" 
                 class="flex items-center space-x-2 px-2 py-1 rounded bg-violet-500/10 border border-violet-500/20 text-[10px] text-violet-400 hover:bg-violet-500/20 transition-all"
                 title="Open results in data panel"
@@ -230,7 +241,7 @@ const props = defineProps<{
   isThinking?: boolean
 }>()
 
-const emit = defineEmits(['update:input', 'submit', 'add-to-dashboard', 'show-results'])
+const emit = defineEmits(['update:input', 'submit', 'add-to-dashboard', 'show-results', 'generate-insights'])
 
 const localInput = ref(props.input)
 const isInputFocused = ref(false)

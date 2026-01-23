@@ -1,4 +1,4 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage' | 'duckdb'
 
 export type MySQLConfig = {
   host: string
@@ -46,6 +46,12 @@ export type SQLiteConfig = {
   enableSync?: boolean
 }
 
+export type DuckDBConfig = {
+  path: string
+  schema?: string
+  tables?: string[]
+}
+
 export type FileConfig = {
   path: string
   type?: 'csv' | 'json' | 'xlsx'
@@ -84,6 +90,7 @@ export type CloudStorageConfig = {
 export type ConnectionEntry = {
   id: string
   nickname: string
+  alias?: string
   description?: string
   provider: Provider
   space?: string
@@ -92,6 +99,7 @@ export type ConnectionEntry = {
   mongodb?: MongoConfig
   kusto?: KustoConfig
   sqlite?: SQLiteConfig
+  duckdb?: DuckDBConfig
   file?: FileConfig
   surrealdb?: SurrealConfig
   ai_provider?: AIProviderConfig
@@ -137,7 +145,7 @@ export const buildConnectionPayload = (
   entry: ConnectionEntry,
   overrides: ConnectionOverrides = {},
 ) => {
-  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.surrealdb || entry.kusto || entry.ai_provider || entry.cloud_storage;
+  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.duckdb || entry.surrealdb || entry.kusto || entry.ai_provider || entry.cloud_storage;
   if (!isRawEntry) return { ...entry, ...overrides };
 
   let basePayload: any = {}
@@ -158,6 +166,9 @@ export const buildConnectionPayload = (
       break
     case 'sqlite':
       basePayload = { provider: 'sqlite', ...entry.sqlite }
+      break
+    case 'duckdb':
+      basePayload = { provider: 'duckdb', ...entry.duckdb }
       break
     case 'file':
       // File uploads use DuckDB, path is stored in sqlite.path

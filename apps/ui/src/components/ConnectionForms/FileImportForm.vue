@@ -2,8 +2,12 @@
 import { ref } from 'vue'
 import { Upload } from 'lucide-vue-next'
 import { uploadFile } from '@/lib/api'
+import { api } from '@/lib/apiClient'
 import { useSpaceStore } from '@/stores/space'
+import { useConnectionStore } from '@/stores/connection'
+import { toast } from '@/composables/useNotifications'
 import type { ConnectionFormState } from '@/views/settings/types'
+import SmartImportDialog from '@/components/Import/SmartImportDialog.vue'
 
 const props = defineProps<{
   connectionForm: ConnectionFormState
@@ -14,16 +18,26 @@ const emit = defineEmits<{
 }>()
 
 const spaceStore = useSpaceStore()
+const connectionStore = useConnectionStore()
 
 const isUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const tempError = ref<string | null>(null)
 const isDragging = ref(false)
 
+const smartImportOpen = ref(false)
+const smartImportFiles = ref<any[]>([])
+
 const handleDrop = async (e: DragEvent) => {
     isDragging.value = false
     const file = e.dataTransfer?.files[0]
-    if (file) await processFile(file)
+    if (file) {
+      if (file.name.toLowerCase().endsWith('.zip')) {
+        await handleZipUpload(file)
+      } else {
+        await processFile(file)
+      }
+    }
 }
 
 const handleFileUpload = async (event: Event) => {
@@ -32,7 +46,50 @@ const handleFileUpload = async (event: Event) => {
 
   const file = target.files[0]
   if (!file) return
+  
+  // If ZIP, trigger smart flow
+  if (file.name.toLowerCase().endsWith('.zip')) {
+    await handleZipUpload(file)
+    target.value = ''
+    return
+  }
+  
   await processFile(file)
+}
+
+const handleZipUpload = async (file: File) => {
+    if (!spaceStore.currentSpaceId) return
+    isUploading.value = true
+    
+    try {
+        toast.info(`Analyzing ZIP: ${file.name}...`)
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('spaceId', (spaceStore.currentSpaceId as unknown) as string)
+
+        const res = await api.upload<any>('/import/upload-zip', formData)
+        
+        if (res.suggestions && res.suggestions.length > 0) {
+            smartImportFiles.value = res.suggestions
+            smartImportOpen.value = true
+        } else {
+            toast.warning('No processable files found in ZIP')
+        }
+    } catch (e: any) {
+        toast.error('ZIP upload failed', { description: e.message })
+    } finally {
+        isUploading.value = false
+    }
+}
+
+const onSmartImportComplete = async () => {
+    // Refresh both contexts
+    await Promise.all([
+        spaceStore.fetchSpaceContext(),
+        connectionStore.loadConnections(true)
+    ])
+    toast.success('All items imported successfully')
+    emit('upload-success')
 }
 
 const processFile = async (file: File) => {
@@ -41,7 +98,7 @@ const processFile = async (file: File) => {
 
   try {
     // Pass current spaceId for Smart Ingestion (auto-connect)
-    const result = await uploadFile(file, spaceStore.currentSpaceId as string, true)
+    const result = await uploadFile(file, (spaceStore.currentSpaceId as unknown) as string, true)
     if (result.success) {
       if (result.provider === 'duckdb') {
         // DuckDB upload (new system)
@@ -84,10 +141,12 @@ const processFile = async (file: File) => {
       <input 
           type="file" 
           ref="fileInput"
-          accept=".xlsx,.xml,.json,.sqlite,.db"
+          accept=".xlsx,.xml,.json,.sqlite,.db,.zip"
           @change="handleFileUpload"
           class="hidden"
       />
+      
+      <!-- Enable Folder Upload via webkitdirectory hiddenly or just let user select zip -->
 
       <!-- Success State -->
       <div 
@@ -136,13 +195,20 @@ const processFile = async (file: File) => {
           
           <div class="text-center space-y-1">
              <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                 {{ isUploading ? 'Uploading...' : 'Click to select file' }}
+                 {{ isUploading ? 'Uploading & Analyzing...' : 'Select File or ZIP Folder' }}
              </p>
              <p class="text-xs text-muted-foreground">
-                 Supported formats: .xlsx, .xml, .json, .sqlite, .db
+                 Connect data files or import an entire folder via ZIP
              </p>
           </div>
       </div>
+
+      <SmartImportDialog 
+        v-model:open="smartImportOpen"
+        :files="smartImportFiles"
+        :space-id="(spaceStore.currentSpaceId as unknown) as string"
+        @complete="onSmartImportComplete"
+      />
 
       <p v-if="tempError" class="text-xs font-medium text-rose-500 flex items-center justify-center gap-2 mt-2">
          <span>⚠️</span> {{ tempError }}

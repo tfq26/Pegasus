@@ -4,7 +4,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -13,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useSpaceStore } from '@/stores/space'
-import { Loader2, Plus, Info } from 'lucide-vue-next'
+import { Loader2, Info, X, Box, Code, Database, Globe, Lock, Layout, Cloud, Shield } from 'lucide-vue-next'
 
 const props = defineProps<{
   open: boolean
@@ -27,10 +26,26 @@ const emit = defineEmits<{
 const spaceStore = useSpaceStore()
 const loading = ref(false)
 
+// Icons
+const icons = [
+  { value: 'box', label: 'Box', component: Box },
+  { value: 'code', label: 'Code', component: Code },
+  { value: 'database', label: 'Database', component: Database },
+  { value: 'globe', label: 'Globe', component: Globe },
+  { value: 'lock', label: 'Lock', component: Lock },
+  { value: 'layout', label: 'Layout', component: Layout },
+  { value: 'cloud', label: 'Cloud', component: Cloud },
+  { value: 'shield', label: 'Shield', component: Shield },
+]
+
 // Create Form
 const name = ref('')
 const description = ref('')
 const selectedColor = ref('#8B5CF6')
+const selectedIcon = ref('box')
+const tags = ref<string[]>([])
+const newTag = ref('')
+
 const colors = [
   '#8B5CF6', // Purple
   '#3B82F6', // Blue
@@ -47,12 +62,23 @@ const colors = [
 // Join Form
 const inviteCode = ref('')
 
+function addTag() {
+  if (newTag.value.trim() && !tags.value.includes(newTag.value.trim())) {
+    tags.value.push(newTag.value.trim())
+    newTag.value = ''
+  }
+}
+
+function removeTag(tag: string) {
+  tags.value = tags.value.filter(t => t !== tag)
+}
+
 async function handleCreate() {
   if (!name.value) return
   
   loading.value = true
   try {
-    await spaceStore.createSpace(name.value, description.value, 'box', selectedColor.value)
+    await spaceStore.createSpace(name.value, description.value, selectedIcon.value, selectedColor.value, tags.value)
     emit('created')
     emit('update:open', false)
     
@@ -60,6 +86,9 @@ async function handleCreate() {
     name.value = ''
     description.value = ''
     selectedColor.value = '#8B5CF6'
+    selectedIcon.value = 'box'
+    tags.value = []
+    newTag.value = ''
   } catch (e) {
     console.error(e)
   } finally {
@@ -90,7 +119,7 @@ async function handleJoin() {
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="sm:max-w-[425px]">
+    <DialogContent class="sm:max-w-[500px]">
       <DialogHeader>
         <DialogTitle>Add Space</DialogTitle>
         <DialogDescription>
@@ -115,20 +144,53 @@ async function handleJoin() {
              <Input v-model="description" placeholder="What is this space for?" />
            </div>
            
-           <div class="space-y-2">
-             <Label>Color Tag</Label>
-             <div class="flex flex-wrap gap-2">
-               <button
-                 v-for="color in colors"
-                 :key="color"
-                 @click="selectedColor = color"
-                 class="w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center"
-                 :class="selectedColor === color ? 'border-primary ring-2 ring-ring ring-offset-2' : 'border-transparent hover:scale-105'"
-                 :style="{ backgroundColor: color }"
-               >
-               </button>
-             </div>
+           <div class="grid grid-cols-2 gap-4">
+               <div class="space-y-2">
+                 <Label>Icon</Label>
+                 <div class="flex flex-wrap gap-2">
+                   <button
+                     v-for="icon in icons"
+                     :key="icon.value"
+                     @click="selectedIcon = icon.value"
+                     class="w-8 h-8 rounded-lg border transition-all flex items-center justify-center hover:bg-muted"
+                     :class="selectedIcon === icon.value ? 'bg-primary/10 border-primary text-primary' : 'border-border text-muted-foreground'"
+                   >
+                     <component :is="icon.component" class="w-4 h-4" />
+                   </button>
+                 </div>
+               </div>
+
+               <div class="space-y-2">
+                 <Label>Color Tag</Label>
+                 <div class="flex flex-wrap gap-2">
+                   <button
+                     v-for="color in colors"
+                     :key="color"
+                     @click="selectedColor = color"
+                     class="w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center"
+                     :class="selectedColor === color ? 'border-primary ring-2 ring-ring ring-offset-2' : 'border-transparent hover:scale-105'"
+                     :style="{ backgroundColor: color }"
+                   >
+                   </button>
+                 </div>
+               </div>
            </div>
+
+            <!-- Tags -->
+            <div class="space-y-2">
+                <Label>Tags</Label>
+                <div class="flex flex-wrap gap-2 mb-2" v-if="tags.length > 0">
+                    <div v-for="tag in tags" :key="tag" class="flex items-center bg-muted px-2 py-1 rounded text-xs">
+                        {{ tag }}
+                        <button @click="removeTag(tag)" class="ml-1 hover:text-destructive"><X class="w-3 h-3" /></button>
+                    </div>
+                </div>
+                <Input 
+                    v-model="newTag" 
+                    placeholder="Add tags (press Enter)" 
+                    @keydown.enter.prevent="addTag"
+                />
+            </div>
            
            <div class="pt-2 flex justify-end">
                <Button @click="handleCreate" :disabled="!name || loading">

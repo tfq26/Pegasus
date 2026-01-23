@@ -50,6 +50,23 @@ export function useChatExecution(
         if (!query) return ''
         let trimmed = query.trim()
 
+        // Strip markdown code blocks
+        trimmed = trimmed.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim()
+
+        // Strip ALL leading/trailing backticks (unbalanced or not)
+        trimmed = trimmed.replace(/^`+|`+$/g, '').trim()
+
+        // HEURISTIC: If query looks like a simple table name
+        // Allowed chars: alphanumeric, underscore, dash, dot (schema.table)
+        if (/^[a-zA-Z0-9_.-]+$/.test(trimmed) && !/^(SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)/i.test(trimmed)) {
+            // It's likely just a table name
+            // Use double quotes for safety unless it already has them (and isn't using dot notation which might complicate quoting)
+            if (!trimmed.includes('"') && !trimmed.includes('.')) {
+                return `SELECT * FROM "${trimmed}"`
+            }
+            return `SELECT * FROM ${trimmed}`
+        }
+
         // SurrealDB is strict about semicolons between statements
         if (provider === 'surrealdb') {
             const statements = trimmed.split(/\n\s*(?=SELECT|UPDATE|DELETE|INSERT|CREATE|REMOVE|DEFINE|LET|BEGIN|COMMIT|CANCEL|RELATE|UPSERT|INFO|USE|LIVE|KILL|SHOW)/i)
@@ -194,35 +211,27 @@ export function useChatExecution(
                 } catch (e) { console.warn(e) }
             }
 
-            // Generate AI Summary for Chat Mode
-            if (mode.value === 'chat') {
-                try {
-                    const aiSummary = await analyzeResults(payload, body.result, payload)
-                    const summaryText = typeof aiSummary === 'string' ? aiSummary : (JSON.stringify(aiSummary) || 'Query executed successfully.')
+            // Show results immediately without blocking on analysis
+            // Analysis is now on-demand via "Generate Insights" button
+            const resultCount = Array.isArray(body.result) ? body.result.length : 1
+            const quickSummary = `Query returned ${resultCount} result${resultCount !== 1 ? 's' : ''}.`
 
-                    chatHistory.value.push({
-                        role: 'assistant',
-                        content: summaryText,
-                        timestamp: Date.now()
-                    })
-
-                    if (selectedChatId.value) {
-                        try {
-                            await chatStore.saveMessage(selectedChatId.value, 'ai', summaryText)
-                        } catch (e) { console.warn('Failed to persist message', e) }
-                    }
-                } catch (err: any) {
-                    console.error('[Chat] Failed to generate summary:', err)
-                    const fallback = 'Query completed.'
-                    chatHistory.value.push({ role: 'assistant', content: fallback, timestamp: Date.now() })
-                    if (selectedChatId.value) {
-                        try {
-                            await chatStore.saveMessage(selectedChatId.value, 'ai', fallback)
-                        } catch (e) { console.warn(e) }
-                    }
+            chatHistory.value.push({
+                role: 'assistant',
+                content: quickSummary,
+                timestamp: Date.now(),
+                meta: {
+                    hasResults: true,
+                    query: payload,
+                    resultPreview: Array.isArray(body.result) ? body.result.slice(0, 20) : body.result,
+                    canGenerateInsights: true
                 }
-            } else {
-                chatHistory.value.push({ role: 'system', content: JSON.stringify(body.result), timestamp })
+            })
+
+            if (selectedChatId.value) {
+                try {
+                    await chatStore.saveMessage(selectedChatId.value, 'ai', quickSummary)
+                } catch (e) { console.warn('Failed to persist message', e) }
             }
 
             resultsPanelVisible.value = true
@@ -352,12 +361,105 @@ export function useChatExecution(
                 isExecuting.value = false
                 return
             }
+
+            // Handle INTENT-BASED architecture responses
+            if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
+                const response = aiResponse as any;
+
+                // Handle COMPOUND response (array of results)
+                if (response.isCompound && Array.isArray(response.results)) {
+                    // Iterate and display each result
+                    // For UI simplicity, we'll set the LAST result as the "main" one for the preview panel
+                    // But we'll push multiple history items so the user sees all of them in the chat stream.
+
+                    response.results.forEach((res: any, index: number) => {
+                        const title = res.intent?.visualization?.title || (index === 0 ? "First Result" : "Next Result");
+
+                        // Push to history
+                        chatHistory.value.push({
+                            role: 'assistant',
+                            content: `**${title}**:`,
+                            timestamp: Date.now(),
+                            meta: { hasResults: true, query: res.query, resultPreview: Array.isArray(res.data) ? res.data.slice(0, 5) : res.data }
+                        });
+
+                        // If it's the last one, open the panel
+                        if (index === response.results.length - 1) {
+                            queryResult.value = res.data;
+                            lastQuery.value = res.query;
+                            resultsPanelVisible.value = true;
+                        }
+                    });
+
+                    isExecuting.value = false;
+                    return;
+                }
+
+
+                // 1. Capture the query for display/history
+                lastQuery.value = response.query;
+
+                // 2. Capture the data directly (No extra roundtrip!)
+                queryResult.value = response.data;
+
+                // 4. Handle Visualizations or Standard Data
+                if (response.type === 'visualization_request') {
+                    // ... existing visualization logic ...
+                    const aiConfig = response.config;
+                    suggestedChartType.value = aiConfig.type;
+
+                    const { generateChartConfig } = await import('@/lib/chartGenerator');
+                    const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+
+                    let finalConfig = generateChartConfig(dataArray, lastQuery.value);
+                    if (finalConfig) {
+                        if (aiConfig.type) finalConfig.type = aiConfig.type as any;
+                        if (aiConfig.title) finalConfig.title = aiConfig.title;
+                    }
+                    if (!finalConfig) {
+                        finalConfig = {
+                            type: aiConfig.type || 'bar',
+                            title: aiConfig.title || 'Visualization',
+                            config: { data: { labels: [], datasets: [] } }
+                        }
+                    }
+
+                    dashboardPreviewConfig.value = finalConfig;
+                    dashboardPreviewVisible.value = true;
+
+                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: response.message || `I've generated a ${aiConfig.type} chart based on your request.`,
+                        timestamp: Date.now(),
+                        meta: { hasResults: true, query: response.query }
+                    });
+                } else {
+                    // Standard Data Response
+                    // resultsPanelVisible.value = true; // DISABLED: User manual open only
+                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
+
+                    // Use the AI's explanation if available (Analyst Loop), otherwise generic text
+                    const content = response.message || `Here is the data you requested.`;
+
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: content,
+                        timestamp: Date.now(),
+                        meta: { hasResults: true, query: response.query }
+                    });
+                }
+
+                isExecuting.value = false;
+                return;
+            }
+
+            // Legacy/Fallback for text-only responses
             update(40, 'Executing...')
 
             // Multi-step logic from Chat.vue
             if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
                 // ... implementation mirrors Chat.vue ...
-                // For brevity in first pass, implementing the steps aggregation logic
                 const combinedResults: any[] = []
                 let combinedQuery = ''
                 let visualizableResults: any[] = []
@@ -386,15 +488,10 @@ export function useChatExecution(
                     suggestedChartType.value = localSuggestedChartType
                 }
 
-                // Summary
-                update(80, 'Summarizing...')
-                let aiSummary = ""
-                try {
-                    aiSummary = await analyzeResults(userPrompt, combinedResults, combinedQuery)
-                } catch (err: any) {
-                    console.error('[Chat] Failed to generate multi-step summary:', err)
-                    aiSummary = "Here are the results of your request."
-                }
+                // Quick summary without blocking on AI analysis
+                update(80, 'Done')
+                const stepCount = aiResponse.steps.length
+                const aiSummary = `Executed ${stepCount} step${stepCount !== 1 ? 's' : ''}. Here are the results.`
 
                 // Update history
                 chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
@@ -429,6 +526,25 @@ export function useChatExecution(
                 }
 
                 // Executing the query in aiResponse
+                if (!singleAIResponse.query || !singleAIResponse.query.trim()) {
+                    console.warn('[Chat] No query generated by AI')
+                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+                    const fallbackContent = singleAIResponse.text || singleAIResponse.explanation || "I'm sorry, I couldn't generate a valid query for that request."
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: fallbackContent,
+                        timestamp: Date.now()
+                    })
+                    if (selectedChatId.value) {
+                        try {
+                            await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
+                            await chatStore.saveMessage(selectedChatId.value, 'ai', fallbackContent)
+                        } catch (e) { console.warn(e) }
+                    }
+                    isExecuting.value = false
+                    return
+                }
+
                 const body = await api.post<any>('/query', {
                     provider: selectedConnection.value.provider,
                     connection: buildConnectionPayload(selectedConnection.value),

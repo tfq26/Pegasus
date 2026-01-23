@@ -229,7 +229,9 @@ const openAddDialog = () => {
                 <Activity v-else class="w-5 h-5 text-orange-400" />
               </div>
               <div>
-                <h3 class="font-semibold text-foreground text-base leading-tight">{{ conn.nickname }}</h3>
+                <h3 class="font-semibold text-foreground text-base leading-tight" :title="conn.alias ? `Original: ${conn.nickname}` : conn.nickname">
+                  {{ conn.alias || conn.nickname }}
+                </h3>
                 <p class="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider">{{ conn.provider }}</p>
               </div>
             </div>

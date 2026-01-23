@@ -223,159 +223,75 @@ const copyToClipboard = async (text: string) => {
     />
 
     <!-- Header / Tab Bar -->
-    <ContextMenu>
-      <ContextMenuTrigger as-child>
-        <div 
-          class="flex items-center justify-between px-4 py-1.5 bg-muted/20 backdrop-blur-md border-b border-border/50 shrink-0 z-10 select-none"
-          :class="{ 'flex-col items-start gap-2 py-3': position === 'right' && !isMaximized }"
-        >
-          <div class="flex items-center gap-6" :class="{ 'w-full flex-col items-start gap-3': position === 'right' && !isMaximized }">
-            <div class="flex items-center gap-1 bg-muted/40 p-0.5 rounded-lg border border-border/30">
-              <template v-for="tab in ([
-                { id: 'output', label: 'Output', icon: Table, count: ref(0), hideable: false },
-                { id: 'insights', label: 'Insights', icon: Brain, count: computed(() => props.analysis?.prediction ? 1 : 0), hideable: true },
-                { id: 'problems', label: 'Problems', icon: AlertCircle, count: problemsCount, hideable: true },
-                { id: 'execution', label: 'Execution', icon: Gauge, count: ref(0), hideable: true },
-                { id: 'versioning', label: 'Versioning', icon: GitBranch, count: ref(0), hideable: true }
-              ] as const)" :key="tab.id">
-                <ContextMenu v-if="!isHidden(tab.id)">
-                  <ContextMenuTrigger as-child>
-                    <button
-                      @click="activeTab = tab.id"
-                      class="flex items-center gap-2 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all relative group"
-                      :class="
-                        activeTab === tab.id
-                          ? 'bg-background text-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground'
-                      "
-                    >
-                      <component :is="tab.icon" class="w-3 h-3" :class="activeTab === tab.id ? 'text-violet-500 dark:text-violet-400' : 'text-muted-foreground/60 group-hover:text-muted-foreground'" />
-                      <span v-if="position !== 'right' || activeTab === tab.id || isMaximized">{{ tab.label }}</span>
-                      <span v-if="unref(tab.count) > 0" class="flex items-center justify-center min-w-[14px] h-[14px] px-1 bg-rose-500 text-white text-[8px] font-black rounded-full ml-1">
-                        {{ unref(tab.count) }}
-                      </span>
-                    </button>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent v-if="tab.hideable">
-                    <ContextMenuItem @click="toggleHidden(tab.id)" class="flex items-center gap-2">
-                      <Trash2 class="w-1 h-3" />
-                      <span>Hide from Top Bar</span>
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              </template>
-            </div>
-
-            <!-- View Mode (Table/JSON) -->
-            <ContextMenu v-if="activeTab === 'output' && Array.isArray(result) && !isHidden('view-mode')">
-              <ContextMenuTrigger as-child>
-                <div class="flex items-center gap-1.5 pl-4 border-l border-border/50" :class="{ 'pl-0 border-l-0': position === 'right' && !isMaximized }">
-                  <button
-                    @click="viewMode = 'table'"
-                    class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
-                    :class="viewMode === 'table' ? 'bg-violet-500/10 text-violet-500 dark:text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-muted-foreground hover:text-foreground'"
-                  >
-                    Tabular
-                  </button>
-                  <button
-                    @click="viewMode = 'json'"
-                    class="p-1 px-2 rounded transition-all text-[10px] font-bold uppercase tracking-tighter"
-                    :class="viewMode === 'json' ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20 shadow-[0_0_10px_-4px_theme(colors.violet.500)]' : 'text-stone-500 hover:text-stone-300'"
-                  >
-                    Object
-                  </button>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem @click="toggleHidden('view-mode')" class="flex items-center gap-2">
-                  <Trash2 class="w-1 h-3" />
-                  <span>Hide from Top Bar</span>
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          </div>
-
-          <div class="flex items-center gap-3" :class="{ 'w-full justify-between': position === 'right' && !isMaximized }">
-            <!-- Result count badge -->
-            <ContextMenu v-if="activeTab === 'output' && resultCount !== null && !isHidden('record-count')">
-              <ContextMenuTrigger as-child>
-                <div class="flex items-center gap-2 px-2 py-0.5 bg-muted/50 border border-border rounded-full">
-                  <div class="w-1 h-1 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]"></div>
-                  <span class="text-[10px] font-mono text-muted-foreground">
-                    {{ resultCount.toLocaleString() }} records
-                  </span>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem @click="toggleHidden('record-count')" class="flex items-center gap-2">
-                  <Trash2 class="w-1 h-3" />
-                  <span>Hide Record Count</span>
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
+    <div 
+      class="flex items-center justify-between px-4 py-2 bg-background border-b border-border/50 shrink-0 z-10"
+      :class="{ 'flex-col items-start gap-2 py-3': position === 'right' && !isMaximized }"
+    >
+        <div class="flex items-center gap-4">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-foreground/80">Query Results</h3>
             
-            <!-- Status Indicator (Pulsing Dot) -->
-            <ContextMenu v-if="!isHidden('status-indicator')">
-              <ContextMenuTrigger as-child>
-                <div class="flex items-center gap-1.5 px-2 py-0.5 bg-muted/40 border border-border rounded-md">
-                   <div :class="`w-1.5 h-1.5 rounded-full ${props.error ? 'bg-rose-500 shadow-[0_0_8px_theme(colors.rose.500)]' : (props.loading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]')}`"></div>
-                   <span class="text-[9px] font-black uppercase tracking-tighter text-muted-foreground">
-                     {{ props.error ? 'Protocol Failure' : (props.loading ? 'Processing' : (position === 'right' && !isMaximized ? 'Secure' : 'System Secure')) }}
-                   </span>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem @click="toggleHidden('status-indicator')" class="flex items-center gap-2">
-                  <Trash2 class="w-1 h-3" />
-                  <span>Hide System Status</span>
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-
-            <div v-if="position !== 'right' || isMaximized" class="h-4 w-px bg-stone-800 mx-1"></div>
-
-            <!-- Utility Group -->
-            <div class="flex items-center gap-1">
-              <button
-                v-if="!lockedPosition"
-                @click="togglePosition"
-                class="p-1.5 rounded-lg text-muted-foreground hover:text-violet-500 hover:bg-muted transition-all"
-                :title="`Dock to ${position === 'bottom' ? 'right' : 'bottom'}`"
-              >
-                <PanelBottom v-if="position === 'right'" class="w-3.5 h-3.5" />
-                <PanelRight v-else class="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                @click="toggleMaximize"
-                class="p-1.5 rounded-lg text-muted-foreground hover:text-violet-500 hover:bg-muted transition-all"
-              >
-                <Minimize2 v-if="isMaximized" class="w-3.5 h-3.5" />
-                <Maximize2 v-else class="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                @click="emit('close')"
-                class="p-1.5 rounded-md hover:bg-rose-500/10 hover:text-rose-400 transition-all ml-1"
-                title="Force Close Results"
-              >
-                <X class="w-3.5 h-3.5" />
-              </button>
+            <!-- Simple Toggles -->
+            <div class="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/30">
+                 <button 
+                    @click="activeTab = 'output'"
+                    class="px-2 py-1 text-[10px] font-medium rounded-md transition-all flex items-center gap-1.5"
+                    :class="activeTab === 'output' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
+                 >
+                    <Table class="w-3 h-3" />
+                    <span>Data</span>
+                 </button>
+                 <button 
+                    v-if="props.analysis?.prediction"
+                    @click="activeTab = 'insights'"
+                    class="px-2 py-1 text-[10px] font-medium rounded-md transition-all flex items-center gap-1.5"
+                    :class="activeTab === 'insights' ? 'bg-background shadow-sm text-violet-500' : 'text-muted-foreground hover:text-foreground'"
+                 >
+                    <Brain class="w-3 h-3" />
+                    <span>Insights</span>
+                 </button>
             </div>
-          </div>
         </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem @click="resetTopBar" class="flex items-center gap-2">
-          <RotateCcw class="w-3.5 h-3.5" />
-          <span>Reset Top Bar Controls</span>
-        </ContextMenuItem>
-        <ContextMenuItem v-if="hiddenItems.length > 0" @click="resetTopBar" class="flex items-center gap-2">
-          <Eye class="w-3.5 h-3.5" />
-          <span>Show All Hidden Items</span>
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+
+        <!-- Right Side Controls -->
+        <div class="flex items-center gap-3">
+             <!-- Status -->
+             <div class="flex items-center gap-1.5 px-2 py-0.5 bg-muted/40 border border-border rounded-md">
+                <div :class="`w-1.5 h-1.5 rounded-full ${props.error ? 'bg-rose-500 shadow-[0_0_8px_theme(colors.rose.500)]' : (props.loading ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]')}`"></div>
+                <span class="text-[9px] font-black uppercase tracking-tighter text-muted-foreground">
+                  {{ props.error ? 'Error' : (props.loading ? 'Processing' : 'Secure') }}
+                </span>
+             </div>
+
+             <div class="h-4 w-px bg-border mx-1"></div>
+
+             <div class="flex items-center gap-1">
+               <button
+                 v-if="!lockedPosition"
+                 @click="togglePosition"
+                 class="p-1.5 rounded-lg text-muted-foreground hover:text-violet-500 hover:bg-muted transition-all"
+                 :title="`Dock to ${position === 'bottom' ? 'right' : 'bottom'}`"
+               >
+                 <PanelBottom v-if="position === 'right'" class="w-3.5 h-3.5" />
+                 <PanelRight v-else class="w-3.5 h-3.5" />
+               </button>
+
+               <button
+                 @click="toggleMaximize"
+                 class="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+               >
+                 <Minimize2 v-if="isMaximized" class="w-3.5 h-3.5" />
+                 <Maximize2 v-else class="w-3.5 h-3.5" />
+               </button>
+               
+               <button
+                 @click="emit('close')"
+                 class="p-1.5 rounded-lg text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+               >
+                 <X class="w-3.5 h-3.5" />
+               </button>
+             </div>
+        </div>
+    </div>
 
     <!-- Panel Content -->
     <div class="flex-1 overflow-hidden relative z-10 flex flex-col">

@@ -467,10 +467,10 @@
     </Dialog>
 
     <!-- Share Modal -->
-    <ShareDialog
+    <ShareResourceDialog
       v-model:open="showShareModal"
-      :dashboard-id="currentDashboard?.id || null"
-      :public-link="shareUrl"
+      :resource-id="currentDashboard?.id || null"
+      resource-type="dashboard"
     />
 
     <!-- Rename Modal -->
@@ -693,7 +693,7 @@ import ElementEditorWrapper from '@/components/Dashboard/ElementEditorWrapper.vu
 import AddElementDialog from '@/components/Dashboard/AddElementDialog.vue'
 import AddTextDialog from '@/components/Dashboard/AddTextDialog.vue'
 import AddFileDialog from '@/components/Dashboard/AddFileDialog.vue'
-import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
+import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 import DashboardChat from '@/components/Dashboard/DashboardChat.vue'
 import LiveCursors from '@/components/Dashboard/LiveCursors.vue'
 import CollaboratorAvatars from '@/components/Dashboard/CollaboratorAvatars.vue'

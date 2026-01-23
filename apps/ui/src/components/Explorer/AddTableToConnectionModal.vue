@@ -110,7 +110,7 @@ const close = () => {
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2 text-lg font-semibold">
             <Upload class="w-5 h-5 text-violet-500" />
-            Add Table to {{ connection?.nickname }}
+            Add Table to {{ connection?.alias || connection?.nickname }}
           </DialogTitle>
           <DialogDescription class="text-muted-foreground text-sm">
             Upload a file to add a new table to this existing connection.

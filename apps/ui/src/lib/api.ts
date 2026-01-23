@@ -663,8 +663,8 @@ export async function fetchSpaces() {
   return body.spaces || []
 }
 
-export async function createSpace(name: string, description?: string, icon?: string, color?: string) {
-  return api.post<{ id: string }>('/spaces', { name, description, icon, color })
+export async function createSpace(name: string, description?: string, icon?: string, color?: string, tags?: string[]) {
+  return api.post<{ id: string }>('/spaces', { name, description, icon, color, tags })
 }
 
 export async function updateSpace(id: string, updates: any) {

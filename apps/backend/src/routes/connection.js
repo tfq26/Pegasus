@@ -70,6 +70,8 @@ router.get("/", async (c) => {
                 ...row,
                 provider: row.type,
                 nickname: row.name,
+                space: row.spaceId,
+                spaceId: row.spaceId,
                 isLocked: row.isVirtual, // Mapping is_locked to isVirtual or similar if conceptually close, or add isLocked to schema
                 ...config
             }
@@ -107,7 +109,8 @@ router.post("/", async (c) => {
         }
 
         const body = await c.req.json()
-        const { type, provider, name, nickname, config, isLocked, spaceId, ...rest } = body
+        const { type, provider, name, nickname, config, isLocked, ...rest } = body
+        const spaceId = body.spaceId || body.space
 
         const finalType = provider || type
         const finalName = nickname || name
@@ -164,7 +167,8 @@ router.put("/:id", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const body = await c.req.json()
-        const { type, provider, name, nickname, config, isLocked, spaceId, ...rest } = body
+        const { type, provider, name, nickname, config, isLocked, ...rest } = body
+        const spaceId = body.spaceId || body.space
 
         const finalType = provider || type
         const finalName = nickname || name
@@ -175,7 +179,7 @@ router.put("/:id", async (c) => {
                 type: finalType,
                 name: finalName,
                 config: finalConfig,
-                spaceId: spaceId || undefined,
+                spaceId: spaceId !== undefined ? spaceId : undefined,
                 isVirtual: !!isLocked,
                 updatedAt: new Date()
             })

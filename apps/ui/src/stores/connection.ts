@@ -23,6 +23,8 @@ export const useConnectionStore = defineStore('connection', () => {
     const lastFetchTime = ref<number>(0)
     const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes cache
     const STORAGE_KEY = 'pegasus-selected-connection'
+    const ALIAS_STORAGE_KEY = 'pegasus-connection-aliases'
+    const localAliases = ref<Record<string, string>>({})
 
     // Actions
     async function loadConnections(forceRefresh = false) {
@@ -30,6 +32,9 @@ export const useConnectionStore = defineStore('connection', () => {
         if (isLoading.value) {
             return
         }
+
+        // Ensure aliases are loaded
+        loadAliases()
 
         // Check cache - only fetch if:
         // 1. Force refresh requested
@@ -46,7 +51,13 @@ export const useConnectionStore = defineStore('connection', () => {
         isLoading.value = true
         try {
             const response = await api.get<{ connections: ConnectionEntry[] }>('/connections')
-            connections.value = response.connections || []
+
+            // Merge with local aliases
+            connections.value = (response.connections || []).map(c => ({
+                ...c,
+                alias: localAliases.value[c.id]
+            }))
+
             isInitialized.value = true
             lastFetchTime.value = now
             console.log('[ConnectionStore] Loaded connections:', connections.value.length)
@@ -70,6 +81,11 @@ export const useConnectionStore = defineStore('connection', () => {
     async function saveConnection(connection: ConnectionEntry) {
         try {
             const saved = await api.post<ConnectionEntry>('/connections', connection)
+            // Apply alias if exists in the incoming connection object (from form)
+            if (connection.alias) {
+                setConnectionAlias(saved.id, connection.alias)
+                saved.alias = connection.alias
+            }
             connections.value.push(saved)
             console.log('[ConnectionStore] Saved connection:', saved.id)
             return saved
@@ -85,6 +101,13 @@ export const useConnectionStore = defineStore('connection', () => {
 
             const index = connections.value.findIndex(c => c.id === connection.id)
             if (index !== -1) {
+                // Preserve alias
+                if (connection.alias !== undefined) {
+                    setConnectionAlias(connection.id, connection.alias)
+                    updated.alias = connection.alias
+                } else {
+                    updated.alias = connections.value[index].alias
+                }
                 connections.value[index] = updated
             }
 
@@ -135,6 +158,39 @@ export const useConnectionStore = defineStore('connection', () => {
         console.log('[ConnectionStore] Selected connection:', connectionId)
     }
 
+    function loadAliases() {
+        try {
+            const stored = localStorage.getItem(ALIAS_STORAGE_KEY)
+            if (stored) {
+                localAliases.value = JSON.parse(stored)
+            }
+        } catch (e) {
+            console.error('[ConnectionStore] Failed to load aliases:', e)
+        }
+    }
+
+    function setConnectionAlias(connectionId: string, alias: string) {
+        // Update local state
+        if (alias) {
+            localAliases.value[connectionId] = alias
+        } else {
+            delete localAliases.value[connectionId]
+        }
+
+        // Update connections list
+        const conn = connections.value.find(c => c.id === connectionId)
+        if (conn) {
+            conn.alias = alias
+        }
+
+        // Persist
+        try {
+            localStorage.setItem(ALIAS_STORAGE_KEY, JSON.stringify(localAliases.value))
+        } catch (e) {
+            console.error('[ConnectionStore] Failed to save aliases:', e)
+        }
+    }
+
     return {
         // State
         connections,
@@ -151,6 +207,7 @@ export const useConnectionStore = defineStore('connection', () => {
         updateConnection,
         deleteConnection,
         addEphemeralConnection,
-        selectConnection
+        selectConnection,
+        setConnectionAlias
     }
 })

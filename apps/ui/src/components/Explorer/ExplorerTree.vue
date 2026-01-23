@@ -252,14 +252,18 @@ const handleDeleteNote = (note: any) => {
                 <ContextMenuTrigger as-child>
                   <Folder
                     :id="conn.id"
-                    :name="conn.nickname"
+                    :name="conn.alias || conn.nickname"
                     open-icon="lucide:database"
                     close-icon="lucide:database"
                     :is-select="selectedIds.includes(conn.id)"
                     class="group/folder ml-0"
                   >
                     <template #label>
-                       <span class="truncate">{{ conn.nickname }}</span>
+                       <div class="flex items-center gap-2 overflow-hidden">
+                           <span class="truncate font-semibold" :title="conn.alias ? `Original: ${conn.nickname}` : conn.nickname">
+                               {{ conn.alias || conn.nickname }}
+                           </span>
+                       </div>
                        <div v-if="!conn.space" class="inline-flex items-center ml-2" title="Unassigned Connection">
                            <AlertTriangle class="w-3.5 h-3.5 text-amber-500/80" />
                        </div>

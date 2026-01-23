@@ -2,9 +2,9 @@
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
     <DialogContent class="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Share {{ resourceType === 'spreadsheet' ? 'Spreadsheet' : 'Dashboard' }}</DialogTitle>
+        <DialogTitle>Share {{ resourceLabel }}</DialogTitle>
         <DialogDescription>
-          Invite authorized users{{ resourceType === 'spreadsheet' ? '' : ' or share a public link' }}.
+          Invite authorized users{{ canGenerateLink ? ' or share a public link' : '' }}.
         </DialogDescription>
       </DialogHeader>
 
@@ -12,49 +12,63 @@
         <!-- Invite Section -->
         <div v-if="canManage" class="space-y-4">
           <h4 class="text-sm font-medium">Invite User</h4>
-          <div class="flex gap-2 relative">
-            <input
-              v-model="inviteEmail"
-              placeholder="Enter email address (must be a registered user)"
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              @keyup.enter="handleInvite"
-            />
-            
-            <!-- User Suggestions Dropdown -->
-            <div v-if="searchResults.length > 0" class="absolute top-10 left-0 w-full bg-popover text-popover-foreground border border-border rounded-md shadow-md z-50 overflow-hidden max-h-[200px] overflow-y-auto">
-               <div
-                 v-for="user in searchResults"
-                 :key="user.id"
-                 class="px-3 py-2 text-sm hover:bg-muted cursor-pointer flex items-center gap-2"
-                 @click="selectUser(user)"
-               >
-                 <div class="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary overflow-hidden">
-                    <img v-if="user.profile_picture_url" :src="user.profile_picture_url" class="w-full h-full object-cover">
-                    <span v-else>{{ user.first_name?.[0] || user.email[0] }}</span>
-                 </div>
-                 <div class="flex flex-col">
-                   <span class="font-medium">{{ user.first_name }} {{ user.last_name }}</span>
-                   <span class="text-xs text-muted-foreground">{{ user.email }}</span>
-                 </div>
-               </div>
+          <div class="flex gap-2 relative flex-col">
+            <div class="flex gap-2 w-full">
+              <div class="relative flex-1">
+                <Input 
+                  v-model="inviteEmail" 
+                  placeholder="name@example.com" 
+                  class="pr-10"
+                  @keyup.enter="handleInvite"
+                />
+                <div v-if="isSearching" class="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
+                </div>
+              </div>
+
+              <!-- Access Level Selector -->
+              <select
+                v-model="accessLevel"
+                class="h-9 rounded-md border border-input bg-background px-2 text-sm focus:ring-1 focus:ring-primary outline-none"
+              >
+                <option value="read">{{ readLabel }}</option>
+                <option value="write">{{ writeLabel }}</option>
+                <option v-if="resourceType === 'space'" value="editor">Editor</option>
+              </select>
+
+              <Button 
+                @click="handleInvite" 
+                :disabled="!isValidEmail || isInviting"
+                class="min-w-[80px]"
+              >
+                {{ isInviting ? '...' : 'Invite' }}
+              </Button>
             </div>
 
-            <!-- Access Level Selector -->
-            <select
-              v-model="accessLevel"
-              class="h-9 rounded-md border border-input bg-background px-2 text-sm focus:ring-1 focus:ring-primary outline-none"
-            >
-              <option value="read">{{ resourceTypeValue === 'spreadsheet' ? 'View' : 'Visitor' }}</option>
-              <option value="write">{{ resourceTypeValue === 'spreadsheet' ? 'Edit' : 'Editor' }}</option>
-            </select>
-
-            <button
-              @click="handleInvite"
-              :disabled="!isValidEmail || isInviting"
-              class="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50 min-w-[80px] transition-all"
-            >
-              {{ isInviting ? '...' : 'Invite' }}
-            </button>
+            <!-- User Suggestions Dropdown -->
+            <div v-if="(searchResults.length > 0 || (inviteEmail.length > 0 && !isSearching))" 
+                 class="absolute top-11 left-0 w-full bg-popover text-popover-foreground border border-border rounded-md shadow-lg z-[100] overflow-hidden">
+              <div v-if="searchResults.length > 0">
+                <div 
+                  v-for="user in searchResults" 
+                  :key="user.id"
+                  @click="selectUser(user)"
+                  class="flex items-center gap-3 p-3 hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors border-b border-border/50 last:border-0"
+                >
+                  <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                    <img v-if="user.profile_picture_url" :src="user.profile_picture_url" class="w-full h-full object-cover" />
+                    <span v-else class="text-xs font-medium">{{ user.first_name?.[0] }}{{ user.last_name?.[0] }}</span>
+                  </div>
+                  <div class="flex flex-col min-w-0">
+                    <span class="text-sm font-medium truncate">{{ user.first_name }} {{ user.last_name }}</span>
+                    <span class="text-xs text-muted-foreground truncate">{{ user.email }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="inviteEmail.length > 0 && !isSearching && !searchResults.length" class="p-4 text-center text-sm text-muted-foreground italic">
+                No registered users found for "{{ inviteEmail }}"
+              </div>
+            </div>
           </div>
         </div>
 
@@ -85,7 +99,6 @@
              </div>
 
              <!-- Invited Users with Stored Permissions -->
-
              <div v-for="perm in permissions" :key="perm.email || perm.user_email" class="group flex items-center justify-between text-sm p-2 rounded-md hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
                 <div class="flex items-center gap-3 overflow-hidden">
                    <div class="w-8 h-8 min-w-[2rem] rounded-lg bg-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/20 overflow-hidden">
@@ -108,11 +121,12 @@
                      @change="handleUpdateRole(perm.email, ($event.target as HTMLSelectElement).value)"
                      class="bg-transparent text-[11px] border-none focus:ring-0 text-muted-foreground hover:text-foreground cursor-pointer outline-none"
                    >
-                     <option value="read">{{ resourceTypeValue === 'spreadsheet' ? 'View' : 'Visitor' }}</option>
-                     <option value="write">{{ resourceTypeValue === 'spreadsheet' ? 'Edit' : 'Editor' }}</option>
+                     <option value="read">{{ readLabel }}</option>
+                     <option value="write">{{ writeLabel }}</option>
+                     <option v-if="resourceType === 'space'" value="editor">Editor</option>
                    </select>
                    <span v-else class="text-[11px] text-muted-foreground px-2">
-                     {{ perm.access_level === 'write' ? (resourceTypeValue === 'spreadsheet' ? 'Edit' : 'Editor') : (resourceTypeValue === 'spreadsheet' ? 'View' : 'Visitor') }}
+                     {{ getRoleLabel(perm.access_level) }}
                    </span>
 
                    <div v-if="canManage" class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -154,11 +168,11 @@
                       @change="handleInviteRealtime(collab.user?.email, ($event.target as HTMLSelectElement).value)"
                       class="bg-transparent text-[11px] border-none focus:ring-0 text-muted-foreground hover:text-foreground cursor-pointer outline-none"
                     >
-                      <option value="read">{{ resourceTypeValue === 'spreadsheet' ? 'View' : 'Visitor' }}</option>
-                      <option value="write">{{ resourceTypeValue === 'spreadsheet' ? 'Edit' : 'Editor' }}</option>
+                      <option value="read">{{ readLabel }}</option>
+                      <option value="write">{{ writeLabel }}</option>
                     </select>
                     <span v-else class="text-[11px] text-muted-foreground px-2">
-                      {{ resourceTypeValue === 'spreadsheet' ? 'View' : 'Visitor' }}
+                      {{ readLabel }}
                     </span>
                  </div>
                </div>
@@ -167,7 +181,7 @@
         </div>
 
         <!-- Public Link Section (Dashboard only) -->
-        <template v-if="resourceTypeValue === 'dashboard'">
+        <template v-if="canGenerateLink">
           <div class="h-px bg-border my-1"></div>
           <div class="space-y-4">
             <h4 class="text-sm font-medium">Public Link</h4>
@@ -229,26 +243,24 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { toast } from '@/composables/useNotifications'
 import { 
   api,
-  inviteUserToDashboard, 
   fetchDashboardPermissions, 
-  removeDashboardPermission,
   searchUsers,
   QUERY_API_URL,
   getAuthHeaders
 } from '@/lib/api'
-import { Trash2, MoreVertical, Edit2 } from 'lucide-vue-next'
+import { Trash2, Edit2, Loader2 } from 'lucide-vue-next'
 import { useCollaboration } from '@/composables/useCollaboration'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const props = defineProps<{
   open: boolean
-  dashboardId?: string | null
-  spreadsheetId?: string | null  // Table name for spreadsheets
-  publicLink?: string
-  resourceType?: 'dashboard' | 'spreadsheet'
+  resourceId: string | null
+  resourceType: 'dashboard' | 'spreadsheet' | 'space'
 }>()
 
 const emit = defineEmits(['update:open'])
@@ -256,7 +268,7 @@ const emit = defineEmits(['update:open'])
 const { collaborators } = useCollaboration()
 
 const inviteEmail = ref('')
-const accessLevel = ref<'read' | 'write'>('read')
+const accessLevel = ref<'read' | 'write' | 'editor'>('read')
 const isInviting = ref(false)
 const isLoading = ref(false)
 const permissions = ref<any[]>([])
@@ -285,17 +297,40 @@ const searchResults = ref<any[]>([])
 const isSearching = ref(false)
 let searchTimeout: any = null
 
-// Computed resource ID (dashboard or spreadsheet)
-const resourceId = computed(() => props.dashboardId || props.spreadsheetId)
-const resourceTypeValue = computed(() => props.resourceType || (props.spreadsheetId ? 'spreadsheet' : 'dashboard'))
+const resourceLabel = computed(() => {
+  if (props.resourceType === 'dashboard') return 'Dashboard'
+  if (props.resourceType === 'spreadsheet') return 'Spreadsheet'
+  if (props.resourceType === 'space') return 'Workspace'
+  return 'Resource'
+})
+
+const readLabel = computed(() => {
+  if (props.resourceType === 'spreadsheet') return 'View'
+  if (props.resourceType === 'space') return 'Viewer'
+  return 'Visitor'
+})
+
+const writeLabel = computed(() => {
+  if (props.resourceType === 'spreadsheet') return 'Edit'
+  if (props.resourceType === 'space') return 'Editor'
+  return 'Editor'
+})
+
+const canGenerateLink = computed(() => props.resourceType === 'dashboard')
+
+const getRoleLabel = (role: string) => {
+  if (role === 'read' || role === 'viewer') return readLabel.value
+  if (role === 'write' || role === 'editor') return writeLabel.value
+  return role
+}
 
 const isValidEmail = computed(() => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.value)
 })
 
 const canManage = computed(() => {
-  if (resourceTypeValue.value === 'spreadsheet') return true // Default to true for now as spreadsheet logic is legacy
-  return currentUserRole.value === 'owner' || currentUserRole.value === 'write'
+  if (props.resourceType === 'spreadsheet') return true
+  return currentUserRole.value === 'owner' || currentUserRole.value === 'write' || currentUserRole.value === 'editor'
 })
 
 // Filter collaborators to exclude owner (already shown) and self
@@ -314,10 +349,10 @@ const isUserInPermissions = (email: string | undefined) => {
 }
 
 watch(() => props.open, async (isOpen) => {
-  if (isOpen && resourceId.value) {
+  if (isOpen && props.resourceId) {
     loadPermissions()
     // Also load existing share link if dashboard
-    if (resourceTypeValue.value === 'dashboard') {
+    if (props.resourceType === 'dashboard') {
       loadShareLink()
     }
   }
@@ -326,7 +361,7 @@ watch(() => props.open, async (isOpen) => {
 // Search Logic
 watch(inviteEmail, (val) => {
   if (searchTimeout) clearTimeout(searchTimeout)
-  if (!val || val.length < 2) {
+  if (!val || val.length < 1) {
     searchResults.value = []
     return
   }
@@ -350,18 +385,24 @@ const selectUser = (user: any) => {
 }
 
 const loadPermissions = async () => {
-  if (!resourceId.value) return
+  if (!props.resourceId) return
   isLoading.value = true
   try {
-    if (resourceTypeValue.value === 'spreadsheet') {
+    if (props.resourceType === 'spreadsheet') {
       // Fetch spreadsheet permissions
-      const res = await fetch(`${QUERY_API_URL}/table/${resourceId.value}/permissions`, {
+      const res = await fetch(`${QUERY_API_URL}/table/${props.resourceId}/permissions`, {
         headers: getAuthHeaders()
       })
       const data = await res.json()
       permissions.value = data.permissions || []
+    } else if (props.resourceType === 'space') {
+      const result = await api.get<any>(`/spaces/${props.resourceId}/permissions`)
+      permissions.value = result.permissions || []
+      currentUserRole.value = result.currentUserRole
+      owner.value = result.owner
     } else {
-      const data = await fetchDashboardPermissions(resourceId.value)
+      // Dashboard
+      const data = await fetchDashboardPermissions(props.resourceId)
       permissions.value = data.permissions || []
       currentUserRole.value = data.currentUserRole || null
       owner.value = data.owner || null
@@ -374,10 +415,10 @@ const loadPermissions = async () => {
 }
 
 const loadShareLink = async () => {
-  if (!resourceId.value || resourceTypeValue.value !== 'dashboard') return
+  if (!props.resourceId || props.resourceType !== 'dashboard') return
   try {
     // Fetch dashboard to get existing share_token
-    const dashboard = await api.get<any>(`/dashboards/${resourceId.value}`)
+    const dashboard = await api.get<any>(`/dashboards/${props.resourceId}`)
     if (dashboard?.dashboard?.share_token) {
       const baseUrl = window.location.origin
       shareLink.value = `${baseUrl}/shared/${dashboard.dashboard.share_token}`
@@ -388,10 +429,10 @@ const loadShareLink = async () => {
 }
 
 const generateShareLink = async () => {
-  if (!resourceId.value) return
+  if (!props.resourceId) return
   isGeneratingLink.value = true
   try {
-    const result = await api.post<{ token: string }>(`/dashboards/${resourceId.value}/share`)
+    const result = await api.post<{ token: string }>(`/dashboards/${props.resourceId}/share`)
     if (result?.token) {
       const baseUrl = window.location.origin
       shareLink.value = `${baseUrl}/shared/${result.token}`
@@ -405,13 +446,13 @@ const generateShareLink = async () => {
 }
 
 const handleInvite = async () => {
-  if (!resourceId.value || !isValidEmail.value) return
+  if (!props.resourceId || !isValidEmail.value) return
   
   isInviting.value = true
   try {
-    if (resourceTypeValue.value === 'spreadsheet') {
+    if (props.resourceType === 'spreadsheet') {
       // Share spreadsheet
-      const res = await fetch(`${QUERY_API_URL}/table/${resourceId.value}/share`, {
+      const res = await fetch(`${QUERY_API_URL}/table/${props.resourceId}/share`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email: inviteEmail.value, accessLevel: accessLevel.value })
@@ -420,8 +461,13 @@ const handleInvite = async () => {
         const err = await res.json()
         throw new Error(err.error || 'Failed to share')
       }
+    } else if (props.resourceType === 'space') {
+      await api.post(`/spaces/${props.resourceId}/share/invite`, {
+         email: inviteEmail.value,
+         role: accessLevel.value
+      })
     } else {
-      await api.post(`/dashboards/${resourceId.value}/share/invite`, { 
+      await api.post(`/dashboards/${props.resourceId}/share/invite`, { 
         email: inviteEmail.value,
         role: accessLevel.value
       })
@@ -440,7 +486,7 @@ const handleInvite = async () => {
 const handleInviteRealtime = async (email: string | undefined, role: string) => {
   if (!email) return
   inviteEmail.value = email
-  accessLevel.value = role as 'read' | 'write'
+  accessLevel.value = role as any
   await handleInvite()
 }
 
@@ -448,7 +494,7 @@ const handleRename = (identifier: string, currentAlias: string) => {
   confirmState.value = {
     open: true,
     title: 'Rename User',
-    description: `Set a nickname for ${identifier} to help identify them in the dashboard.`,
+    description: `Set a nickname for ${identifier} to help identify them in the workspace.`,
     confirmText: 'Save Changes',
     isDestructive: false,
     showInput: true,
@@ -456,19 +502,23 @@ const handleRename = (identifier: string, currentAlias: string) => {
     inputPlaceholder: 'e.g. John (Data Lead)',
     initialInputValue: currentAlias,
     action: async (newAlias: string) => {
-      if (!resourceId.value) return
+      if (!props.resourceId) return
       try {
-        if (resourceTypeValue.value === 'spreadsheet') {
-          toast.error('Renaming is only available for dashboards')
+        if (props.resourceType === 'spreadsheet') {
+          toast.error('Renaming is only available for dashboards/workspaces')
+        } else if (props.resourceType === 'space') {
+          await api.put(`/spaces/${props.resourceId}/permissions/${encodeURIComponent(identifier)}`, { 
+            alias: newAlias.trim() || null 
+          })
         } else {
-          await api.put(`/dashboards/${resourceId.value}/permissions/${encodeURIComponent(identifier)}`, { 
+          await api.put(`/dashboards/${props.resourceId}/permissions/${encodeURIComponent(identifier)}`, { 
             alias: newAlias.trim() || null 
           })
         }
-        toast.success('User renamed')
+        toast.success('User updated')
         await loadPermissions()
       } catch (e: any) {
-        toast.error('Failed to rename user')
+        toast.error('Failed to update user')
       }
     }
   }
@@ -482,18 +532,19 @@ const handleConfirmAction = (val?: any) => {
 }
 
 const handleUpdateRole = async (email: string, role: string) => {
-  if (!resourceId.value) return
+  if (!props.resourceId) return
   
   try {
-    if (resourceTypeValue.value === 'spreadsheet') {
-       // Spreadsheet role update (different endpoint usually, but let's assume POST share handles it)
-       await fetch(`${QUERY_API_URL}/table/${resourceId.value}/share`, {
+    if (props.resourceType === 'spreadsheet') {
+       await fetch(`${QUERY_API_URL}/table/${props.resourceId}/share`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ email, accessLevel: role })
       })
+    } else if (props.resourceType === 'space') {
+      await api.put(`/spaces/${props.resourceId}/permissions/${encodeURIComponent(email)}`, { role })
     } else {
-      await api.put(`/dashboards/${resourceId.value}/permissions/${encodeURIComponent(email)}`, { role })
+      await api.put(`/dashboards/${props.resourceId}/permissions/${encodeURIComponent(email)}`, { role })
     }
     toast.success('Role updated')
     await loadPermissions()
@@ -506,7 +557,7 @@ const handleRemove = (identifier: string) => {
   confirmState.value = {
     open: true,
     title: 'Revoke Access',
-    description: `Are you sure you want to remove ${identifier}? they will no longer be able to access this dashboard.`,
+    description: `Are you sure you want to remove ${identifier}? they will no longer be able to access this resource.`,
     confirmText: 'Revoke Access',
     isDestructive: true,
     showInput: false,
@@ -514,15 +565,17 @@ const handleRemove = (identifier: string) => {
     inputPlaceholder: '',
     initialInputValue: '',
     action: async () => {
-      if (!resourceId.value) return
+      if (!props.resourceId) return
       try {
-        if (resourceTypeValue.value === 'spreadsheet') {
-          await fetch(`${QUERY_API_URL}/table/${resourceId.value}/share/${encodeURIComponent(identifier)}`, {
+        if (props.resourceType === 'spreadsheet') {
+          await fetch(`${QUERY_API_URL}/table/${props.resourceId}/share/${encodeURIComponent(identifier)}`, {
             method: 'DELETE',
             headers: getAuthHeaders()
           })
+        } else if (props.resourceType === 'space') {
+           await api.delete(`/spaces/${props.resourceId}/permissions/${encodeURIComponent(identifier)}`)
         } else {
-          await api.delete(`/dashboards/${resourceId.value}/permissions/${encodeURIComponent(identifier)}`)
+          await api.delete(`/dashboards/${props.resourceId}/permissions/${encodeURIComponent(identifier)}`)
         }
         toast.success('Access revoked')
         await loadPermissions()

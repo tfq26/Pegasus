@@ -14,6 +14,7 @@ import { usePlatform } from '@/composables/usePlatform'
 import { useColorMode } from '@vueuse/core'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import ErrorPage from '@/views/ErrorPage.vue'
+import AILoadingIsland from '@/components/AILoadingIsland.vue'
 import 'vue-sonner/style.css'
 
 const { isTauri } = usePlatform()
@@ -145,6 +146,7 @@ onUnmounted(() => {
 <template>
   <!-- Minimal layout for auth pages -->
   <div v-if="isMinimalRoute" class="h-full w-full bg-black">
+    <AILoadingIsland />
     <Toaster position="top-right" richColors />
     <!-- For minimal routes, we still overlay the error entirely if it happens -->
     <ErrorPage 
@@ -166,6 +168,7 @@ onUnmounted(() => {
     <Navbar v-else :theme-mode="themeMode" :toggle-theme="toggleTheme" />
 
     <!-- Sonner Toasts -->
+    <AILoadingIsland />
     <Toaster position="top-right" richColors />
 
     <!-- Main layout: Adjust padding for navbar height -->

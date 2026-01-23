@@ -78,7 +78,7 @@ const getTabTooltip = (tab: Tab) => {
   if (!data) return tab.label;
 
   const connection = data.connection;
-  const connectionName = connection?.nickname || connection?.host || connection?.database || connection?.provider || 'Local Data';
+  const connectionName = connection?.alias || connection?.nickname || connection?.host || connection?.database || connection?.provider || 'Local Data';
   const tableName = data.tableName || tab.label;
   
   return `${tableName} @ ${connectionName}`;

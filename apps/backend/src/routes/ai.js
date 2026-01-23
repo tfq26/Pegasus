@@ -3,6 +3,7 @@ import { aiClient } from '../../ai/AIClient.js';
 import { EntitlementService } from '../services/EntitlementService.js';
 import { db } from '../db/index.js';
 import { secretService } from '../services/SecretService.js';
+import { spreadsheetToolService } from '../services/SpreadsheetToolService.js';
 
 const aiRoutes = new Hono();
 const entitlementService = new EntitlementService(db);

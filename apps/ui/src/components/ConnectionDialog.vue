@@ -87,7 +87,7 @@ const closeModal = () => {
           <div class="space-y-2">
             <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nickname</label>
             <input
-              v-model="props.connectionForm.nickname"
+              v-model="props.connectionForm.alias"
               type="text"
               placeholder="e.g. Production DB"
               class="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary transition-colors placeholder:text-muted-foreground"

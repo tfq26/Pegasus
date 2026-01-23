@@ -114,12 +114,14 @@ spaces.get("/:id/permissions", async (c) => {
         const userId = payload.sub
         let id = c.req.param("id")
         if (!id.includes(':')) id = `data_space:${id}`
+        const rawSpaceId = id.split(':')[1]
 
         const role = await getSpaceRole(userId, id);
         if (!role) return c.json({ error: "Unauthorized" }, 403)
 
         const currentPerms = await db.select({
             access_level: spacePermissions.role,
+            alias: spacePermissions.alias,
             user_id: spacePermissions.userId,
             email: users.email,
             first_name: users.firstName,
@@ -197,6 +199,52 @@ spaces.post("/:id/share/invite", async (c) => {
     }
 })
 
+spaces.put("/:id/permissions/:email", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        let id = c.req.param("id")
+        const email = decodeURIComponent(c.req.param("email"))
+        if (!id.includes(':')) id = `data_space:${id}`
+
+        const body = await c.req.json()
+        const { role, alias } = body
+
+        const currentRole = await getSpaceRole(userId, id);
+        if (currentRole !== 'owner' && currentRole !== 'editor') return c.json({ error: "Unauthorized" }, 403)
+
+        let targetUserId = email;
+        const userCheck = await db.query.users.findFirst({
+            where: eq(users.email, email)
+        })
+        if (userCheck) {
+            targetUserId = userCheck.id;
+        }
+
+        const rawSpaceId = id.split(':')[1];
+
+        // Construct update object dynamically
+        const updates = {};
+        if (role) updates.role = role;
+        if (alias !== undefined) updates.alias = alias;
+        updates.updatedAt = new Date(); // If we had updatedAt on permissions, but we don't. Drizzle ignores extras usually.
+
+        await db.update(spacePermissions)
+            .set(updates)
+            .where(and(
+                eq(spacePermissions.userId, targetUserId),
+                eq(spacePermissions.spaceId, rawSpaceId)
+            ))
+
+        return c.json({ ok: true })
+    } catch (e) {
+        console.error("[Update Permission] Error:", e)
+        return c.json({ error: "Failed to update permission" }, 500)
+    }
+})
+
 spaces.delete("/:id/permissions/:email", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -266,7 +314,8 @@ spaces.get("/", async (c) => {
                     description: 'Your default workspace for data analysis.',
                     icon: 'box',
                     color: '#8B5CF6',
-                    isDefault: true
+                    isDefault: true,
+                    isPersonal: true
                 })
                 .returning()
 
@@ -298,7 +347,7 @@ spaces.post("/", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         const body = await c.req.json()
-        const { name, description, icon, color } = body
+        const { name, description, icon, color, tags } = body
 
         const [result] = await db.insert(dataSpaces)
             .values({
@@ -307,6 +356,7 @@ spaces.post("/", async (c) => {
                 description,
                 icon: icon || "database",
                 color: color || "#8B5CF6",
+                tags: tags || [],
                 isDefault: false
             })
             .returning()
@@ -323,17 +373,39 @@ spaces.put("/:id", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
         const { id } = c.req.param()
         const body = await c.req.json()
         const rawId = id.includes(':') ? id.split(':')[1] : id
+
+        // 1. Check Permissions (Existing logic was missing this!)
+        // Implicitly checks if user owns the space via userId matching or if we trust the update
+        // Since we are changing 'default', we must ensure the user owns this space or is at least an editor? 
+        // Typically 'default' is a personal preference, but here spaces are shared. 
+        // 'isDefault' on the space object implies it's the default for the OWNER or arguably the space itself is 'default'?
+        // Schema: isDefault is on dataSpaces table. This means it's a global property of the space.
+        // If 'Personal Space' is default, it's default for everyone? No, `dataSpaces` has `userId`.
+        // So `isDefault` is likely "Is this the default space for the USER who owns it?".
+
+        // If updating isDefault to true, unset others for this user
+        if (body.isDefault === true) {
+            await db.update(dataSpaces)
+                .set({ isDefault: false })
+                .where(eq(dataSpaces.userId, userId))
+        }
 
         const [result] = await db.update(dataSpaces)
             .set({
                 ...body,
                 updatedAt: new Date()
             })
-            .where(eq(dataSpaces.id, rawId))
+            .where(and(eq(dataSpaces.id, rawId), eq(dataSpaces.userId, userId))) // Ensure user owns it
             .returning()
+
+        if (!result) {
+            return c.json({ error: "Space not found or unauthorized" }, 404);
+        }
 
         return c.json(result);
     } catch (e) {

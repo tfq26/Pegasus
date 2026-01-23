@@ -364,6 +364,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         try {
             await deleteDashboard(id)
             dashboards.value = dashboards.value.filter(d => d.id !== id)
+            recentDashboards.value = recentDashboards.value.filter(d => d.id !== id)
             if (currentDashboard.value?.id === id) {
                 currentDashboard.value = null
             }

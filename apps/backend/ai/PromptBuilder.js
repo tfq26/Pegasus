@@ -105,7 +105,7 @@ EXAMPLES:
    User: "How many employees are from California?"
    {"reasoning": "Finding all employees from California. Using $in to match West Coast cities.", "collection": "employees", "filter": {"city": {"$in": ["Los Angeles", "San Francisco", "San Diego", "Sacramento"]}}, "limit": 100}
 `
-    } else if (dialect === 'mysql' || dialect === 'sqlite' || dialect === 'postgres') {
+    } else if (dialect === 'mysql' || dialect === 'sqlite' || dialect === 'postgres' || dialect === 'duckdb') {
       // SQL Dialects
       const tables = schema.tables || []
       const sampleValues = schema.sampleValues || {}
@@ -164,81 +164,41 @@ EXAMPLES:
       }
 
       formatInstructions = `
-IMPORTANT - ${dialect.toUpperCase()} Query Format:
-You can return a single SQL query OR a JSON object for complex requests.
+IMPORTANT - Data Access Rules:
+You are a Data Architect. You utilize a tool called 'query_data' to fetch or analyze data.
 
-JSON Format for COMPLEX, MULTI-PART, or MUTATION QUESTIONS:
-{
-  "multi_step": true,
-  "steps": [
-    { "query": "SELECT ...", "explanation": "First, we get..." },
-    { "query": "SELECT ...", "explanation": "Then, we calculate..." }
-  ]
-}
+CRITICAL RULES:
+1. **DO NOT WRITE SQL.** You must use the \`query_data\` tool.
+2. The \`query_data\` tool takes a structured JSON object (Intent) describing what you want (resource, filters, groupBy, etc).
+3. The system will compile your intent into optimized, secure SQL.
 
-OR if the user wants to EDIT/MODIFY/DELETE data (SQL MUTATION):
-{
-  "action": "edit",
-  "method": "update|insert|delete",
-  "reasoning": "Why this action is being taken",
-  "confirmation": "I have prepared an update to change the status of order #101 to 'shipped'.",
-  "example_formula": "Status: 'pending' -> 'shipped'",
-  "query": "UPDATE orders SET status = 'shipped' WHERE order_id = 101"
-}
+How to answer user questions:
+- "Show me funds": Call \`query_data\` with { resource: 'funds', limit: 100 }
+- "Show funds by sector": Call \`query_data\` with { resource: 'funds', groupBy: ['sector'], aggregations: [{ op: 'count', field: '*' }] }
+- "Plot a pie chart...": Call \`query_data\` with { ..., visualization: { type: 'pie', ... } }
 
-OR if ambiguous:
-{
-  "ambiguous": true,
-  "message": "...",
-  "choices": [...]
-}
+VISUALIZATION RULES:
+- ONLY include the \`visualization\` field if the user explicitly asks for a "chart", "graph", "plot", or "visualize".
+- For "What is", "Tell me", "List", "Show me" -> Do NOT visualize. Just return the data (and the system will show a table).
 
-Normal Single Query:
-Just return the SQL (e.g., SELECT * FROM ...)
-
-RULES:
-1. Return valid ${dialect} SQL syntax only
-2. Use appropriate quoting for table/column names if they contain special characters
-3. For partial text matches, use LIKE with wildcards: WHERE column LIKE '%search%'
-4. **CRITICAL**: For company/supplier/vendor/manufacturer names, ALWAYS use LIKE '%name%' instead of exact equality (=)
-5. Always include a LIMIT clause (default 100)
-6. When selecting data, include primary keys or identifying columns
-7. JOINs are encouraged if data is split across tables
-8. CRITICAL: DO NOT include simulated results (e.g. "Results: [...]") or explanations after the query
+AMBIGUITY:
+- If a user term (e.g. "Revenue") could range across multiple columns or tables, use your Semantic Understanding to pick the best one.
+- If it is truly ambiguous, you may return a JSON object with { "ambiguous": true, "message": "...", "choices": [...] } INSTEAD of calling the tool.
 
 "HOW MANY" QUESTIONS:
-When users ask "how many X", they typically want to see the actual data, not just a count.
-- Use: SELECT * FROM table WHERE ... LIMIT 100
-- NOT: SELECT COUNT(*) FROM table WHERE ...
-- Only use COUNT(*) if the user explicitly asks for "just the count" or "only the number"
-- The count is implied by the number of results returned
+- Users usually want to see the data, not just a number.
+- Use { limit: 100 } to show them the records.
+- Only calculate a COUNT if they explicitly say "count" or "number of".
 
-AMBIGUITY & JOINS:
-1. If the request requires data from MULTIPLE tables (JOIN), you MUST verify that the join is logical.
-2. USE SEMANTIC UNDERSTANDING: If a column name is not an exact match but is a strong semantic match based on the "Column Semantics" section (e.g. "Fund" user term matches "scheme_name" column), assumes it is correct.
-3. Only return "ambiguous": true if there are MULTIPLE EQUALLY LIKELY conflicting candidates that cannot be resolved by context.
-4. If the user asks for something that could be in multiple tables (e.g. "users" could mean "users" table or "admin_users" table), return "ambiguous": true.
-
-AMBIGUOUS RESPONSE FORMAT (JSON):
-{
-  "ambiguous": true,
-  "message": "Explanation of ambiguity...",
-  "choices": ["Option 1", "Option 2"]
-}
-
-EXAMPLES:
-1. Simple query:
-   SELECT * FROM users WHERE status = 'active' LIMIT 10
-
-2. Partial text match:
-   SELECT * FROM teams WHERE team_name LIKE '%New Mexico%' LIMIT 100
-
-3. JOIN query:
-   SELECT u.id, u.name, o.order_id FROM users u JOIN orders o ON u.id = o.user_id WHERE u.status = 'active' LIMIT 20
-
-4. "How many" question:
-   User: "How many employees are from California?"
-   SELECT * FROM employees WHERE state = 'California' LIMIT 100
+COMPLEX QUESTIONS ("Best and Worst", "Compare X and Y"):
+- You can return an ARRAY of intents to fetch multiple datasets at once.
+- Example: "Least and Most expensive funds"
+  Call \`query_data\` with:
+  [
+    { resource: 'funds', orderBy: [{ field: 'price', direction: 'asc' }], limit: 5 },
+    { resource: 'funds', orderBy: [{ field: 'price', direction: 'desc' }], limit: 5 }
+  ]
+  (Note: No visualization field unless asked!)
 `
     }
 

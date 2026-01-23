@@ -40,6 +40,14 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { computed } from 'vue'
 
 const props = defineProps<{
   aiMode: boolean
@@ -55,6 +63,8 @@ const props = defineProps<{
   textWrap?: boolean
   showGridlines?: boolean
   hasUncommittedChanges?: boolean
+  availableModels?: { id: string; name: string }[]
+  aiOptions?: { model: string | null; temperature: number }
 }>()
 
 const emit = defineEmits<{
@@ -75,7 +85,30 @@ const emit = defineEmits<{
   'version-change': [version: number]
   'update:text-wrap': [value: boolean]
   'update:show-gridlines': [value: boolean]
+  'auto-fit': []
+  'update:ai-options': [value: { model: string | null; temperature: number }]
 }>()
+
+const defaultModels = [
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-pro', label: 'Gemini Pro' },
+]
+
+const aiModels = computed(() => {
+  if (props.availableModels && props.availableModels.length > 0) {
+    return props.availableModels.map(m => ({
+      value: m.id,
+      label: m.name
+    }))
+  }
+  return defaultModels
+})
+
+const updateOption = (key: 'model' | 'temperature', value: any) => {
+  if (props.aiOptions) {
+    emit('update:ai-options', { ...props.aiOptions, [key]: value })
+  }
+}
 </script>
 
 <template>
@@ -101,6 +134,28 @@ const emit = defineEmits<{
           <TooltipContent side="bottom">{{ props.aiMode ? 'Switch to Formula Mode' : 'Switch to AI Mode' }}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
+    </div>
+    
+    <!-- Model Selection (AI Mode Only) -->
+    <div v-if="props.aiMode && props.aiOptions" class="flex items-center gap-1 border-r border-border pr-2 mr-1">
+      <Select 
+        :model-value="props.aiOptions.model"
+        @update:model-value="updateOption('model', $event)"
+      >
+        <SelectTrigger class="w-[140px] h-7 text-[11px] border-none bg-purple-500/5 hover:bg-purple-500/10 focus:ring-0 px-2 shadow-none text-purple-700 dark:text-purple-400 font-medium">
+          <Sparkles class="w-3 h-3 mr-1.5 opacity-70" />
+          <SelectValue placeholder="Select Model" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem
+            v-for="model in aiModels"
+            :key="model.value"
+            :value="model.value"
+          >
+            {{ model.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
     </div>
 
     <!-- Undo / Redo -->
@@ -241,6 +296,22 @@ const emit = defineEmits<{
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Show Gridlines</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('auto-fit')"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3v18M16 3v18M3 12h18M3 6h4M17 6h4M3 18h4M17 18h4"/>
+              </svg>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Auto-fit All Columns</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>

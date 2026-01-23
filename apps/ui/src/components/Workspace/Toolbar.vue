@@ -146,6 +146,8 @@ const models = computed(() => {
           :text-wrap="textWrap"
           :show-gridlines="showGridlines"
           :has-uncommitted-changes="hasUncommittedChanges"
+          :ai-options="aiOptions"
+          :available-models="availableModels"
           @toggle-ai-mode="emit('toggle-ai-mode')"
           @format="(t, v) => emit('format', t, v)"
           @visualize="emit('visualize')"
@@ -163,6 +165,8 @@ const models = computed(() => {
           @version-change="(v) => emit('version-change', v)"
           @update:text-wrap="(v) => emit('update:text-wrap', v)"
           @update:show-gridlines="(v) => emit('update:show-gridlines', v)"
+          @auto-fit="emit('format', 'auto-fit')"
+          @update:ai-options="emit('update:aiOptions', $event)"
         />
 
         <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->

@@ -258,10 +258,10 @@
     </Dialog>
 
     <!-- Share Modal -->
-    <ShareDialog
+    <ShareResourceDialog
       v-model:open="showShareModal"
-      :dashboard-id="dashboardToShare?.id || null" 
-      :public-link="shareUrl"
+      :resource-id="dashboardToShare?.id || null" 
+      resource-type="dashboard"
     />
 
     <!-- Rename Modal -->
@@ -561,7 +561,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
+import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 import UpgradeModal from '@/components/UpgradeModal.vue'
 import { toast } from '@/composables/useNotifications'
 import { useEntitlements } from '@/composables/useEntitlements'
@@ -912,7 +912,12 @@ const confirmDelete = async () => {
   if (!dashboardToDelete.value) return
   
   try {
-    await store.removeDashboard(dashboardToDelete.value.id)
+    const id = dashboardToDelete.value.id
+    await store.removeDashboard(id)
+    
+    // Also remove from local shared dashboards if present
+    sharedDashboards.value = sharedDashboards.value.filter(d => d.id !== id)
+    
     toast.success('Dashboard deleted successfully')
     showDeleteModal.value = false
   } catch (e) {

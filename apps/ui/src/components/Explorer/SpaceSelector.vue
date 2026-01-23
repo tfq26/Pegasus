@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSpaceStore, type DataSpace } from '@/stores/space'
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { ChevronDown, Box, Plus, Settings, Copy, Share2, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, Box, Plus, Settings, Copy, Share2, Trash2, Code, Database, Globe, Lock, Layout, Cloud, Shield, Pin } from 'lucide-vue-next'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/context-menu'
 import CreateSpaceDialog from './CreateSpaceDialog.vue'
 import SpaceSettingsDialog from './SpaceSettingsDialog.vue'
+import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 import { toast } from '@/composables/useNotifications'
 
 const spaceStore = useSpaceStore()
@@ -25,6 +26,24 @@ const showCreateDialog = ref(false)
 const showSettingsDialog = ref(false)
 const selectedSpaceForSettings = ref<DataSpace | null>(null)
 const isDeleting = ref(false)
+const showShareDialog = ref(false)
+const selectedSpaceForShare = ref<DataSpace | null>(null)
+
+// Icon Map
+const iconMap: Record<string, any> = {
+  box: Box,
+  code: Code,
+  database: Database,
+  globe: Globe,
+  lock: Lock,
+  layout: Layout,
+  cloud: Cloud,
+  shield: Shield
+}
+
+function getIcon(name: string) {
+  return iconMap[name] || Box
+}
 
 // Computed helpers to ensure proper typing in template
 const activeSpace = computed(() => (spaceStore.currentSpace as unknown) as DataSpace | null)
@@ -39,17 +58,27 @@ function openSettings(space: DataSpace) {
   showSettingsDialog.value = true
 }
 
-async function handleDelete(space: DataSpace) {
-  if (space.is_default) {
+function handleDelete(space: DataSpace) {
+  if (space.isDefault) {
     toast.error('Cannot Delete', { description: 'You cannot delete your default space.' })
     return
   }
   
   try {
-    await spaceStore.deleteSpace(space.id)
+    spaceStore.deleteSpace(space.id)
     toast.success('Space Deleted', { description: `${space.name} has been removed.` })
   } catch (e) {
     toast.error('Error', { description: 'Failed to delete space.' })
+  }
+}
+
+async function handleSetDefault(space: DataSpace) {
+  try {
+    await spaceStore.updateSpace(space.id, { isDefault: true })
+    toast.success('Default Updated', { description: `${space.name} is now your default space.` })
+  } catch (e) {
+    console.error(e)
+    toast.error('Error', { description: 'Failed to update default space.' })
   }
 }
 
@@ -60,6 +89,11 @@ function copyJoinCode(space: DataSpace) {
   toast.success('Copied!', {
     description: 'Join code copied to clipboard.'
   })
+}
+
+function openShareDialog(space: DataSpace) {
+  selectedSpaceForShare.value = space
+  showShareDialog.value = true
 }
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -97,7 +131,7 @@ onUnmounted(() => {
             class="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg shadow-purple-900/10 transition-transform group-hover:scale-105"
             :style="{ backgroundColor: activeSpace ? activeSpace.color : '#8B5CF6' }"
           >
-            <Box class="w-5 h-5 pointer-events-none" />
+            <component :is="getIcon(activeSpace?.icon || 'box')" class="w-5 h-5 pointer-events-none" />
           </div>
           <div class="flex-1 min-w-0">
             <h4 class="text-[13px] font-bold truncate leading-none text-foreground mb-1">
@@ -111,7 +145,7 @@ onUnmounted(() => {
         </button>
       </DropdownMenuTrigger>
       
-      <DropdownMenuContent class="w-64 bg-popover/95 backdrop-blur-xl border-border shadow-2xl rounded-2xl z-[100] p-1.5 overflow-hidden" align="start" :side-offset="8">
+      <DropdownMenuContent class="w-64 bg-popover/95 backdrop-blur-xl border-border shadow-2xl rounded-2xl z-[100] p-1.5" align="start" :side-offset="8">
         <div class="text-[10px] uppercase tracking-[0.25em] font-black text-muted-foreground/60 px-4 py-3 select-none">
           Your Spaces
         </div>
@@ -131,13 +165,15 @@ onUnmounted(() => {
                   class="w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 shadow-sm"
                   :style="{ backgroundColor: s.color }"
                 >
-                  <Box class="w-4 h-4" />
+                  <component :is="getIcon(s.icon)" class="w-4 h-4" />
                 </div>
                 <div class="flex-1 min-w-0">
-                  <p class="text-xs font-bold truncate text-foreground">{{ s.name }}</p>
-                  <p v-if="s.is_default" class="text-[9px] text-purple-500 font-extrabold uppercase tracking-wider mt-0.5">
-                    Default Workspace
-                  </p>
+                  <div class="flex items-center gap-1.5">
+                    <p class="text-xs font-bold truncate text-foreground">{{ s.name }}</p>
+                    <div v-if="s.isDefault" class="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/10 text-purple-500 shrink-0" title="Default Workspace">
+                      <Pin class="w-2.5 h-2.5 fill-current" />
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Action Toggle (Settings vs Delete) -->
@@ -159,17 +195,33 @@ onUnmounted(() => {
                 </button>
               </DropdownMenuItem>
             </ContextMenuTrigger>
-            <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+            <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground z-[200]">
               <ContextMenuItem @select="openSettings(s)" class="cursor-pointer">
                 <Settings class="w-3.5 h-3.5 mr-2" />
                 Edit Space Settings
+              </ContextMenuItem>
+              <ContextMenuItem 
+                v-if="!s.isDefault"
+                @select="handleSetDefault(s)" 
+                class="cursor-pointer"
+              >
+                <Pin class="w-3.5 h-3.5 mr-2" />
+                Mark as Default
+              </ContextMenuItem>
+              <ContextMenuItem 
+                v-else
+                disabled
+                class="opacity-50 cursor-not-allowed"
+              >
+                <Pin class="w-3.5 h-3.5 mr-2 fill-current" />
+                Default Space
               </ContextMenuItem>
               <ContextMenuItem @select="copyJoinCode(s)" class="cursor-pointer">
                 <Copy class="w-3.5 h-3.5 mr-2" />
                 Copy Join Code
               </ContextMenuItem>
-              <ContextMenuSeparator class="bg-border my-1" />
-              <ContextMenuItem @select="copyJoinCode(s)" class="cursor-pointer">
+              <ContextMenuSeparator v-if="!s.isPersonal" class="bg-border my-1" />
+              <ContextMenuItem v-if="!s.isPersonal" @select="openShareDialog(s)" class="cursor-pointer">
                 <Share2 class="w-3.5 h-3.5 mr-2" />
                 Share Space
               </ContextMenuItem>
@@ -198,6 +250,12 @@ onUnmounted(() => {
       :open="showSettingsDialog" 
       :space="selectedSpaceForSettings"
       @update:open="showSettingsDialog = $event" 
+    />
+    <ShareResourceDialog
+      :open="showShareDialog"
+      @update:open="showShareDialog = $event"
+      :resource-id="selectedSpaceForShare?.id || null"
+      resource-type="space"
     />
   </div>
 </template>

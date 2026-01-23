@@ -8,7 +8,7 @@
 import { Surreal } from 'surrealdb';
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { userPayments } from './src/db/schema.js';
+import { userPayments, experimentalAccess, experimentalRequests, userFeatureFlags } from './src/db/schema.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -152,6 +152,51 @@ async function migrateSurrealToNeon() {
                 errorCount++;
             }
         }
+
+        // --- Migrate Experimental Access ---
+        console.log('\n📥 Fetching experimental_access from SurrealDB...');
+        const surrealAccess = await surrealDb.query('SELECT * FROM experimental_access');
+        const accessList = surrealAccess[0]?.result || surrealAccess[0] || [];
+
+        console.log(`✅ Found ${accessList.length} experimental access records`);
+
+        for (const data of accessList) {
+            try {
+                let userId = data.user_id || data.user;
+                if (typeof userId === 'string' && userId.includes(':')) userId = userId.split(':')[1];
+
+                await db.insert(experimentalAccess).values({
+                    userId,
+                    hasAccess: !!data.has_access,
+                    grantedAt: data.granted_at ? new Date(data.granted_at) : new Date(),
+                    grantedBy: data.granted_by
+                }).onConflictDoNothing();
+                console.log(`✅ Migrated access for user: ${userId}`);
+            } catch (e) { console.error('Failed access migration', e.message) }
+        }
+
+        // --- Migrate Feature Flags ---
+        console.log('\n📥 Fetching user_feature_flag from SurrealDB...');
+        const surrealFlags = await surrealDb.query('SELECT * FROM user_feature_flag');
+        const flagList = surrealFlags[0]?.result || surrealFlags[0] || [];
+
+        console.log(`✅ Found ${flagList.length} feature flags`);
+
+        for (const data of flagList) {
+            try {
+                let userId = data.user_id || data.user;
+                if (typeof userId === 'string' && userId.includes(':')) userId = userId.split(':')[1];
+
+                await db.insert(userFeatureFlags).values({
+                    userId,
+                    featureId: data.feature_id,
+                    enabled: !!data.enabled,
+                    enabledAt: data.enabled_at ? new Date(data.enabled_at) : new Date()
+                }).onConflictDoNothing();
+                console.log(`✅ Migrated flag ${data.feature_id} for user: ${userId}`);
+            } catch (e) { console.error('Failed flag migration', e.message) }
+        }
+
 
         // Summary
         console.log('\n' + '='.repeat(50));

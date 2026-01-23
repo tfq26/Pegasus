@@ -273,7 +273,7 @@ const toggleAdvancedSettings = () => {
 // --- BYOM Logic ---
 const currentProvider = ref('default') // 'default' | 'aws' | 'azure' | 'gcp'
 const canUseByom = computed(() => {
-  return ['teams', 'enterprise'].includes(subscriptionTier.value)
+  return ['pro_plus', 'teams', 'enterprise'].includes(subscriptionTier.value)
 })
 
 // Modular Upgrade Modal State
@@ -291,7 +291,7 @@ const changeProvider = async (provider: string) => {
     upgradeModalState.value = {
       open: true,
       title: 'Connect Your Own Cloud',
-      description: 'Connecting external cloud providers like AWS, Azure, and Google Cloud is a Teams+ feature.',
+      description: 'Connecting external cloud providers like AWS, Azure, and Google Cloud is a Pro+ feature.',
       benefits: [
         'Bring Your Own Model (BYOM)',
         'AWS Bedrock Integration',
@@ -299,7 +299,7 @@ const changeProvider = async (provider: string) => {
         'Google Cloud Vertex AI',
         'Centralized Team Management'
       ],
-      targetTier: 'teams',
+      targetTier: 'pro_plus',
       limitType: undefined
     }
     return
@@ -327,9 +327,9 @@ const changeProvider = async (provider: string) => {
           upgradeModalState.value = {
              open: true,
              title: 'Access Restricted',
-             description: 'You need a Teams subscription to change providers.',
+             description: 'You need a Pro+ subscription to change providers.',
              benefits: ['Unlock Cloud Providers', 'Prioritized Inference'],
-             targetTier: 'teams',
+             targetTier: 'pro_plus',
              limitType: undefined
           }
        }
@@ -373,7 +373,7 @@ onMounted(async () => {
       <h3 class="text-foreground font-medium mb-3 flex items-center gap-2">
         Model Provider
         <span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-500 border border-purple-500/20 font-bold uppercase">
-          Teams+
+          Pro+
         </span>
       </h3>
       
@@ -449,7 +449,7 @@ onMounted(async () => {
       
       <div v-if="!canUseByom" class="mt-3 text-xs text-muted-foreground flex items-center gap-2 p-2 bg-muted/50 rounded-md">
          <AlertCircle class="w-3.5 h-3.5 text-purple-500" />
-         Upgrade to <strong>Teams</strong> or <strong>Enterprise</strong> to connect your own cloud providers.
+         Upgrade to <strong>Pro+</strong> to connect your own cloud providers.
       </div>
     </div>
     
@@ -516,8 +516,6 @@ onMounted(async () => {
               <p class="opacity-80 mt-1">You need to pull a model to use local AI. Open your terminal and run <code>ollama pull llama3</code> or download one from the library.</p>
             </div>
       </div>
-    </div>
-
     </div>
 
     <div class="pt-6 border-t border-border">

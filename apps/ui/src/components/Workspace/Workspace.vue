@@ -51,6 +51,8 @@ const emit = defineEmits<{
   (e: 'optimize-query', query: string): void;
   (e: 'show-results'): void;
   (e: 'share'): void;
+  (e: 'ai-respond', response: any): void;
+  (e: 'generate-insights', payload: { query: string; results: any; messageIndex: number }): void;
 }>();
 
 // --- Pinia Store ---
@@ -877,6 +879,9 @@ const handleAIResponse = (response: any) => {
         // Switch to new tab
         workspaceStore.setActiveTab(createdTab.id);
         toast.success(`Created new table "${tableName}"`);
+    } else if (response.type === 'message') {
+        // Handle direct AI text responses
+        emit('ai-respond', response.content);
     } else if (response.type === 'processed_data') {
         // Handle processed data (e.g. show in dialog)
         console.log('[Workspace] Received processed data:', response);
@@ -1306,7 +1311,14 @@ const activeTabShowGridlines = computed(() => {
 
 const handleFormat = (type: string, value?: any) => {
     const grid = gridRefs.value.get((activeTabId as any).value);
-    if (grid?.handleFormat) {
+    if (!grid) return;
+    
+    if (type === 'auto-fit') {
+        if (grid.autoFitAllColumns) grid.autoFitAllColumns();
+        return;
+    }
+    
+    if (grid.handleFormat) {
         grid.handleFormat(type, value);
     }
 };
@@ -1441,6 +1453,22 @@ const hasUncommittedChanges = computed(() => {
   return grid?.hasUncommittedChanges || false;
 });
 
+const isAIMode = computed(() => {
+  const tabId = activeTabId.value as unknown as string;
+  if (!tabId) return false;
+  const grid = gridRefs.value.get(tabId);
+  return grid?.isAIMode || false;
+});
+
+const handleToggleAIMode = () => {
+    const tabId = activeTabId.value as unknown as string;
+    if (!tabId) return;
+    const grid = gridRefs.value.get(tabId);
+    if (grid?.toggleAIMode) {
+        grid.toggleAIMode();
+    }
+}
+
 // Save functionality exposed to parent
 const saveCurrentTab = async () => {
   const tabId = activeTabId.value as unknown as string;
@@ -1553,6 +1581,8 @@ defineExpose({
       :has-uncommitted-changes="hasUncommittedChanges"
       :note-file-type="(activeTab as any)?.data?.file_type || 'md'"
       :note-is-private="(activeTab as any)?.data?.isPrivate || false"
+      :ai-mode="isAIMode"
+      @toggle-ai-mode="handleToggleAIMode"
       @run="handleToolbarRun"
       @clear="handleToolbarClear"
       @format="handleFormat"
@@ -1642,6 +1672,7 @@ defineExpose({
             :private-mode="props.privateMode"
             :versions="(tab.data?.versions as TableVersion[])"
             :current-version="tab.data?.currentVersion"
+            :ai-options="aiOptions"
             @save-query="(query, type) => emit('save-query', query, type)"
             @version-change="(v) => handleVersionChange(tab.id, v)"
             @ai-response="handleAIResponse"
@@ -1659,6 +1690,7 @@ defineExpose({
             @submit="emit('submit')"
             @show-results="emit('show-results')"
             @add-to-dashboard="(config) => emit('add-to-dashboard', config)"
+            @generate-insights="(payload) => emit('generate-insights', payload)"
           />
 
           <!-- Dedicated Query Console -->

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import JsonViewer from '@/components/JsonViewer.vue'
-import { ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-vue-next'
 
 const props = defineProps<{
   content: string
@@ -9,8 +9,14 @@ const props = defineProps<{
   meta?: any
 }>()
 
+const emit = defineEmits<{
+  (e: 'generateInsights', payload: { query: string; results: any }): void
+}>()
+
 import { FileText, Database, StickyNote, Quote } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
+
+const isGeneratingInsights = ref(false)
 
 const getIcon = (type: string) => {
   switch (type) {
@@ -46,6 +52,19 @@ const parsedContent = computed(() => {
   
   return { text: props.content, hasResults: false }
 })
+
+const canGenerateInsights = computed(() => {
+  return props.meta?.canGenerateInsights === true && !props.meta?.insightsGenerated
+})
+
+const handleGenerateInsights = () => {
+  if (!props.meta?.resultPreview || !props.meta?.query) return
+  isGeneratingInsights.value = true
+  emit('generateInsights', {
+    query: props.meta.query,
+    results: props.meta.resultPreview
+  })
+}
 
 const isTable = computed(() => {
   const results = parsedContent.value.results
@@ -84,6 +103,19 @@ const formatValue = (val: any) => {
   <div class="space-y-3 w-full overflow-hidden">
     <!-- Text Part -->
     <div v-if="parsedContent.text" class="whitespace-pre-wrap break-words">{{ parsedContent.text }}</div>
+    
+    <!-- Generate Insights Button -->
+    <div v-if="canGenerateInsights" class="flex items-center gap-2">
+      <button
+        @click="handleGenerateInsights"
+        :disabled="isGeneratingInsights"
+        class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Loader2 v-if="isGeneratingInsights" class="w-3 h-3 animate-spin" />
+        <Sparkles v-else class="w-3 h-3" />
+        {{ isGeneratingInsights ? 'Generating...' : 'Generate Insights' }}
+      </button>
+    </div>
     
     <!-- Results Part -->
     <div v-if="parsedContent.hasResults" class="mt-2">

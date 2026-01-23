@@ -8,7 +8,9 @@ export interface DataSpace {
     description?: string
     icon: string
     color: string
-    is_default: boolean
+    tags: string[]
+    isDefault: boolean
+    isPersonal: boolean
     created_at: string
     updated_at: string
 }
@@ -42,7 +44,7 @@ export const useSpaceStore = defineStore('space', () => {
     const currentSpace = computed(() => {
         if (!allSpaces.value.length) return null
         return allSpaces.value.find(s => s.id === currentSpaceId.value) ||
-            allSpaces.value.find(s => s.is_default) ||
+            allSpaces.value.find(s => s.isDefault) ||
             allSpaces.value[0]
     })
 
@@ -54,7 +56,10 @@ export const useSpaceStore = defineStore('space', () => {
 
             // Select default if none selected
             if (!currentSpaceId.value && allSpaces.value.length > 0) {
-                const def = allSpaces.value.find(s => s.is_default) || allSpaces.value[0]
+                // Prioritize "Personal" space
+                const personal = allSpaces.value.find(s => s.name.toLowerCase() === 'personal' || s.name.toLowerCase() === 'personal space')
+                const def = allSpaces.value.find(s => s.isDefault) || personal || allSpaces.value[0]
+
                 if (def) {
                     currentSpaceId.value = def.id
                 }
@@ -95,9 +100,9 @@ export const useSpaceStore = defineStore('space', () => {
         fetchSpaceContext()
     })
 
-    async function createSpace(name: string, description?: string, icon?: string, color?: string) {
+    async function createSpace(name: string, description?: string, icon?: string, color?: string, tags?: string[]) {
         try {
-            const newSpace = await apiCreateSpace(name, description, icon, color)
+            const newSpace = await apiCreateSpace(name, description, icon, color, tags)
             await loadSpaces()
             if (newSpace && newSpace.id) {
                 selectSpace(newSpace.id)

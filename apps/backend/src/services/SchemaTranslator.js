@@ -167,7 +167,7 @@ export class SchemaTranslator {
             let quoted = original
             if (provider === 'surrealdb' && this.needsNormalization(original)) {
                 quoted = `\`${original}\``
-            } else if ((provider === 'postgres' || provider === 'sqlite') && this.needsNormalization(original)) {
+            } else if ((provider === 'postgres' || provider === 'sqlite' || provider === 'duckdb') && this.needsNormalization(original)) {
                 quoted = `"${original}"`
             } else if (provider === 'mysql' && this.needsNormalization(original)) {
                 quoted = `\`${original}\``

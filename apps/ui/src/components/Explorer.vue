@@ -274,6 +274,7 @@ const handleAddNote = async () => {
 }
 
 const fileInput = ref<HTMLInputElement | null>(null)
+const zipInput = ref<HTMLInputElement | null>(null)
 
 const handleUploadFile = () => {
     fileInput.value?.click()
@@ -897,7 +898,8 @@ const onTestDataGenerated = (sql: string) => {
         </DialogContent>
       </Dialog>
 
-      <AddConnectionModal 
+
+        <AddConnectionModal 
         :open="addConnectionModalOpen"
         @update:open="(v) => addConnectionModalOpen = v"
         @connection-added="refreshSchemas"

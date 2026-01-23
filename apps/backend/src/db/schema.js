@@ -26,7 +26,9 @@ export const dataSpaces = pgTable("data_space", {
     description: text("description"),
     icon: text("icon").default("database"),
     color: text("color").default("#8B5CF6"),
+    tags: jsonb("tags").default([]),
     isDefault: boolean("is_default").default(false),
+    isPersonal: boolean("is_personal").default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -36,6 +38,7 @@ export const spacePermissions = pgTable("space_permission", {
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }).notNull(),
     role: text("role").notNull(), // 'owner', 'editor', 'viewer'
+    alias: text("alias"),
 }, (t) => ({
     pk: primaryKey({ columns: [t.userId, t.spaceId] }),
 }));
@@ -75,6 +78,7 @@ export const dashboardPermissions = pgTable("dashboard_permission", {
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
     dashboardId: uuid("dashboard_id").references(() => dashboards.id, { onDelete: 'cascade' }).notNull(),
     role: text("role").notNull(),
+    alias: text("alias"),
     canShare: boolean("can_share").default(false),
     canDownload: boolean("can_download").default(false),
 }, (t) => ({
@@ -169,6 +173,39 @@ export const dashboardElementRelations = relations(dashboardElements, ({ one }) 
     dashboard: one(dashboards, {
         fields: [dashboardElements.dashboardId],
         references: [dashboards.id],
+    }),
+}));
+
+export const dashboardPermissionRelations = relations(dashboardPermissions, ({ one }) => ({
+    dashboard: one(dashboards, {
+        fields: [dashboardPermissions.dashboardId],
+        references: [dashboards.id],
+    }),
+    user: one(users, {
+        fields: [dashboardPermissions.userId],
+        references: [users.id],
+    }),
+}));
+
+export const spaceRelations = relations(dataSpaces, ({ one, many }) => ({
+    owner: one(users, {
+        fields: [dataSpaces.userId],
+        references: [users.id],
+    }),
+    permissions: many(spacePermissions),
+    files: many(spaceFiles),
+    notes: many(spaceNotes),
+    connections: many(connections),
+}));
+
+export const spacePermissionRelations = relations(spacePermissions, ({ one }) => ({
+    space: one(dataSpaces, {
+        fields: [spacePermissions.spaceId],
+        references: [dataSpaces.id],
+    }),
+    user: one(users, {
+        fields: [spacePermissions.userId],
+        references: [users.id],
     }),
 }));
 

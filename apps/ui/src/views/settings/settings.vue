@@ -122,14 +122,15 @@ import CloudTab from './CloudTab.vue'
 import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
 import ExperimentalSettings from './ExperimentalSettings.vue'
 import AnalyticsTab from './AnalyticsTab.vue'
-import { CONNECTION_STORAGE_KEY, defaultConnections } from '@/lib/db-connections'
+import { defaultConnections } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema, QUERY_API_URL, getAuthHeaders } from '@/lib/api'
+import { fetchConnectionSchema } from '@/lib/api'
 import type { SettingsModel, ConnectionFormState, ConnectionStatusState } from './types'
 import { usePlatform } from '@/composables/usePlatform'
 import { useEntitlements } from '@/composables/useEntitlements'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
+import { useConnectionStore } from '@/stores/connection'
 import { storeToRefs } from 'pinia'
 import { unref, watch } from 'vue'
 
@@ -195,11 +196,15 @@ const settingsStore = useSettingsStore()
 const { isLoading } = storeToRefs(settingsStore)
 const settings = computed(() => unref(settingsStore.settings))
 
-const savedConnections = ref<ConnectionEntry[]>([])
+// Use Connection Store
+const connectionStore = useConnectionStore()
+const savedConnections = computed(() => unref(connectionStore.connections))
+
 const connectionStatuses = ref<Record<string, ConnectionStatusState>>({})
 const editingConnectionId = ref<string | null>(null)
 const connectionForm = reactive<ConnectionFormState>({
   nickname: '',
+  alias: '',
   description: '',
   provider: 'mysql',
   mysql: {
@@ -222,6 +227,9 @@ const connectionForm = reactive<ConnectionFormState>({
     clientSecret: '',
   },
   sqlite: {
+    path: '',
+  },
+  duckdb: {
     path: '',
   },
   postgres: {
@@ -247,7 +255,7 @@ const connectionForm = reactive<ConnectionFormState>({
 
 const profilePayments = ref<any[]>([])
 
-const canAddConnection = computed(() => connectionForm.nickname.trim().length > 0)
+const canAddConnection = computed(() => connectionForm.alias.trim().length > 0)
 const isEditMode = computed(() => editingConnectionId.value !== null)
 
 const connectionStatusFor = (id: string) => connectionStatuses.value[id]
@@ -317,7 +325,6 @@ const testConnection = async (conn: ConnectionEntry) => {
 
 const commitConnections = (emitEvent = true) => {
   if (typeof window === 'undefined') return
-  // window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(savedConnections.value))
   if (emitEvent) {
     window.dispatchEvent(new CustomEvent('pegasus:connections-updated'))
   }
@@ -327,6 +334,7 @@ const resetConnectionForm = () => {
   editingConnectionId.value = null
   const fresh: ConnectionFormState = {
     nickname: '',
+    alias: '',
     description: '',
     provider: 'mysql',
     mysql: {
@@ -349,6 +357,9 @@ const resetConnectionForm = () => {
       clientSecret: '',
     },
     sqlite: {
+      path: '',
+    },
+    duckdb: {
       path: '',
     },
     postgres: {
@@ -380,39 +391,18 @@ const summaryFor = (conn: ConnectionEntry) => {
   if (conn.provider === 'mongodb') return JSON.stringify(conn.mongodb, null, 2)
   if (conn.provider === 'kusto') return JSON.stringify(conn.kusto, null, 2)
   if (conn.provider === 'sqlite') return JSON.stringify(conn.sqlite, null, 2)
+  if (conn.provider === 'duckdb') return JSON.stringify(conn.duckdb, null, 2)
   if (conn.provider === 'surrealdb') return JSON.stringify(conn.surrealdb, null, 2)
   return ''
 }
 
-const loadConnections = async (retryCount = 0) => {
-  // console.log(`[Settings] loadConnections called, retry: ${retryCount}, token in localStorage:`, !!localStorage.getItem('auth_token'))
+const loadConnections = async (force = false) => {
   try {
-    const res = await fetch(`${QUERY_API_URL}/connections`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-      credentials: 'include'
-    })
-    
-    console.log(`[Settings] /connections response: ${res.status}`)
-    
-    // If 401 and we haven't retried yet, wait for token and retry
-    if (res.status === 401 && retryCount < 3) {
-      console.log(`[Settings] Got 401, retrying in 200ms (attempt ${retryCount + 1}/3)`)
-      await new Promise(resolve => setTimeout(resolve, 200))
-      return loadConnections(retryCount + 1)
-    }
-    
-    if (res.ok) {
-      const data = await res.json()
-      console.log(`[Settings] Loaded ${data.connections?.length || 0} connections`)
-      savedConnections.value = data.connections || []
-    } else {
-      console.error(`[Settings] Failed to load connections: ${res.status}`)
-      savedConnections.value = []
-    }
+    // Delegate to store, which handles caching and local aliases
+    await connectionStore.loadConnections(force)
+    // console.log(`[Settings] Loaded ${savedConnections.value.length} connections from store`)
   } catch (e) {
-    console.error('[Settings] Failed to load connections:', e)
-    savedConnections.value = []
+    console.error('[Settings] Failed to load connections via store:', e)
   }
   
   refreshConnectionStatuses()
@@ -422,6 +412,7 @@ const loadConnections = async (retryCount = 0) => {
 const editConnection = (conn: ConnectionEntry) => {
   editingConnectionId.value = conn.id
   connectionForm.nickname = conn.nickname
+  connectionForm.alias = conn.alias || ''
   connectionForm.description = conn.description || ''
   connectionForm.provider = conn.provider
   
@@ -442,6 +433,9 @@ const editConnection = (conn: ConnectionEntry) => {
   if (conn.provider === 'sqlite' && conn.sqlite) {
     connectionForm.sqlite = { ...conn.sqlite }
   }
+  if (conn.provider === 'duckdb' && conn.duckdb) {
+    connectionForm.duckdb = { ...conn.duckdb }
+  }
   if (conn.provider === 'postgres' && conn.postgres) {
     connectionForm.postgres = { ...conn.postgres }
   }
@@ -456,6 +450,7 @@ const updateConnection = async () => {
   const payload: ConnectionEntry = {
     id: editingConnectionId.value,
     nickname: connectionForm.nickname.trim(),
+    alias: connectionForm.alias?.trim() || undefined,
     description: connectionForm.description.trim() || undefined,
     provider: connectionForm.provider,
   }
@@ -472,6 +467,9 @@ const updateConnection = async () => {
   if (payload.provider === 'sqlite') {
     payload.sqlite = { ...connectionForm.sqlite }
   }
+  if (payload.provider === 'duckdb') {
+    payload.duckdb = { ...connectionForm.duckdb }
+  }
   if (payload.provider === 'postgres') {
     payload.postgres = { ...connectionForm.postgres }
   }
@@ -484,45 +482,27 @@ const updateConnection = async () => {
   }
 
   try {
-    const res = await fetch(`${QUERY_API_URL}/connections/${editingConnectionId.value}`, {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(payload)
-    })
+    // Delegate to store for updating. Store handles API call and alias mapping.
+    await connectionStore.updateConnection(payload)
     
-    if (res.ok) {
-      const index = savedConnections.value.findIndex(c => c.id === editingConnectionId.value)
-      if (index !== -1) {
-        savedConnections.value[index] = payload
-      }
-      refreshConnectionStatuses()
-      resetConnectionForm()
-      toast.success('Connection updated!')
-    } else {
-      const error = await res.text()
-      toast.error('Failed to update connection', { description: error })
-    }
+    // UI Updates
+    refreshConnectionStatuses()
+    resetConnectionForm()
+    toast.success('Connection updated!')
+    
   } catch (e) {
+    console.error(e)
     toast.error('Failed to update connection', { description: e instanceof Error ? e.message : String(e) })
   }
 }
 
 const deleteConnection = async (id: string) => {
   try {
-    const res = await fetch(`${QUERY_API_URL}/connections/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-      credentials: 'include'
-    })
+    // Delegate to store
+    await connectionStore.deleteConnection(id)
     
-    if (res.ok) {
-      savedConnections.value = savedConnections.value.filter((conn) => conn.id !== id)
-      refreshConnectionStatuses()
-      toast.success('Connection removed')
-    } else {
-      toast.error('Failed to remove connection')
-    }
+    refreshConnectionStatuses()
+    toast.success('Connection removed')
   } catch (e) {
     console.error('Failed to remove connection:', e)
     toast.error('Failed to remove connection')
@@ -539,7 +519,7 @@ const saveSettings = async () => {
   }
 }
 
-const connectionUpdateHandler = () => loadConnections()
+const connectionUpdateHandler = () => loadConnections(true)
 
 onMounted(async () => {
   if (isPhone.value) {

@@ -59,19 +59,35 @@ export class SpreadsheetToolService {
             },
             handler: async ({ tableName }, context) => {
                 let columns = context?.schemaInfo?.detailedSchema?.[tableName];
+                let ddl = null;
 
                 // Lazy fetch if not in initial context
-                if (!columns && context?.adapter) {
-                    console.log(`[SpreadsheetToolService] Lazy fetching schema for ${tableName}`);
-                    if (typeof context.adapter.getOneTableSchema === 'function') {
-                        columns = await context.adapter.getOneTableSchema(tableName);
+                if (context?.adapter) {
+                    if (!columns) {
+                        console.log(`[SpreadsheetToolService] Lazy fetching schema for ${tableName}`);
+                        if (typeof context.adapter.getOneTableSchema === 'function') {
+                            columns = await context.adapter.getOneTableSchema(tableName);
+                        }
                     }
+
+                    // Try to fetch DDL/View definition for better context (critical for DuckDB/Parquet)
+                    try {
+                        // Creating a generic way to get DDL if supported
+                        if (typeof context.adapter.query === 'function') {
+                            // DuckDB specific check
+                            const ddlResult = await context.adapter.query(`SELECT sql FROM sqlite_master WHERE name = '${tableName}' UNION ALL SELECT sql FROM duckdb_tables WHERE table_name = '${tableName}' LIMIT 1`).catch(() => null);
+                            if (ddlResult && ddlResult.length > 0) {
+                                ddl = ddlResult[0].sql;
+                            }
+                        }
+                    } catch (e) { console.warn('Failed to fetch DDL', e); }
                 }
 
                 return {
                     type: "schema_result",
                     tableName,
                     columns: columns || [],
+                    ddl: ddl,
                     note: "Table structure fetched successfully"
                 };
             }
@@ -233,6 +249,7 @@ export class SpreadsheetToolService {
             name: "process_with_ai",
             description: "Process or transform spreadsheet data using AI for tasks that don't fit other tools (e.g., 'create random groups', 'shuffle and assign', 'categorize items', 'generate creative output from data'). Use this when the user wants to manipulate, reorganize, or creatively transform the data.",
             category: "spreadsheet",
+            mutation: true,
             parameters: {
                 type: "object",
                 properties: {
@@ -415,6 +432,7 @@ export class SpreadsheetToolService {
         this.registerTool({
             name: "clean_data",
             description: "Standardize formats, remove duplicates, or fix inconsistencies",
+            mutation: true,
             parameters: {
                 type: "object",
                 properties: {
@@ -502,6 +520,7 @@ export class SpreadsheetToolService {
         this.registerTool({
             name: "sort_data",
             description: "Sort the data by a specific column",
+            mutation: true,
             parameters: {
                 type: "object",
                 properties: {
@@ -550,6 +569,7 @@ export class SpreadsheetToolService {
         this.registerTool({
             name: "apply_template",
             description: "Transform this table to match a template table's structure",
+            mutation: true,
             parameters: {
                 type: "object",
                 properties: {
@@ -565,6 +585,117 @@ export class SpreadsheetToolService {
                     type: "template_transform",
                     templateName
                 };
+            }
+        });
+
+        this.registerTool({
+            name: "query_data",
+            description: "Fetch or analyze data from the database using a structured intent. Use this for ANY data retrieval (tables, charts, lists). Do NOT write SQL.",
+            category: "data",
+            parameters: {
+                type: "object",
+                properties: {
+                    resource: { type: "string", description: "The table name to query (e.g. 'funds', 'users')." },
+                    filters: {
+                        type: "array",
+                        description: "Conditions to filter data (WHERE clause)",
+                        items: {
+                            type: "object",
+                            properties: {
+                                field: { type: "string" },
+                                op: { type: "string", enum: ["eq", "neq", "gt", "lt", "gte", "lte", "contains", "in"] },
+                                value: {
+                                    oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }, { type: "array", items: { type: "string" } }]
+                                }
+                            },
+                            required: ["field", "op", "value"]
+                        }
+                    },
+                    groupBy: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Columns to group by"
+                    },
+                    aggregations: {
+                        type: "array",
+                        description: "Calculations (SUM, COUNT, etc)",
+                        items: {
+                            type: "object",
+                            properties: {
+                                op: { type: "string", enum: ["sum", "count", "avg", "min", "max"] },
+                                field: { type: "string" },
+                                alias: { type: "string" }
+                            },
+                            required: ["op", "field"]
+                        }
+                    },
+                    orderBy: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                field: { type: "string" },
+                                direction: { type: "string", enum: ["asc", "desc"] }
+                            }
+                        }
+                    },
+                    limit: { type: "number", description: "Max rows to return (default 1000)" },
+                    visualization: {
+                        type: "object",
+                        description: "If a chart is needed, specify config here",
+                        properties: {
+                            type: { type: "string", enum: ["bar", "line", "pie", "doughnut", "area", "scatter"] },
+                            title: { type: "string" },
+                            xAxis: { type: "string" },
+                            yAxis: { type: "array", items: { type: "string" } }
+                        }
+                    }
+                },
+                required: ["resource"]
+            },
+            handler: async (intent, context) => {
+                const { IntentCompiler } = await import('./IntentCompiler.js');
+                const compiler = new IntentCompiler();
+
+                try {
+                    // Pass the full context (including schema/mappings) to compile
+                    const sqlOrSqls = compiler.compile(intent, context);
+
+                    if (Array.isArray(sqlOrSqls)) {
+                        // Handle Compound Intent (Multiple Queries)
+                        const results = await Promise.all(sqlOrSqls.map(sql => context.adapter.query(sql)));
+                        return {
+                            type: "data_response",
+                            isCompound: true,
+                            results: results.map((data, i) => ({
+                                query: sqlOrSqls[i],
+                                data: data,
+                                intent: intent[i] // Pass back the specific intent part (e.g. for titles)
+                            }))
+                        };
+                    } else {
+                        // Handle Single Intent
+                        const result = await context.adapter.query(sqlOrSqls);
+
+                        if (intent.visualization) {
+                            return {
+                                type: "visualization_request",
+                                query: sqlOrSqls,
+                                config: { type: intent.visualization.type, ...intent.visualization },
+                                data: result
+                            };
+                        }
+
+                        return {
+                            type: "data_response",
+                            query: sqlOrSqls,
+                            data: result
+                        };
+                    }
+
+                } catch (e) {
+                    throw new Error(`Intent Compilation Failed: ${e.message}`);
+                }
             }
         });
 
@@ -832,6 +963,7 @@ export class SpreadsheetToolService {
             name: "bind_to_live_data",
             description: "Bind a column of identifiers (like stock symbols or crypto IDs) to live data sources. Use this when the user asks for 'live prices', 'current market data', or 'weather updates' for a list of items. For example, 'get live prices for stocks in column A and put them in column B'.",
             category: "spreadsheet",
+            mutation: true,
             parameters: {
                 type: "object",
                 properties: {
@@ -859,6 +991,138 @@ export class SpreadsheetToolService {
                 return {
                     type: "live_data_binding_request",
                     ...args
+                };
+            }
+        });
+
+        // ============================================
+        // MODIFICATION & FORMATTING TOOLS
+        // ============================================
+
+        this.registerTool({
+            name: "modify_cells",
+            description: "Update values in specific cells. Use this for point-edits or correcting specific data entries.",
+            category: "spreadsheet",
+            mutation: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    changes: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                row: { type: "number", description: "0-based row index" },
+                                col: { type: "number", description: "0-based column index" },
+                                value: { type: "string", description: "New value for the cell (string or number)" }
+                            },
+                            required: ["row", "col", "value"]
+                        }
+                    }
+                },
+                required: ["changes"]
+            },
+            handler: async ({ changes }) => {
+                return {
+                    type: "modification",
+                    description: `Updating ${changes.length} cells`,
+                    cellChanges: changes
+                };
+            }
+        });
+
+        this.registerTool({
+            name: "add_columns",
+            description: "Add one or more new columns to the spreadsheet.",
+            category: "spreadsheet",
+            mutation: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    columns: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                header: { type: "string", description: "Header name for the new column" },
+                                values: { type: "array", description: "Optional initial values for the column rows" }
+                            },
+                            required: ["header"]
+                        }
+                    }
+                },
+                required: ["columns"]
+            },
+            handler: async ({ columns }) => {
+                return {
+                    type: "add_column", // Unified type for frontend handling
+                    description: `Adding ${columns.length} columns: ${columns.map(c => c.header).join(', ')}`,
+                    newColumns: columns
+                };
+            }
+        });
+
+        this.registerTool({
+            name: "remove_columns",
+            description: "Delete columns from the spreadsheet by their indices.",
+            category: "spreadsheet",
+            mutation: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    columnIndices: {
+                        type: "array",
+                        items: { type: "number" },
+                        description: "0-based indices of columns to remove"
+                    }
+                },
+                required: ["columnIndices"]
+            },
+            handler: async ({ columnIndices }) => {
+                return {
+                    type: "delete_column",
+                    description: `Deleting columns at indices: ${columnIndices.join(', ')}`,
+                    deletedColumns: columnIndices
+                };
+            }
+        });
+
+        this.registerTool({
+            name: "format_spreadsheet",
+            description: "Apply visual formatting (bold, color, alignment) to a range of cells.",
+            category: "spreadsheet",
+            mutation: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    formats: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                range: { type: "string", description: "A1-style range (e.g., 'A1:C1') or 'all'" },
+                                style: {
+                                    type: "object",
+                                    properties: {
+                                        bold: { type: "boolean" },
+                                        italic: { type: "boolean" },
+                                        color: { type: "string", description: "Text color hex or name" },
+                                        backgroundColor: { type: "string", description: "Background color hex or name" },
+                                        textAlign: { type: "string", enum: ["left", "center", "right"] }
+                                    }
+                                }
+                            },
+                            required: ["range", "style"]
+                        }
+                    }
+                },
+                required: ["formats"]
+            },
+            handler: async ({ formats }) => {
+                return {
+                    type: "format",
+                    description: `Applying formatting to ${formats.length} ranges`,
+                    formatting: formats
                 };
             }
         });
@@ -910,6 +1174,24 @@ export class SpreadsheetToolService {
     getSpreadsheetTools() {
         // Return ALL tools - no restrictions
         return this.getToolDefinitions();
+    }
+
+    getReadOnlyTools() {
+        // Return only tools that are NOT marked as mutation: true
+        const allTools = this.tools.values();
+        const readOnlyTools = [];
+
+        for (const tool of allTools) {
+            if (!tool.mutation) {
+                readOnlyTools.push({
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters,
+                    category: tool.category || 'general'
+                });
+            }
+        }
+        return readOnlyTools;
     }
 
     getQueryTools() {

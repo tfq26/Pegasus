@@ -345,8 +345,8 @@ interface NavLink {
 }
 
 const links: NavLink[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, webOnly: false },
-  { to: '/query', label: 'Query', icon: MessageSquare, webOnly: false },
+  { to: '/dashboard', label: 'Dashboards', icon: LayoutDashboard, webOnly: false },
+  { to: '/query', label: 'Spaces', icon: MessageSquare, webOnly: false },
 ]
 
 // Use centralized platform detection

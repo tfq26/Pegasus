@@ -43,6 +43,7 @@ import { getPayments } from "./src/routes/payments.js"
 import adminFixTier from "./src/routes/admin-fix-tier.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import { storageRoutes } from "./src/routes/storage.js"
+import importRoutes from "./src/routes/import.js"
 import {
   EXPERIMENTAL_FEATURES,
   initExperimentalTables,
@@ -288,6 +289,7 @@ app.route('/api/cloud-auth', cloudAuth)
 app.route('/api/cloud-provision', cloudProvision)
 app.route('/spaces', spaceRoutes)
 app.route('/storage', storageRoutes) // Modular Storage (Upload/Download/Config)
+app.route('/import', importRoutes) // Smart Batch Import
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -1272,7 +1274,7 @@ app.get("/api/users/search", async (c) => {
     const payload = await verify(token, jwtSecret)
     const query = c.req.query("q")
 
-    if (!query || query.length < 2) {
+    if (!query || query.length < 1) {
       return c.json({ users: [] })
     }
 
@@ -1294,7 +1296,7 @@ app.get("/api/users/search", async (c) => {
           sql`${users.id} != ${payload.sub}`
         )
       )
-      .limit(5);
+      .limit(10);
 
     return c.json({ users: results })
   } catch (e) {
@@ -1693,9 +1695,12 @@ app.post("/schema", async (c) => {
       return c.json({ error: `Provider '${provider}' not supported` }, 400)
     }
 
-    // Force Read Only for schema fetching (prevents locking)
+    // Force Read Only for schema fetching (prevents locking) - but NOT for in-memory DBs
     if (provider === 'duckdb' && connection) {
-      connection = { ...connection, readOnly: true }
+      const dbPath = connection.path || ':memory:'
+      if (dbPath !== ':memory:') {
+        connection = { ...connection, readOnly: true }
+      }
     }
 
     const adapter = new Adapter(connection)

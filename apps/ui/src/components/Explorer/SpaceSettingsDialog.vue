@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useSpaceStore, type DataSpace } from '@/stores/space'
-import { Loader2, Copy, Check, Trash2, Users, Settings as Cog, Shield, UserPlus, X } from 'lucide-vue-next'
+import { Loader2, Copy, Check, Trash2, Users, Settings as Cog, Shield, UserPlus, X, Box, Code, Database, Globe, Lock, Layout, Cloud } from 'lucide-vue-next'
 import { toast } from '@/composables/useNotifications'
 import { inviteUserToSpace, fetchSpacePermissions, removeSpacePermission, searchUsers } from '@/lib/api'
 
@@ -36,11 +36,27 @@ const spaceStore = useSpaceStore()
 const loading = ref(false)
 const copied = ref(false)
 const activeTab = ref('general')
+const isSearching = ref(false)
+
+// Icons
+const icons = [
+  { value: 'box', label: 'Box', component: Box },
+  { value: 'code', label: 'Code', component: Code },
+  { value: 'database', label: 'Database', component: Database },
+  { value: 'globe', label: 'Globe', component: Globe },
+  { value: 'lock', label: 'Lock', component: Lock },
+  { value: 'layout', label: 'Layout', component: Layout },
+  { value: 'cloud', label: 'Cloud', component: Cloud },
+  { value: 'shield', label: 'Shield', component: Shield },
+]
 
 // Form state
 const name = ref('')
 const description = ref('')
 const selectedColor = ref('#8B5CF6')
+const selectedIcon = ref('box')
+const tags = ref<string[]>([])
+const newTag = ref('')
 
 // Sharing state
 const inviteEmail = ref('')
@@ -88,6 +104,8 @@ watch(() => props.space, (newSpace) => {
     name.value = newSpace.name || ''
     description.value = newSpace.description || ''
     selectedColor.value = newSpace.color || '#8B5CF6'
+    selectedIcon.value = newSpace.icon || 'box'
+    tags.value = [...(newSpace.tags || [])]
     loadPermissions()
   }
 }, { immediate: true })
@@ -95,19 +113,33 @@ watch(() => props.space, (newSpace) => {
 // Search Logic
 watch(inviteEmail, (val) => {
   if (searchTimeout) clearTimeout(searchTimeout)
-  if (!val || val.length < 2) {
+  if (!val || val.length < 1) {
     searchResults.value = []
     return
   }
   
   searchTimeout = setTimeout(async () => {
+    isSearching.value = true
     try {
       searchResults.value = await searchUsers(val)
     } catch (e) {
       console.error(e)
+    } finally {
+      isSearching.value = false
     }
   }, 300)
 })
+
+function addTag() {
+  if (newTag.value.trim() && !tags.value.includes(newTag.value.trim())) {
+    tags.value.push(newTag.value.trim())
+    newTag.value = ''
+  }
+}
+
+function removeTag(tag: string) {
+  tags.value = tags.value.filter(t => t !== tag)
+}
 
 async function loadPermissions() {
   if (!props.space) return
@@ -166,7 +198,9 @@ async function handleSave() {
     await spaceStore.updateSpace(props.space.id, {
       name: name.value,
       description: description.value,
-      color: selectedColor.value
+      color: selectedColor.value,
+      icon: selectedIcon.value,
+      tags: tags.value
     })
     toast.success('Space Updated', { description: 'Your space settings have been saved.' })
     emit('update:open', false)
@@ -179,7 +213,7 @@ async function handleSave() {
 
 async function handleDelete() {
   if (!props.space) return
-  if (props.space.is_default) {
+  if (props.space.isDefault) {
     toast.error('Cannot Delete', { description: 'You cannot delete your default space.' })
     return
   }
@@ -207,7 +241,7 @@ function copyJoinCode() {
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="sm:max-w-md p-0 overflow-hidden gap-0">
+    <DialogContent class="sm:max-w-[500px] p-0 overflow-hidden gap-0">
       <DialogHeader class="p-6 pb-2">
         <DialogTitle>Space Settings</DialogTitle>
         <DialogDescription>
@@ -221,7 +255,7 @@ function copyJoinCode() {
             <Cog class="w-4 h-4 mr-2" />
             General
           </TabsTrigger>
-          <TabsTrigger value="sharing" class="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">
+          <TabsTrigger v-if="!space?.isPersonal" value="sharing" class="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none h-full px-4">
             <Users class="w-4 h-4 mr-2" />
             Sharing
           </TabsTrigger>
@@ -240,24 +274,62 @@ function copyJoinCode() {
               <Label>Description</Label>
               <Input v-model="description" placeholder="What is this space for?" :disabled="!isOwner" />
             </div>
-            
-            <!-- Color -->
+
+            <!-- Icon and Color -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-2">
+                  <Label>Icon</Label>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="icon in icons"
+                      :key="icon.value"
+                      @click="selectedIcon = icon.value"
+                       :disabled="!isOwner"
+                      class="w-8 h-8 rounded-lg border transition-all flex items-center justify-center"
+                      :class="[
+                        selectedIcon === icon.value ? 'bg-primary/10 border-primary text-primary' : 'border-border text-muted-foreground',
+                        isOwner ? 'hover:bg-muted' : 'opacity-50 cursor-not-allowed'
+                      ]"
+                    >
+                      <component :is="icon.component" class="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                
+                <div class="space-y-2">
+                  <Label>Color Tag</Label>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="color in colors"
+                      :key="color"
+                      @click="selectedColor = color"
+                      :disabled="!isOwner"
+                      class="w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center"
+                      :class="[
+                        selectedColor === color ? 'border-primary ring-2 ring-ring ring-offset-2' : 'border-transparent',
+                        isOwner ? 'hover:scale-105' : 'opacity-50 cursor-not-allowed'
+                      ]"
+                      :style="{ backgroundColor: color }"
+                    />
+                  </div>
+                </div>
+            </div>
+
+            <!-- Tags -->
             <div class="space-y-2">
-              <Label>Color Tag</Label>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="color in colors"
-                  :key="color"
-                  @click="selectedColor = color"
-                  :disabled="!isOwner"
-                  class="w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center"
-                  :class="[
-                    selectedColor === color ? 'border-primary ring-2 ring-ring ring-offset-2' : 'border-transparent',
-                    isOwner ? 'hover:scale-105' : 'opacity-50 cursor-not-allowed'
-                  ]"
-                  :style="{ backgroundColor: color }"
+                <Label>Tags</Label>
+                <div class="flex flex-wrap gap-2 mb-2" v-if="tags.length > 0">
+                    <div v-for="tag in tags" :key="tag" class="flex items-center bg-muted px-2 py-1 rounded text-xs">
+                        {{ tag }}
+                        <button v-if="isOwner" @click="removeTag(tag)" class="ml-1 hover:text-destructive"><X class="w-3 h-3" /></button>
+                    </div>
+                </div>
+                <Input 
+                    v-if="isOwner"
+                    v-model="newTag" 
+                    placeholder="Add tags (press Enter)" 
+                    @keydown.enter.prevent="addTag"
                 />
-              </div>
             </div>
             
             <!-- Join Code Section -->
@@ -281,36 +353,47 @@ function copyJoinCode() {
           </div>
         </TabsContent>
 
-        <TabsContent value="sharing" class="p-6 mt-0">
+        <TabsContent v-if="!space?.isPersonal" value="sharing" class="p-6 mt-0">
           <div class="space-y-6">
             <!-- Invite Section -->
             <div v-if="canManage" class="space-y-3">
               <Label>Invite Member</Label>
               <div class="flex gap-2 relative">
-                <div class="relative flex-1">
-                  <Input 
-                    v-model="inviteEmail" 
-                    placeholder="Enter email address" 
-                    @keyup.enter="handleInvite"
-                  />
-                  <!-- Search Results -->
-                  <div v-if="searchResults.length > 0" class="absolute top-full left-0 w-full mt-1 bg-popover border rounded-md shadow-lg z-50 overflow-hidden">
-                    <button
-                      v-for="user in searchResults"
-                      :key="user.id"
-                      @click="selectUser(user)"
-                      class="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-                    >
-                      <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold">
-                        {{ user.first_name?.[0] || user.email[0].toUpperCase() }}
+                  <div class="relative flex-1">
+                    <Input 
+                      v-model="inviteEmail" 
+                      placeholder="Enter email address" 
+                      class="pr-10"
+                      @keyup.enter="handleInvite"
+                    />
+                    <div v-if="isSearching" class="absolute right-3 top-1/2 -translate-y-1/2">
+                      <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
+                    </div>
+                    
+                    <!-- Search Results -->
+                    <div v-if="(searchResults.length > 0 || (inviteEmail.length > 0 && !isSearching))" 
+                         class="absolute top-full left-0 w-full mt-1 bg-popover border border-border rounded-md shadow-lg z-50 overflow-hidden">
+                      <div v-if="searchResults.length > 0">
+                        <button
+                          v-for="user in searchResults"
+                          :key="user.id"
+                          @click="selectUser(user)"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2 border-b border-border/50 last:border-0"
+                        >
+                          <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold shrink-0">
+                            {{ user.first_name?.[0] || user.email[0].toUpperCase() }}
+                          </div>
+                          <div class="flex flex-col min-w-0">
+                            <span class="font-medium truncate text-xs">{{ user.first_name }} {{ user.last_name }}</span>
+                            <span class="text-[10px] text-muted-foreground truncate">{{ user.email }}</span>
+                          </div>
+                        </button>
                       </div>
-                      <div class="flex flex-col">
-                        <span class="font-medium truncate">{{ user.first_name }} {{ user.last_name }}</span>
-                        <span class="text-[10px] text-muted-foreground">{{ user.email }}</span>
+                      <div v-else-if="inviteEmail.length > 0 && !isSearching && !searchResults.length" class="p-3 text-center text-[11px] text-muted-foreground italic">
+                        No results found
                       </div>
-                    </button>
+                    </div>
                   </div>
-                </div>
                 <select 
                   v-model="inviteRole"
                   class="h-9 px-2 rounded-md border text-xs bg-background outline-none hover:bg-accent"
@@ -370,7 +453,7 @@ function copyJoinCode() {
       
       <DialogFooter class="p-6 border-t bg-muted/10 gap-2">
         <Button 
-          v-if="!space?.is_default && isOwner"
+          v-if="!space?.isDefault && isOwner"
           variant="destructive" 
           @click="handleDelete" 
           :disabled="loading"

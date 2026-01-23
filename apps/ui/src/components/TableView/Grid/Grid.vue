@@ -47,6 +47,8 @@ import PresenceOverlay from '../PresenceOverlay.vue';
 import { connectToSurreal } from '@/lib/surreal';
 import { RealtimeSync } from '../Engine/RealtimeSync';
 import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration';
+import { useFormulaBarAI } from '@/composables/grid/useFormulaBarAI';
+import AIActionPreviewDialog from '../AIActionPreviewDialog.vue';
 
 const props = defineProps<{
   engine: Engine;
@@ -56,6 +58,7 @@ const props = defineProps<{
   privateMode?: boolean;
   versions?: Array<{ version: number; table: string; created_at: string }>;
   currentVersion?: number;
+  aiOptions?: { model: string | null; temperature: number };
 }>();
 
 const emit = defineEmits<{
@@ -213,6 +216,34 @@ const onMatchSelected = (pos: CellPosition) => {
 
 const isProcessingAI = ref(false);
 
+const { 
+  isAIMode: internalIsAIMode, 
+  isProcessing: isAIProcessing, 
+  toggleMode: toggleAIMode,
+  executeAIQuery,
+  pendingAction,
+  showPreview: showAIPreview,
+  applyAction: applyAIAction,
+  discardAction: discardAIAction,
+  lastResponse: aiLastResponse
+} = useFormulaBarAI(props.engine, computed(() => props.engine.sourceConnection));
+
+watch(aiLastResponse, (val) => {
+  if (val) {
+    emit('ai-response', {
+      type: 'message',
+      content: val,
+      task: 'answer'
+    });
+  }
+});
+
+watch(() => props.isAIMode, (val) => {
+  if (val !== undefined && val !== internalIsAIMode.value) {
+    internalIsAIMode.value = val;
+  }
+}, { immediate: true });
+
 
 
 // Follow me logic removed (moved to useRealtimeCursor)
@@ -314,7 +345,7 @@ watch(selection, (newVal) => {
 
 // --- AI Feature State ---
 // isAIMode and autoExecuteMode are now props
-const selectedAIModel = ref('gemini-2.0-flash-exp');
+const selectedAIModel = computed(() => props.aiOptions?.model || 'gemini-2.0-flash-exp');
 const aiModels = ref([
   { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash' },
   { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
@@ -976,8 +1007,13 @@ const analyzeSpreadsheet = () => {
 };
 
 const onAIInputEnter = async () => {
-    if (!formulaBarValue.value.trim() || isProcessingAI.value) return;
-    await generateAIFormula(formulaBarValue.value.trim());
+    if (!formulaBarValue.value.trim() || isProcessingAI.value || isAIProcessing.value) return;
+    
+    if (internalIsAIMode.value) {
+      await executeAIQuery(formulaBarValue.value.trim(), selectedAIModel.value);
+    } else {
+      await generateAIFormula(formulaBarValue.value.trim());
+    }
 };
 
 const generateAIFormula = async (userRequest: string) => {
@@ -2056,7 +2092,10 @@ defineExpose({
     handleFormat,
     textWrap,
     showGridlines,
-    commitChanges
+    commitChanges,
+    toggleAIMode,
+    isAIMode: internalIsAIMode,
+    autoFitAllColumns
 });
 </script>
 
@@ -2095,7 +2134,7 @@ defineExpose({
     <div v-else class="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
       
       <!-- AI Mode Controls -->
-      <div v-if="props.isAIMode" class="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-200">
+      <div v-if="internalIsAIMode" class="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-200">
          <div class="relative">
              <select 
                v-model="selectedAIModel"
@@ -2108,14 +2147,25 @@ defineExpose({
              <ChevronDown class="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
          </div>
           
-         <!-- Auto-Execute is now in toolbar -->
-          
-          <div class="w-px h-4 bg-border mx-1"></div>
+         <div class="w-px h-4 bg-border mx-1"></div>
       </div>
 
       <div class="w-12 text-xs font-semibold text-muted-foreground text-center tabular-nums">
         {{ selectedCellLabel || 'A1' }}
       </div>
+
+      <!-- Mode Toggle Button -->
+      <button 
+        @click="toggleAIMode"
+        class="flex items-center justify-center w-8 h-8 rounded-md transition-all duration-200"
+        :class="internalIsAIMode ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/20 scale-110' : 'hover:bg-accent text-muted-foreground'"
+        :title="internalIsAIMode ? 'Switch to Formula Mode' : 'Switch to AI Mode'"
+      >
+        <Sparkles v-if="internalIsAIMode" class="w-4 h-4 animate-pulse" />
+        <span v-else class="text-xs font-serif italic font-bold">fx</span>
+      </button>
+
+      <div class="w-px h-6 bg-border mx-1"></div>
       
       <!-- Provider Badge -->
       <ProviderBadge 
@@ -2123,9 +2173,9 @@ defineExpose({
         :provider="props.engine.sourceProvider" 
       />
       
-      <div class="flex-1 relative">
+      <div class="flex-1 relative" :class="{ 'ai-glow': internalIsAIMode }">
         <input
-          v-if="!props.isAIMode"
+          v-if="!internalIsAIMode"
           v-model="formulaBarValue"
           @input="onFormulaBarChange"
           @keydown="onFormulaBarKeydown"
@@ -2136,13 +2186,13 @@ defineExpose({
           v-else
           v-model="formulaBarValue"
           @keydown.enter="onAIInputEnter"
-          :disabled="isProcessingAI"
+          :disabled="isProcessingAI || isAIProcessing"
           class="w-full px-2 py-1 pr-8 text-sm border border-primary/50 rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 placeholder:text-primary/40"
           :placeholder="formulaBarPlaceholder"
         />
         
         <!-- Loading spinner for AI mode -->
-        <div v-if="isProcessingAI" class="absolute right-2 top-1/2 -translate-y-1/2">
+        <div v-if="isProcessingAI || isAIProcessing" class="absolute right-2 top-1/2 -translate-y-1/2">
           <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-lg animate-spin"></div>
         </div>
         
@@ -2165,38 +2215,6 @@ defineExpose({
       </div>
     </div>
     
-    <!-- Toolbar -->
-    <div class="flex items-center gap-1 px-3 py-1 border-b border-border bg-muted/30">
-        <!-- Version Dropdown -->
-        <div v-if="props.versions && props.versions.length > 0" class="flex items-center gap-2 mr-4 border-r pr-4 border-border/50">
-            <span class="text-xs text-muted-foreground font-medium">Version:</span>
-            <select 
-                :value="props.currentVersion" 
-                @change="(e) => emit('version-change', Number((e.target as HTMLSelectElement).value))"
-                class="h-7 text-xs bg-background border border-border rounded px-2 min-w-[100px] outline-none focus:ring-1 focus:ring-primary"
-            >
-                <!-- Original is implicit if not in versions array, but we assume versions array contains all selectable options or we handle it -->
-                <option v-for="v in props.versions" :key="v.version" :value="v.version">
-                    v{{ v.version }} ({{ new Date(v.created_at).toLocaleDateString() }})
-                </option>
-            </select>
-             <span v-if="props.currentVersion" class="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                Active
-            </span>
-        </div>
-
-        <!-- Formatting toolbar moved to Workspace Toolbar -->
-        <!-- Auto-fit Columns -->
-        <button 
-          class="w-8 h-8 flex items-center justify-center rounded hover:bg-accent text-foreground"
-          @click="autoFitAllColumns"
-          title="Auto-fit all column widths"
-        >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M8 3v18M16 3v18M3 12h18M3 6h4M17 6h4M3 18h4M17 18h4"/>
-          </svg>
-        </button>
-    </div>
 
     <!-- Grid Body with Sticky Header -->
     <div 
@@ -2567,6 +2585,14 @@ defineExpose({
       </div>
     </div>
 
+    <!-- AI Action Preview Dialog -->
+    <AIActionPreviewDialog 
+      v-model:open="showAIPreview"
+      :action="pendingAction"
+      @apply="applyAIAction"
+      @discard="discardAIAction"
+    />
+
   </div>
   
       <ContextMenuContent class="w-64 bg-slate-950/95 backdrop-blur-sm border-slate-800 text-slate-200">
@@ -2647,6 +2673,20 @@ defineExpose({
 .row-modified:not(.row-deleted) td:first-child::after {
   content: '';
   @apply absolute top-1 left-1 w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse;
+}
+
+.ai-glow::after {
+  content: '';
+  @apply absolute inset-0 rounded-md pointer-events-none;
+  box-shadow: 0 0 15px -3px rgba(139, 92, 246, 0.3);
+  z-index: -1;
+  animation: ai-pulse 2s infinite ease-in-out;
+}
+
+@keyframes ai-pulse {
+  0% { box-shadow: 0 0 10px -3px rgba(139, 92, 246, 0.2); }
+  50% { box-shadow: 0 0 20px -1px rgba(139, 92, 246, 0.4); }
+  100% { box-shadow: 0 0 10px -3px rgba(139, 92, 246, 0.2); }
 }
 </style>
 ```

@@ -43,7 +43,10 @@ rag.post("/index", async (c) => {
 
             let finalAdapterConfig = adapterConfig
             if (provider === 'duckdb' && finalAdapterConfig) {
-                finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
+                const dbPath = finalAdapterConfig.path || ':memory:'
+                if (dbPath !== ':memory:') {
+                    finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
+                }
             }
             const adapter = new Adapter(finalAdapterConfig)
 

@@ -404,7 +404,10 @@ chat.post("/ai/health-profile", async (c) => {
 
         let adapterConfig = config[provider] || config
         if (provider === 'duckdb' && adapterConfig) {
-            adapterConfig = { ...adapterConfig, readOnly: true }
+            const dbPath = adapterConfig.path || ':memory:'
+            if (dbPath !== ':memory:') {
+                adapterConfig = { ...adapterConfig, readOnly: true }
+            }
         }
         const adapter = new Adapter(adapterConfig)
         try {
@@ -440,7 +443,10 @@ chat.post("/ai/explain-table", async (c) => {
 
         let adapterConfig = config[provider] || config
         if (provider === 'duckdb' && adapterConfig) {
-            adapterConfig = { ...adapterConfig, readOnly: true }
+            const dbPath = adapterConfig.path || ':memory:'
+            if (dbPath !== ':memory:') {
+                adapterConfig = { ...adapterConfig, readOnly: true }
+            }
         }
         const adapter = new Adapter(adapterConfig)
         try {
@@ -488,7 +494,10 @@ chat.post("/ai/explain-query", async (c) => {
 
         let adapterConfig = config[provider] || config
         if (provider === 'duckdb' && adapterConfig) {
-            adapterConfig = { ...adapterConfig, readOnly: true }
+            const dbPath = adapterConfig.path || ':memory:'
+            if (dbPath !== ':memory:') {
+                adapterConfig = { ...adapterConfig, readOnly: true }
+            }
         }
         const adapter = new Adapter(adapterConfig)
         try {
@@ -523,7 +532,10 @@ chat.post("/ai/optimize-query", async (c) => {
 
         let adapterConfig = config[provider] || config
         if (provider === 'duckdb' && adapterConfig) {
-            adapterConfig = { ...adapterConfig, readOnly: true }
+            const dbPath = adapterConfig.path || ':memory:'
+            if (dbPath !== ':memory:') {
+                adapterConfig = { ...adapterConfig, readOnly: true }
+            }
         }
         const adapter = new Adapter(adapterConfig)
         try {
@@ -640,7 +652,18 @@ chat.post("/ai/generate", async (c) => {
             const keys = Object.keys(config).filter(k => ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'duckdb'].includes(k.toLowerCase()))
             if (keys.length > 0) provider = keys[0]
         }
-        const adapterConfig = config[provider] || config[provider?.toLowerCase()]
+
+        // For DuckDB, the config might have the path directly or nested
+        let adapterConfig = config[provider] || config[provider?.toLowerCase()]
+
+        // DuckDB config fix: If adapterConfig is empty but config has a path directly, use root config
+        if (provider === 'duckdb') {
+            if (!adapterConfig?.path && config.path) {
+                console.log(`[AI Generate][DuckDB] Using root config (path: ${config.path})`)
+                adapterConfig = config
+            }
+        }
+
         let schemaInfo = { tables: [], detailedSchema: {} }
         let adapter = null
         if (provider === 'local' && connRow.is_virtual) {
@@ -648,9 +671,13 @@ chat.post("/ai/generate", async (c) => {
         } else {
             const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
             if (Adapter) {
-                let finalAdapterConfig = adapterConfig
-                if (provider === 'duckdb' && finalAdapterConfig) {
-                    finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
+                let finalAdapterConfig = adapterConfig || {}
+                if (provider === 'duckdb') {
+                    const dbPath = finalAdapterConfig.path || ':memory:'
+                    console.log(`[AI Generate][DuckDB] Final path: ${dbPath}`)
+                    if (dbPath !== ':memory:') {
+                        finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
+                    }
                 }
                 adapter = new Adapter(finalAdapterConfig)
                 try {
@@ -699,52 +726,185 @@ chat.post("/ai/generate", async (c) => {
 
                         console.log(`[AI Generate] Fetched schema for ${tablesToFetch.length} tables with sample values`)
                     }
+
+                    // Use SchemaTranslator to normalize column names for AI
+                    const translator = new SchemaTranslator()
+                    const normalizedSchema = translator.normalizeSchema(schemaInfo)
+
+                    if (translator.hasNormalizations()) {
+                        console.log(`[AI Generate] Schema normalized. Mappings:`, translator.getMappingSummary())
+                        // Attach mappings to schema so IntentCompiler can use them
+                        normalizedSchema.mappings = {
+                            columns: Object.fromEntries(translator.columnMapping),
+                            tables: Object.fromEntries(translator.tableMapping)
+                        }
+                    }
+
+                    const aiSettings = { modelId: activeModel, temperature: Number(temperature || 0.7), maxTokens: Number(maxTokens || 1000), activeTable }
+                    const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+                    // Enforce Read-Only Tools for Chat
+                    aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
+
+                    // Append OneContext block to prompt
+                    const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
+
+                    const result = await aiClient.generateQuery(finalPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
+                    let generatedQuery = typeof result === 'string' ? result : result.text
+
+                    if (result.toolCalls?.length > 0) {
+                        // Check for generate_table
+                        const tableTool = result.toolCalls.find(t => t.function.name === 'generate_table')
+                        if (tableTool) {
+                            const args = JSON.parse(tableTool.function.arguments)
+                            const genPrompt = `Generate table for "${args.tableName}". Return JSON: { "tableName": "...", "headers": [], "rows": [] }`
+                            const dataRes = await aiClient.generateContent([{ role: 'user', content: genPrompt }], { model: activeModel, json: true })
+                            const finalData = JSON.parse(dataRes.text.replace(/```json | ```/g, '').trim())
+                            return c.json({ type: 'generated_table', ...finalData, usage: dataRes.usage })
+                        }
+
+                        // Check for execute_query - Verify it's not trying to run mutations if unauthorized?
+                        // Start by extracting the query.
+                        const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
+                        if (queryTool) {
+                            const args = JSON.parse(queryTool.function.arguments)
+                            // Return the query so frontend can execute it
+                            return c.json({ query: args.query, usage: result.usage, contextUsed: resolvedResources })
+                        }
+
+                        // Check for get_table_schema
+                        const schemaTool = result.toolCalls.find(t => t.function.name === 'get_table_schema')
+                        if (schemaTool) {
+                            const args = JSON.parse(schemaTool.function.arguments)
+                            const tableName = args.tableName
+                            // We need to fetch the schema and give it back to the AI to try again.
+                            // Re-use logic from above if possible or just use the tool service
+                            const schemaRes = await spreadsheetToolService.callTool('get_table_schema', { tableName }, { adapter: adapter, schemaInfo: schemaInfo })
+
+                            if (schemaRes && schemaRes.columns) {
+                                const schemaDescription = `Schema for ${tableName}: ${JSON.stringify(schemaRes.columns)}`;
+                                console.log(`[AI Generate] Tool fetched schema for ${tableName}. Recurring...`);
+
+                                // Recursive call with enriched context
+                                const newPrompt = `${prompt}\n\n[System Info]: ${schemaDescription}`;
+                                // Prevent infinite loops with a simple check? The AI should move to query generation next.
+                                const retryResult = await aiClient.generateQuery(newPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
+
+                                // Handle the result of the retry (likely an execute_query call or text)
+                                if (retryResult.toolCalls?.length > 0) {
+                                    const retryQueryTool = retryResult.toolCalls.find(t => t.function.name === 'execute_query')
+                                    if (retryQueryTool) {
+                                        const retryArgs = JSON.parse(retryQueryTool.function.arguments)
+                                        return c.json({ query: retryArgs.query, usage: retryResult.usage, contextUsed: resolvedResources })
+                                    }
+                                }
+
+                                // If just text or other, return as query/text
+                                let retryGeneratedQuery = typeof retryResult === 'string' ? retryResult : retryResult.text
+                                retryGeneratedQuery = retryGeneratedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
+                                return c.json({ query: retryGeneratedQuery, usage: retryResult.usage, contextUsed: resolvedResources })
+                            }
+                        }
+
+                        // Check for query_data (Intent-Based Architecture)
+                        const dataTool = result.toolCalls.find(t => t.function.name === 'query_data')
+                        if (dataTool) {
+                            try {
+                                const args = JSON.parse(dataTool.function.arguments)
+                                console.log('[AI Generate] Query Intent:', args)
+
+                                // Execute the tool immediately in the backend
+                                // The handler in SpreadsheetToolService uses the IntentCompiler to generate SQL 
+                                // AND executes it against the adapter.
+                                // We pass 'schema' (which contains mappings) so the Compiler can denormalize column names.
+                                const toolResult = await spreadsheetToolService.callTool('query_data', args, {
+                                    adapter: adapter,
+                                    dialect: provider,
+                                    schema: normalizedSchema
+                                })
+
+                                // ANALYST LOOP:
+                                // If the user wants an answer (not just a dump), the AI needs to see the data.
+                                // Heuristic: If visualization -> Return immediately (Chart speaks for itself)
+                                // If Data is small (< 10 rows) -> Feed back to AI to explain.
+                                // If Data is large -> Return immediately (Table is better)
+
+                                const isVisual = !!toolResult.config; // Check for visualization config
+                                const isSmallData = !isVisual && (
+                                    (Array.isArray(toolResult.data) && toolResult.data.length <= 10) ||
+                                    (toolResult.isCompound && toolResult.results.every(r => r.data.length <= 5))
+                                );
+
+                                if (isSmallData) {
+                                    console.log(`[AI Generate] Data is small/analysis. Feeding back to AI for explanation...`);
+                                    const dataContext = JSON.stringify(toolResult.data || toolResult.results);
+                                    const explanationPrompt = `
+                                     I have fetched the data you requested using the tool:
+                                     ${dataContext}
+
+                                     Please provide the final answer to the user's question based on this data.
+                                     Be concise. If it's a list, just summarize it.
+                                     `;
+
+                                    // Recursive call (or just generation)
+                                    const answerRes = await aiClient.generateContent([{ role: 'user', content: prompt + '\n' + explanationPrompt }], { model: activeModel });
+
+                                    return c.json({
+                                        ...toolResult,
+                                        message: answerRes.text, // Attach the explanation
+                                        usage: result.usage,
+                                        contextUsed: resolvedResources
+                                    });
+                                }
+
+                                return c.json({
+                                    ...toolResult,
+                                    usage: result.usage,
+                                    contextUsed: resolvedResources
+                                });
+                            } catch (e) {
+                                console.error("[AI Generate] Query Data Tool Failed:", e)
+                                return c.json({ error: e.message }, 500)
+                            }
+                        }
+                    }
+                    if (result.usage) await logAiUsage(userId, result.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
+                    generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
+
+                    // Handle multi_step JSON response - extract first query
+                    if (generatedQuery.startsWith('{')) {
+                        try {
+                            const parsed = JSON.parse(generatedQuery)
+                            if (parsed.multi_step && parsed.steps?.length > 0) {
+                                console.log(`[AI Generate] Multi-step response detected, extracting first query`)
+                                generatedQuery = parsed.steps[0].query
+                            } else if (parsed.query) {
+                                // Handle other JSON formats with a query field
+                                generatedQuery = parsed.query
+                            } else if (parsed.ambiguous) {
+                                // Return ambiguous response as-is for frontend to handle
+                                return c.json({ ambiguous: true, message: parsed.message, choices: parsed.choices, usage: result.usage })
+                            }
+                        } catch (e) {
+                            console.warn(`[AI Generate] Failed to parse JSON response:`, e.message)
+                        }
+                    }
+
+                    // Denormalize the query - replace AI's normalized names with original column names
+                    if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
+                        const originalQuery = generatedQuery
+                        generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
+                        console.log(`[AI Generate] Denormalized query:`)
+                        console.log(`  Before: ${originalQuery}`)
+                        console.log(`  After:  ${generatedQuery}`)
+                    }
+
+                    return c.json({ query: generatedQuery, usage: result.usage, contextUsed: resolvedResources })
+
                 } finally {
                     await adapter.disconnect().catch(() => { })
                 }
             }
         }
-        // Use SchemaTranslator to normalize column names for AI
-        const translator = new SchemaTranslator()
-        const normalizedSchema = translator.normalizeSchema(schemaInfo)
-
-        if (translator.hasNormalizations()) {
-            console.log(`[AI Generate] Schema normalized. Mappings:`, translator.getMappingSummary())
-        }
-
-        const aiSettings = { modelId: activeModel, temperature: Number(temperature || 0.7), maxTokens: Number(maxTokens || 1000), activeTable }
-        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
-        aiSettings.tools = spreadsheetToolService.getSpreadsheetTools()
-
-        // Append OneContext block to prompt
-        const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
-
-        const result = await aiClient.generateQuery(finalPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
-        let generatedQuery = typeof result === 'string' ? result : result.text
-
-        if (result.toolCalls?.length > 0) {
-            const tc = result.toolCalls.find(t => t.function.name === 'generate_table')
-            if (tc) {
-                const args = JSON.parse(tc.function.arguments)
-                const genPrompt = `Generate table for "${args.tableName}". Return JSON: { "tableName": "...", "headers": [], "rows": [] }`
-                const dataRes = await aiClient.generateContent([{ role: 'user', content: genPrompt }], { model: activeModel, json: true })
-                const finalData = JSON.parse(dataRes.text.replace(/```json | ```/g, '').trim())
-                return c.json({ type: 'generated_table', ...finalData, usage: dataRes.usage })
-            }
-        }
-        if (result.usage) await logAiUsage(userId, result.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
-        generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
-
-        // Denormalize the query - replace AI's normalized names with original column names
-        if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
-            const originalQuery = generatedQuery
-            generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
-            console.log(`[AI Generate] Denormalized query:`)
-            console.log(`  Before: ${originalQuery}`)
-            console.log(`  After:  ${generatedQuery}`)
-        }
-
-        return c.json({ query: generatedQuery, usage: result.usage, contextUsed: resolvedResources })
     } catch (e) { return c.json({ error: e.message }, 500) }
 
 })

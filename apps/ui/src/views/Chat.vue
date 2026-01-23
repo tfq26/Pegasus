@@ -85,6 +85,8 @@
           @add-to-dashboard="handleAddChartToDashboard"
           @explain-query="handleExplainQuery"
           @optimize-query="handleOptimizeQuery"
+          @ai-respond="handleWorkspaceAIResponse"
+          @generate-insights="handleGenerateInsights"
         />
       </section>
 
@@ -168,10 +170,9 @@
     <!-- <WranglerDialog :open="wranglerOpen" @update:open="wranglerOpen = $event" /> -->
 
     <!-- Share Dialog -->
-    <ShareDialog
+    <ShareResourceDialog
         v-model:open="shareDialogOpen"
-        :dashboard-id="(mode as any) === 'dashboard' ? workspaceRef?.activeDashboardId : undefined"
-        :spreadsheet-id="(mode as any) !== 'dashboard' ? activeTableName : undefined"
+        :resource-id="((mode as any) === 'dashboard' ? workspaceRef?.activeDashboardId : activeTableName)"
         :resource-type="(mode as any) === 'dashboard' ? 'dashboard' : 'spreadsheet'"
       />
     </div>
@@ -215,7 +216,7 @@ import { generateKey, decryptData } from '@/lib/crypto'
 import { db } from '@/lib/local-db'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
 import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration'
-import ShareDialog from '@/components/Dashboard/ShareDialog.vue'
+import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 
 // Stores
 const workspaceStore = useWorkspaceStore()
@@ -237,9 +238,10 @@ const _selectConnection = (id: string) => connectionStore.selectConnection(id)
 // Wrapper to handle workspace persistence
 const unsavedDialogVisible = ref(false)
 const pendingConnectionId = ref<string | null>(null)
-const pendingConnectionName = computed(() => 
-    connections.value.find(c => c.id === pendingConnectionId.value)?.nickname
-)
+const pendingConnectionName = computed(() => {
+    const conn = connections.value.find(c => c.id === pendingConnectionId.value)
+    return conn ? (conn.alias || conn.nickname) : undefined
+})
 
 const handleSelectConnection = async (id: string | null) => {
     // If we're deselecting/collapsing (id is null or empty)
@@ -799,6 +801,16 @@ const handleCreateChat = async () => {
     workspaceStore.createTab('chat', { chatHistory: [] })
 }
 
+const handleWorkspaceAIResponse = (response: any) => {
+    // Show AI response in the Results Panel
+    queryResult.value = response
+    resultsPanelPosition.value = 'right'
+    resultsPanelVisible.value = true
+    
+    // Also log to history if needed, but primarily show in panel
+    // If not a complex object, we might want to sanitize or format it
+}
+
 const handleContinueChat = async (id: string) => {
     try {
         await continueChat(id)
@@ -909,6 +921,40 @@ const handleAnalyze = async () => {
         toast.success('Analysis added to chat')
     } catch(e) {
         toast.error('Analysis failed')
+    } finally {
+        isAnalyzing.value = false
+    }
+}
+
+// On-demand insights generation for messages with results
+const handleGenerateInsights = async (payload: { query: string; results: any; messageIndex: number }) => {
+    isAnalyzing.value = true
+    try {
+        const analysis = await analyzeResults('Analyze these results and provide insights', payload.results, payload.query)
+        let aiSummary = typeof analysis === 'object' && analysis.answer ? analysis.answer : (typeof analysis === 'string' ? analysis : JSON.stringify(analysis))
+        aiSummary = sanitizeAIResponse(aiSummary)
+        
+        // Add insights as a new message
+        chatHistory.value.push({ 
+            role: 'assistant', 
+            content: `**✨ Insights:**\n\n${aiSummary}`, 
+            timestamp: Date.now() 
+        })
+        
+        // Mark the original message as having insights generated (so button disappears)
+        if (chatHistory.value[payload.messageIndex]) {
+            const msg = chatHistory.value[payload.messageIndex] as any
+            if (msg.meta) {
+                msg.meta.insightsGenerated = true
+                msg.meta.canGenerateInsights = false
+            }
+        }
+        
+        if (selectedChatId.value) await saveMessage(selectedChatId.value, 'ai', `**✨ Insights:**\n\n${aiSummary}`)
+        toast.success('Insights generated!')
+    } catch(e) {
+        console.error('[Chat] Failed to generate insights:', e)
+        toast.error('Failed to generate insights')
     } finally {
         isAnalyzing.value = false
     }

@@ -5,6 +5,7 @@ import { CellType, posToKey } from './types';
 import { DependencyGraph } from './DependencyGraph';
 import { FormulaParser } from './FormulaParser';
 import { UndoManager, SetValueCommand } from './UndoManager';
+import { parseRange } from './FormulaParser';
 import { ChangeTracker } from './ChangeTracker';
 
 export class Engine {
@@ -964,7 +965,21 @@ export class Engine {
         this.notifyChange();
     }
 
-    public clear(options: { keepStyles?: boolean } = {}) {
+    /**
+     * Apply style to a range of cells using A1 notation (e.g. "A1:B10")
+     */
+    public applyFormat(rangeStr: string, style: Partial<import('./types').CellStyle>) {
+        const range = parseRange(rangeStr);
+        if (!range) return;
+
+        for (let r = range.start.row; r <= range.end.row; r++) {
+            for (let c = range.start.col; c <= range.end.col; c++) {
+                this.setCellStyle({ row: r, col: c }, style);
+            }
+        }
+    }
+
+    public clear(options: { keepStyles?: boolean, silent?: boolean } = {}) {
         if (options.keepStyles) {
             // Only clear values/rawInput, keep style objects
             for (const [key, cell] of this.cells.entries()) {
@@ -982,7 +997,9 @@ export class Engine {
                 console.error('Failed to clear localStorage:', e);
             }
         }
-        this.notifyChange();
+        if (!options.silent) {
+            this.notifyChange();
+        }
     }
 
     /**
