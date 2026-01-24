@@ -23,7 +23,11 @@ import {
   GitCommit,
   WrapText,
   Rows,
-  ChevronDown
+  ChevronDown,
+  Plus,
+  Minus,
+  Type,
+  Save
 } from 'lucide-vue-next'
 import { ColorPicker } from '@/components/ColorPicker'
 import { Switch } from '@/components/ui/switch'
@@ -65,6 +69,8 @@ const props = defineProps<{
   hasUncommittedChanges?: boolean
   availableModels?: { id: string; name: string }[]
   aiOptions?: { model: string | null; temperature: number }
+  zoomLevel?: number
+  isSheet?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -87,6 +93,8 @@ const emit = defineEmits<{
   'update:show-gridlines': [value: boolean]
   'auto-fit': []
   'update:ai-options': [value: { model: string | null; temperature: number }]
+  'update:zoom-level': [value: number]
+  'save-sheet': []
 }>()
 
 const defaultModels = [
@@ -267,6 +275,43 @@ const updateOption = (key: 'model' | 'temperature', value: any) => {
       </TooltipProvider>
     </div>
 
+    <div class="w-px h-4 bg-border mx-1"></div>
+
+    <!-- Zoom Controls -->
+    <div class="flex items-center gap-0.5">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('update:zoom-level', Math.max(8, (props.zoomLevel || 12) - 1))"
+            >
+              <Minus class="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Decrease Font Size</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <div class="flex items-center justify-center min-w-[1.5rem] select-none">
+        <span class="text-[10px] font-medium tabular-nums text-muted-foreground">{{ props.zoomLevel || 12 }}</span>
+      </div>
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button 
+              class="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              @click="emit('update:zoom-level', Math.min(32, (props.zoomLevel || 12) + 1))"
+            >
+              <Plus class="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Increase Font Size</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+
     <!-- View Options -->
     <div class="flex items-center gap-0.5 ml-1">
       <TooltipProvider>
@@ -378,15 +423,26 @@ const updateOption = (key: 'model' | 'temperature', value: any) => {
     <!-- Spacer -->
     <div class="flex-1"></div>
 
-      <!-- COMMIT BUTTON -->
+      <!-- COMMIT BUTTON (DB) -->
       <button 
-        v-if="privateMode || props.hasUncommittedChanges"
+        v-if="!isSheet && (privateMode || props.hasUncommittedChanges)"
         @click="emit('commit')"
         class="flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-none text-xs font-medium disabled:opacity-50"
         :disabled="saveStatus === 'saving'"
       >
         <GitCommit class="w-3.5 h-3.5" />
         <span class="hidden md:inline">Commit</span>
+      </button>
+
+      <!-- SAVE BUTTON (Sheet) -->
+      <button 
+        v-if="isSheet"
+        @click="emit('save-sheet')"
+        class="flex items-center gap-1.5 px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-none text-xs font-medium disabled:opacity-50"
+        :disabled="saveStatus === 'saving'"
+      >
+        <Save class="w-3.5 h-3.5" />
+        <span class="hidden md:inline">Save</span>
       </button>
 
       <!-- Sync/Save Status Indicator -->

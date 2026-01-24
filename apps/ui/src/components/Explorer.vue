@@ -12,13 +12,13 @@ import { isTauri } from '@/composables/usePlatform'
 import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import AddTableToConnectionModal from './Explorer/AddTableToConnectionModal.vue'
 import ExplorerTree from './Explorer/ExplorerTree.vue'
-import ChatHistoryList from './Explorer/ChatHistoryList.vue'
-import QueryLogList from './Explorer/QueryLogList.vue'
 import SpaceSelector from './Explorer/SpaceSelector.vue'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
+import { useSheetStore } from '@/stores/sheet'
 
 const connectionStore = useConnectionStore()
+const sheetStore = useSheetStore()
 
 // Add state for selected table
 const selectedTable = ref<{ connectionId: string; tableName: string } | null>(null)
@@ -89,6 +89,7 @@ const emit = defineEmits<{
   'toggle-pin': []
   'select-note': [note: any]
   'select-file': [file: any]
+  'select-sheet': [sheet: any]
 }>()
 
 // --- Data Spaces ---
@@ -96,6 +97,7 @@ const spaceStore = useSpaceStore()
 
 onMounted(() => {
   spaceStore.loadSpaces()
+  sheetStore.loadSheets(spaceStore.currentSpaceId)
   
   // Force refresh connections to ensure we have latest space assignments
   connectionStore.loadConnections(true)
@@ -143,6 +145,7 @@ const filteredConnections = computed(() => {
 
 const currentFiles = computed(() => spaceStore.currentSpaceFiles || [])
 const currentNotes = computed(() => spaceStore.currentSpaceNotes || [])
+const currentSheets = computed(() => sheetStore.getAllSheets())
 
 const {
   viewer,
@@ -164,8 +167,6 @@ const {
 const persistentZoom = useStorage('pegasus-viewer-zoom', 1)
 zoomLevel.value = persistentZoom.value
 
-const sidebarTabs = ['data', 'chats', 'queries'] as const
-const activeTab = ref<typeof sidebarTabs[number]>('data')
 const addConnectionModalOpen = ref(false)
 const addTableModalOpen = ref(false)
 const connectionForAddTable = ref<ConnectionEntry | null>(null)
@@ -540,7 +541,45 @@ const onTestDataGenerated = (sql: string) => {
     toast.success('SQL generated in Query Editor')
 }
 
-// ... rest of script ...
+// --- Sheet Logic ---
+const handleAddSheet = async () => {
+    try {
+        await sheetStore.saveSheet({
+            name: "New Spreadsheet",
+            data: { cells: [], rowCount: 100, colCount: 26 },
+            spaceId: spaceStore.currentSpaceId
+        })
+        toast.success('Spreadsheet created')
+    } catch (e: any) {
+        toast.error('Failed to create sheet', { description: e.message })
+    }
+}
+
+const handleDeleteSheet = async (sheet: any) => {
+    if (!window.confirm(`Delete sheet "${sheet.name}"?`)) return
+    try {
+        await sheetStore.deleteSheet(sheet.id)
+        toast.success('Sheet deleted')
+    } catch (e: any) {
+        toast.error('Delete failed', { description: e.message })
+    }
+}
+
+const handleSelectSheet = (sheet: any) => {
+    // TODO: Open sheet in specialized viewer/editor
+    // For now, emit event or open in grid (handled by parent Workspace probably?)
+    // Actually, Explorer shouldn't handle VIEWING, just selection.
+    // We emit an event.
+    
+    // We will assume the parent handles `select-sheet` if we emit something?
+    // But `Explorer` props/emits don't have `select-sheet`.
+    // Let's rely on `emit('edit-table')` maybe? No, that's for DB.
+    
+    // The Workspace needs to know to open a Link/Route for this Sheet.
+    // Or we emit a custom event.
+    // Let's add 'select-sheet' to Explorer Emits first.
+}
+
 </script>
 
 <template>
@@ -554,21 +593,7 @@ const onTestDataGenerated = (sql: string) => {
     <header class="p-4 border-b border-border">
       <div class="flex items-center justify-end">
         <div class="flex items-center gap-3">
-          <div class="flex items-center gap-1.5 p-1 bg-muted/40 rounded-xl border border-border">
-            <button
-              v-for="tab in sidebarTabs"
-              :key="tab"
-              @click="activeTab = tab"
-              class="px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
-              :class="[
-                activeTab === tab 
-                  ? 'bg-purple-100/50 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300 shadow-sm ring-1 ring-purple-500/20' 
-                  : 'text-muted-foreground hover:text-foreground'
-              ]"
-            >
-              {{ tab }}
-            </button>
-          </div>
+          <!-- Removed Tabs -->
           
           <button 
             @click="emit('toggle-pin')"
@@ -594,65 +619,57 @@ const onTestDataGenerated = (sql: string) => {
 
     <!-- Content Area -->
     <div class="flex-1 overflow-hidden relative flex flex-col">
-      <!-- DATA TAB -->
-      <section v-if="activeTab === 'data'" class="flex-1 h-full flex flex-col overflow-hidden">
-         <div class="flex-1 overflow-hidden p-2">
-             <ExplorerTree 
-                :connections="filteredConnections"
-                :files="(currentFiles as any)"
-                :notes="(currentNotes as any)"
-                :spaces="(spaceStore.allSpaces as any)"
-                :selected-table="selectedTable"
-                @select-connection="(conn: any) => emit('update:selectedConnectionId', conn.id)"
-                @select-table="(conn: any, table: string) => { selectedTable = { connectionId: conn.id, tableName: table }; emit('edit-table', conn, table) }"
-                @preview-table="openViewer"
-                @rename-table="startRenameTable"
-                @delete-table="handleDeleteTable"
-                @explain-table="handleExplainTable"
-                @generate-data="handleGenerateData"
-                @delete-connection="handleDeleteConnection"
-                @add-table="handleAddTable"
-                @health-check="handleHealthCheck"
-                
-                @select-file="handleSelectFile"
-                @select-note="handleSelectNote"
-                @add-connection="addConnectionModalOpen = true"
-                @upload-file="handleUploadFile"
-                @add-file="handleUploadFile"
-                @add-note="handleAddNote"
-                @update:context="(c) => currentContext = c"
-                @move-connection="handleMoveConnection"
-                @delete-file="handleDeleteFile"
-                @delete-note="handleDeleteNote"
-                @selection-change="(items) => selectedItems = items"
-                @delete-files="handleBulkDelete"
-                @delete-notes="handleBulkDelete"
-              />
-         </div>
-      </section>
-
-      <!-- CHATS TAB -->
-      <section v-if="activeTab === 'chats'" class="flex-1 overflow-y-auto p-3 scrollbar-hide">
-        <ChatHistoryList 
-          :chats="chats"
-          :selected-chat-id="selectedChatId"
-          @select-chat="(id) => emit('select-chat', id)"
-          @create-chat="emit('create-chat')"
-          @clear-all="clearAllChatsDialogOpen = true"
-          @delete-chat="startDeleteChat"
-        />
-      </section>
-
-      <!-- QUERIES TAB -->
-      <section v-if="activeTab === 'queries'" class="flex-1 overflow-y-auto p-3 scrollbar-hide">
-        <QueryLogList 
-          :query-history="queryHistory"
-          @load-query="(q) => emit('load-query', q)"
-          @delete-query="handleDeleteQuery"
-          @share-query="handleShareQuery"
-          @clear-history="handleClearHistory"
-        />
-      </section>
+       <div class="flex-1 overflow-hidden p-2">
+           <ExplorerTree 
+              :connections="filteredConnections"
+              :files="(currentFiles as any)"
+              :notes="(currentNotes as any)"
+              :spaces="(spaceStore.allSpaces as any)"
+              :sheets="(currentSheets as any)"
+              :chats="chats"
+              :query-history="queryHistory"
+              
+              :selected-table="selectedTable"
+              @select-connection="(conn: any) => emit('update:selectedConnectionId', conn.id)"
+              @select-table="(conn: any, table: string) => { selectedTable = { connectionId: conn.id, tableName: table }; emit('edit-table', conn, table) }"
+              @preview-table="openViewer"
+              @rename-table="startRenameTable"
+              @delete-table="handleDeleteTable"
+              @explain-table="handleExplainTable"
+              @generate-data="handleGenerateData"
+              @delete-connection="handleDeleteConnection"
+              @add-table="handleAddTable"
+              @health-check="handleHealthCheck"
+              
+              @select-file="handleSelectFile"
+              @select-note="handleSelectNote"
+              @select-sheet="(sheet) => emit('select-sheet', sheet)"
+              
+              @add-connection="addConnectionModalOpen = true"
+              @upload-file="handleUploadFile"
+              @add-file="handleUploadFile"
+              @add-note="handleAddNote"
+              @add-sheet="handleAddSheet"
+              
+              @update:context="(c) => currentContext = c"
+              @move-connection="handleMoveConnection"
+              
+              @delete-file="handleDeleteFile"
+              @delete-note="handleDeleteNote"
+              @delete-sheet="handleDeleteSheet"
+              
+              @selection-change="(items) => selectedItems = items"
+              @delete-files="handleBulkDelete"
+              @delete-notes="handleBulkDelete"
+              
+              @select-chat="(id) => emit('select-chat', id)"
+              @create-chat="emit('create-chat')"
+              @delete-chat="startDeleteChat"
+              
+              @load-query="(q) => emit('load-query', q)"
+              @delete-query="handleDeleteQuery"
+            />
+       </div>
     </div>
 
     <!-- Viewer & Dialogs -->

@@ -1,4 +1,4 @@
-import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, DuckDBConfig, PostgresConfig, SurrealConfig, AIProviderConfig, CloudStorageConfig } from '@/lib/db-connections'
+import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, DuckDBConfig, PostgresConfig, SurrealConfig, AIProviderConfig, CloudStorageConfig, DynamoDBConfig, BigQueryConfig } from '@/lib/db-connections'
 import type { SchemaPreview } from '@/lib/api'
 
 export type ConnectionFormState = {
@@ -6,6 +6,7 @@ export type ConnectionFormState = {
   alias: string
   description: string
   provider: Provider
+  spaceId?: string | null
   mysql: MySQLConfig
   postgres: PostgresConfig
   mongodb: MongoConfig
@@ -13,6 +14,8 @@ export type ConnectionFormState = {
   sqlite: SQLiteConfig
   duckdb: DuckDBConfig
   surrealdb: SurrealConfig
+  dynamodb: DynamoDBConfig
+  bigquery: BigQueryConfig
   ai_provider: AIProviderConfig
   cloud_storage: CloudStorageConfig
   isLocked: boolean
@@ -23,13 +26,15 @@ export const defaultConnectionForm: ConnectionFormState = {
   alias: '',
   provider: 'mysql',
   description: '',
-  mysql: { host: '', port: 3306, database: '', user: '', password: '' },
-  postgres: { host: '', port: 5432, database: '', user: '', password: '', ssl: false },
-  mongodb: { url: '', database: '', collection: '' },
-  kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '' },
-  sqlite: { path: '', authToken: '' },
+  mysql: { host: '', port: 3306, database: '', user: '', password: '', enableLiveCache: false, pollingInterval: 300 },
+  postgres: { host: '', port: 5432, database: '', user: '', password: '', ssl: false, enableLiveCache: false, pollingInterval: 300 },
+  mongodb: { url: '', database: '', collection: '', enableLiveCache: false, pollingInterval: 300 },
+  kusto: { cluster: '', database: '', tenantId: '', clientId: '', clientSecret: '', enableLiveCache: false, pollingInterval: 300 },
+  sqlite: { path: '', authToken: '', enableLiveCache: false, pollingInterval: 300 },
   duckdb: { path: '' },
   surrealdb: { protocol: 'ws', host: '127.0.0.1', port: 8000, namespace: 'test', database: 'test', username: 'root', password: 'root' },
+  dynamodb: { region: 'us-east-1', accessKeyId: '', secretAccessKey: '', enableLiveCache: false, pollingInterval: 300 },
+  bigquery: { projectId: '', enableLiveCache: false, pollingInterval: 300 },
   ai_provider: { service: 'openai', apiKey: '', allowedModels: [], defaultModel: '' },
   cloud_storage: { service: 'azure_blob', connectionString: '', allowedBuckets: [], bucket: '' },
   isLocked: false

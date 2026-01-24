@@ -59,6 +59,7 @@ const props = defineProps<{
   versions?: Array<{ version: number; table: string; created_at: string }>;
   currentVersion?: number;
   aiOptions?: { model: string | null; temperature: number };
+  zoomLevel?: number;
 }>();
 
 const emit = defineEmits<{
@@ -99,9 +100,17 @@ const {
   textWrap
 } = useGridScroll(props.engine);
 
-// Force re-render trigger
 const renderKey = ref(0);
 const showGridlines = ref(true);
+
+const cellFontSize = computed(() => `${props.zoomLevel || 12}px`);
+
+// Watch zoom to update row height
+watch(() => props.zoomLevel, (newZoom) => {
+  if (newZoom) {
+    rowHeight.value = Math.max(24, newZoom * 2);
+  }
+}, { immediate: true });
 
 // --- Realtime & Follow Me (useRealtimeCursor) ---
 // --- Selection State (useGridSelection) ---
@@ -2336,6 +2345,7 @@ defineExpose({
                 width: `${getColWidth(col - 1)}px`, 
                 minWidth: `${getColWidth(col - 1)}px`, 
                 maxWidth: `${getColWidth(col - 1)}px`,
+                fontSize: cellFontSize,
                 ...getCellStyle(virtualState.startRow + rowOffset, col - 1)
               }"
               :data-row="virtualState.startRow + rowOffset"

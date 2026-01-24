@@ -11,7 +11,10 @@
           class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
         />
         <div class="flex flex-col">
-          <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block leading-none">Pegasus</span>
+          <div class="flex items-center gap-2">
+            <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block leading-none">Pegasus</span>
+            <span class="hidden sm:inline-flex text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-wider self-start mt-0.5">Beta</span>
+          </div>
           <span v-if="isDevMode" class="text-[10px] font-bold text-amber-500 tracking-widest uppercase mt-0.5">Dev Mode</span>
         </div>
       </RouterLink>
@@ -185,7 +188,10 @@
           <div class="flex items-center justify-between mb-6">
             <RouterLink to="/" class="flex items-center gap-2" @click="mobileOpen = false">
               <img src="/logo_new_purple.svg" class="h-7 w-7" />
-              <span class="text-sm font-bold tracking-tight text-foreground">Pegasus</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold tracking-tight text-foreground">Pegasus</span>
+                <span class="text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-wider">Beta</span>
+              </div>
             </RouterLink>
 
             <button
@@ -347,6 +353,7 @@ interface NavLink {
 const links: NavLink[] = [
   { to: '/dashboard', label: 'Dashboards', icon: LayoutDashboard, webOnly: false },
   { to: '/query', label: 'Spaces', icon: MessageSquare, webOnly: false },
+  { to: '/history', label: 'History', icon: MessageSquare, webOnly: false },
 ]
 
 // Use centralized platform detection

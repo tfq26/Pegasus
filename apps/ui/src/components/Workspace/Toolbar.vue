@@ -35,6 +35,8 @@ const props = defineProps<{
   noteFileType?: 'txt' | 'md' | 'docx' | 'pdf'
   noteFormatState?: { bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean }
   noteSaving?: boolean
+  zoomLevel?: number
+  isSheet?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -76,6 +78,8 @@ const emit = defineEmits<{
   'update:note-file-type': [value: 'txt' | 'md' | 'docx' | 'pdf']
   'note-share': []
   'note-download': []
+  'update:zoom-level': [value: number]
+  'save-sheet': []
 }>()
 
 const expanded = ref(false)
@@ -146,8 +150,9 @@ const models = computed(() => {
           :text-wrap="textWrap"
           :show-gridlines="showGridlines"
           :has-uncommitted-changes="hasUncommittedChanges"
-          :ai-options="aiOptions"
           :available-models="availableModels"
+          :zoom-level="zoomLevel"
+          :is-sheet="isSheet"
           @toggle-ai-mode="emit('toggle-ai-mode')"
           @format="(t, v) => emit('format', t, v)"
           @visualize="emit('visualize')"
@@ -162,11 +167,13 @@ const models = computed(() => {
           @redo="emit('redo')"
           @toggle-find="emit('toggle-find')"
           @commit="emit('save')"
+          @save-sheet="emit('save-sheet')"
           @version-change="(v) => emit('version-change', v)"
           @update:text-wrap="(v) => emit('update:text-wrap', v)"
           @update:show-gridlines="(v) => emit('update:show-gridlines', v)"
           @auto-fit="emit('format', 'auto-fit')"
           @update:ai-options="emit('update:aiOptions', $event)"
+          @update:zoom-level="emit('update:zoom-level', $event)"
         />
 
         <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->

@@ -35,6 +35,9 @@ const props = defineProps<{
   files?: any[]
   notes?: any[]
   spaces?: any[]
+  chats?: any[]
+  queryHistory?: any[]
+  sheets?: any[]
   selectedTable?: { connectionId: string; tableName: string } | null
 }>()
 
@@ -61,6 +64,20 @@ const emit = defineEmits<{
   'selection-change': [items: { type: string, id: string }[]]
   'delete-files': [files: any[]]
   'delete-notes': [notes: any[]]
+
+  // Sheets
+  'select-sheet': [sheet: any]
+  'delete-sheet': [sheet: any]
+  'add-sheet': []
+
+  // Chats
+  'select-chat': [id: string]
+  'delete-chat': [chat: any]
+  'create-chat': []
+
+  // Queries
+  'load-query': [query: string]
+  'delete-query': [id: string]
 }>()
 
 const { schemaFor } = useExplorerSchema(computed(() => props.connections))
@@ -95,8 +112,15 @@ const allSelectableIds = computed(() => {
   })
   ids.push('root:files')
   props.files?.forEach(f => ids.push(`file:${f.id}`))
+  props.files?.forEach(f => ids.push(`file:${f.id}`))
   ids.push('root:notes')
   props.notes?.forEach(n => ids.push(`note:${n.id}`))
+  ids.push('root:sheets')
+  props.sheets?.forEach(s => ids.push(`sheet:${s.id}`))
+  ids.push('root:chats')
+  props.chats?.forEach(c => ids.push(`chat:${c.id}`))
+  ids.push('root:queries')
+  props.queryHistory?.forEach(q => ids.push(`query:${q.id}`))
   return ids
 })
 
@@ -139,6 +163,9 @@ function handleSelect(id: string, event?: MouseEvent) {
   let context = 'db'
   if (id.startsWith('root:files') || id.startsWith('file:')) context = 'files'
   else if (id.startsWith('root:notes') || id.startsWith('note:')) context = 'notes'
+  else if (id.startsWith('root:sheets') || id.startsWith('sheet:')) context = 'sheets'
+  else if (id.startsWith('root:chats') || id.startsWith('chat:')) context = 'chats'
+  else if (id.startsWith('root:queries') || id.startsWith('query:')) context = 'queries'
   
   emit('update:context', context)
 
@@ -164,7 +191,28 @@ function handleSelect(id: string, event?: MouseEvent) {
       emit('select-table', conn, tableName)
     }
   } else {
-    const conn = props.connections.find(c => c.id === id)
+  // Handle new types
+  if (id.startsWith('sheet:')) {
+    const sheetId = id.replace('sheet:', '')
+    const sheet = props.sheets?.find(s => s.id === sheetId)
+    if (sheet) emit('select-sheet', sheet)
+    return
+  }
+
+  if (id.startsWith('chat:')) {
+    const chatId = id.replace('chat:', '')
+    emit('select-chat', chatId)
+    return
+  }
+  
+  if (id.startsWith('query:')) {
+    const qId = id.replace('query:', '')
+    const q = props.queryHistory?.find(q => q.id === qId)
+    if (q) emit('load-query', q.query) 
+    return
+  }
+
+  const conn = props.connections.find(c => c.id === id)
     if (conn) {
       emit('select-connection', conn)
     }
@@ -175,6 +223,9 @@ const initialExpanded = computed(() => [
   'root:db', 
   'root:files', 
   'root:notes',
+  'root:sheets',
+  'root:chats',
+  'root:queries',
   ...props.connections.map(c => c.id)
 ])
 const handleDeleteFile = (file: any) => {
@@ -366,6 +417,156 @@ const handleDeleteNote = (note: any) => {
                Add Connection
             </ContextMenuItem>
         </ContextMenuContent>
+      </ContextMenu>
+      
+      <!-- SHEETS ROOT -->
+      <ContextMenu>
+        <ContextMenuTrigger as-child>
+            <Folder 
+                id="root:sheets" 
+                name="Sheets" 
+                open-icon="lucide:grid" 
+                close-icon="lucide:grid"
+                :is-select="selectedIds.includes('root:sheets')"
+                class="font-medium group"
+            >
+                <template #label>
+                  <div class="flex items-center justify-between w-full">
+                     <span>Sheets</span>
+                  </div>
+               </template>
+                <div v-if="!sheets?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
+                    No sheets
+                </div>
+                <!-- Sheets Loop -->
+                <ContextMenu v-for="sheet in sheets" :key="sheet.id">
+                    <ContextMenuTrigger as-child>
+                        <File 
+                            :id="`sheet:${sheet.id}`" 
+                            :name="sheet.name"
+                            file-icon="lucide:grid"
+                            :is-select="selectedIds.includes(`sheet:${sheet.id}`)"
+                        >
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="truncate">{{ sheet.name }}</span>
+                            </div>
+                        </File>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+                        <ContextMenuItem @select="emit('delete-sheet', sheet)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                            <Trash class="w-3.5 h-3.5 mr-2" />
+                            Delete Sheet
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
+            </Folder>
+        </ContextMenuTrigger>
+        <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+             <ContextMenuItem @select="emit('add-sheet')">
+               <Plus class="w-3.5 h-3.5 mr-2" />
+               New Sheet
+            </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+       <!-- CHATS ROOT -->
+       <ContextMenu>
+        <ContextMenuTrigger as-child>
+            <Folder 
+                id="root:chats" 
+                name="Chats" 
+                open-icon="lucide:message-square" 
+                close-icon="lucide:message-square"
+                :is-select="selectedIds.includes('root:chats')"
+                class="font-medium group"
+            >
+                <template #label>
+                  <div class="flex items-center justify-between w-full">
+                     <span>Chats</span>
+                     <button 
+                        @click.stop.prevent="emit('create-chat')" 
+                        class="mr-2 p-0.5 rounded-sm hover:bg-muted-foreground/20 text-muted-foreground transition-colors"
+                        title="New Chat"
+                     >
+                        <Plus class="w-3.5 h-3.5" />
+                     </button>
+                  </div>
+               </template>
+                <div v-if="!chats?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
+                    No chats
+                </div>
+                <ContextMenu v-for="chat in chats" :key="chat.id">
+                    <ContextMenuTrigger as-child>
+                        <File 
+                            :id="`chat:${chat.id}`" 
+                            :name="chat.title || 'Untitled Chat'"
+                            file-icon="lucide:message-circle"
+                            :is-select="selectedIds.includes(`chat:${chat.id}`)"
+                        >
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="truncate">{{ chat.title || 'Untitled Chat' }}</span>
+                            </div>
+                        </File>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+                        <ContextMenuItem @select="emit('delete-chat', chat)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                            <Trash class="w-3.5 h-3.5 mr-2" />
+                            Delete Chat
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
+            </Folder>
+        </ContextMenuTrigger>
+        <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+             <ContextMenuItem @select="emit('create-chat')">
+               <Plus class="w-3.5 h-3.5 mr-2" />
+               New Chat
+            </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+
+       <!-- QUERIES ROOT -->
+       <ContextMenu>
+        <ContextMenuTrigger as-child>
+            <Folder 
+                id="root:queries" 
+                name="Queries" 
+                open-icon="lucide:scroll-text" 
+                close-icon="lucide:scroll-text"
+                :is-select="selectedIds.includes('root:queries')"
+                class="font-medium group"
+            >
+                <template #label>
+                  <div class="flex items-center justify-between w-full">
+                     <span>Queries</span>
+                  </div>
+               </template>
+                <div v-if="!queryHistory?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
+                    No queries
+                </div>
+                <ContextMenu v-for="q in queryHistory" :key="q.id">
+                    <ContextMenuTrigger as-child>
+                        <File 
+                            :id="`query:${q.id}`" 
+                            :name="q.query"
+                            file-icon="lucide:code-2"
+                            :is-select="selectedIds.includes(`query:${q.id}`)"
+                        >
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="truncate">{{ q.query }}</span>
+                                <span class="text-[9px] text-muted-foreground ml-auto bg-muted px-1 rounded">{{ new Date(q.timestamp).toLocaleTimeString() }}</span>
+                            </div>
+                        </File>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+                        <ContextMenuItem @select="emit('delete-query', q.id)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                            <Trash class="w-3.5 h-3.5 mr-2" />
+                            Delete Query
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
+            </Folder>
+        </ContextMenuTrigger>
       </ContextMenu>
 
       <!-- FILES ROOT -->

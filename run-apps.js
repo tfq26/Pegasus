@@ -218,9 +218,13 @@ async function main() {
         killPort(1420); // Kill Tauri dev port
     }
 
-    // Install dependencies
-    console.log("Installing dependencies...");
-    await runCommand("bun", ["install"], rootDir, "Root Install");
+    // Install dependencies only if needed
+    if (!require("fs").existsSync(join(rootDir, "node_modules"))) {
+        console.log("Installing dependencies...");
+        await runCommand("bun", ["install"], rootDir, "Root Install");
+    } else {
+        console.log("Skipping install (node_modules exists)...");
+    }
 
     // Check service connections
     await checkServiceConnections();

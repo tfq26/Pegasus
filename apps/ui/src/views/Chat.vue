@@ -32,6 +32,7 @@
       @sanitize-table="handleSanitizeFixed"
       @select-note="handleSelectNote"
       @select-file="handleSelectFile"
+      @select-sheet="handleSelectSheet"
       @mouseenter="clearHoverTimer"
       @mouseleave="startHoverTimer"
     />
@@ -613,6 +614,26 @@ const handleSelectFile = (file: any) => {
     if (workspaceRef.value?.openNote) {
         workspaceRef.value.openNote(file, 'file')
     }
+}
+
+const handleSelectSheet = (sheet: any) => {
+    // Check if tab already exists
+    const tabs = (workspaceStore.tabs as any)
+    const existing = tabs.find((t: any) => t.data?.sheetId === sheet.id)
+    
+    if (existing) {
+        workspaceStore.setActiveTab(existing.id)
+        mode.value = 'spreadsheet'
+        return
+    }
+    
+    workspaceStore.createTab('spreadsheet', {
+        sheetId: sheet.id,
+        label: sheet.name,
+        engineState: sheet.data,
+        isLocalSheet: true
+    })
+    mode.value = 'spreadsheet'
 }
 
 // Note toolbar handlers

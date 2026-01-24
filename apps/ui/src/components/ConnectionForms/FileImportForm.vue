@@ -97,8 +97,8 @@ const processFile = async (file: File) => {
   tempError.value = null
 
   try {
-    // Pass current spaceId for Smart Ingestion (auto-connect)
-    const result = await uploadFile(file, (spaceStore.currentSpaceId as unknown) as string, true)
+    // Pass current spaceId, but don't auto-create connection (let user edit details first)
+    const result = await uploadFile(file, (spaceStore.currentSpaceId as unknown) as string, false)
     if (result.success) {
       if (result.provider === 'duckdb') {
         // DuckDB upload (new system)
@@ -118,9 +118,11 @@ const processFile = async (file: File) => {
         props.connectionForm.sqlite.tables = result.tables
       }
       
-      // Auto-set nickname if empty
-      if (!props.connectionForm.nickname) {
-        props.connectionForm.nickname = file.name.split('.')[0] ?? 'Untitled'
+      // Auto-set connection name from filename
+      if (!props.connectionForm.nickname && !props.connectionForm.alias) {
+        const fileName = file.name.split('.')[0] ?? 'Untitled'
+        props.connectionForm.nickname = fileName
+        props.connectionForm.alias = fileName
       }
       emit('upload-success')
     } else {

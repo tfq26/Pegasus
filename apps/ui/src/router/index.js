@@ -35,6 +35,7 @@ const router = createRouter({
       path: '/chat/spreadsheet',
       redirect: '/query'
     },
+    { path: '/history', component: () => import('@/views/HistoryView.vue') },
 
     { path: '/dashboard', component: () => import('@/views/DashboardHome.vue') },
     { path: '/dashboard/:id', component: () => import('@/views/Dashboard.vue') },

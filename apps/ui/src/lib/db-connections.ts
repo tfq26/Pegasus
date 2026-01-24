@@ -1,4 +1,4 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage' | 'duckdb'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage' | 'duckdb' | 'dynamodb' | 'bigquery'
 
 export type MySQLConfig = {
   host: string
@@ -7,6 +7,8 @@ export type MySQLConfig = {
   password: string
   database: string
   enableSync?: boolean
+  enableLiveCache?: boolean
+  pollingInterval?: number
 }
 
 export type PostgresConfig = {
@@ -18,6 +20,8 @@ export type PostgresConfig = {
   ssl?: boolean
   connectionString?: string
   enableSync?: boolean
+  enableLiveCache?: boolean
+  pollingInterval?: number
 }
 
 export type MongoConfig = {
@@ -44,6 +48,8 @@ export type SQLiteConfig = {
   authToken?: string
   tables?: string[]
   enableSync?: boolean
+  enableLiveCache?: boolean
+  pollingInterval?: number
 }
 
 export type DuckDBConfig = {
@@ -87,6 +93,24 @@ export type CloudStorageConfig = {
   allowedBuckets?: string[] // whitelist
 }
 
+export type DynamoDBConfig = {
+  region: string
+  accessKeyId: string
+  secretAccessKey: string
+  endpoint?: string // for local dynamodb
+  enableLiveCache?: boolean
+  pollingInterval?: number
+}
+
+export type BigQueryConfig = {
+  projectId: string
+  keyFile?: string // Path to JSON key file
+  credentials?: string // JSON string content
+  location?: string
+  enableLiveCache?: boolean
+  pollingInterval?: number
+}
+
 export type ConnectionEntry = {
   id: string
   nickname: string
@@ -102,6 +126,8 @@ export type ConnectionEntry = {
   duckdb?: DuckDBConfig
   file?: FileConfig
   surrealdb?: SurrealConfig
+  dynamodb?: DynamoDBConfig
+  bigquery?: BigQueryConfig
   ai_provider?: AIProviderConfig
   cloud_storage?: CloudStorageConfig
   isLocked?: boolean
@@ -183,6 +209,12 @@ export const buildConnectionPayload = (
       break
     case 'cloud_storage':
       basePayload = { provider: 'cloud_storage', ...entry.cloud_storage }
+      break
+    case 'dynamodb':
+      basePayload = { provider: 'dynamodb', ...entry.dynamodb }
+      break
+    case 'bigquery':
+      basePayload = { provider: 'bigquery', ...entry.bigquery }
       break
     default:
       basePayload = { provider: entry.provider }

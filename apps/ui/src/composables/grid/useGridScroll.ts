@@ -2,10 +2,30 @@ import { ref, computed, reactive, watch, onUnmounted } from 'vue';
 import type { Engine } from '../../../Engine/Engine';
 
 export function useGridScroll(engine: Engine) {
-    // Configuration
     const rowCount = computed(() => engine.config.rowCount || 100);
-    const colCount = computed(() => engine.columnNames.length || 26);
-    const rowHeight = 24;
+    const containerWidth = ref(0);
+
+    const colCount = computed(() => {
+        const dataCols = engine.columnNames.length || 0;
+
+        let currentWidth = 40;
+        let neededCols = 0;
+        const availableWidth = containerWidth.value || 1920;
+
+        for (let i = 0; i < dataCols; i++) {
+            currentWidth += (columnWidths[i] ?? defaultColWidth);
+        }
+
+        if (currentWidth < availableWidth) {
+            const remaining = availableWidth - currentWidth;
+            const colsToAdd = Math.ceil(remaining / defaultColWidth);
+            neededCols = dataCols + colsToAdd;
+        }
+
+        return Math.max(dataCols, neededCols, 50);
+    });
+
+    const rowHeight = ref(24);
     const defaultColWidth = 100;
 
     // Dynamic column widths (reactive map)
@@ -32,7 +52,7 @@ export function useGridScroll(engine: Engine) {
         let maxLen = 3; // Minimum for column label like "A"
 
         // Sample first 50 rows for content width
-        for (let row = 0; row < Math.min(50, rowCount); row++) {
+        for (let row = 0; row < Math.min(50, rowCount.value); row++) {
             const cell = engine.getCell({ row, col });
             if (cell?.rawInput) {
                 const len = String(cell.rawInput).length;
@@ -46,7 +66,7 @@ export function useGridScroll(engine: Engine) {
 
     // Auto-fit all columns
     const autoFitAllColumns = () => {
-        for (let col = 0; col < colCount; col++) {
+        for (let col = 0; col < colCount.value; col++) {
             autoFitColumn(col);
         }
     };
@@ -82,10 +102,11 @@ export function useGridScroll(engine: Engine) {
     const updateVisibleRowCount = () => {
         if (gridContainer.value) {
             const containerHeight = gridContainer.value.clientHeight;
+            containerWidth.value = gridContainer.value.clientWidth;
+
             // Calculate how many rows fit in the container, plus a buffer
-            const count = Math.ceil(containerHeight / rowHeight) + 5;
+            const count = Math.ceil(containerHeight / rowHeight.value) + 5;
             virtualState.visibleRowCount = count;
-            console.log(`[useGridScroll] Updated visibleRowCount to ${count} for height ${containerHeight}px`);
         }
     };
 
@@ -124,7 +145,7 @@ export function useGridScroll(engine: Engine) {
         }
 
         // Calculate start row based on scroll position
-        const startRow = Math.floor(scrollTop / rowHeight);
+        const startRow = Math.floor(scrollTop / rowHeight.value);
 
         // Update state if changed
         if (startRow !== virtualState.startRow) {
@@ -140,8 +161,8 @@ export function useGridScroll(engine: Engine) {
         if (!gridContainer.value) return;
 
         // Vertical
-        const top = row * rowHeight;
-        const bottom = (row + 1) * rowHeight;
+        const top = row * rowHeight.value;
+        const bottom = (row + 1) * rowHeight.value;
         const containerHeight = gridContainer.value.clientHeight;
         const scrollTop = gridContainer.value.scrollTop;
 

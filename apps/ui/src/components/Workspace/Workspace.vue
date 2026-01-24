@@ -14,6 +14,8 @@ import { fetchTableSchema, fetchTableQuery, getAIModels, QUERY_API_URL, getAuthH
 import { buildConnectionPayload } from '@/lib/db-connections';
 import { localAI } from '@/services/LocalAIService';
 import { useSettingsStore } from '@/stores/settings';
+import { useSheetStore } from '@/stores/sheet'; 
+import { useSpaceStore } from '@/stores/space'; // NEW
 import { Plus, MessageSquare, Layout, Sparkles, Database, FileCode, StickyNote, FileText } from 'lucide-vue-next';
 import NotesEditor from '../Explorer/NotesEditor.vue';
 import RichTextEditor from './RichTextEditor.vue';
@@ -58,6 +60,8 @@ const emit = defineEmits<{
 // --- Pinia Store ---
 const workspaceStore = useWorkspaceStore();
 const settingsStore = useSettingsStore();
+const sheetStore = useSheetStore(); 
+const spaceStore = useSpaceStore(); // NEW
 const { tabs, activeTabId, activeTab } = storeToRefs(workspaceStore);
 const { settings } = storeToRefs(settingsStore);
 
@@ -117,6 +121,7 @@ const noteEditorRef = ref<any>(null);
 const privateEngines = new Map<string, Engine>(); // Cache for private branches
 const loadingTabIds = ref(new Set<string>());
 const aiOptions = ref({ model: 'gemini-2.5-flash', temperature: 0.7 });
+const zoomLevel = ref(12);
 const isDataLoading = computed(() => loadingTabIds.value.size > 0);
 
 // Compute toolbar mode based on active tab type
@@ -1460,6 +1465,48 @@ const isAIMode = computed(() => {
   return grid?.isAIMode || false;
 });
 
+const isSheet = computed(() => {
+    const t = (activeTab as any).value;
+    // We differentiate Sheets from DB Tables by type or data flag
+    // Assuming 'spreadsheet' type is for Sheets
+    return t?.type === 'spreadsheet' || t?.data?.isLocalSheet;
+});
+
+const handleSaveSheet = async () => {
+    const tabId = activeTabId.value as unknown as string;
+    if (!tabId) return;
+    
+    const engine = engineCache.get(tabId);
+    if (!engine) return;
+
+    try {
+        const state = engine.getState(); // Get full state (cells, styles, etc.)
+        const currentTab = (activeTab as any).value;
+        const sheetId = currentTab?.data?.sheetId;
+        
+        if (sheetId) {
+             const loadingId = toast.loading('Saving sheet...');
+             await sheetStore.saveSheet({
+                 id: sheetId,
+                 data: state,
+                 name: currentTab.label,
+                 updatedAt: new Date().toISOString(),
+                 spaceId: currentTab?.data?.spaceId || spaceStore.currentSpaceId || null
+             });
+             toast.dismiss(loadingId);
+             toast.success('Sheet saved');
+             
+             // Reset dirty state
+             // engine.clearDirty? Or just assume it's clean (engine doesn't track "saved" for sheets same way as DB?)
+        } else {
+             // Handle "Save As" for new sheets if needed, but usually we have an ID
+             toast.error('No sheet ID found');
+        }
+    } catch (e: any) {
+        toast.error('Failed to save sheet', { description: e.message });
+    }
+}
+
 const handleToggleAIMode = () => {
     const tabId = activeTabId.value as unknown as string;
     if (!tabId) return;
@@ -1582,6 +1629,7 @@ defineExpose({
       :note-file-type="(activeTab as any)?.data?.file_type || 'md'"
       :note-is-private="(activeTab as any)?.data?.isPrivate || false"
       :ai-mode="isAIMode"
+      :zoom-level="zoomLevel"
       @toggle-ai-mode="handleToggleAIMode"
       @run="handleToolbarRun"
       @clear="handleToolbarClear"
@@ -1589,6 +1637,8 @@ defineExpose({
       @undo="handleUndo"
       @redo="handleRedo"
       @save="saveCurrentTab"
+      @save-sheet="handleSaveSheet"
+      :is-sheet="isSheet"
       @export="(f) => exportCurrentTable(f)"
       @refresh-table="handleRefreshTable"
       @version-change="(v) => handleVersionChange(activeTabId as any, v)"
@@ -1597,6 +1647,7 @@ defineExpose({
       @note-format="handleNoteFormat"
       @update:note-is-private="handleNotePrivacyChange"
       @update:note-file-type="handleNoteFileTypeChange"
+      @update:zoom-level="zoomLevel = $event"
       @note-share="handleNoteShare"
       @note-download="handleNoteDownload"
     />
@@ -1673,6 +1724,7 @@ defineExpose({
             :versions="(tab.data?.versions as TableVersion[])"
             :current-version="tab.data?.currentVersion"
             :ai-options="aiOptions"
+            :zoom-level="zoomLevel"
             @save-query="(query, type) => emit('save-query', query, type)"
             @version-change="(v) => handleVersionChange(tab.id, v)"
             @ai-response="handleAIResponse"

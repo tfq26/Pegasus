@@ -5,10 +5,12 @@ import UpgradeModal from '@/components/UpgradeModal.vue'
 import { defaultConnectionForm } from '@/views/settings/types'
 import type { ConnectionFormState } from '@/views/settings/types'
 import { useConnectionStore } from '@/stores/connection'
+import { useSpaceStore } from '@/stores/space'
 import { useEntitlements } from '@/composables/useEntitlements'
 import { toast } from '@/composables/useNotifications'
 
 const connectionStore = useConnectionStore()
+const spaceStore = useSpaceStore()
 const { canCreateConnection: tierAllowsConnection, connectionUsage, handleLimitError, fetchEntitlements } = useEntitlements()
 
 const props = defineProps<{
@@ -33,6 +35,8 @@ const isSaving = ref(false)
 watch(() => props.open, async (isOpen) => {
   if (isOpen) {
     form.value = getFreshForm()
+    // Set the current space ID
+    form.value.spaceId = spaceStore.currentSpaceId
   }
 })
 
@@ -69,7 +73,16 @@ const handleSave = async () => {
   try {
     // Use connection store instead of direct API call
     form.value.nickname = form.value.alias
-    await connectionStore.saveConnection(form.value as any)
+    
+    // Ensure spaceId is set for the connection
+    const connectionData = {
+      ...form.value,
+      space: form.value.spaceId,
+      spaceId: form.value.spaceId
+    }
+    
+    console.log('[AddConnectionModal] Saving connection with spaceId:', form.value.spaceId, 'Current space:', spaceStore.currentSpaceId)
+    await connectionStore.saveConnection(connectionData as any)
     toast.success('Connection added')
     emit('update:open', false)
     emit('connection-added')
@@ -92,6 +105,12 @@ const handleSave = async () => {
     isSaving.value = false
   }
 }
+
+// Separate handler for file upload success
+// Keep dialog open so user can edit name/description before saving
+const handleUploadSuccess = () => {
+  toast.success('File uploaded - review and save connection')
+}
 </script>
 
 <template>
@@ -102,7 +121,7 @@ const handleSave = async () => {
     :is-edit-mode="false"
     :can-add-connection="canAddConnection"
     @save="handleSave"
-    @upload-success="handleSave"
+    @upload-success="handleUploadSuccess"
   />
   
   <UpgradeModal

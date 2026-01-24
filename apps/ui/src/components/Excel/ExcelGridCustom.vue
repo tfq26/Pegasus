@@ -91,11 +91,14 @@ onUnmounted(() => {
 
 const getColumnLabel = (index: number) => {
   let label = ''
-  let i = index
-  while (i >= 0) {
-    label = String.fromCharCode(65 + (i % 26)) + label
-    i = Math.floor(i / 26) - 1
+  let num = index + 1 // Excel columns are 1-indexed
+  
+  while (num > 0) {
+    let remainder = (num - 1) % 26
+    label = String.fromCharCode(65 + remainder) + label
+    num = Math.floor((num - 1) / 26)
   }
+  
   return label
 }
 
@@ -155,13 +158,70 @@ const fillHandlePosition = computed(() => {
   return { row: maxR, col: maxC }
 })
 
+// === Dynamic Column Sizing ===
+import { onMounted } from 'vue'
 
+const containerRef = ref<HTMLElement | null>(null)
+const containerWidth = ref(0)
+const minColWidth = 100 // pixels
+
+let resizeObserver: ResizeObserver | null = null
+
+onMounted(() => {
+    // Initial delay to ensure render
+    setTimeout(() => {
+        if (containerRef.value) {
+            // Initial width
+            containerWidth.value = containerRef.value.clientWidth
+            
+            // Watch for size changes
+            resizeObserver = new ResizeObserver((entries) => {
+                const entry = entries[0]
+                if (entry) {
+                    containerWidth.value = entry.contentRect.width
+                }
+            })
+            resizeObserver.observe(containerRef.value)
+        }
+    }, 100)
+})
+
+onUnmounted(() => {
+    if (resizeObserver) {
+        resizeObserver.disconnect()
+    }
+})
+
+// Calculate how many columns we need to fill the screen
+// Plus adds a buffer to ensure we scroll a bit
+const totalColumns = computed(() => {
+    const dataCols = props.data[0]?.length || 0
+    const neededCols = Math.ceil(containerWidth.value / minColWidth)
+    // Always ensure at least 'neededCols' or 'dataCols', whichever is larger
+    // Add small buffer +2
+    return Math.max(dataCols, neededCols, 26) // At least A-Z
+})
+
+const totalRows = computed(() => {
+    // Fill vertical space too if needed? User asked mainly about columns (right side void)
+    // But let's ensure at least 20 rows or data length
+    const dataRows = props.data.length
+    return Math.max(dataRows, 50) 
+})
+
+// Helper to get value safely for any coordinate
+const getCellValue = (rowIndex: number, colIndex: number) => {
+    if (rowIndex < props.data.length) {
+        return props.data[rowIndex][colIndex] ?? ''
+    }
+    return ''
+}
 </script>
 
 <template>
-  <div class="overflow-auto relative select-none w-full h-full spreadsheet-scrollbar">
+  <div ref="containerRef" class="overflow-auto relative select-none w-full h-full spreadsheet-scrollbar">
     <table 
-      class="border-collapse w-full table-fixed"
+      class="border-collapse w-full table-auto"
       @mousedown="onMouseDown"
       @dragstart.prevent
     >
@@ -172,62 +232,62 @@ const fillHandlePosition = computed(() => {
           
           <!-- Column Headers -->
           <th 
-            v-for="(col, colIndex) in data[0] || []" 
-            :key="colIndex"
+            v-for="colIndex in totalColumns" 
+            :key="colIndex - 1"
             class="h-8 min-w-[100px] bg-muted/50 border border-border text-xs font-medium text-muted-foreground sticky top-0 z-10 px-2 text-center cursor-pointer hover:bg-muted/80"
-            :class="{ 'bg-purple-500/10 text-purple-600 font-bold': isSelectedHeaderCol(colIndex) }"
-            @click.stop="emit('select-col', colIndex, $event.shiftKey)"
+            :class="{ 'bg-purple-500/10 text-purple-600 font-bold': isSelectedHeaderCol(colIndex - 1) }"
+            @click.stop="emit('select-col', colIndex - 1, $event.shiftKey)"
           >
-            {{ getColumnLabel(colIndex) }}
+            {{ getColumnLabel(colIndex - 1) }}
           </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(row, rowIndex) in data" :key="rowIndex">
+        <tr v-for="rowIndex in totalRows" :key="rowIndex - 1">
           <!-- Row Header -->
           <td 
             class="w-10 bg-muted/50 border border-border text-xs font-medium text-muted-foreground sticky left-0 z-10 text-center cursor-pointer hover:bg-muted/80"
-            :class="{ 'bg-purple-500/10 text-purple-600 font-bold': isSelectedHeaderRow(rowIndex) }"
-            @click.stop="emit('select-row', rowIndex, $event.shiftKey)"
+            :class="{ 'bg-purple-500/10 text-purple-600 font-bold': isSelectedHeaderRow(rowIndex - 1) }"
+            @click.stop="emit('select-row', rowIndex - 1, $event.shiftKey)"
           >
-            {{ rowIndex + 1 }}
+            {{ rowIndex }}
           </td>
 
           <!-- Cells -->
           <td 
-            v-for="(cell, colIndex) in row" 
-            :key="colIndex"
+            v-for="colIndex in totalColumns" 
+            :key="colIndex - 1"
             class="border border-border h-8 px-2 text-sm relative cursor-cell whitespace-nowrap overflow-hidden text-foreground select-none"
             :class="{
-              'bg-purple-500/10': isInSelection(rowIndex, colIndex),
-              'outline outline-2 outline-purple-500 z-10': selection?.start.row === rowIndex && selection?.start.col === colIndex,
-              'bg-background': !isInSelection(rowIndex, colIndex)
+              'bg-purple-500/10': isInSelection(rowIndex - 1, colIndex - 1),
+              'outline outline-2 outline-purple-500 z-10': selection?.start.row === (rowIndex - 1) && selection?.start.col === (colIndex - 1),
+              'bg-background': !isInSelection(rowIndex - 1, colIndex - 1)
             }"
-            :style="getCellStyle(rowIndex, colIndex)"
-            :data-row="rowIndex"
-            :data-col="colIndex"
-            @dblclick="startEditing(rowIndex, colIndex)"
+            :style="getCellStyle(rowIndex - 1, colIndex - 1)"
+            :data-row="rowIndex - 1"
+            :data-col="colIndex - 1"
+            @dblclick="startEditing(rowIndex - 1, colIndex - 1)"
           >
             <!-- Editing Mode -->
             <input
-              v-if="editingCell?.row === rowIndex && editingCell?.col === colIndex"
+              v-if="editingCell?.row === (rowIndex - 1) && editingCell?.col === (colIndex - 1)"
               ref="editInput"
-              :value="cell"
+              :value="getCellValue(rowIndex - 1, colIndex - 1)"
               @input="emit('update:value', ($event.target as HTMLInputElement).value)"
               @blur="emit('edit-end', ($event.target as HTMLInputElement).value)"
               @keydown="onEditKeydown"
               class="absolute inset-0 w-full h-full px-2 bg-background outline-none font-mono text-sm"
-              :style="getCellStyle(rowIndex, colIndex)"
+              :style="getCellStyle(rowIndex - 1, colIndex - 1)"
             />
             
             <!-- Display Mode -->
             <span v-else class="pointer-events-none">
-              {{ cell }}
+              {{ getCellValue(rowIndex - 1, colIndex - 1) }}
             </span>
             
             <!-- Fill Handle (Excel-style drag corner) -->
             <div 
-              v-if="fillHandlePosition && fillHandlePosition.row === rowIndex && fillHandlePosition.col === colIndex"
+              v-if="fillHandlePosition && fillHandlePosition.row === (rowIndex - 1) && fillHandlePosition.col === (colIndex - 1)"
               class="absolute bottom-0 right-0 w-2 h-2 bg-purple-500 cursor-crosshair z-20"
               style="transform: translate(50%, 50%)"
               @mousedown.stop="() => {}"

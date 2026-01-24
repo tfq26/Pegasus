@@ -2343,24 +2343,61 @@ async function createTableAndInsertData(tableName, rows) {
   }
 
   // Batch Insert
-  const chunkSize = 100; // Smaller chunks for Postgres raw insert
+  const chunkSize = 50;
+  const allKeys = Array.from(columnNames);
+  const keysStr = allKeys.map(k => `"${k}"`).join(', ');
+
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
-    for (const row of chunk) {
-      const keys = Object.keys(row);
-      const values = keys.map(k => row[k]);
-      // This is a bit manual because it's dynamic. 
-      // In a real app we'd use a better abstraction.
-      const keysStr = keys.map(k => `"${k}"`).join(', ');
-      const placeholders = keys.map((_, idx) => `$${idx + 2}`).join(', ');
+    if (!chunk.length) continue;
 
-      try {
-        await db.execute(sql.raw(`
-          INSERT INTO "${tableName}" (_row_order, ${keysStr})
-          VALUES ($1, ${placeholders})
-        `), [i + chunk.indexOf(row), ...values]);
-      } catch (e) {
-        console.error(`[DB] Insert failed for row in ${tableName}:`, e.message);
+    try {
+      // Try Batch Insert
+      const valuesChunks = [];
+      for (let j = 0; j < chunk.length; j++) {
+        const row = chunk[j];
+        const rowParams = [];
+        // _row_order
+        rowParams.push(i + j);
+        allKeys.forEach(k => {
+          rowParams.push(row[k] !== undefined ? row[k] : null);
+        });
+
+        const rowSql = sql`(${rowParams[0]}`;
+        for (let p = 1; p < rowParams.length; p++) {
+          rowSql.append(sql`, ${rowParams[p]}`);
+        }
+        rowSql.append(sql`)`);
+        valuesChunks.push(rowSql);
+      }
+
+      if (valuesChunks.length > 0) {
+        const finalQuery = sql.raw(`INSERT INTO "${tableName}" (_row_order, ${keysStr}) VALUES `);
+        finalQuery.append(valuesChunks[0]);
+        for (let k = 1; k < valuesChunks.length; k++) {
+          finalQuery.append(sql`, `);
+          finalQuery.append(valuesChunks[k]);
+        }
+        await db.execute(finalQuery);
+      }
+
+    } catch (batchError) {
+      console.warn(`[DB] Batch insert failed for chunk ${i}, falling back to row-by-row. Error:`, batchError.message);
+
+      // Fallback: Row-by-Row
+      for (const row of chunk) {
+        const keys = Object.keys(row);
+        const values = keys.map(k => row[k]);
+        const rowKeysStr = keys.map(k => `"${k}"`).join(', ');
+        const placeholders = keys.map((_, idx) => `$${idx + 2}`).join(', ');
+        try {
+          await db.execute(sql.raw(`
+                  INSERT INTO "${tableName}" (_row_order, ${rowKeysStr})
+                  VALUES ($1, ${placeholders})
+                `), [i + chunk.indexOf(row), ...values]);
+        } catch (e) {
+          console.error(`[DB] Single row insert failed:`, e.message);
+        }
       }
     }
   }
