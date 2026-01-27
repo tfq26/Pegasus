@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import { computed, ref, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { storeToRefs } from 'pinia'
+import { api } from '@/lib/apiClient'
 
 // Check if running in Tauri desktop environment
 const isTauri = computed(() => '__TAURI_INTERNALS__' in window)
@@ -16,8 +17,9 @@ import UpgradeModal from '@/components/UpgradeModal.vue'
 import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle, Lock, ChevronDown } from 'lucide-vue-next'
 
 const settingsStore = useSettingsStore()
-const { settings } = storeToRefs(settingsStore)
+const { settings, availableModels, isModelsLoading } = storeToRefs(settingsStore)
 
+// Local list (including local engine models)
 const models = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -67,59 +69,22 @@ onMounted(async () => {
     // Fetch subscription info first
     await fetchEntitlements()
     
-    const [cloudModelsResponse, _] = await Promise.all([
-      getAIModels(),
-      checkLocalStatus()
-    ])
+    // Check Statuses
+    await checkLocalStatus()
     
-    // The backend now returns { models: [...], tier: 'free' }
-    const cloudModels = Array.isArray(cloudModelsResponse) ? cloudModelsResponse : ((cloudModelsResponse as any).models || [])
-    
-    // Add tier information to each model
-    const TIER_REQUIREMENTS: Record<string, 'free' | 'pro' | 'pro_plus'> = {
-      // OpenAI models
-      'gpt-5.1-mini': 'free',
-      'o4-mini': 'pro',
-      'gpt-5.1': 'pro',
-      // Gemini models
-      'gemini-2.5-flash-lite': 'free',
-      'gemini-3-flash-preview': 'pro',
-      'gemini-3-pro-preview': 'pro',
-      // Anthropic models
-      'claude-3-5-haiku-latest': 'pro',
-      'claude-3-5-sonnet-latest': 'pro',
-      'claude-3-opus-latest': 'pro_plus',
-      // Legacy/Future models
-      'gpt-4o-mini': 'free',
-      'gemini-2.5-flash': 'free',
-      'gemini-2.5-pro': 'free',
-      'gemini-1.5-flash': 'free',
-      'gemini-1.5-pro': 'pro',
-      'o1-mini': 'pro',
-      'o1-preview': 'pro_plus',
-      'claude-3-5-sonnet-20241022': 'pro_plus'
-    }
-    
-    const TIER_LABELS: Record<string, string> = {
-      'free': 'Free',
-      'pro': 'Pro',
-      'pro_plus': 'Pro+'
-    }
-    
-    const TIER_ORDER = { 'free': 0, 'pro': 1, 'pro_plus': 2 }
-    
-    models.value = cloudModels.map((m: any) => {
-      const requiredTier = TIER_REQUIREMENTS[m.id] || 'free'
-      const isLocked = TIER_ORDER[requiredTier] > TIER_ORDER[subscriptionTier.value]
-      
-      return {
+    // Load models via store (with tier)
+    await settingsStore.loadAvailableModels(subscriptionTier.value)
+
+
+    // Sync local store models to view models (adding local ones)
+    // Store models are already filtered/processed, so we just map for UI labels
+    const cloudModels = availableModels.value.map(m => ({
         ...m,
-        requiredTier,
-        requiredTierLabel: TIER_LABELS[requiredTier],
-        isLocked
-      }
-    })
+        requiredTierLabel: m.requiredTier === 'free' ? 'Free' : (m.requiredTier === 'pro' ? 'Pro' : 'Pro+')
+    }))
     
+    models.value = cloudModels
+
     // Merge local models into the list if available
     if (localStatus.value.is_running) {
        const localModels = localStatus.value.models.map(m => ({
@@ -210,7 +175,7 @@ const filteredModels = computed(() => {
 })
 
 // Group models by access level
-const availableModels = computed(() => {
+const displayModels = computed(() => {
   return filteredModels.value.filter(m => !m.isLocked)
 })
 
@@ -538,14 +503,14 @@ onMounted(async () => {
       <div v-else-if="error" class="text-destructive text-sm">{{ error }}</div>
       <div v-else class="space-y-6">
         <!-- Your Models (Available) -->
-        <div v-if="availableModels.length > 0">
+        <div v-if="displayModels.length > 0">
           <div class="flex items-center gap-2 mb-3">
             <h4 class="text-sm font-semibold text-foreground">Your Models</h4>
-            <span class="text-xs text-muted-foreground">({{ availableModels.length }} available)</span>
+            <span class="text-xs text-muted-foreground">({{ displayModels.length }} available)</span>
           </div>
           <div class="space-y-2">
             <div 
-              v-for="model in availableModels" 
+              v-for="model in displayModels" 
               :key="model.id"
               class="p-4 rounded-lg border border-border bg-card hover:bg-accent/50 transition-all"
               :class="isModelActive(model.id) ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/20' : ''"

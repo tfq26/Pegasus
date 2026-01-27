@@ -3,24 +3,40 @@
     class="w-full border-b border-border bg-background text-foreground shadow-sm fixed top-0 z-50 transition-all duration-300"
   >
     <div class="flex items-center justify-between px-4 py-3 sm:px-8 h-16 w-full">
-      <!-- Left: Logo -->
-      <RouterLink to="/" class="flex items-center gap-3 group">
-        <img
-          src="/logo_new_purple.svg"
-          alt="Pegasus Logo"
-          class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
-        />
-        <div class="flex flex-col">
-          <div class="flex items-center gap-2">
-            <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block leading-none">Pegasus</span>
-            <span class="hidden sm:inline-flex text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-wider self-start mt-0.5">Beta</span>
+      <!-- Left: Logo & Compact Nav -->
+      <div class="flex items-center gap-6">
+        <RouterLink to="/" class="flex items-center gap-3 group">
+          <img
+            src="/logo_new_purple.svg"
+            alt="Pegasus Logo"
+            class="h-8 w-8 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110"
+          />
+          <div class="flex flex-col">
+            <div class="flex items-center gap-2">
+              <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block leading-none">Pegasus</span>
+              <span class="hidden sm:inline-flex text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-wider self-start mt-0.5">Beta</span>
+            </div>
+            <span v-if="isDevMode" class="text-[10px] font-bold text-amber-500 tracking-widest uppercase mt-0.5">Dev Mode</span>
           </div>
-          <span v-if="isDevMode" class="text-[10px] font-bold text-amber-500 tracking-widest uppercase mt-0.5">Dev Mode</span>
-        </div>
-      </RouterLink>
+        </RouterLink>
 
-      <!-- Center: Desktop Links -->
-      <div class="hidden sm:flex items-center gap-8">
+        <!-- Compact Navigation Links (Visible only in Fullscreen/Compact) -->
+        <div v-if="isFullscreen" class="hidden sm:flex items-center gap-1 pl-4 border-l border-border/50">
+            <RouterLink
+                v-for="link in filteredLinks"
+                :key="link.to"
+                :to="link.to"
+                class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-200 group/nav"
+                active-class="bg-primary/5 text-primary border border-primary/20"
+            >
+                <component :is="link.icon" class="w-4 h-4 transition-transform group-hover/nav:scale-110" />
+                <span class="text-[10px] font-bold uppercase tracking-widest">{{ link.label }}</span>
+            </RouterLink>
+        </div>
+      </div>
+
+      <!-- Center: Spacer -->
+      <div v-if="!isFullscreen" class="hidden sm:flex items-center gap-8">
         <RouterLink
           v-for="link in links"
           :key="link.to"
@@ -36,8 +52,9 @@
           ></span>
         </RouterLink>
       </div>
+      <div v-else class="flex-1"></div>
 
-      <!-- Right: Mobile Toggle + Profile -->
+      <!-- Right: Mobile Toggle + Compact Menu -->
       <div class="flex items-center gap-4">
 
         <button
@@ -65,96 +82,150 @@
         <!-- Global Progress Bar -->
         <GlobalProgressBar v-if="!isPhone" />
 
-        <!-- Profile -->
-        <div v-if="!isPhone" ref="dropdownRef" class="relative">
-          <!-- Loading State -->
-          <div
-            v-if="isLoading"
-            class="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1"
-          >
-            <div class="h-7 w-7 rounded-lg bg-muted animate-pulse"></div>
-            <div class="hidden sm:block h-4 w-16 bg-muted rounded animate-pulse"></div>
-          </div>
-
-          <!-- Not Logged In -->
-          <RouterLink
-            v-else-if="!user"
-            to="/login"
-            class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
-          >
-            <LogIn class="h-5 w-5" />
-            <span class="hidden sm:inline font-medium">Login</span>
-          </RouterLink>
-
-          <!-- Logged In -->
-          <button
-            v-else
-            @click="toggleDropdown"
-            class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
-          >
-            <img
-              :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
-              alt="Profile"
-              class="h-7 w-7 rounded-lg object-cover border border-border transition-all"
-            />
-            <span class="hidden sm:inline font-medium flex items-center gap-1">
-              {{ user.firstName || 'User' }}
-              <span
-                v-if="tierDisplay && subscriptionTier !== 'free'"
-                class="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
-                :class="tierDisplay.badgeClass"
-              >
-                {{ tierDisplay.label }}
-              </span>
-            </span>
-            <ChevronDown
-              class="h-4 w-4 transition-transform duration-200"
-              :class="{ 'rotate-180': showDropdown }"
-            />
-          </button>
-
-          <!-- Dropdown -->
-          <transition name="dropdown-fade">
-            <div
-              v-if="showDropdown && user"
-              class="absolute right-0 top-12 w-48 rounded-xl border border-border bg-popover shadow-lg shadow-black/10 dark:shadow-black/30 py-2 z-50 overflow-hidden"
-            >
-              <div class="px-4 py-2 border-b border-border mb-1 sm:hidden">
-                <p class="text-xs font-bold text-foreground truncate">
-                  {{ user.firstName }} {{ user.lastName }}
-                </p>
-                <p class="text-[10px] text-muted-foreground truncate">{{ user.email }}</p>
-              </div>
-              <RouterLink
-                v-for="item in dropdownItems"
-                :key="item.to"
-                :to="item.to"
-                class="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
-                @click="showDropdown = false"
-              >
-                <component :is="item.icon" class="w-4 h-4" />
-                {{ item.label }}
-              </RouterLink>
-              <div class="h-px bg-border my-1"></div>
-              <button
-                @click="toggleTheme"
-                class="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
-              >
-                <Sun v-if="currentIcon === 'sun'" class="w-4 h-4" />
-                <Moon v-else-if="currentIcon === 'moon'" class="w-4 h-4" />
-                <Monitor v-else class="w-4 h-4" />
-                <span>Theme: {{ props.themeMode }}</span>
-              </button>
-              <div class="h-px bg-border my-1"></div>
-              <button
-                @click="handleLogout"
-                class="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition"
-              >
-                <LogOut class="w-4 h-4" />
-                Logout
-              </button>
+        <!-- Standard Profile Menu (Not Fullscreen) -->
+        <div v-if="!isPhone && !isFullscreen">
+            <div v-if="isLoading" class="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-1">
+                <div class="h-7 w-7 rounded-lg bg-muted animate-pulse"></div>
             </div>
-          </transition>
+            <RouterLink
+                v-else-if="!user"
+                to="/login"
+                class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all"
+            >
+                <LogIn class="h-5 w-5" />
+                <span class="hidden sm:inline font-medium">Login</span>
+            </RouterLink>
+            <DropdownMenu v-else>
+                <DropdownMenuTrigger as-child>
+                    <button class="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1 text-sm text-muted-foreground hover:border-primary hover:text-primary transition-all">
+                        <img
+                          :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
+                          alt="Profile"
+                          class="h-7 w-7 rounded-lg object-cover border border-border transition-all"
+                        />
+                        <span class="hidden sm:inline font-medium flex items-center gap-1">
+                          {{ user.firstName || 'User' }}
+                          <span
+                            v-if="tierDisplay && subscriptionTier !== 'free'"
+                            class="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                            :class="tierDisplay.badgeClass"
+                          >
+                            {{ tierDisplay.label }}
+                          </span>
+                        </span>
+                        <ChevronDown class="h-4 w-4 opacity-50" />
+                    </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-48">
+                    <!-- Standard Menu Items -->
+                    <DropdownMenuItem v-for="item in dropdownItems" :key="item.to" as-child>
+                         <RouterLink :to="item.to" class="cursor-pointer flex items-center w-full">
+                            <component :is="item.icon" class="mr-2 h-4 w-4" />
+                            <span>{{ item.label }}</span>
+                         </RouterLink>
+                    </DropdownMenuItem>
+                    
+                    <DropdownMenuSeparator />
+                    
+                    <DropdownMenuItem @click="toggleFullscreen()">
+                        <component :is="isFullscreen ? Minimize2 : Maximize2" class="mr-2 h-4 w-4" />
+                        <span>{{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem @click="toggleTheme">
+                        <Sun v-if="currentIcon === 'sun'" class="mr-2 h-4 w-4" />
+                        <Moon v-else-if="currentIcon === 'moon'" class="mr-2 h-4 w-4" />
+                        <Monitor v-else class="mr-2 h-4 w-4" />
+                        <span>Theme: {{ props.themeMode }}</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem @click="handleLogout" class="text-destructive focus:text-destructive focus:bg-destructive/10">
+                        <LogOut class="mr-2 h-4 w-4" />
+                        <span>Logout</span>
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
+
+        <!-- Compact Menu (Only in Fullscreen) -->
+        <div v-if="!isPhone && isFullscreen">
+            <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                    <button class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-primary/50 transition-all group">
+                         <Menu class="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                         <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground hidden sm:block">Menu</span>
+                    </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="w-64 p-2">
+                    <!-- Fullscreen Toggle -->
+                    <DropdownMenuItem @click="toggleFullscreen()" class="flex items-center gap-2 cursor-pointer">
+                        <component :is="isFullscreen ? Minimize2 : Maximize2" class="h-4 w-4 text-muted-foreground" />
+                        <span class="text-xs font-semibold">{{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen' }}</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+                    
+                    <!-- Settings, Support & Docs (All at main level) -->
+                    <div class="space-y-1">
+                        <DropdownMenuItem v-for="item in dropdownItems" :key="item.to" as-child class="cursor-pointer">
+                             <RouterLink :to="item.to" class="flex items-center w-full">
+                                <component :is="item.icon" class="mr-2 h-4 w-4 text-muted-foreground" />
+                                <span class="text-xs font-semibold">{{ item.label }}</span>
+                             </RouterLink>
+                        </DropdownMenuItem>
+                    </div>
+
+                    <!-- Theme Toggle -->
+                    <DropdownMenuItem @click="toggleTheme" class="flex items-center gap-2 cursor-pointer">
+                        <Sun v-if="currentIcon === 'sun'" class="h-4 w-4 text-muted-foreground" />
+                        <Moon v-else-if="currentIcon === 'moon'" class="h-4 w-4 text-muted-foreground" />
+                        <Monitor v-else class="h-4 w-4 text-muted-foreground" />
+                        <span class="text-xs font-semibold">Theme: {{ props.themeMode }}</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+
+                    <!-- User Profile & Integrated Logout -->
+                    <div v-if="user" class="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/50">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <img
+                              :src="user.profilePictureUrl || `https://api.dicebear.com/8.x/avataaars/svg?seed=${user.email}`"
+                              class="h-7 w-7 rounded-full border border-border object-cover"
+                            />
+                            <div class="flex flex-col min-w-0">
+                                <span class="text-[11px] font-bold text-foreground truncate leading-tight">{{ user.firstName || 'User' }}</span>
+                                <span
+                                    v-if="tierDisplay && subscriptionTier !== 'free'"
+                                    class="w-fit text-[8px] px-1 py-0.5 mt-0.5 rounded-sm font-black uppercase tracking-wider"
+                                    :class="tierDisplay.badgeClass"
+                                >
+                                    {{ tierDisplay.label }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <button 
+                            @click="handleLogout"
+                            class="p-2 rounded-md hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-all flex items-center gap-1 group/logout"
+                            title="Logout"
+                        >
+                            <span class="text-[10px] font-bold uppercase tracking-wider opacity-0 group-hover/logout:opacity-100 transition-opacity">Exit</span>
+                            <LogOut class="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                    
+                    <!-- Login Item (if not user) -->
+                    <DropdownMenuItem v-else as-child>
+                        <RouterLink to="/login" class="cursor-pointer flex items-center w-full">
+                            <LogIn class="mr-2 h-4 w-4" />
+                            <span>Login</span>
+                        </RouterLink>
+                    </DropdownMenuItem>
+
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </div>
     </div>
@@ -305,10 +376,20 @@ import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useEntitlements } from '@/composables/useEntitlements'
 import { usePlatform, isTauri as isTauriRef, isOnline as isOnlineRef } from '@/composables/usePlatform'
-import { useColorMode } from '@vueuse/core'
+import { useColorMode, useFullscreen } from '@vueuse/core'
 import { getSubscriptionStatus } from '@/lib/api'
 import NotificationCenter from './NotificationCenter.vue'
 import GlobalProgressBar from './GlobalProgressBar.vue'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger
+} from '@/components/ui/dropdown-menu'
 import {
   Home,
   Info,
@@ -327,7 +408,10 @@ import {
   Sun,
   Moon,
   Monitor,
-  BookOpen
+  BookOpen,
+  Maximize2,
+  Minimize2,
+  History
 } from 'lucide-vue-next'
 
 defineOptions({ name: 'AppNavbar' })
@@ -339,6 +423,7 @@ const props = defineProps<{
 
 const route = useRoute()
 const { isPhone } = usePlatform()
+const { toggle: toggleFullscreen, isFullscreen } = useFullscreen()
 const isDevMode = import.meta.env.VITE_PEGASUS_DEV_MODE === 'true'
 const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
 const { user, isLoading, fetchUser, logout } = useAuth()
@@ -351,9 +436,9 @@ interface NavLink {
 }
 
 const links: NavLink[] = [
-  { to: '/dashboard', label: 'Dashboards', icon: LayoutDashboard, webOnly: false },
-  { to: '/query', label: 'Spaces', icon: MessageSquare, webOnly: false },
-  { to: '/history', label: 'History', icon: MessageSquare, webOnly: false },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, webOnly: false },
+  { to: '/query', label: 'Spaces', icon: TrendingUp, webOnly: false },
+  { to: '/history', label: 'History', icon: History, webOnly: false },
 ]
 
 // Use centralized platform detection
@@ -382,9 +467,7 @@ const dropdownItems = [
   { to: '/docs', label: 'Docs', icon: BookOpen }
 ]
 
-const showDropdown = ref(false)
 const mobileOpen = ref(false)
-const dropdownRef = ref<HTMLElement | null>(null)
 
 const { subscriptionTier } = useEntitlements()
 
@@ -408,10 +491,7 @@ const activeTabClass = computed(() => {
   }
 })
 
-const toggleDropdown = () => (showDropdown.value = !showDropdown.value)
-
 const handleLogout = () => {
-  showDropdown.value = false
   mobileOpen.value = false
   logout()
 }
@@ -423,18 +503,9 @@ const currentIcon = computed(() => {
   return 'sun'
 })
 
-// Close dropdown when clicking outside
-const handleClickOutside = (e: MouseEvent) => {
-  if (dropdownRef.value && !dropdownRef.value.contains(e.target as Node)) {
-    showDropdown.value = false
-  }
-}
-
 onMounted(async () => {
   await fetchUser()
-  document.addEventListener('click', handleClickOutside)
 })
-
 
 // Close drawer on route change
 watch(
@@ -450,7 +521,6 @@ watch(mobileOpen, (open) => {
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
   document.body.style.overflow = ''
 })
 </script>

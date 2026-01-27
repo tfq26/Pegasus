@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { files, spaceNotes, connections, spaceFiles, knowledgeChunks } from '../db/schema.js';
+import { files, spaceNotes, connections, spaceFiles, knowledgeChunks, dataSpaces, spacePermissions, connectionWorkspaces } from '../db/schema.js';
 import { eq, ilike, or, and, like, sql } from 'drizzle-orm';
 import { RAGService } from './ragService.js';
 
@@ -32,7 +32,20 @@ export class OneContext {
     /**
      * Resolve mentions to actual DB resources
      */
-    static async resolveContext(text, userId) {
+    static async resolveContext(text, userId, connectionId = null) {
+        // Resolve spaceId if connectionId is provided
+        let spaceId = null;
+        if (connectionId) {
+            try {
+                const conn = await db.query.connections.findFirst({
+                    where: eq(connections.id, connectionId)
+                });
+                if (conn) spaceId = conn.spaceId;
+            } catch (e) {
+                console.warn('[OneContext] Failed to resolve spaceId for connection:', connectionId);
+            }
+        }
+
         const mentions = this.parseMentions(text);
         const resolved = [];
         const missing = [];
@@ -43,7 +56,6 @@ export class OneContext {
 
             if (mention.type === 'file') {
                 // Search in `files` and `spaceFiles`
-                // Try exact match on ID or fuzzy on name
                 const fileResults = await db.select()
                     .from(files)
                     .where(and(
@@ -54,16 +66,8 @@ export class OneContext {
 
                 if (fileResults.length) {
                     resource = { ...fileResults[0], type: 'file', source: 'files' };
-                } else {
-                    // Try spaceFiles
-                    // We need to join with dataSpaces to check userId
-                    // simplifiction: assume unique filename across user spaces or just pick first
-                    // ideally we join. 
-                    // For MVP let's skip spaceFiles complex join for explicit mention unless needed.
                 }
-
             } else if (mention.type === 'database') {
-                // Search connections
                 const connResults = await db.select()
                     .from(connections)
                     .where(and(
@@ -73,37 +77,21 @@ export class OneContext {
                     .limit(1);
 
                 if (connResults.length) {
-                    resource = { ...connResults[0], type: 'database' };
+                    resource = { ...connResults[0], provider: connResults[0].type, type: 'database' };
                 }
 
             } else if (mention.type === 'note') {
-                // Search spaceNotes
-                // Notes are inside spaces. Join required?
-                // spaceNotes has spaceId. 
-                // Let's do a direct search on spaceNotes where spaceId in (user's spaces)
-                // Performance: suboptimal but functional for MVP
-                const noteResults = await db.select({
-                    id: spaceNotes.id,
-                    title: spaceNotes.title,
-                    content: spaceNotes.content,
-                    preview: spaceNotes.preview
-                })
-                    .from(spaceNotes)
-                    .innerJoin(connections, eq(spaceNotes.spaceId, connections.spaceId)) // Wait, connections link spaces? No.
-                // Join spaceNotes -> dataSpaces -> users
-                // Actually simpler: 
-                // select * from space_note where space_id in (select id from data_space where user_id = ?) and (id = ? or title ilike ?)
-                // Drizzle:
-                // ...
-                // For now, let's implement a helper query
-                const notes = await db.execute(sql`
-                    SELECT n.* FROM space_note n
+                const notesResult = await db.execute(sql`
+                    SELECT n.id, n.title, n.content, n.preview 
+                    FROM space_note n
                     JOIN data_space s ON n.space_id = s.id
-                    WHERE s.user_id = ${userId}
-                    AND (n.id = ${mention.name} OR n.title ILIKE ${'%' + mention.name + '%'})
+                    LEFT JOIN space_permission sp ON s.id = sp.space_id
+                    WHERE (s.user_id = ${userId} OR sp.user_id = ${userId})
+                    AND (n.id::text = ${mention.name} OR n.title ILIKE ${'%' + mention.name + '%'})
                     LIMIT 1
-                 `);
+                `);
 
+                const notes = Array.isArray(notesResult) ? notesResult : (notesResult.rows || []);
                 if (notes.length) {
                     resource = { ...notes[0], type: 'note' };
                 }
@@ -116,36 +104,233 @@ export class OneContext {
             }
         }
 
-        // 2. Implicit Discovery (if no explicit mentions AND query looks like it needs context)
-        // Heuristic: specific keywords or length? 
-        // Or always run a light weight semantic search if explicit list is empty?
+        // 2. Implicit Discovery
         if (mentions.length === 0 && text.length > 10) {
             console.log('[OneContext] No explicit mentions, running implicit discovery...');
 
-            // A. Vector Search for Chunks (Files/Notes)
-            const chunks = await RAGService.hybridSearch(text, userId, 3); // Top 3 chunks
-
-            // Format chunks as "resolved" resources
-            chunks.forEach(chunk => {
-                resolved.push({
-                    type: 'chunk',
-                    content: chunk.content,
-                    metadata: chunk.metadata,
-                    score: chunk.score
+            // A. Vector Search for Chunks
+            try {
+                const chunks = await RAGService.hybridSearch(text, userId, 3).catch(e => {
+                    console.warn('[OneContext] Hybrid search failed:', e.message);
+                    return [];
                 });
-            });
+                chunks.forEach(chunk => {
+                    resolved.push({
+                        type: 'chunk',
+                        content: chunk.content,
+                        metadata: chunk.metadata,
+                        score: chunk.score
+                    });
+                });
+            } catch (e) {
+                console.warn('[OneContext] RAG search error:', e.message);
+            }
 
             // B. Schema Search (Databases) 
-            // Simple keyword match on Connection Names for now
-            // If connection name appears in text
-            const connectionsData = await db.select({ id: connections.id, name: connections.name, type: connections.type })
-                .from(connections)
-                .where(eq(connections.userId, userId));
+            try {
+                const connectionsData = await db.select()
+                    .from(connections)
+                    .where(eq(connections.userId, userId));
 
-            for (const conn of connectionsData) {
-                if (text.toLowerCase().includes(conn.name.toLowerCase())) {
-                    resolved.push({ ...conn, type: 'database', implicit: true });
+                for (const conn of connectionsData) {
+                    const slugConn = conn.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const slugQuery = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    let match = slugQuery.length >= 3 && (slugQuery.includes(slugConn) || slugConn.includes(slugQuery));
+                    if (match) {
+                        resolved.push({ ...conn, provider: conn.type, type: 'database', implicit: true });
+                    }
                 }
+            } catch (e) {
+                console.warn('[OneContext] Connection search failed:', e.message);
+            }
+
+            // C. Implicit File Search (The core fix)
+            try {
+                const filesData = [];
+
+                // 1. Personal Files
+                try {
+                    const pFiles = await db.select({
+                        id: files.id,
+                        filename: files.filename,
+                        storageId: files.storageId
+                    }).from(files).where(eq(files.userId, userId));
+                    filesData.push(...pFiles);
+                } catch (e) { }
+
+                // 2. Space Files
+                try {
+                    const sharedFiles = await db.select({
+                        id: spaceFiles.id,
+                        filename: spaceFiles.filename,
+                        storageId: spaceFiles.storageId
+                    })
+                        .from(spaceFiles)
+                        .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+                        .leftJoin(spacePermissions, eq(dataSpaces.id, spacePermissions.spaceId))
+                        .where(or(eq(dataSpaces.userId, userId), eq(spacePermissions.userId, userId)));
+                    filesData.push(...sharedFiles);
+                } catch (e) { }
+
+                // 3. Workspace Files (Files open in tabs across all workspaces)
+                try {
+                    const workspaces = await db.select().from(connectionWorkspaces).where(eq(connectionWorkspaces.userId, userId));
+                    for (const ws of workspaces) {
+                        const data = ws.workspaceData || {};
+                        if (ws === workspaces[0]) {
+                            console.log(`[OneContext] DEBUG: Workspace data structure: ${JSON.stringify(data).slice(0, 500)}...`);
+                        }
+                        const tabs = data.tabs || data.config?.tabs || [];
+
+                        if (tabs.length > 0) {
+                            console.log(`[OneContext] WS ${ws.connectionId}: processing ${tabs.length} tabs.`);
+                        }
+
+                        for (const tab of tabs) {
+                            const conn = tab.data?.source?.connection || tab.config?.connection || tab.connection || (tab.data?.connection);
+                            const source = tab.data?.source || tab.source;
+
+                            const path = conn?.path || conn?.config?.path || source?.path;
+                            const type = conn?.type || source?.type || source?.provider || conn?.provider;
+                            const name = conn?.name || tab.label || source?.table || source?.name;
+
+                            if (path || type === 'duckdb') {
+                                filesData.push({
+                                    id: tab.id || conn?.id || `ws-tab-${Math.random()}`,
+                                    filename: name || 'Untitled File',
+                                    storageId: path,
+                                    provider: type === 'duckdb' ? 'duckdb' : undefined,
+                                    source: 'workspace'
+                                });
+                                console.log(`[OneContext] Discovered workspace file: ${name} (path: ${path})`);
+                            } else if (tab.label) {
+                                console.log(`[OneContext] Tab ${tab.label} skipped (no path or duckdb type found)`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[OneContext] Workspace tab scan failed:', e.message);
+                }
+
+                // 4. Space-mate Connections (All DBs/Files in the same space)
+                try {
+                    let spaceConns = [];
+                    if (spaceId) {
+                        spaceConns = await db.select().from(connections)
+                            .where(and(eq(connections.spaceId, spaceId), eq(connections.userId, userId)));
+                        if (spaceConns.length > 0) console.log(`[OneContext] Found ${spaceConns.length} space-mate connections.`);
+                    }
+
+                    // Global DuckDB files for this user
+                    const personalDuck = await db.select().from(connections)
+                        .where(and(eq(connections.userId, userId), eq(connections.type, 'duckdb')));
+
+                    const allResources = [...spaceConns];
+                    personalDuck.forEach(pd => {
+                        if (!allResources.find(ad => ad.id === pd.id)) allResources.push(pd);
+                    });
+
+                    console.log(`[OneContext] Found ${allResources.length} candidate connections.`);
+                    for (const conn of allResources) {
+                        console.log(`[OneContext] Discovered: ${conn.name} (${conn.type})`);
+                        const cfg = typeof conn.config === 'string' ? JSON.parse(conn.config) : conn.config || {};
+                        filesData.push({
+                            id: conn.id,
+                            filename: conn.name,
+                            storageId: cfg.path || cfg.duckdb?.path || cfg.config?.path,
+                            provider: conn.type,
+                            type: conn.type === 'duckdb' ? 'file' : 'database',
+                            source: 'connection'
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[OneContext] Connection discovery failed:', e.message);
+                }
+
+                // 5. Data Source Table (Legacy/Alternate Fallback)
+                try {
+                    const dsRes = await db.execute(sql`SELECT id, name, type, config FROM data_source`);
+                    const dsList = Array.isArray(dsRes) ? dsRes : (dsRes.rows || []);
+                    if (dsList.length > 0) console.log(`[OneContext] Data sources found: ${dsList.length}`);
+                    for (const ds of dsList) {
+                        const cfg = typeof ds.config === 'string' ? JSON.parse(ds.config) : ds.config || {};
+                        const path = cfg.path || cfg.duckdb?.path;
+                        if (path || ds.type === 'duckdb') {
+                            filesData.push({
+                                id: ds.id,
+                                filename: ds.name,
+                                storageId: path,
+                                provider: ds.type || 'duckdb',
+                                source: 'data_source'
+                            });
+                        }
+                    }
+                } catch (e) { }
+
+                console.log(`[OneContext] Discovery scan finished. total resources: ${filesData.length}`);
+
+                for (const f of filesData) {
+                    let fName = (f.filename || '').toLowerCase();
+                    // Strip the UUID prefix if present (e.g. 612e25db-...-FileName.csv)
+                    if (/^[0-9a-f-]{36}-/.test(fName)) {
+                        fName = fName.slice(37);
+                    }
+
+                    const baseName = fName.indexOf('.') !== -1 ? fName.split('.').slice(0, -1).join('.') : fName;
+                    const slugFile = baseName.replace(/[^a-z0-9]/g, '');
+                    const slugQuery = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                    console.log(`[OneContext] Checking file: "${f.filename}" -> slug: "${slugFile}" against query slug snippet: "${slugQuery.slice(0, 30)}..."`);
+
+                    // 1. Exact/Slug Match
+                    let match = slugFile.length >= 3 && (slugQuery.includes(slugFile) || slugFile.includes(slugQuery));
+                    let matchedReason = match ? 'filename_match' : null;
+
+                    // 2. Keyword Match
+                    if (!match) {
+                        const fileKeywords = baseName.toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
+                        const queryWords = text.toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
+                        for (const kw of fileKeywords) {
+                            if (queryWords.includes(kw) || slugQuery.includes(kw)) {
+                                match = true;
+                                matchedReason = `keyword:${kw}`;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 3. Domain Heuristics (e.g. 'Indices' matching 'Nifty' or 'Market')
+                    if (!match) {
+                        const domainMap = {
+                            indices: ['nifty', 'sensex', 'market', 'benchmark', 'index'],
+                            performance: ['return', 'gain', 'loss', 'profit', 'yield'],
+                            portfolio: ['holdings', 'investment', 'asset', 'stock']
+                        };
+
+                        for (const [key, synonyms] of Object.entries(domainMap)) {
+                            if (fName.includes(key)) {
+                                if (synonyms.some(s => slugQuery.includes(s))) {
+                                    match = true;
+                                    matchedReason = `domain:${key}`;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Force Include: If from 'workspace' or 'connection' (space-mate/active context)
+                    if (!match && (f.source === 'workspace' || f.source === 'connection') && text.length > 30) {
+                        match = true;
+                        matchedReason = 'active_context_heuristic';
+                    }
+
+                    if (match) {
+                        resolved.push({ ...f, type: 'file', implicit: true });
+                        console.log(`[OneContext] Implicitly matched resource: ${f.filename} (Reason: ${matchedReason})`);
+                    }
+                }
+            } catch (e) {
+                console.warn('[OneContext] File implicit search failed:', e.message);
             }
         }
 
@@ -159,8 +344,6 @@ export class OneContext {
         if (!resources.length) return "";
 
         let contextParams = ["\n--- RELEVANT CONTEXT (OneContext) ---"];
-
-        // Group by type
         const files = resources.filter(r => r.type === 'file');
         const dbs = resources.filter(r => r.type === 'database');
         const notes = resources.filter(r => r.type === 'note');
@@ -169,11 +352,6 @@ export class OneContext {
         if (files.length) {
             contextParams.push(`\n[FILES]`);
             files.forEach(f => {
-                // Ideally we have content. For MVP only meta is here unless we fetch.
-                // If it's a file, we might assume RAGService will fetch chunks.
-                // BUT if explicit !file is used, user expects FULL content or focused RAG.
-                // For now, let's just list it. RAGService logic should be separate?
-                // Actually, resolved needs to contain the content or we fetch it here.
                 contextParams.push(`- ${f.filename} (ID: ${f.id})`);
             });
         }
@@ -181,7 +359,7 @@ export class OneContext {
         if (notes.length) {
             contextParams.push(`\n[NOTES]`);
             notes.forEach(n => {
-                contextParams.push(`Title: ${n.title}\nContent:\n${n.content.slice(0, 1000)}... (truncated)`);
+                contextParams.push(`Title: ${n.title}\nContent:\n${n.content.slice(0, 1000)}...`);
             });
         }
 
@@ -189,7 +367,6 @@ export class OneContext {
             contextParams.push(`\n[DATABASES]`);
             dbs.forEach(d => {
                 contextParams.push(`- ${d.name} (${d.type}) - ID: ${d.id}`);
-                // TODO: Inject Schema here?
             });
         }
 

@@ -137,32 +137,89 @@ export async function fetchTableCount({ entry, table }: { entry: ConnectionEntry
   return 0
 }
 
-export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = [], activeTable?: string, options: { temperature?: number, maxTokens?: number } = {}) {
+export async function generateAIQuery(prompt: string, connectionId: string, context: any[] = [], activeTable?: string, options: { temperature?: number, maxTokens?: number, model?: string } = {}) {
   const requestBody: any = {
     prompt,
     connectionId,
     context,
+    model: options.model,
     ...options
   };
 
-  // Only include activeTable if it has a value
-  if (activeTable) {
-    requestBody.activeTable = activeTable;
-  }
-
+  if (activeTable) requestBody.activeTable = activeTable;
   const body = await api.post<any>('/ai/generate', requestBody)
-
-  // Check if this is a multi-step response
-  if (body.multi_step && Array.isArray(body.steps)) {
-    return {
-      multi_step: true,
-      steps: body.steps,
-      usage: body.usage
-    }
-  }
-
   return { ...body, query: body.query, usage: body.usage }
 }
+
+export async function generateAIQueryStream(
+  prompt: string,
+  connectionId: string,
+  context: any[] = [],
+  activeTable?: string,
+  options: {
+    temperature?: number,
+    maxTokens?: number,
+    model?: string,
+    onChunk?: (chunk: string) => void,
+    onToolCall?: (toolCalls: any[]) => void,
+    onToolResult?: (result: any) => void,
+    onDone?: (usage: any) => void
+  } = {}
+) {
+  const requestBody: any = {
+    prompt,
+    connectionId,
+    context,
+    model: options.model,
+    temperature: options.temperature,
+    maxTokens: options.maxTokens
+  };
+  if (activeTable) requestBody.activeTable = activeTable;
+
+  const response = await fetch(`${QUERY_API_URL}/ai/generate/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await getAuthHeaders())
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Streaming failed');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('ReadableStream not supported');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const data = JSON.parse(line);
+        if (data.type === 'text') options.onChunk?.(data.content);
+        else if (data.type === 'tool_calls') options.onToolCall?.(data.content);
+        else if (data.type === 'tool_result') options.onToolResult?.(data.content);
+        else if (data.type === 'done') options.onDone?.(data.usage);
+        else if (data.type === 'error') throw new Error(data.content);
+      } catch (e) {
+        console.warn('[Stream] Parse error:', e, line);
+      }
+    }
+  }
+}
+
 
 export async function translateQuery(query: string, targetDialect: string, connectionId: string) {
   const prompt = `Translate the following SQL query to ${targetDialect} dialect. Return ONLY the translated SQL query:\n\n${query}`

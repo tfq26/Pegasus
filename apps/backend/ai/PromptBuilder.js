@@ -114,19 +114,23 @@ EXAMPLES:
       schemaPresentation = `\nDatabase Schema:\n`
       if (schema.detailedSchema) {
         Object.entries(schema.detailedSchema).forEach(([table, columns]) => {
-          // LAZY LOADING: Only show full details for the active table or if explicitly requested via tool
-          if (table === activeTable || tables.length <= 3) {
-            schemaPresentation += `Table: ${table}\nColumns:\n`
+          const desc = schema.tableDescriptions?.[table] ? ` (${schema.tableDescriptions[table]})` : '';
+          // LAZY LOADING: Show full details for the active table or if total tables are few
+          if (table === activeTable || tables.length <= 10) {
+            schemaPresentation += `Table: ${table}${desc}\nColumns:\n`
             columns.forEach(col => {
               schemaPresentation += `  - ${col.name} (${col.type})${col.pk ? ' [PK]' : ''}\n`
             })
           } else {
-            schemaPresentation += `Table: ${table} (Details available via get_table_schema tool)\n`
+            schemaPresentation += `Table: ${table}${desc} (Details available via get_table_schema tool)\n`
           }
           schemaPresentation += '\n'
         })
       } else {
-        schemaPresentation += `Available Tables:\n${tables.map(t => `- ${t}`).join('\n')}`
+        schemaPresentation += `Available Tables:\n${tables.map(t => {
+          const desc = schema.tableDescriptions?.[t] ? ` (${schema.tableDescriptions[t]})` : '';
+          return `- ${t}${desc}`;
+        }).join('\n')}`
       }
 
       // Add sample values if available (Smarter, filtered list)
@@ -173,9 +177,11 @@ CRITICAL RULES:
 3. The system will compile your intent into optimized, secure SQL.
 
 How to answer user questions:
-- "Show me funds": Call \`query_data\` with { resource: 'funds', limit: 100 }
-- "Show funds by sector": Call \`query_data\` with { resource: 'funds', groupBy: ['sector'], aggregations: [{ op: 'count', field: '*' }] }
-- "Plot a pie chart...": Call \`query_data\` with { ..., visualization: { type: 'pie', ... } }
+- "Show me X": Call \`query_data\` with { resource: 'actual_table_name', limit: 100 }
+- "My portfolio": Use the table name that most closely resembles portfolio holdings (e.g. 'transactions' or a file-based table containing 'portfoliogain').
+- "Market indices": Use the table name for market benchmarks (e.g. 'indices' or 'market_data').
+- "Compare A and B": Call \`query_data\` with an array of intents.
+- "Group by category": Call \`query_data\` with { resource: 'table_name', groupBy: ['category_column'], aggregations: [{ op: 'count', field: '*' }] }
 
 VISUALIZATION RULES:
 - ONLY include the \`visualization\` field if the user explicitly asks for a "chart", "graph", "plot", or "visualize".
@@ -413,18 +419,25 @@ EXAMPLES:
     const languageInstruction = settings.language ? `Respond in ${settings.language}.` : ''
 
     return `
-You are an expert ${dialect} database engineer. Return only the query/JSON without explanation.
+You are an expert ${dialect} database engineer. Return only the query/JSON without any conversational filler or explanation.
 
 ${formatInstructions}
 ${schemaPresentation}
 
 RULES:
-- Handle relative dates (last month, Q1, etc.)
+- **CRITICAL**: The Schema provided above is the ONLY source of truth. You MUST NOT query any table that is not listed in the [Database Schema] section.
+- DATA SOURCE ROLES:
+    - 'investment_demo' (SQLite): Contains internal CRM, Client goals, SIP registrations, and Transaction history.
+    - Uploaded Spreadsheets (DuckDB): Contain portfolio performance reports, sector analysis, and market benchmarks like NIFTY 50.
+- **NEVER REFUSE BASED ON SAMPLES**: The schema samples provided below are ONLY for understanding column names and types. You MUST NOT conclude that data is "missing" just because it's not in the 3 sample rows. You MUST use 'query_data' to fetch the actual contents of the tables before giving up.
+- **IF DATA IS TRULY MISSING**: After querying, if you still cannot answer, return a plain text message starting with "I cannot answer this because..." and explain what specific data/table was missing.
+- If you cannot answer using SQLite views (v_monthly_sip_summary), check the spreadsheet tables (portfoliogain_lossreport, marketindices2024).
 - For company names, ALWAYS use LIKE '%name%' (case-insensitive)
 - For geographic regions (West Coast, etc.), infer cities/states from common sense
-- Only ask for clarification if candidate fields are truly ambiguous
-- Use appropriate quoting for special characters
 - DEFAULT LIMIT: 100
+- **NEVER return "ambiguous": true if you can reasonably infer the intent from the available tables and columns.**
+- If multiple tables seem relevant, query the one that most closely matches the user's terms.
+- Use 'contains' for fuzzy string matching in filters.
 
 LIVE DATA BINDING:
 - You have access to a \`bind_to_live_data\` tool. 

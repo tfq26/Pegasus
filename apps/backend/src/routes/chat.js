@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { stream } from "hono/streaming"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../db/index.js"
@@ -14,7 +15,12 @@ import { filterModelsByTier, calculateUserLimits } from "../../lib/tierLimits.js
 import { ConfigService } from "../services/ConfigService.js"
 import { SchemaTranslator } from "../services/SchemaTranslator.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
+import { ConnectionAnalyzer } from "../services/ConnectionAnalyzer.js"
 import { OneContext } from "../services/OneContext.js"
+import { DataContextService } from "../services/DataContextService.js"
+
+// Fix BigInt serialization for JSON.stringify
+BigInt.prototype.toJSON = function () { return this.toString() }
 
 const chat = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -583,7 +589,7 @@ chat.post("/ai/generate", async (c) => {
 
         // --- OneContext Integration ---
         console.log(`[OneContext] Resolving context for prompt: "${prompt.substring(0, 50)}..."`);
-        const resolvedResources = await OneContext.resolveContext(prompt, userId);
+        const resolvedResources = await OneContext.resolveContext(prompt, userId, connectionId);
         const contextBlock = OneContext.buildContextBlock(resolvedResources);
 
         if (contextBlock) {
@@ -600,7 +606,7 @@ chat.post("/ai/generate", async (c) => {
 
         console.log(`[AI Generate] User: ${userId}, ConnectionId: ${connectionId || 'none'}, ActiveTable: ${activeTable || 'none'}`)
 
-        let connRow = null
+
         let userSettings = null
         let activeModel = null
 
@@ -613,296 +619,234 @@ chat.post("/ai/generate", async (c) => {
         userSettings = userRow?.config || null
         activeModel = userSettings?.activeModel || null
 
-        if (connectionId && connectionId !== 'undefined' && connectionId !== 'null' && connectionId !== 'local') {
-            connRow = await db.query.connections.findFirst({
-                where: eq(connections.id, connectionId)
+        // --- Data Context Service ---
+        let contextData;
+        try {
+            // Combine OneContext resolved resources with any context explicitly sent by the client
+            const allResolved = [...resolvedResources];
+            if (context && Array.isArray(context)) {
+                context.forEach(c => {
+                    if (!allResolved.find(r => r.id === c.id)) {
+                        allResolved.push(c);
+                    }
+                });
+            }
+
+            contextData = await DataContextService.buildContext(userId, connectionId, {
+                activeTable,
+                adHocSchema,
+                resolvedResources: allResolved
             });
-
-            if (connRow) {
-                console.log(`[AI Generate] Found connection ${connectionId}. Owner: ${connRow.userId}, Requester: ${userId}`)
-            } else {
-                console.log(`[AI Generate] Connection ${connectionId} not found in DB`)
-            }
-        }
-
-        // Handle local/virtual connections (e.g., spreadsheets without DB backing)
-        if (!connRow && connectionId === 'connection:local') {
-            connRow = { type: 'local', provider: 'local', config: {}, is_virtual: true }
-        }
-
-        // If still no connection but we have adHocSchema, create a virtual connection
-        // This allows AI to work with spreadsheet data passed directly from frontend
-        if (!connRow && adHocSchema) {
-            console.log(`[AI Generate] No connection found, using adHocSchema for virtual analysis`)
-            connRow = { type: 'local', provider: 'local', config: {}, is_virtual: true }
-        }
-
-        // Final check - if no connection and no fallback possible, return error
-        if (!connRow) {
-            console.log(`[AI Generate] Connection not found and no fallback available. ID: ${connectionId}`)
+        } catch (e) {
+            console.error(`[AI Generate] DataContext build failed:`, e);
             return c.json({
-                error: "Connection not found. Please select a valid connection or ensure the data is loaded.",
-                hint: "If you're working with a spreadsheet, try refreshing the page."
-            }, 404)
+                error: e.message || "Connection not found.",
+                hint: "Please select a valid connection or ensure the data is loaded."
+            }, 404);
         }
 
-        const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config || {}
-        let provider = connRow.type || connRow.provider
-        if (!provider && config) {
-            const keys = Object.keys(config).filter(k => ['mongodb', 'mysql', 'kusto', 'sqlite', 'postgres', 'duckdb'].includes(k.toLowerCase()))
-            if (keys.length > 0) provider = keys[0]
-        }
+        const { provider, adapter, normalizedSchema, resourceToAdapter, resourceToProvider, extraAdapters } = contextData;
 
-        // For DuckDB, the config might have the path directly or nested
-        let adapterConfig = config[provider] || config[provider?.toLowerCase()]
+        console.log(`[AI Generate] Context built. Provider: ${provider}, Tables: ${normalizedSchema.tables.length}`);
 
-        // DuckDB config fix: If adapterConfig is empty but config has a path directly, use root config
-        if (provider === 'duckdb') {
-            if (!adapterConfig?.path && config.path) {
-                console.log(`[AI Generate][DuckDB] Using root config (path: ${config.path})`)
-                adapterConfig = config
+        const aiSettings = { modelId: activeModel, temperature: Number(temperature || 0.7), maxTokens: Number(maxTokens || 1000), activeTable }
+        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+        aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
+
+        const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
+        let currentPrompt = finalPrompt;
+        let lastResult = null;
+        let iterations = 0;
+        const maxIterations = 3;
+
+        try {
+            while (iterations < maxIterations) {
+                iterations++;
+                console.log(`[AI Generate] Iteration ${iterations}...`);
+
+                const result = await aiClient.generateQuery(currentPrompt, {
+                    dialect: provider,
+                    schema: normalizedSchema,
+                    previousContext: context
+                }, aiSettings);
+
+                lastResult = result;
+
+                if (!result.toolCalls || result.toolCalls.length === 0) {
+                    break;
+                }
+
+                console.log(`[AI Generate] Tool calls found:`, result.toolCalls.map(t => t.function.name));
+
+                // 1. Check for generate_table (Immediate Exit)
+                const tableTool = result.toolCalls.find(t => t.function.name === 'generate_table')
+                if (tableTool) {
+                    const args = JSON.parse(tableTool.function.arguments)
+                    const genPrompt = `Generate table for "${args.tableName}". Return JSON: { "tableName": "...", "headers": [], "rows": [] }`
+                    const dataRes = await aiClient.generateContent([{ role: 'user', content: genPrompt }], { model: activeModel, json: true })
+                    const finalData = JSON.parse(dataRes.text.replace(/```json | ```/g, '').trim())
+                    return c.json({ type: 'generated_table', ...finalData, usage: dataRes.usage })
+                }
+
+                // 2. Check for get_table_schema (Continue Loop)
+                const schemaTool = result.toolCalls.find(t => t.function.name === 'get_table_schema')
+                if (schemaTool) {
+                    const args = JSON.parse(schemaTool.function.arguments)
+                    const tableName = args.tableName
+                    const slug = tableName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const targetAdapter = resourceToAdapter[tableName] || resourceToAdapter[slug] || adapter;
+                    const targetProvider = resourceToProvider[tableName] || resourceToProvider[slug] || provider;
+
+                    const schemaRes = await spreadsheetToolService.callTool('get_table_schema', { tableName }, {
+                        adapter: targetAdapter,
+                        dialect: targetProvider,
+                        schemaInfo: normalizedSchema
+                    })
+
+                    if (schemaRes && schemaRes.columns) {
+                        const schemaDescription = `Structure of '${tableName}':\nColumns: ${schemaRes.columns.map(c => `${c.name} (${c.type})`).join(', ')}`;
+                        currentPrompt += `\n\n[System Context - Table Schema]:\n${schemaDescription}`;
+                        console.log(`[AI Generate] Schema added for ${tableName}, retrying...`);
+                        continue; // Go to next iteration with updated prompt
+                    }
+                }
+
+                // 3. Check for query_data (Immediate Exit or Analyst Loop)
+                const dataTool = result.toolCalls.find(t => t.function.name === 'query_data')
+                if (dataTool) {
+                    try {
+                        const args = JSON.parse(dataTool.function.arguments)
+                        console.log('[AI Generate] Query Intent:', args)
+
+                        const slug = args.resource?.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const targetAdapter = resourceToAdapter[args.resource] || resourceToAdapter[slug] || adapter;
+                        const targetProvider = resourceToProvider[args.resource] || resourceToProvider[slug] || provider;
+
+                        const toolResult = await spreadsheetToolService.callTool('query_data', args, {
+                            adapter: targetAdapter,
+                            dialect: targetProvider,
+                            schema: normalizedSchema
+                        })
+
+                        const isVisual = !!toolResult.config;
+                        const isSmallData = !isVisual && (
+                            (Array.isArray(toolResult.data) && toolResult.data.length <= 10) ||
+                            (toolResult.isCompound && toolResult.results.every(r => r.data.length <= 5))
+                        );
+
+                        if (isSmallData) {
+                            console.log(`[AI Generate] Data is small. Explaining...`);
+                            const dataContext = JSON.stringify(toolResult.data || toolResult.results);
+                            const answerRes = await aiClient.generateContent([{
+                                role: 'user',
+                                content: prompt + '\n' + `Data results:\n${dataContext}\nExplain findings briefly.`
+                            }], { model: activeModel });
+
+                            return c.json({
+                                ...toolResult,
+                                message: answerRes.text,
+                                usage: result.usage,
+                                contextUsed: resolvedResources
+                            });
+                        }
+
+                        return c.json({
+                            ...toolResult,
+                            usage: result.usage,
+                            contextUsed: resolvedResources
+                        });
+                    } catch (e) {
+                        console.error("[AI Generate] query_data failed:", e)
+                        return c.json({ error: e.message }, 500)
+                    }
+                }
+
+                // 4. Check for execute_query (Immediate Exit)
+                const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
+                if (queryTool) {
+                    const args = JSON.parse(queryTool.function.arguments)
+                    return c.json({ query: args.query, usage: result.usage, contextUsed: resolvedResources })
+                }
+
+                // If none of the specific tools matched but we have tool calls, just break
+                break;
             }
-        }
 
-        let schemaInfo = { tables: [], detailedSchema: {} }
-        let adapter = null
-        if (provider === 'local' && connRow.is_virtual) {
-            if (adHocSchema) schemaInfo = { tables: [activeTable], detailedSchema: { [activeTable]: adHocSchema } }
-        } else {
-            const Adapter = adapters[provider] || adapters[provider?.toLowerCase()]
-            if (Adapter) {
-                let finalAdapterConfig = adapterConfig || {}
-                if (provider === 'duckdb') {
-                    const dbPath = finalAdapterConfig.path || ':memory:'
-                    console.log(`[AI Generate][DuckDB] Final path: ${dbPath}`)
-                    if (dbPath !== ':memory:') {
-                        finalAdapterConfig = { ...finalAdapterConfig, readOnly: true }
-                    }
-                }
-                adapter = new Adapter(finalAdapterConfig)
+            const finalResult = lastResult;
+            let generatedQuery = typeof finalResult === 'string' ? finalResult : (finalResult.text || '');
+            if (finalResult.usage) await logAiUsage(userId, finalResult.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
+
+            console.log(`[AI Generate] No tools called. Response text preview: ${generatedQuery.substring(0, 200)}...`);
+
+            if (generatedQuery) {
+                generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
+            }
+
+            // Handle multi_step JSON response - extract first query
+            if (generatedQuery.startsWith('{')) {
                 try {
-                    await adapter.connect()
-                    const allTables = await adapter.listCollections()
-                    schemaInfo.tables = allTables.slice(0, 50)
-                    console.log(`[AI Generate] Found ${allTables.length} tables. Active table: ${activeTable || 'none'}`)
-
-                    // Get schema for the active table or the first few tables if no active table
-                    if (typeof adapter.getOneTableSchema === 'function') {
-                        let tablesToFetch = []
-
-                        if (activeTable && allTables.includes(activeTable)) {
-                            tablesToFetch = [activeTable]
-                        } else if (!activeTable && allTables.length > 0) {
-                            // Fetch schema for first few tables to give AI context
-                            tablesToFetch = allTables.slice(0, 5)
-                        }
-
-                        // Initialize sample values object
-                        schemaInfo.sampleValues = {}
-
-                        for (const t of tablesToFetch) {
-                            schemaInfo.detailedSchema[t] = await adapter.getOneTableSchema(t)
-
-                            // Fetch sample data to show AI what values look like
-                            if (typeof adapter.sampleCollection === 'function') {
-                                try {
-                                    const samples = await adapter.sampleCollection(t, 5)
-                                    if (samples && samples.length > 0) {
-                                        schemaInfo.sampleValues[t] = {}
-                                        // Get unique sample values for each column
-                                        for (const col of schemaInfo.detailedSchema[t] || []) {
-                                            const values = samples.map(row => row[col.name]).filter(v => v != null)
-                                            const uniqueValues = [...new Set(values)].slice(0, 3)
-                                            if (uniqueValues.length > 0) {
-                                                schemaInfo.sampleValues[t][col.name] = uniqueValues
-                                            }
-                                        }
-                                    }
-                                } catch (e) {
-                                    console.warn(`[AI Generate] Failed to fetch samples for ${t}:`, e.message)
-                                }
-                            }
-                        }
-
-                        console.log(`[AI Generate] Fetched schema for ${tablesToFetch.length} tables with sample values`)
+                    const parsed = JSON.parse(generatedQuery)
+                    if (parsed.multi_step && parsed.steps?.length > 0) {
+                        console.log(`[AI Generate] Multi-step response detected, extracting first query`)
+                        generatedQuery = parsed.steps[0].query
+                    } else if (parsed.query) {
+                        // Handle other JSON formats with a query field
+                        generatedQuery = parsed.query
+                    } else if (parsed.ambiguous) {
+                        // Return ambiguous response as-is for frontend to handle
+                        return c.json({ ambiguous: true, message: parsed.message, choices: parsed.choices, usage: finalResult.usage })
                     }
-
-                    // Use SchemaTranslator to normalize column names for AI
-                    const translator = new SchemaTranslator()
-                    const normalizedSchema = translator.normalizeSchema(schemaInfo)
-
-                    if (translator.hasNormalizations()) {
-                        console.log(`[AI Generate] Schema normalized. Mappings:`, translator.getMappingSummary())
-                        // Attach mappings to schema so IntentCompiler can use them
-                        normalizedSchema.mappings = {
-                            columns: Object.fromEntries(translator.columnMapping),
-                            tables: Object.fromEntries(translator.tableMapping)
-                        }
-                    }
-
-                    const aiSettings = { modelId: activeModel, temperature: Number(temperature || 0.7), maxTokens: Number(maxTokens || 1000), activeTable }
-                    const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
-                    // Enforce Read-Only Tools for Chat
-                    aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
-
-                    // Append OneContext block to prompt
-                    const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
-
-                    const result = await aiClient.generateQuery(finalPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
-                    let generatedQuery = typeof result === 'string' ? result : result.text
-
-                    if (result.toolCalls?.length > 0) {
-                        // Check for generate_table
-                        const tableTool = result.toolCalls.find(t => t.function.name === 'generate_table')
-                        if (tableTool) {
-                            const args = JSON.parse(tableTool.function.arguments)
-                            const genPrompt = `Generate table for "${args.tableName}". Return JSON: { "tableName": "...", "headers": [], "rows": [] }`
-                            const dataRes = await aiClient.generateContent([{ role: 'user', content: genPrompt }], { model: activeModel, json: true })
-                            const finalData = JSON.parse(dataRes.text.replace(/```json | ```/g, '').trim())
-                            return c.json({ type: 'generated_table', ...finalData, usage: dataRes.usage })
-                        }
-
-                        // Check for execute_query - Verify it's not trying to run mutations if unauthorized?
-                        // Start by extracting the query.
-                        const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
-                        if (queryTool) {
-                            const args = JSON.parse(queryTool.function.arguments)
-                            // Return the query so frontend can execute it
-                            return c.json({ query: args.query, usage: result.usage, contextUsed: resolvedResources })
-                        }
-
-                        // Check for get_table_schema
-                        const schemaTool = result.toolCalls.find(t => t.function.name === 'get_table_schema')
-                        if (schemaTool) {
-                            const args = JSON.parse(schemaTool.function.arguments)
-                            const tableName = args.tableName
-                            // We need to fetch the schema and give it back to the AI to try again.
-                            // Re-use logic from above if possible or just use the tool service
-                            const schemaRes = await spreadsheetToolService.callTool('get_table_schema', { tableName }, { adapter: adapter, schemaInfo: schemaInfo })
-
-                            if (schemaRes && schemaRes.columns) {
-                                const schemaDescription = `Schema for ${tableName}: ${JSON.stringify(schemaRes.columns)}`;
-                                console.log(`[AI Generate] Tool fetched schema for ${tableName}. Recurring...`);
-
-                                // Recursive call with enriched context
-                                const newPrompt = `${prompt}\n\n[System Info]: ${schemaDescription}`;
-                                // Prevent infinite loops with a simple check? The AI should move to query generation next.
-                                const retryResult = await aiClient.generateQuery(newPrompt, { dialect: provider, schema: normalizedSchema, previousContext: context }, aiSettings)
-
-                                // Handle the result of the retry (likely an execute_query call or text)
-                                if (retryResult.toolCalls?.length > 0) {
-                                    const retryQueryTool = retryResult.toolCalls.find(t => t.function.name === 'execute_query')
-                                    if (retryQueryTool) {
-                                        const retryArgs = JSON.parse(retryQueryTool.function.arguments)
-                                        return c.json({ query: retryArgs.query, usage: retryResult.usage, contextUsed: resolvedResources })
-                                    }
-                                }
-
-                                // If just text or other, return as query/text
-                                let retryGeneratedQuery = typeof retryResult === 'string' ? retryResult : retryResult.text
-                                retryGeneratedQuery = retryGeneratedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
-                                return c.json({ query: retryGeneratedQuery, usage: retryResult.usage, contextUsed: resolvedResources })
-                            }
-                        }
-
-                        // Check for query_data (Intent-Based Architecture)
-                        const dataTool = result.toolCalls.find(t => t.function.name === 'query_data')
-                        if (dataTool) {
-                            try {
-                                const args = JSON.parse(dataTool.function.arguments)
-                                console.log('[AI Generate] Query Intent:', args)
-
-                                // Execute the tool immediately in the backend
-                                // The handler in SpreadsheetToolService uses the IntentCompiler to generate SQL 
-                                // AND executes it against the adapter.
-                                // We pass 'schema' (which contains mappings) so the Compiler can denormalize column names.
-                                const toolResult = await spreadsheetToolService.callTool('query_data', args, {
-                                    adapter: adapter,
-                                    dialect: provider,
-                                    schema: normalizedSchema
-                                })
-
-                                // ANALYST LOOP:
-                                // If the user wants an answer (not just a dump), the AI needs to see the data.
-                                // Heuristic: If visualization -> Return immediately (Chart speaks for itself)
-                                // If Data is small (< 10 rows) -> Feed back to AI to explain.
-                                // If Data is large -> Return immediately (Table is better)
-
-                                const isVisual = !!toolResult.config; // Check for visualization config
-                                const isSmallData = !isVisual && (
-                                    (Array.isArray(toolResult.data) && toolResult.data.length <= 10) ||
-                                    (toolResult.isCompound && toolResult.results.every(r => r.data.length <= 5))
-                                );
-
-                                if (isSmallData) {
-                                    console.log(`[AI Generate] Data is small/analysis. Feeding back to AI for explanation...`);
-                                    const dataContext = JSON.stringify(toolResult.data || toolResult.results);
-                                    const explanationPrompt = `
-                                     I have fetched the data you requested using the tool:
-                                     ${dataContext}
-
-                                     Please provide the final answer to the user's question based on this data.
-                                     Be concise. If it's a list, just summarize it.
-                                     `;
-
-                                    // Recursive call (or just generation)
-                                    const answerRes = await aiClient.generateContent([{ role: 'user', content: prompt + '\n' + explanationPrompt }], { model: activeModel });
-
-                                    return c.json({
-                                        ...toolResult,
-                                        message: answerRes.text, // Attach the explanation
-                                        usage: result.usage,
-                                        contextUsed: resolvedResources
-                                    });
-                                }
-
-                                return c.json({
-                                    ...toolResult,
-                                    usage: result.usage,
-                                    contextUsed: resolvedResources
-                                });
-                            } catch (e) {
-                                console.error("[AI Generate] Query Data Tool Failed:", e)
-                                return c.json({ error: e.message }, 500)
-                            }
-                        }
-                    }
-                    if (result.usage) await logAiUsage(userId, result.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
-                    generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
-
-                    // Handle multi_step JSON response - extract first query
-                    if (generatedQuery.startsWith('{')) {
-                        try {
-                            const parsed = JSON.parse(generatedQuery)
-                            if (parsed.multi_step && parsed.steps?.length > 0) {
-                                console.log(`[AI Generate] Multi-step response detected, extracting first query`)
-                                generatedQuery = parsed.steps[0].query
-                            } else if (parsed.query) {
-                                // Handle other JSON formats with a query field
-                                generatedQuery = parsed.query
-                            } else if (parsed.ambiguous) {
-                                // Return ambiguous response as-is for frontend to handle
-                                return c.json({ ambiguous: true, message: parsed.message, choices: parsed.choices, usage: result.usage })
-                            }
-                        } catch (e) {
-                            console.warn(`[AI Generate] Failed to parse JSON response:`, e.message)
-                        }
-                    }
-
-                    // Denormalize the query - replace AI's normalized names with original column names
-                    if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
-                        const originalQuery = generatedQuery
-                        generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
-                        console.log(`[AI Generate] Denormalized query:`)
-                        console.log(`  Before: ${originalQuery}`)
-                        console.log(`  After:  ${generatedQuery}`)
-                    }
-
-                    return c.json({ query: generatedQuery, usage: result.usage, contextUsed: resolvedResources })
-
-                } finally {
-                    await adapter.disconnect().catch(() => { })
+                } catch (e) {
+                    console.warn(`[AI Generate] Failed to parse JSON response:`, e.message)
                 }
+            }
+
+            const translator = new SchemaTranslator();
+            translator.tableMapping = new Map(Object.entries(normalizedSchema.mappings.tables || {}));
+            translator.columnMapping = new Map(Object.entries(normalizedSchema.mappings.columns || {}));
+
+            // Denormalize the query - replace AI's normalized names with original column names
+            if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
+                const originalQuery = generatedQuery
+                generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
+                console.log(`[AI Generate] Denormalized query:`)
+                console.log(`  Before: ${originalQuery}`)
+                console.log(`  After:  ${generatedQuery}`)
+            }
+
+            // Detect if the result is a refusal message or plain text rather than a query
+            const lowerQuery = generatedQuery.toLowerCase();
+            const isPlainExplanation = (generatedQuery.length > 20 &&
+                !lowerQuery.includes('select ') &&
+                !lowerQuery.includes('update ') &&
+                !lowerQuery.includes('delete from') &&
+                !lowerQuery.includes('insert into') &&
+                !generatedQuery.startsWith('{')) ||
+                lowerQuery.startsWith('i cannot') ||
+                lowerQuery.startsWith('i am sorry') ||
+                lowerQuery.startsWith("i'm sorry");
+
+            if (isPlainExplanation) {
+                console.log(`[AI Generate] Result appears to be a plain explanation/refusal. Returning as message. Text: ${generatedQuery.substring(0, 50)}...`);
+                return c.json({ message: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources });
+            }
+
+            if (!generatedQuery) {
+                console.warn(`[AI Generate] AI returned an empty response. Raw result:`, JSON.stringify(finalResult));
+                return c.json({
+                    message: "I'm having trouble phrasing that as a query. Could you try being more specific, or mention the data source using symbols like !filename or #database?",
+                    usage: finalResult.usage,
+                    contextUsed: resolvedResources
+                });
+            }
+
+            console.log(`[AI Generate] Final query: [${generatedQuery}]`);
+            return c.json({ query: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources })
+
+        } finally {
+            if (adapter) await adapter.disconnect().catch(() => { })
+            for (const extra of extraAdapters) {
+                await extra.disconnect().catch(() => { })
             }
         }
     } catch (e) { return c.json({ error: e.message }, 500) }
@@ -1005,5 +949,115 @@ chat.post("/ai/search", async (c) => {
         return c.json({ result: response.text || response })
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
+
+
+chat.post("/ai/generate/stream", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        let userId = payload.sub
+        const resolvedId = await upsertUser(payload)
+        if (resolvedId) {
+            const parts = resolvedId.toString().split(':')
+            userId = parts.length > 1 ? parts[1] : resolvedId
+        }
+
+        const quota = await checkAiQuota(userId);
+        if (!quota.allowed) return c.json(quota, 403);
+
+        const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema, model } = await c.req.json()
+        let connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
+
+        // 1. Resolve Context
+        const resolvedResources = await OneContext.resolveContext(prompt, userId, connectionId);
+        const contextBlock = OneContext.buildContextBlock(resolvedResources);
+
+        if (!connectionId && resolvedResources.find(r => r.type === 'database')) {
+            connectionId = resolvedResources.find(r => r.type === 'database').id;
+        }
+
+        const userRow = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { config: true }
+        });
+        const activeModel = model || userRow?.config?.activeModel || null;
+
+        const contextData = await DataContextService.buildContext(userId, connectionId, {
+            activeTable,
+            adHocSchema,
+            resolvedResources: [...resolvedResources, ...(context || [])]
+        });
+
+        const { provider, adapter, normalizedSchema, resourceToAdapter, resourceToProvider } = contextData;
+        const aiSettings = {
+            modelId: activeModel,
+            userId,
+            temperature: Number(temperature || 0.7),
+            maxTokens: Number(maxTokens || 1000),
+            activeTable
+        };
+
+        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+        aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
+
+        const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
+
+        return stream(c, async (stream) => {
+            stream.onAbort(() => {
+                console.log(`[Stream] Client aborted stream for user ${userId}`);
+            });
+
+            try {
+                const streamIter = aiClient.generateStream([{ role: 'system', content: 'You are Pegasus, an expert data analyst.' }, { role: 'user', content: finalPrompt }], {
+                    dialect: provider,
+                    schema: normalizedSchema,
+                    ...aiSettings
+                });
+
+                for await (const chunk of streamIter) {
+                    if (chunk.text) {
+                        await stream.write(JSON.stringify({ type: 'text', content: chunk.text }) + "\n");
+                    }
+                    if (chunk.toolCalls) {
+                        await stream.write(JSON.stringify({ type: 'tool_calls', content: chunk.toolCalls }) + "\n");
+
+                        // Handle tool calls in stream (simplified)
+                        for (const tool of chunk.toolCalls) {
+                            if (tool.function.name === 'query_data') {
+                                try {
+                                    const args = JSON.parse(tool.function.arguments);
+                                    const targetAdapter = resourceToAdapter[args.resource] || adapter;
+                                    const targetProvider = resourceToProvider[args.resource] || provider;
+
+                                    const toolResult = await spreadsheetToolService.callTool('query_data', args, {
+                                        adapter: targetAdapter,
+                                        dialect: targetProvider,
+                                        schema: normalizedSchema
+                                    });
+
+                                    await stream.write(JSON.stringify({ type: 'tool_result', tool: 'query_data', content: toolResult }) + "\n");
+                                } catch (e) {
+                                    console.error(`[Stream] Tool call failed:`, e);
+                                }
+                            }
+                        }
+                    }
+                    if (chunk.done) {
+                        await stream.write(JSON.stringify({ type: 'done', usage: chunk.usage }) + "\n");
+                    }
+                }
+            } catch (e) {
+                console.error(`[Stream] Error during streaming:`, e);
+                await stream.write(JSON.stringify({ type: 'error', content: e.message }) + "\n");
+            }
+        });
+
+    } catch (e) {
+        console.error(`[Chat Stream] Fatal error:`, e);
+        return c.json({ error: e.message }, 500);
+    }
+});
 
 export { chat as chatRoutes }

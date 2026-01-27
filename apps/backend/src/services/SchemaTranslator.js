@@ -33,6 +33,8 @@ export class SchemaTranslator {
         if (!name || typeof name !== 'string') return name
 
         let normalized = name
+            // Convert CamelCase to snake_case for better AI readability
+            .replace(/([a-z])([A-Z])/g, "$1_$2")
             .toLowerCase()
             // Replace common symbols with semantic names
             .replace(/%/g, '_pct')

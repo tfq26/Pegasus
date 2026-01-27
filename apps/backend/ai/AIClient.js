@@ -253,13 +253,18 @@ export class AIClient {
         // Support options.userId if provided
         const provider = await this.getProviderForModel(modelId, options.userId)
         const result = await provider.generateContent([{ role: 'user', content: prompt }], options)
-        return result
+        return result.text || result
     }
 
     async generateContent(messages, options = {}) {
-        const provider = await this.getProviderForModel(options.model, options.userId)
+        const provider = await this.getProviderForModel(options.modelId || options.model, options.userId)
         const result = await provider.generateContent(messages, options)
         return result
+    }
+
+    async *generateStream(messages, options = {}) {
+        const provider = await this.getProviderForModel(options.modelId || options.model, options.userId)
+        yield* provider.generateStream(messages, options)
     }
 
     async generateEmbedding(text, modelId, options = {}) {

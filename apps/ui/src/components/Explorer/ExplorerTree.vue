@@ -102,6 +102,28 @@ function getTableId(connId: string, table: string) {
   return `${connId}::${table}`
 }
 
+function getProviderIcon(conn: ConnectionEntry): string {
+  const p = conn.provider
+  if (p === 'mysql') return '/icons/mysql/mysql.svg'
+  if (p === 'postgres' || p === 'surrealdb') return '/icons/postgres/postgres.svg'
+  if (p === 'sqlite') return '/icons/sqlite/sqlite.svg'
+  if (p === 'mongodb') return '/icons/mongo/mongo-svgrepo-com.svg'
+  
+  if (p === 'duckdb' || p === 'file') {
+    // Check nickname or alias for file extension
+    const name = (conn.nickname || '').toLowerCase()
+    if (name.includes('.xlsx') || name.includes('.xls')) {
+        return '/icons/microsoft/Excel/excel-file-svgrepo-com.svg'
+    }
+    if (name.includes('.csv')) {
+        // Use Excel icon for CSVs as requested
+        return '/icons/microsoft/Excel/excel-file-svgrepo-com.svg'
+    }
+  }
+
+  return 'lucide:database'
+}
+
 // Flatten all IDs for range selection
 const allSelectableIds = computed(() => {
   const ids: string[] = []
@@ -304,8 +326,8 @@ const handleDeleteNote = (note: any) => {
                   <Folder
                     :id="conn.id"
                     :name="conn.alias || conn.nickname"
-                    open-icon="lucide:database"
-                    close-icon="lucide:database"
+                    :open-icon="getProviderIcon(conn)"
+                    :close-icon="getProviderIcon(conn)"
                     :is-select="selectedIds.includes(conn.id)"
                     class="group/folder ml-0"
                   >

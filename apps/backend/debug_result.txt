@@ -1,0 +1,1 @@
+Tables in investment_demo.db (SQLite): clients, portfolio_goals, transactions, sip_registrations

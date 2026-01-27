@@ -8,6 +8,81 @@ export class GeminiProvider extends AIProvider {
         // We don't initialize this.model here because systemInstruction changes per request
     }
 
+    async *generateStream(messages, options = {}) {
+        let systemInstruction = undefined
+        const systemMsg = messages.find(m => m.role === 'system')
+        if (systemMsg) systemInstruction = systemMsg.content
+        const chatMessages = messages.filter(m => m.role !== 'system')
+
+        let history = []
+        let lastUserMessage = ''
+        if (chatMessages.length > 0) {
+            lastUserMessage = chatMessages[chatMessages.length - 1].content
+            history = chatMessages.slice(0, -1).map(m => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: [{ text: m.content }]
+            }))
+        }
+
+        const generationConfig = {
+            maxOutputTokens: options.maxTokens || 4000,
+            temperature: options.temperature ?? undefined,
+            ...(options.json ? { responseMimeType: "application/json" } : {})
+        }
+
+        const modelId = options.model || this.config.model || "gemini-1.5-flash"
+        const model = this.genAI.getGenerativeModel({
+            model: modelId,
+            systemInstruction: systemInstruction,
+            tools: options.tools ? [{
+                functionDeclarations: options.tools.map(t => ({
+                    name: t.name,
+                    description: t.description,
+                    parameters: t.parameters
+                }))
+            }] : undefined
+        })
+
+        try {
+            const chat = model.startChat({ history, generationConfig })
+            const result = await chat.sendMessageStream(lastUserMessage)
+
+            for await (const chunk of result.stream) {
+                const text = chunk.text()
+                if (text) yield { text }
+            }
+
+            const response = await result.response
+            const usage = response.usageMetadata
+
+            const functionCalls = response.candidates?.[0]?.content?.parts
+                ?.filter(p => p.functionCall)
+                ?.map(p => ({
+                    id: `call_${crypto.randomUUID().replace(/-/g, '')}`,
+                    function: {
+                        name: p.functionCall.name,
+                        arguments: JSON.stringify(p.functionCall.args)
+                    }
+                }));
+
+            if (functionCalls?.length) {
+                yield { toolCalls: functionCalls }
+            }
+
+            yield {
+                done: true,
+                usage: {
+                    promptTokens: usage?.promptTokenCount || 0,
+                    candidatesTokens: usage?.candidatesTokenCount || 0,
+                    totalTokens: usage?.totalTokenCount || 0
+                }
+            }
+        } catch (e) {
+            console.error("Gemini Streaming Error:", e)
+            throw e
+        }
+    }
+
     async generateContent(messages, options = {}) {
         let systemInstruction = undefined
         let history = []
@@ -92,12 +167,10 @@ export class GeminiProvider extends AIProvider {
                 }
             } else {
                 // Single turn (or just prompt without history)
-                console.time('[Gemini] generateContent')
                 const result = await model.generateContent({
                     contents: [{ role: 'user', parts: [{ text: lastUserMessage }] }],
                     generationConfig
                 })
-                console.timeEnd('[Gemini] generateContent')
                 const response = result.response
                 const text = response.text()
                 const usage = response.usageMetadata

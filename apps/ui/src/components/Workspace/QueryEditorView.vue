@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, defineAsyncComponent, onMounted, onUnmounted, computed } from 'vue'
+import { ref, watch, defineAsyncComponent, onMounted, onUnmounted, computed, unref } from 'vue'
 import { Terminal, Sparkles } from 'lucide-vue-next'
 import { useSettingsStore } from '@/stores/settings'
 import { storeToRefs } from 'pinia'
@@ -17,8 +17,8 @@ const emit = defineEmits(['update:modelValue', 'submit', 'save', 'explain-query'
 const localValue = ref(props.modelValue)
 
 const settingsStore = useSettingsStore()
-// In Setup Stores, refs are returned as is, so we can destructure directly
-const { settings } = settingsStore
+// Use computed to access store state reactively
+const settings = computed(() => unref(settingsStore.settings))
 
 // Keyboard shortcuts
 const handleKeyDown = (e: KeyboardEvent) => {

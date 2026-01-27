@@ -2,6 +2,9 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, CreateBucketCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "../../db/index.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 
 import { storageCredentials, users } from "../../db/schema.js";
 import { secretService } from "../SecretService.js";
@@ -21,6 +24,19 @@ class S3Provider {
         });
         this.bucket = config.bucket;
         this.providerType = 's3'; // or 'b2' etc.
+    }
+
+    async write(key, buffer, mimeType) {
+        return this.upload(key, buffer, mimeType);
+    }
+
+    async read(key) {
+        const command = new GetObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+        });
+        const response = await this.client.send(command);
+        return Buffer.from(await response.Body.transformToByteArray());
     }
 
     async upload(key, buffer, mimeType) {
@@ -90,6 +106,19 @@ class GCPProvider {
         this.providerType = 'gcp';
     }
 
+    async write(key, buffer, mimeType) {
+        return this.upload(key, buffer, mimeType);
+    }
+
+    async read(key) {
+        const url = `https://storage.googleapis.com/storage/v1/b/${this.bucket}/o/${encodeURIComponent(key)}?alt=media`;
+        const response = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${this.accessToken}` }
+        });
+        if (!response.ok) throw new Error(`GCP Read Failed: ${await response.text()}`);
+        return Buffer.from(await response.arrayBuffer());
+    }
+
     async upload(key, buffer, mimeType) {
         // https://cloud.google.com/storage/docs/json_api/v1/objects/insert
         const url = `https://storage.googleapis.com/upload/storage/v1/b/${this.bucket}/o?uploadType=media&name=${encodeURIComponent(key)}`;
@@ -137,6 +166,38 @@ class GCPProvider {
     }
 }
 
+class LocalProvider {
+    constructor() {
+        this.baseDir = path.join(process.cwd(), 'data', 'storage');
+        this.providerType = 'local';
+    }
+
+    async write(key, buffer) {
+        const fullPath = path.join(this.baseDir, key);
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, buffer);
+        return { key, bucket: 'local', url: `/api/storage/local/${key}` };
+    }
+
+    async upload(key, buffer) {
+        return this.write(key, buffer);
+    }
+
+    async read(key) {
+        const fullPath = path.join(this.baseDir, key);
+        return await fs.readFile(fullPath);
+    }
+
+    async delete(key) {
+        const fullPath = path.join(this.baseDir, key);
+        await fs.unlink(fullPath).catch(() => { });
+    }
+
+    async getPresignedUrl(key) {
+        return `/api/storage/local/${key}`;
+    }
+}
+
 export class StorageManager {
     static async getProvider(userId, providerType = 'default') {
         let selectedType = providerType;
@@ -173,7 +234,11 @@ export class StorageManager {
                 bucket: process.env.S3_BUCKET_NAME || "pegasus-default-storage",
                 endpoint: process.env.S3_ENDPOINT
             };
-            if (!config.accessKeyId) throw new Error("System storage not configured.");
+            if (!config.accessKeyId) {
+                console.log("[StorageManager] S3 credentials not found, using LocalProvider.");
+                return new LocalProvider();
+            }
+            console.log("[StorageManager] S3 credentials found, using S3Provider.");
             return new S3Provider(config);
         }
 
@@ -236,5 +301,48 @@ export class StorageManager {
 
         // Default / Fallback
         return new S3Provider(config);
+    }
+
+    /**
+     * Generates a signed URL (or direct URL) for a storage key.
+     * Useful for zero-copy retrieval tools (DuckDB httpfs).
+     */
+    static async getPublicUrl(userId, key) {
+        if (!key) return null;
+        if (!key.startsWith('uploads/')) return null;
+
+        const provider = await this.getProvider(userId);
+        return provider.getPresignedUrl(key);
+    }
+
+    /**
+     * Resolves a storage key to an absolute local file path.
+     * If the storage is remote (S3/GCP), it downloads the file to a local cache first.
+     */
+    static async getLocalPath(userId, key) {
+        if (!key) return null;
+        if (!key.startsWith('uploads/')) return key; // Not a managed upload
+
+        const provider = await this.getProvider(userId);
+
+        // If LocalProvider, just resolve the path
+        if (provider.baseDir) {
+            return path.resolve(provider.baseDir, key);
+        }
+
+        // Remote Provider: Use a local cache outside the watched directory
+        const cacheDir = path.join(os.tmpdir(), 'pegasus-storage-cache');
+        const localPath = path.join(cacheDir, userId, key);
+
+        try {
+            await fs.access(localPath);
+            return localPath;
+        } catch (e) {
+            console.log(`[StorageManager] Downloading remote file to cache: ${key}`);
+            await fs.mkdir(path.dirname(localPath), { recursive: true });
+            const buffer = await provider.read(key);
+            await fs.writeFile(localPath, buffer);
+            return localPath;
+        }
     }
 }

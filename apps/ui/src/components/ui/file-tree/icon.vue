@@ -37,8 +37,19 @@ const iconComponent = computed(() => {
 })
 
 const iconSize = computed(() => Number(props.size) || 16)
+
+const isPath = computed(() => {
+  return props.name?.startsWith('/') || props.name?.startsWith('http')
+})
 </script>
 
 <template>
-  <component :is="iconComponent" :size="iconSize" />
+  <img 
+    v-if="isPath" 
+    :src="name" 
+    :style="{ width: iconSize + 'px', height: iconSize + 'px' }" 
+    class="object-contain"
+    alt=""
+  />
+  <component v-else :is="iconComponent" :size="iconSize" />
 </template>

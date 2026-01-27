@@ -7,11 +7,12 @@ import { db } from "../db/index.js"
 import { users, sanitizationMetadata, spreadsheetPermissions, connections } from "../db/schema.js"
 import { eq, and, sql, or, inArray } from "drizzle-orm"
 import { uploadsDb } from "../../db/uploads.js"
-import { adapters } from "../../adapters/index.js"
+import { adapters, createAdapter } from "../../adapters/index.js"
 import { analyzeForSanitization, applySanitization, interpretDataset } from "../../ai/sanitizer.js"
 
 import { ConfigService } from "../services/ConfigService.js"
 import { SyncService } from "../services/SyncService.js"
+import { StorageManager } from "../services/storage/StorageManager.js"
 
 const table = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -103,9 +104,8 @@ table.post("/rename-table", async (c) => {
             }
         }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: `Provider '${provider}' not supported` }, 400)
-        const adapter = new Adapter(actualConnection)
+        const adapter = await createAdapter(provider, actualConnection, userId)
+        if (!adapter) return c.json({ error: `Provider '${provider}' not supported` }, 400)
 
         try {
             await adapter.connect()
@@ -186,9 +186,8 @@ table.post("/delete-table", async (c) => {
             }
         }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
-        const adapter = new Adapter(actualConnection)
+        const adapter = await createAdapter(provider, actualConnection, userId)
+        if (!adapter) return c.json({ error: 'Unsupported provider' }, 400)
 
         try {
             await adapter.connect()
@@ -264,9 +263,8 @@ table.post("/save-table-data", async (c) => {
             }
         }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
-        const adapter = new Adapter(connection)
+        const adapter = await createAdapter(provider, connection, userId)
+        if (!adapter) return c.json({ error: 'Unsupported provider' }, 400)
 
         try {
             await adapter.connect()
@@ -360,11 +358,11 @@ table.post("/copy-table", async (c) => {
         }
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
-        try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
-        const adapter = new Adapter(connection)
+        const adapter = await createAdapter(provider, connection, userId)
+        if (!adapter) return c.json({ error: 'Unsupported provider' }, 400)
 
         try {
             await adapter.connect()
@@ -401,19 +399,16 @@ table.post("/table/:tableName/schema", async (c) => {
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
 
         // Force Read Only for DuckDB schema - but NOT for in-memory DBs
-        if (provider === 'duckdb' && connection) {
-            const dbPath = connection.path || ':memory:'
-            if (dbPath !== ':memory:') {
-                connection = { ...connection, readOnly: true }
-            }
-        }
+        const connWithRole = (provider === 'duckdb' && connection && (connection.path || ':memory:') !== ':memory:')
+            ? { ...connection, readOnly: true }
+            : connection;
 
-        console.log('[Table Schema] Connection object:', JSON.stringify(connection, null, 2))
-        const adapter = new Adapter(connection)
+        const adapter = await createAdapter(provider, connWithRole, userId)
+        if (!adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
 
         try {
             await adapter.connect()
@@ -475,19 +470,16 @@ table.post("/table/:tableName/query", async (c) => {
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
 
         // Force Read Only for DuckDB query - but NOT for in-memory DBs
-        if (provider === 'duckdb' && connection) {
-            const dbPath = connection.path || ':memory:'
-            if (dbPath !== ':memory:') {
-                connection = { ...connection, readOnly: true }
-            }
-        }
+        const connWithRole = (provider === 'duckdb' && connection && (connection.path || ':memory:') !== ':memory:')
+            ? { ...connection, readOnly: true }
+            : connection;
 
-        console.log('[Table Query] Connection object:', JSON.stringify(connection, null, 2))
-        const adapter = new Adapter(connection)
+        const adapter = await createAdapter(provider, connWithRole, userId)
+        if (!adapter) return c.json({ error: `Unsupported provider: ${provider}` }, 400)
 
         try {
             await adapter.connect()
@@ -527,8 +519,14 @@ table.post("/table/:tableName/query", async (c) => {
             } else if (provider === 'postgres' || provider === 'mysql') {
                 const q = provider === 'mysql' ? '`' : '"'
                 query = `SELECT * FROM ${q}${actualTableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+            } else if (provider === 'duckdb') {
+                // Generate a synthetic ID using row_number()
+                // Note: We add offset to the row_number to keep IDs consistent across pages
+                // We use a subquery to ensure correct ordering if needed, but for now simple is better.
+                query = `SELECT (row_number() OVER ()) + ${Number(offset)} as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             } else {
-                query = `SELECT rowid as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                // Use row_number() for SQLite to support Views which lack rowid
+                query = `SELECT (row_number() OVER ()) + ${Number(offset)} as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
             }
 
             const rows = await adapter.query(query)
@@ -568,9 +566,8 @@ table.post("/table/:tableName/operations", async (c) => {
             userId = payload.sub
         } catch (e) { return c.json({ error: "Unauthorized" }, 401) }
 
-        const Adapter = adapters[provider]
-        if (!Adapter) return c.json({ error: 'Unsupported provider' }, 400)
-        const adapter = new Adapter(connection)
+        const adapter = await createAdapter(provider || connection.provider, connection, userId)
+        if (!adapter) return c.json({ error: 'Unsupported provider' }, 400)
 
         try {
             await adapter.connect()
@@ -877,7 +874,25 @@ table.post("/table/:tableName/load", async (c) => {
                         const q = provider === 'mysql' ? '`' : '"'
                         sqlStr = `SELECT * FROM ${q}${actualTableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
                     } else {
-                        sqlStr = `SELECT rowid as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                        // SQLite / Generic
+                        try {
+                            sqlStr = `SELECT rowid as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                            return await adapter.query(sqlStr)
+                        } catch (e) {
+                            if (e.message.includes('no such column: rowid')) {
+                                console.log(`[Table Load] Table ${actualTableName} has no rowid, falling back to simple SELECT`)
+                                sqlStr = `SELECT * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                                const rows = await adapter.query(sqlStr)
+                                if (Array.isArray(rows)) {
+                                    return rows.map((r, i) => ({
+                                        ...r,
+                                        __id: r.__id || r.id || r.ID || r.UUID || `v${Number(offset) + i}`
+                                    }))
+                                }
+                                return rows
+                            }
+                            throw e
+                        }
                     }
                     return adapter.query(sqlStr)
                 })()

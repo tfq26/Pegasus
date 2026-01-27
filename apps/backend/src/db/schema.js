@@ -454,6 +454,7 @@ export const files = pgTable("file", {
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
     storageId: text("storage_id").notNull(),
     filename: text("filename").notNull(),
+    description: text("description"),
     size: bigint("size", { mode: "number" }),
     mimeType: text("mime_type"),
     provider: text("provider").default('default'), // 'default' or 'custom'

@@ -75,14 +75,14 @@ importRouter.post("/upload-zip", async (c) => {
         const tempDir = path.join(os.tmpdir(), `pegasus-zip-${crypto.randomUUID()}`)
         await fs.mkdir(tempDir, { recursive: true })
 
-        const filesToProcess = []
         const storage = await StorageManager.getProvider(userId)
 
-        for (const entry of zipEntries) {
-            if (entry.isDirectory) continue
+        // Process entries in parallel for better performance
+        const uploadPromises = zipEntries.map(async (entry) => {
+            if (entry.isDirectory) return null
 
             // Skip system files
-            if (entry.entryName.includes('__MACOSX') || entry.entryName.includes('.DS_Store')) continue
+            if (entry.entryName.includes('__MACOSX') || entry.entryName.includes('.DS_Store')) return null
 
             const fileName = path.basename(entry.entryName)
             const entryBuffer = entry.getData()
@@ -91,18 +91,23 @@ importRouter.post("/upload-zip", async (c) => {
             const storagePath = `uploads/${userId}/${crypto.randomUUID()}-${fileName}`
             await storage.write(storagePath, entryBuffer)
 
-            filesToProcess.push({
+            return {
                 name: fileName,
                 key: storagePath,
                 size: entryBuffer.length,
                 type: fileName.split('.').pop()
-            })
-        }
+            }
+        })
+        console.log(`[Import ZIP] Starting processing of ${zipEntries.length} entries`)
+        const results = await Promise.all(uploadPromises)
+        const filesToProcess = results.filter(r => r !== null)
+        console.log(`[Import ZIP] Uploaded ${filesToProcess.length} files to storage`)
 
         // Clean up temp dir if we used any (though here we process buffers)
         await fs.rm(tempDir, { recursive: true, force: true })
 
         // 2. Classify
+        console.log(`[Import ZIP] Classifying ${filesToProcess.length} files...`)
         let spaceName = "General Workspace"
         if (spaceId) {
             const space = await db.query.dataSpaces.findFirst({
@@ -213,12 +218,10 @@ importRouter.post("/execute", async (c) => {
                         updatedAt: new Date()
                     }).returning()
 
-                    // Trigger RAG indexing
-                    try {
-                        await RAGService.indexFileFromStorage(key, filename, userId);
-                    } catch (idxErr) {
-                        console.warn(`[Import] RAG Indexing failed for ${filename}:`, idxErr);
-                    }
+                    // Trigger RAG indexing (background - don't await to avoid UI hang)
+                    RAGService.indexFileFromStorage(key, filename, userId).catch(idxErr => {
+                        console.warn(`[Import] Background RAG Indexing failed for ${filename}:`, idxErr);
+                    });
 
                     results.push({ filename, status: 'success', type: 'file', id: file.id })
                 }

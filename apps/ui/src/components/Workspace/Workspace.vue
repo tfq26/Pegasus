@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, onMounted, computed } from 'vue';
+import { ref, watch, onUnmounted, onMounted, computed, unref } from 'vue';
 import { storeToRefs } from 'pinia';
 import TabsManager from './TabsManager.vue';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -57,54 +57,27 @@ const emit = defineEmits<{
   (e: 'generate-insights', payload: { query: string; results: any; messageIndex: number }): void;
 }>();
 
+import { useEntitlements } from '@/composables/useEntitlements'; // NEW
+
 // --- Pinia Store ---
 const workspaceStore = useWorkspaceStore();
 const settingsStore = useSettingsStore();
 const sheetStore = useSheetStore(); 
-const spaceStore = useSpaceStore(); // NEW
+const spaceStore = useSpaceStore(); 
 const { tabs, activeTabId, activeTab } = storeToRefs(workspaceStore);
 const { settings } = storeToRefs(settingsStore);
+const { subscriptionTier } = useEntitlements(); // get tier
 
-const allModels = ref<any[]>([]);
+// usableModels from store already handles 'enabledModels' filtering AND 'isLocked' check
+const availableModels = computed(() => settingsStore.usableModels);
 
-// Load available models (Cloud + Local)
+// Load available models (Cloud + Local) via Store with correct Tier
 onMounted(async () => {
     try {
-        const [cloud, localStatus] = await Promise.all([
-             getAIModels().catch(() => []),
-             localAI.getStatus().catch(() => ({ is_running: false, models: [] }))
-        ]);
-        
-        let models = Array.isArray(cloud) ? cloud : (cloud as any).models || [];
-        
-        // Merge local models
-        if (localStatus.is_running) {
-             const local = (localStatus.models || []).map((m: string) => ({
-                 id: `local:${m}`,
-                 name: m,
-                 provider: 'local'
-             }));
-             models = [...local, ...models];
-        }
-        
-        allModels.value = models;
-        
-        // Initialize settings if needed
-        if (settings.value && !(settings.value as any).enabledModels) {
-            (settings.value as any).enabledModels = models.map((m: any) => m.id);
-        }
+       await settingsStore.loadAvailableModels(subscriptionTier.value);
     } catch (e) {
         console.error('[Workspace] Failed to load AI models:', e);
     }
-});
-
-const availableModels = computed(() => {
-    if (!settings.value) return allModels.value;
-    const enabled = (settings.value as any).enabledModels;
-    if (enabled && enabled.length > 0) {
-        return allModels.value.filter(m => enabled.includes(m.id));
-    }
-    return allModels.value;
 });
 
 // Sync chatHistory prop to active chat tab's data
@@ -120,7 +93,16 @@ const engineCache = new Map<string, Engine>();
 const noteEditorRef = ref<any>(null);
 const privateEngines = new Map<string, Engine>(); // Cache for private branches
 const loadingTabIds = ref(new Set<string>());
-const aiOptions = ref({ model: 'gemini-2.5-flash', temperature: 0.7 });
+const aiOptions = ref({ 
+  model: (settings.value as any)?.activeModel || 'gemini-3-flash-preview', 
+  temperature: (settings.value as any)?.temperature || 0.7 
+});
+
+// Keep aiOptions in sync with global settings
+watch(() => [(settings.value as any)?.activeModel, (settings.value as any)?.temperature], ([newModel, newTemp]) => {
+    if (newModel) aiOptions.value.model = newModel as string;
+    if (newTemp !== undefined) aiOptions.value.temperature = newTemp as number;
+}, { immediate: true });
 const zoomLevel = ref(12);
 const isDataLoading = computed(() => loadingTabIds.value.size > 0);
 

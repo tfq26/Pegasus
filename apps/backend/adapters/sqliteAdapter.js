@@ -1,15 +1,21 @@
 import { DatabaseAdapter } from "./DatabaseAdapter.js"
 import { createClient } from "@libsql/client"
+import path from "node:path"
+import { resolveDatabasePath } from "../src/utils/resolveDatabasePath.js"
 
 export class SQLiteAdapter extends DatabaseAdapter {
   async connect() {
     // Connection can be a file path, ':memory:', or a remote URL (Turso)
     const dbPath = this.connection.database || this.connection.path || ':memory:'
-    const authToken = this.connection.authToken || this.connection.password // Support both fields
+    const authToken = this.connection.authToken || this.connection.password
 
     let url = dbPath
-    if (dbPath !== ':memory:' && !dbPath.startsWith('http') && !dbPath.startsWith('libsql')) {
-      url = `file:${dbPath}`
+    if (dbPath !== ':memory:') {
+      url = await resolveDatabasePath(dbPath, this.userId);
+      // Prepare 'file:' prefix for local paths if not already remote
+      if (!url.startsWith('http') && !url.startsWith('libsql') && !url.startsWith('file:')) {
+        url = `file:${url}`;
+      }
     }
 
     console.log(`[SQLite] Connecting to database at: ${url}`)
@@ -49,7 +55,10 @@ export class SQLiteAdapter extends DatabaseAdapter {
         }
       }
     } catch (error) {
-      console.error(`[SQLite] Query failed: ${query}`, error)
+      // Don't log expected errors like missing rowid (common for views)
+      if (!error.message.includes('no such column: rowid')) {
+        console.error(`[SQLite] Query failed: ${query}`, error)
+      }
       throw new Error(`SQLite query error: ${error.message}`)
     }
   }
@@ -137,7 +146,7 @@ export class SQLiteAdapter extends DatabaseAdapter {
   async listCollections() {
     try {
       const result = await this.db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'"
       )
       const tables = result.rows
 
@@ -197,36 +206,32 @@ export class SQLiteAdapter extends DatabaseAdapter {
 
   async getSchema() {
     try {
-      const result = await this.db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-      )
-      const tables = result.rows
-
+      const tables = await this.listCollections();
       const schema = {}
 
-      for (const t of tables) {
-        const tableName = t.name
-
-        // Filter tables if allowedTables is set
-        if (this.connection.tables && Array.isArray(this.connection.tables) && this.connection.tables.length > 0) {
-          if (!this.connection.tables.includes(tableName)) continue
-        }
-
-        const colResult = await this.db.execute(`PRAGMA table_info("${tableName}")`)
-        const columns = colResult.rows
-
-        schema[tableName] = columns.map(col => ({
-          name: col.name,
-          type: col.type,
-          nullable: col.notnull === 0,
-          pk: col.pk > 0
-        }))
+      for (const tableName of tables) {
+        schema[tableName] = await this.getOneTableSchema(tableName);
       }
 
       return schema
     } catch (e) {
       console.error('[SQLite] Error fetching schema:', e)
       return {}
+    }
+  }
+
+  async getOneTableSchema(tableName) {
+    try {
+      const colResult = await this.db.execute(`PRAGMA table_info("${tableName}")`)
+      return colResult.rows.map(col => ({
+        name: col.name,
+        type: col.type,
+        nullable: col.notnull === 0,
+        pk: col.pk > 0
+      }))
+    } catch (e) {
+      console.error(`[SQLite] Error fetching schema for table ${tableName}:`, e)
+      return []
     }
   }
 

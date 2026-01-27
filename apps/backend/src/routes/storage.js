@@ -6,11 +6,51 @@ import { eq, and } from "drizzle-orm";
 import { StorageManager } from "../services/storage/StorageManager.js";
 import { getAuthToken } from "../../lib/auth.js";
 import { verify } from "hono/jwt";
+import ExcelJS from "exceljs";
+import { aiClient } from "../../ai/AIClient.js";
 
 const storage = new Hono();
 // Assuming JWT Secret is available in env or passed via config. 
 // Using process.env.JWT_SECRET as per index.js convention.
 const jwtSecret = process.env.JWT_SECRET || 'secret';
+
+async function generateFileDescription(buffer, filename, mimeType, userId) {
+    try {
+        let snippet = '';
+
+        if (mimeType === 'text/csv' || mimeType === 'application/json' || mimeType.startsWith('text/')) {
+            snippet = buffer.toString('utf-8').slice(0, 1500); // First 1.5KB
+        } else if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(buffer);
+            const worksheet = workbook.worksheets[0];
+            if (worksheet) {
+                // Get first 5 rows to provide context (header + data)
+                // Note: ExcelJS rows are 1-based
+                const rows = [];
+                worksheet.eachRow((row, rowNumber) => {
+                    if (rowNumber <= 5) {
+                        // Filter out empty cells and join
+                        const rowText = (row.values || []).filter(v => v !== null && v !== undefined).join(', ');
+                        if (rowText) rows.push(rowText);
+                    }
+                });
+                snippet = rows.join('\n');
+            }
+        }
+
+        if (!snippet) return null;
+
+        const prompt = `Provide a concise, single-sentence description of this dataset based on the filename "${filename}" and the sample below:\n\n${snippet}\n\nDescription:`;
+
+        // Use a fast model for latency
+        const description = await aiClient.generateText(prompt, 'gemini', { userId });
+        return description ? description.trim() : null;
+    } catch (e) {
+        console.warn("Failed to generate file description:", e);
+        return null;
+    }
+}
 
 // Middleware to get user
 const authMiddleware = async (c, next) => {
@@ -49,6 +89,9 @@ storage.post("/upload", async (c) => {
         const provider = await StorageManager.getProvider(user.sub);
         const result = await provider.upload(key, buffer, file.type);
 
+        // Generate AI Description (Non-blocking usually preferred, but for now blocking)
+        const description = await generateFileDescription(buffer, file.name, file.type, user.sub);
+
         // Record in DB
         const providerType = provider.providerType || (result.bucket === process.env.S3_BUCKET_NAME ? 'default' : 'custom');
 
@@ -56,6 +99,7 @@ storage.post("/upload", async (c) => {
             userId: user.sub,
             storageId: result.key, // stored key
             filename: file.name,
+            description: description,
             size: file.size,
             mimeType: file.type,
             provider: providerType

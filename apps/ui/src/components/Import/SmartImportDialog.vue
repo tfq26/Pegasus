@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
 } from '@/components/ui/dialog'
@@ -39,24 +39,34 @@ const isImporting = ref(false)
 const importResults = ref<any[]>([])
 
 const analyzeFiles = async () => {
-  isLoading.value = true
-  try {
-    const res = await api.post<any>('/import/analyze', {
-      files: props.files,
-      spaceId: props.spaceId
-    })
-    suggestions.value = res.suggestions.map((s: any) => ({
-      ...s,
-      key: props.files.find(f => f.name === s.filename)?.key || '',
-      size: props.files.find(f => f.name === s.filename)?.size || 0,
-      status: 'pending'
-    }))
-  } catch (e) {
-    toast.error('Failed to analyze files')
-    console.error(e)
-  } finally {
-    isLoading.value = false
-  }
+    // If we already have suggestions passed in as files, use them directly
+    if (props.files && props.files.length > 0 && (props.files[0] as any).suggested_action) {
+        suggestions.value = props.files.map((s: any) => ({
+            ...s,
+            status: 'pending'
+        }))
+        isLoading.value = false
+        return
+    }
+
+    isLoading.value = true
+    try {
+        const res = await api.post<any>('/import/analyze', {
+            files: props.files,
+            spaceId: props.spaceId
+        })
+        suggestions.value = res.suggestions.map((s: any) => ({
+            ...s,
+            key: props.files.find(f => f.name === s.filename)?.key || '',
+            size: props.files.find(f => f.name === s.filename)?.size || 0,
+            status: 'pending'
+        }))
+    } catch (e) {
+        toast.error('Failed to analyze files')
+        console.error(e)
+    } finally {
+        isLoading.value = false
+    }
 }
 
 const handleImport = async () => {
@@ -106,10 +116,16 @@ const getActionColor = (action: string) => {
   }
 }
 
+watch(() => props.open, (isOpen) => {
+    if (isOpen && props.files.length > 0) {
+        analyzeFiles()
+    }
+})
+
 onMounted(() => {
-  if (props.open && props.files.length > 0) {
-    analyzeFiles()
-  }
+    if (props.open && props.files.length > 0) {
+        analyzeFiles()
+    }
 })
 </script>
 
@@ -131,7 +147,7 @@ onMounted(() => {
       <div class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 space-y-4">
           <Loader2 class="w-10 h-10 animate-spin text-primary" />
-          <p class="text-sm font-medium text-muted-foreground animate-pulse">Analyzing files with AI...</p>
+          <p class="text-sm font-medium text-muted-foreground animate-pulse">Analyzing files...</p>
         </div>
 
         <div v-else class="space-y-3">

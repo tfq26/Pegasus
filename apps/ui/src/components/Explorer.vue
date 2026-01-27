@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, toRefs, computed, onMounted, watch } from 'vue'
+import { ref, toRefs, computed, onMounted, watch, unref } from 'vue'
 import { toast } from '@/composables/useNotifications'
 import { 
   Database, Plus, Trash, Search, Sparkles, FolderOpen, Lock, Unlock,
@@ -13,6 +13,7 @@ import AddConnectionModal from '@/components/AddConnectionModal.vue'
 import AddTableToConnectionModal from './Explorer/AddTableToConnectionModal.vue'
 import ExplorerTree from './Explorer/ExplorerTree.vue'
 import SpaceSelector from './Explorer/SpaceSelector.vue'
+import ConfirmDialog from '@/components/Common/ConfirmDialog.vue'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
 import { useSheetStore } from '@/stores/sheet'
@@ -40,14 +41,8 @@ import GenerateTestDataDialog from '@/components/GenerateTestDataDialog.vue' // 
 import { useLocalFile } from '@/composables/useLocalFile'
 
 // UI Parts
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+// UI Parts
+// Dialog components removed as we use ConfirmDialog now
 
 // Composables & Libs
 import { useExplorerSchema } from '@/composables/useExplorerSchema'
@@ -84,6 +79,7 @@ const emit = defineEmits<{
   'edit-table': [connection: ConnectionEntry, table: string]
   'create-chat': []
   'select-chat': [id: string]
+  'preview-chat': [id: string]
   'load-query': [query: string]
   'sanitize-table': [connection: ConnectionEntry, table: string]
   'toggle-pin': []
@@ -97,7 +93,7 @@ const spaceStore = useSpaceStore()
 
 onMounted(() => {
   spaceStore.loadSpaces()
-  sheetStore.loadSheets(spaceStore.currentSpaceId)
+  sheetStore.loadSheets(unref(spaceStore.currentSpaceId) || '')
   
   // Force refresh connections to ensure we have latest space assignments
   connectionStore.loadConnections(true)
@@ -259,7 +255,17 @@ const handleExplainTable = async (conn: ConnectionEntry, table: string) => {
 // --- Space Context Logic (Files & Notes) ---
 const newNoteTitle = ref('')
 const handleAddNote = async () => {
-    if (!spaceStore.currentSpaceId) return
+    // Ensure we have a space selected
+    if (!spaceStore.currentSpaceId) {
+        toast.info('Selecting primary space...')
+        await spaceStore.loadSpaces()
+    }
+    
+    if (!spaceStore.currentSpaceId) {
+        toast.error('No space selected', { description: 'Please create or select a space first.' })
+        return
+    }
+
     try {
         const spaceId = spaceStore.currentSpaceId as any
         const note = await createSpaceNote(spaceId, {
@@ -269,6 +275,9 @@ const handleAddNote = async () => {
         })
         await spaceStore.fetchSpaceContext()
         toast.success('Note created')
+        
+        // Switch context to notes after creating one
+        currentContext.value = 'notes'
     } catch (e: any) {
         toast.error('Failed to create note', { description: e.message })
     }
@@ -277,6 +286,83 @@ const handleAddNote = async () => {
 const fileInput = ref<HTMLInputElement | null>(null)
 const zipInput = ref<HTMLInputElement | null>(null)
 
+// --- Unified Confirm Dialog State ---
+const confirmDialogState = ref<{
+    open: boolean
+    title: string
+    description: string
+    variant: 'destructive' | 'default'
+    confirmText: string
+    validationText?: string
+    onConfirm: () => Promise<void>
+    loading: boolean
+}>({
+    open: false,
+    title: '',
+    description: '',
+    variant: 'destructive',
+    confirmText: 'Confirm',
+    validationText: undefined,
+    onConfirm: async () => {},
+    loading: false
+})
+
+const handleConfirmDialogConfirm = async () => {
+    confirmDialogState.value.loading = true
+    try {
+        await confirmDialogState.value.onConfirm()
+    } finally {
+        confirmDialogState.value.loading = false
+        confirmDialogState.value.open = false
+    }
+}
+
+const handleBulkDelete = async () => {
+    if (!selectedItems.value.length) return
+    
+    // Use Confirm Dialog
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete Items',
+        description: `Are you sure you want to delete ${selectedItems.value.length} items? This cannot be undone.`,
+        variant: 'destructive',
+        confirmText: 'Delete Items',
+        loading: false,
+        onConfirm: async () => {
+             try {
+                toast.info(`Deleting ${selectedItems.value.length} items...`)
+                const res = await api.post<any>('/spaces/bulk-delete', { items: selectedItems.value })
+                
+                if (res.success && res.success.length > 0) {
+                    toast.success(`Deleted ${res.success.length} items`)
+                }
+                
+                if (res.failed && res.failed.length > 0) {
+                    toast.error(`Failed to delete ${res.failed.length} items`)
+                }
+
+                // Refresh everything
+                await Promise.all([
+                    spaceStore.fetchSpaceContext(),
+                    connectionStore.loadConnections(true)
+                ])
+                
+                // Refresh specific lists if needed (Queries, Chats)
+                if (selectedItems.value.some(i => i.type === 'query')) {
+                    window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
+                }
+                if (selectedItems.value.some(i => i.type === 'chat')) {
+                    window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
+                }
+                
+                selectedItems.value = []
+            } catch (e: any) {
+                toast.error('Bulk delete failed', { description: e.message })
+            }
+        }
+    }
+}
+
 const handleUploadFile = () => {
     fileInput.value?.click()
 }
@@ -284,7 +370,17 @@ const handleUploadFile = () => {
 const onFileSelected = async (event: Event) => {
     const target = event.target as HTMLInputElement
     const file = target.files?.[0]
-    if (!file || !spaceStore.currentSpaceId) return
+    
+    // Ensure we have a space selected
+    if (!spaceStore.currentSpaceId) {
+        toast.info('Selecting primary space...')
+        await spaceStore.loadSpaces()
+    }
+
+    if (!file || !spaceStore.currentSpaceId) {
+        if (!spaceStore.currentSpaceId) toast.error('No space selected')
+        return
+    }
 
     try {
         toast.info(`Ingesting ${file.name}...`)
@@ -314,175 +410,137 @@ const handleSelectNote = (note: any) => {
     emit('select-note', note)
 }
 
-const handleBulkDelete = async () => {
-    if (!selectedItems.value.length) return
-    
-    if (!window.confirm(`Are you sure you want to delete ${selectedItems.value.length} items?`)) return
-
-    try {
-        toast.info(`Deleting ${selectedItems.value.length} items...`)
-        const res = await api.post<any>('/spaces/bulk-delete', { items: selectedItems.value })
-        
-        if (res.success && res.success.length > 0) {
-            toast.success(`Deleted ${res.success.length} items`)
-        }
-        
-        if (res.failed && res.failed.length > 0) {
-            toast.error(`Failed to delete ${res.failed.length} items`)
-        }
-
-        // Refresh everything
-        await Promise.all([
-            spaceStore.fetchSpaceContext(),
-            connectionStore.loadConnections(true)
-        ])
-        
-        selectedItems.value = []
-    } catch (e: any) {
-        toast.error('Bulk delete failed', { description: e.message })
-    }
-}
-
 const handleSelectFile = (file: any) => {
     emit('select-file', file)
 }
 
-// --- Delete File/Note Logic ---
-const deleteFileConfirmationOpen = ref(false)
-const fileToDelete = ref<any>(null)
-const deleteNoteConfirmationOpen = ref(false)
-const noteToDelete = ref<any>(null)
-
+// --- Refactored Delete Logic ---
 const handleDeleteFile = (file: any) => {
-    fileToDelete.value = file
-    deleteFileConfirmationOpen.value = true
-}
-
-const confirmDeleteFile = async () => {
-    if (!fileToDelete.value) return
-    try {
-        await deleteSpaceFile(fileToDelete.value.id)
-        toast.success('File deleted')
-        await spaceStore.fetchSpaceContext()
-        deleteFileConfirmationOpen.value = false
-    } catch (err: any) {
-        toast.error('Failed to delete file', { description: err.message })
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete File',
+        description: `This file "${file.filename}" will be permanently deleted.`,
+        variant: 'destructive',
+        confirmText: 'Delete File',
+        loading: false,
+        onConfirm: async () => {
+            try {
+                await deleteSpaceFile(file.id)
+                toast.success('File deleted')
+                await spaceStore.fetchSpaceContext()
+            } catch (err: any) {
+                toast.error('Failed to delete file', { description: err.message })
+            }
+        }
     }
 }
 
 const handleDeleteNote = (note: any) => {
-    noteToDelete.value = note
-    deleteNoteConfirmationOpen.value = true
-}
-
-const confirmDeleteNote = async () => {
-    if (!noteToDelete.value) return
-    try {
-        await deleteSpaceNote(noteToDelete.value.id)
-        toast.success('Note deleted')
-        await spaceStore.fetchSpaceContext()
-        deleteNoteConfirmationOpen.value = false
-    } catch (err: any) {
-        toast.error('Failed to delete note', { description: err.message })
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete Note',
+        description: `This note "${note.title}" will be permanently deleted.`,
+        variant: 'destructive',
+        confirmText: 'Delete Note',
+        loading: false,
+        onConfirm: async () => {
+             try {
+                await deleteSpaceNote(note.id)
+                toast.success('Note deleted')
+                await spaceStore.fetchSpaceContext()
+            } catch (err: any) {
+                toast.error('Failed to delete note', { description: err.message })
+            }
+        }
     }
 }
 
-// --- Delete Table Logic ---
-const deleteDialogOpen = ref(false)
-const tableToDelete = ref<{ conn: ConnectionEntry; table: string } | null>(null)
-
 const handleDeleteTable = (conn: ConnectionEntry, table: string) => {
-  tableToDelete.value = { conn, table }
-  deleteDialogOpen.value = true
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete Table',
+        description: `Are you sure you want to delete ${table}? All data associated with this table will be purged.`,
+        variant: 'destructive',
+        confirmText: 'Delete Table',
+        loading: false,
+        onConfirm: async () => {
+            try {
+                await apiDeleteTable(conn, table)
+                toast.success('Table deleted')
+                refreshSchemas(true)
+            } catch (err: any) {
+                toast.error('Failed to delete table', { description: err.message })
+            }
+        }
+    }
 }
-
-const confirmDeleteTable = async () => {
-  if (!tableToDelete.value) return
-  try {
-    await apiDeleteTable(tableToDelete.value.conn, tableToDelete.value.table)
-    toast.success('Table deleted')
-    deleteDialogOpen.value = false
-    refreshSchemas(true)
-  } catch (err: any) {
-    toast.error('Failed to delete table', { description: err.message })
-  }
-}
-
-// --- Delete Connection Logic ---
-const deleteConnectionDialogOpen = ref(false)
-const connectionToDelete = ref<ConnectionEntry | null>(null)
-const deleteConfirmationText = ref('')
 
 const handleDeleteConnection = (conn: ConnectionEntry) => {
-  connectionToDelete.value = conn
-  deleteConfirmationText.value = ''
-  deleteConnectionDialogOpen.value = true
+    confirmDialogState.value = {
+        open: true,
+        title: 'Remove Connection',
+        description: `You are about to remove ${conn.nickname}. This will remove access in Pegasus but won't delete actual data.`,
+        variant: 'destructive',
+        confirmText: 'Remove Connection',
+        validationText: conn.isLocked ? conn.nickname : undefined,
+        loading: false,
+        onConfirm: async () => {
+            try {
+                await apiDeleteConnection(conn.id)
+                toast.success('Connection removed')
+                const connStore = useConnectionStore()
+                await connStore.loadConnections(true)
+            } catch (err: any) {
+                toast.error('Failed to remove connection', { description: err.message })
+            }
+        }
+    }
 }
 
 const { openLocalFile, processing: openingFile } = useLocalFile()
 
-const confirmDeleteConnection = async () => {
-  if (!connectionToDelete.value) return
-  
-  // Only require confirmation text if the connection is locked
-  if (connectionToDelete.value.isLocked && deleteConfirmationText.value !== connectionToDelete.value.nickname) {
-    toast.error('Confirmation text does not match')
-    return
-  }
-
-  try {
-    await apiDeleteConnection(connectionToDelete.value.id)
-    toast.success('Connection removed')
-    deleteConnectionDialogOpen.value = false
-    
-    // Reactively update the connection store instead of full page reload
-    const connStore = useConnectionStore()
-    await connStore.loadConnections(true) // Force refresh from backend
-  } catch (err: any) {
-    toast.error('Failed to remove connection', { description: err.message })
-  }
-}
-
 // --- Chat Logic ---
-const deleteChatDialogOpen = ref(false)
-const chatToDelete = ref<any>(null)
-const clearAllChatsDialogOpen = ref(false)
-
 const startDeleteChat = (chat: any) => {
-  chatToDelete.value = chat
-  deleteChatDialogOpen.value = true
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete Session',
+        description: 'Are you sure you want to delete this chat session? This cannot be undone.',
+        variant: 'destructive',
+        confirmText: 'Delete',
+        loading: false,
+        onConfirm: async () => {
+             try {
+                await deleteChat(chat.id)
+                toast.success('Deleted session')
+                window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
+            } catch (err: any) {
+                toast.error('Failed to delete session', { description: err.message })
+            }
+        }
+    }
 }
 
-const confirmDeleteChat = async () => {
-  if (!chatToDelete.value) return
-  try {
-    await deleteChat(chatToDelete.value.id)
-    toast.success('Deleted session')
-    deleteChatDialogOpen.value = false
-    // Emit event to parent to refresh chat list
-    window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
-  } catch (err: any) {
-    toast.error('Failed to delete session', { description: err.message })
-  }
-}
-
-const confirmClearAllChats = async () => {
-  try {
-    await clearAllChats()
-    toast.success('History cleared')
-    clearAllChatsDialogOpen.value = false
-    // Emit event to parent to refresh chat list
-    window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
-  } catch (err: any) {
-    toast.error('Failed to clear history', { description: err.message })
-  }
+const confirmClearAllChats = () => {
+     confirmDialogState.value = {
+        open: true,
+        title: 'Clear History',
+        description: 'Are you sure you want to clear your entire chat history? All sessions will be lost.',
+        variant: 'destructive',
+        confirmText: 'Clear All',
+        loading: false,
+        onConfirm: async () => {
+            try {
+                await clearAllChats()
+                toast.success('History cleared')
+                window.dispatchEvent(new CustomEvent('pegasus:chats-updated'))
+            } catch (err: any) {
+                toast.error('Failed to clear history', { description: err.message })
+            }
+        }
+    }
 }
 
 // --- Query History Logic ---
-const deleteQueryDialogOpen = ref(false)
-const queryToDelete = ref<string | null>(null)
-const clearQueriesDialogOpen = ref(false)
-
 const handleShareQuery = (query: any) => {
   // For now, just copy to clipboard with a special message
   navigator.clipboard.writeText(query.query)
@@ -492,37 +550,43 @@ const handleShareQuery = (query: any) => {
 }
 
 const handleDeleteQuery = (id: string) => {
-  queryToDelete.value = id
-  deleteQueryDialogOpen.value = true
-}
-
-const confirmDeleteQuery = async () => {
-  if (!queryToDelete.value) return
-  try {
-    await apiDeleteQuery(queryToDelete.value)
-    toast.success('Query deleted')
-    deleteQueryDialogOpen.value = false
-    // Emit event to parent to refresh query list
-    window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
-  } catch (err: any) {
-    toast.error('Failed to delete query', { description: err.message })
-  }
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete Query',
+        description: 'Remove this query from your history. This action cannot be undone.',
+        variant: 'destructive',
+        confirmText: 'Delete',
+        loading: false,
+        onConfirm: async () => {
+             try {
+                await apiDeleteQuery(id)
+                toast.success('Query deleted')
+                window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
+            } catch (err: any) {
+                toast.error('Failed to delete query', { description: err.message })
+            }
+        }
+    }
 }
 
 const handleClearHistory = () => {
-  clearQueriesDialogOpen.value = true
-}
-
-const confirmClearQueries = async () => {
-  try {
-    await apiClearAllQueries()
-    toast.success('Query history cleared')
-    clearQueriesDialogOpen.value = false
-    // Emit event to parent to refresh query list
-    window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
-  } catch (err: any) {
-    toast.error('Failed to clear queries', { description: err.message })
-  }
+    confirmDialogState.value = {
+        open: true,
+        title: 'Clear Query Log',
+        description: 'Are you sure you want to delete your entire query history?',
+        variant: 'destructive',
+        confirmText: 'Clear All',
+        loading: false,
+        onConfirm: async () => {
+            try {
+                await apiClearAllQueries()
+                toast.success('Query history cleared')
+                window.dispatchEvent(new CustomEvent('pegasus:queries-updated'))
+            } catch (err: any) {
+                toast.error('Failed to clear queries', { description: err.message })
+            }
+        }
+    }
 }
 // --- Generate Test Data ---
 const generateDataDialogOpen = ref(false)
@@ -543,11 +607,22 @@ const onTestDataGenerated = (sql: string) => {
 
 // --- Sheet Logic ---
 const handleAddSheet = async () => {
+    // Ensure we have a space selected
+    if (!spaceStore.currentSpaceId) {
+        toast.info('Selecting primary space...')
+        await spaceStore.loadSpaces()
+    }
+
+    if (!spaceStore.currentSpaceId) {
+        toast.error('No space selected', { description: 'Please create or select a space first.' })
+        return
+    }
+
     try {
         await sheetStore.saveSheet({
             name: "New Spreadsheet",
-            data: { cells: [], rowCount: 100, colCount: 26 },
-            spaceId: spaceStore.currentSpaceId
+            data: { cells: [], rowCount: 100, colCount: 26, version: 1 },
+            spaceId: unref(spaceStore.currentSpaceId)
         })
         toast.success('Spreadsheet created')
     } catch (e: any) {
@@ -556,12 +631,21 @@ const handleAddSheet = async () => {
 }
 
 const handleDeleteSheet = async (sheet: any) => {
-    if (!window.confirm(`Delete sheet "${sheet.name}"?`)) return
-    try {
-        await sheetStore.deleteSheet(sheet.id)
-        toast.success('Sheet deleted')
-    } catch (e: any) {
-        toast.error('Delete failed', { description: e.message })
+    confirmDialogState.value = {
+        open: true,
+        title: 'Delete Sheet',
+        description: `Delete sheet "${sheet.name}"?`,
+        variant: 'destructive',
+        confirmText: 'Delete Sheet',
+        loading: false,
+        onConfirm: async () => {
+             try {
+                await sheetStore.deleteSheet(sheet.id)
+                toast.success('Sheet deleted')
+            } catch (e: any) {
+                toast.error('Delete failed', { description: e.message })
+            }
+        }
     }
 }
 
@@ -580,24 +664,24 @@ const handleSelectSheet = (sheet: any) => {
     // Let's add 'select-sheet' to Explorer Emits first.
 }
 
+
 </script>
 
 <template>
   <aside 
     class="flex flex-col h-full bg-background border-r border-border w-full"
   >
-    <!-- Space Selector -->
-    <SpaceSelector />
+    <div class="flex items-center gap-2 p-3 border-b border-border">
+      <!-- Space Selector (Flex Grow) -->
+      <div class="flex-1 min-w-0">
+         <SpaceSelector />
+      </div>
 
-    <!-- Header -->
-    <header class="p-4 border-b border-border">
-      <div class="flex items-center justify-end">
-        <div class="flex items-center gap-3">
-          <!-- Removed Tabs -->
-          
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-1 shrink-0">
           <button 
             @click="emit('toggle-pin')"
-            class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all active:scale-95"
+            class="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all active:scale-95"
             :title="isPinned ? 'Unlock Sidebar (Auto-hide)' : 'Lock Sidebar (Always show)'"
           >
             <Unlock v-if="!isPinned" class="w-3.5 h-3.5" />
@@ -607,15 +691,14 @@ const handleSelectSheet = (sheet: any) => {
           <button
               v-if="selectedItems.length > 0"
               @click="handleBulkDelete"
-              class="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all active:scale-95 flex items-center gap-1.5"
+              class="p-2 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all active:scale-95 flex items-center gap-1.5"
               title="Delete Selected Items"
           >
               <Trash class="w-3.5 h-3.5" />
               <span class="text-[10px] font-bold">{{ selectedItems.length }}</span>
           </button>
-        </div>
       </div>
-    </header>
+    </div>
 
     <!-- Content Area -->
     <div class="flex-1 overflow-hidden relative flex flex-col">
@@ -663,6 +746,7 @@ const handleSelectSheet = (sheet: any) => {
               @delete-notes="handleBulkDelete"
               
               @select-chat="(id) => emit('select-chat', id)"
+              @preview-chat="(id: string) => emit('preview-chat', id)"
               @create-chat="emit('create-chat')"
               @delete-chat="startDeleteChat"
               
@@ -674,6 +758,12 @@ const handleSelectSheet = (sheet: any) => {
 
     <!-- Viewer & Dialogs -->
     <Teleport to="body">
+      <AddConnectionModal
+        :open="addConnectionModalOpen"
+        @update:open="(v) => addConnectionModalOpen = v"
+        @connection-added="refreshSchemas(true)"
+      />
+
       <DataViewerModal 
         :viewer="viewer"
         :zoom-level="zoomLevel"
@@ -722,265 +812,17 @@ const handleSelectSheet = (sheet: any) => {
         @generated="onTestDataGenerated"
       />
 
-      <!-- Delete Table Confirmation -->
-      <Dialog :open="deleteDialogOpen" @update:open="(v) => !v && (deleteDialogOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-md rounded-xl p-0 overflow-hidden shadow-2xl">
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                <Trash class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Delete Table</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  This action is permanent and cannot be undone.
-                </DialogDescription>
-              </div>
-            </div>
-            
-            <p class="text-sm text-muted-foreground leading-relaxed pt-2">
-              Are you sure you want to delete <span class="text-foreground font-code font-bold underline decoration-rose-500/30 underline-offset-4">{{ tableToDelete?.table }}</span>? All data associated with this table will be purged.
-            </p>
-          </div>
-
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button 
-              @click="deleteDialogOpen = false" 
-              class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors"
-            >
-              Cancel
-            </button>
-            <button 
-              @click="confirmDeleteTable" 
-              class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-lg shadow-rose-950/20 transition-all active:scale-95"
-            >
-              Delete Table
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Delete Connection Confirmation -->
-      <Dialog :open="deleteConnectionDialogOpen" @update:open="(v) => !v && (deleteConnectionDialogOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-md rounded-xl p-0 overflow-hidden shadow-2xl">
-          <div class="p-6 space-y-5">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
-                <Database class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Remove Connection</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  Disconnecting from the database.
-                </DialogDescription>
-              </div>
-            </div>
-            
-            <div class="space-y-4">
-              <p class="text-sm text-muted-foreground leading-relaxed">
-                You are about to remove <span class="text-foreground font-bold underline underline-offset-4 decoration-amber-500/30">{{ connectionToDelete?.nickname }}</span>. This will remove access in Pegasus but won't delete actual data.
-              </p>
-              
-              <div v-if="connectionToDelete?.isLocked" class="space-y-2">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-muted-foreground px-1">Type nickname to confirm</label>
-                <input 
-                  v-model="deleteConfirmationText"
-                  type="text"
-                  :placeholder="connectionToDelete?.nickname"
-                  class="w-full bg-muted/50 border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all font-medium"
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button 
-              @click="deleteConnectionDialogOpen = false" 
-              class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors"
-            >
-              Cancel
-            </button>
-            <button 
-              @click="confirmDeleteConnection" 
-              :disabled="connectionToDelete?.isLocked && deleteConfirmationText !== connectionToDelete?.nickname"
-              class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-rose-950/20 transition-all active:scale-95"
-            >
-              Remove Connection
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Deleting Session Confirmation -->
-      <Dialog :open="deleteChatDialogOpen" @update:open="(v) => !v && (deleteChatDialogOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                <Trash class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Delete Session</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  This cannot be undone.
-                </DialogDescription>
-              </div>
-            </div>
-            <p class="text-sm text-muted-foreground leading-relaxed">
-              Are you sure you want to delete this chat session?
-            </p>
-          </div>
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button @click="deleteChatDialogOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
-            <button @click="confirmDeleteChat" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Delete</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Clear All History Confirmation -->
-      <Dialog :open="clearAllChatsDialogOpen" @update:open="(v) => !v && (clearAllChatsDialogOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
-          <div class="p-6 space-y-4">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                <Trash class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Clear History</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  All sessions will be lost.
-                </DialogDescription>
-              </div>
-            </div>
-            <p class="text-sm text-muted-foreground leading-relaxed">
-              Are you sure you want to clear your entire chat history?
-            </p>
-          </div>
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button @click="clearAllChatsDialogOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
-            <button @click="confirmClearAllChats" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Clear All</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Delete Query Confirmation -->
-      <Dialog :open="deleteQueryDialogOpen" @update:open="(v) => !v && (deleteQueryDialogOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
-          <div class="p-6 space-y-4">
-             <div class="flex items-center gap-4">
-                <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                  <Trash class="w-5 h-5" />
-                </div>
-                <div>
-                  <DialogTitle class="text-lg font-semibold leading-none">Delete Query</DialogTitle>
-                  <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                     Remove this query from your history.
-                  </DialogDescription>
-                </div>
-              </div>
-              <p class="text-sm text-muted-foreground leading-relaxed">
-                This action cannot be undone.
-              </p>
-          </div>
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button @click="deleteQueryDialogOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
-            <button @click="confirmDeleteQuery" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Delete</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Clear Queries Confirmation -->
-      <Dialog :open="clearQueriesDialogOpen" @update:open="(v) => !v && (clearQueriesDialogOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
-           <div class="p-6 space-y-4">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                <Trash class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Clear Query Log</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  All saved queries will be deleted.
-                </DialogDescription>
-              </div>
-            </div>
-            <p class="text-sm text-muted-foreground leading-relaxed">
-              Are you sure you want to delete your entire query history?
-            </p>
-          </div>
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button @click="clearQueriesDialogOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
-            <button @click="confirmClearQueries" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Clear All</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-
-        <AddConnectionModal 
-        :open="addConnectionModalOpen"
-        @update:open="(v) => addConnectionModalOpen = v"
-        @connection-added="refreshSchemas"
+      <!-- Unified Confirmation Dialog -->
+      <ConfirmDialog
+        v-model:open="confirmDialogState.open"
+        :title="confirmDialogState.title"
+        :description="confirmDialogState.description"
+        :confirm-text="confirmDialogState.confirmText"
+        :variant="confirmDialogState.variant"
+        :validation-text="confirmDialogState.validationText"
+        :loading="confirmDialogState.loading"
+        @confirm="handleConfirmDialogConfirm"
       />
-
-      <!-- Hidden File Input -->
-      <input 
-        type="file" 
-        ref="fileInput" 
-        class="hidden" 
-        @change="onFileSelected"
-      />
-
-       <!-- Delete File Confirmation -->
-       <Dialog :open="deleteFileConfirmationOpen" @update:open="(v) => !v && (deleteFileConfirmationOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
-           <div class="p-6 space-y-4">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                <Trash class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Delete File</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  This file will be permanently deleted.
-                </DialogDescription>
-              </div>
-            </div>
-            <p class="text-sm text-muted-foreground leading-relaxed">
-              Are you sure you want to delete <span class="font-bold text-foreground">{{ fileToDelete?.filename }}</span>?
-            </p>
-          </div>
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button @click="deleteFileConfirmationOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
-            <button @click="confirmDeleteFile" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Delete File</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <!-- Delete Note Confirmation -->
-      <Dialog :open="deleteNoteConfirmationOpen" @update:open="(v) => !v && (deleteNoteConfirmationOpen = false)">
-        <DialogContent class="bg-card border-border text-foreground max-w-sm rounded-xl p-0 overflow-hidden shadow-2xl">
-           <div class="p-6 space-y-4">
-            <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
-                <Trash class="w-5 h-5" />
-              </div>
-              <div>
-                <DialogTitle class="text-lg font-semibold leading-none">Delete Note</DialogTitle>
-                <DialogDescription class="text-muted-foreground text-sm mt-1.5 font-medium">
-                  This note will be permanently deleted.
-                </DialogDescription>
-              </div>
-            </div>
-            <p class="text-sm text-muted-foreground leading-relaxed">
-              Are you sure you want to delete <span class="font-bold text-foreground">{{ noteToDelete?.title }}</span>?
-            </p>
-          </div>
-          <DialogFooter class="bg-muted/40 p-4 border-t border-border flex items-center justify-end gap-3 px-6">
-            <button @click="deleteNoteConfirmationOpen = false" class="px-4 py-2 rounded-lg text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors">Cancel</button>
-            <button @click="confirmDeleteNote" class="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition-all active:scale-95">Delete Note</button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Teleport>
   </aside>
 </template>
