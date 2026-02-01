@@ -119,20 +119,33 @@ export class IntentCompiler {
             return id;
         }
 
-        // Try exact/lowercase match first
+        // 1. Precise Match
         if (mappings[id]) return mappings[id];
-        if (typeof id === 'string' && mappings[id.toLowerCase()]) return mappings[id.toLowerCase()];
 
-        // Fallback: Slug-based fuzzy match (ignore underscores/spaces)
+        // 2. Case-Insensitive Match
+        const lowId = typeof id === 'string' ? id.toLowerCase() : id;
+        if (mappings[lowId]) return mappings[lowId];
+
+        // 3. Reverse mapping check if keys are normalized but AI provides raw
+        // (Rare but handles cases where AI might "guess" the real table name)
+        const entries = Object.entries(mappings);
+        const matchByValue = entries.find(([k, v]) => v.toLowerCase() === lowId);
+        if (matchByValue) return matchByValue[1];
+
+        // 4. Slug-based fuzzy match (ignore underscores/special chars)
         if (typeof id === 'string') {
             const clean = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/pct$|usd$|eur$|gbp$/g, '');
             const targetSlug = clean(id);
 
-            for (const [key, value] of Object.entries(mappings)) {
+            for (const [key, value] of entries) {
                 const keySlug = clean(key);
-                if (keySlug === targetSlug || keySlug.includes(targetSlug) || targetSlug.includes(keySlug)) {
-                    return value;
-                }
+                const valueSlug = clean(value);
+
+                if (keySlug === targetSlug || valueSlug === targetSlug) return value;
+
+                // Partial matches (e.g. AI uses name with UUID, registry has cleaned name)
+                if (targetSlug.includes(keySlug) && keySlug.length > 5) return value;
+                if (keySlug.includes(targetSlug) && targetSlug.length > 5) return value;
             }
         }
 

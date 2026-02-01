@@ -237,7 +237,10 @@ function statusLabel(state?: ConnectionSchemaState) {
           class="flex-1 text-[10px] font-bold uppercase tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
           :class="viewMode === 'tables' ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
         >
-          <Table2 class="w-3 h-3" />
+          <div class="relative w-3 h-3 shrink-0">
+            <img src="/icons/table/table-rows-svgrepo-com.svg" class="w-full h-full block dark:hidden" alt="Tables" />
+            <img src="/icons/table/table-rows-svgrepo-com-white.svg" class="w-full h-full hidden dark:block" alt="Tables" />
+          </div>
           Tables
         </button>
         <button 

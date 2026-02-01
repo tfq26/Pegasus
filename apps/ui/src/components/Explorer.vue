@@ -17,9 +17,11 @@ import ConfirmDialog from '@/components/Common/ConfirmDialog.vue'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
 import { useSheetStore } from '@/stores/sheet'
+import { useDashboardStore } from '@/stores/dashboard'
 
 const connectionStore = useConnectionStore()
 const sheetStore = useSheetStore()
+const dashboardStore = useDashboardStore()
 
 // Add state for selected table
 const selectedTable = ref<{ connectionId: string; tableName: string } | null>(null)
@@ -204,6 +206,33 @@ const handleMoveConnection = async (conn: any, spaceId: string) => {
     toast.success(`Connection moved to ${spaceName || 'Space'}`)
   } catch (err: any) {
     toast.error('Failed to move connection', { description: err.message })
+  }
+}
+
+const handleAddNoteToDashboard = async (note: any) => {
+  if (!dashboardStore.currentDashboard) {
+    toast.error('No dashboard open', { description: 'Please open a dashboard to add this note to it.' })
+    return
+  }
+
+  try {
+    const element = {
+      type: 'text',
+      title: note.title,
+      config: {
+        content: note.content || ''
+      },
+      w: 6,
+      h: 4
+    }
+    
+    const dashboardId = (unref(dashboardStore.currentDashboard) as any)?.id
+    if (!dashboardId) throw new Error('Dashboard ID not found')
+    
+    await dashboardStore.addElementToDashboard(dashboardId, element)
+    toast.success('Note added to dashboard', { description: note.title })
+  } catch (err: any) {
+    toast.error('Failed to add note', { description: err.message })
   }
 }
 
@@ -723,6 +752,7 @@ const handleSelectSheet = (sheet: any) => {
               @delete-connection="handleDeleteConnection"
               @add-table="handleAddTable"
               @health-check="handleHealthCheck"
+              @add-note-to-dashboard="handleAddNoteToDashboard"
               
               @select-file="handleSelectFile"
               @select-note="handleSelectNote"
@@ -744,6 +774,8 @@ const handleSelectSheet = (sheet: any) => {
               @selection-change="(items) => selectedItems = items"
               @delete-files="handleBulkDelete"
               @delete-notes="handleBulkDelete"
+              @delete-chats="handleBulkDelete"
+              @delete-queries="handleBulkDelete"
               
               @select-chat="(id) => emit('select-chat', id)"
               @preview-chat="(id: string) => emit('preview-chat', id)"

@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../db/index.js"
-import { dataSpaces, spacePermissions, users, connections, spaceSources, spaceFiles, spaceNotes } from "../db/schema.js"
+import { dataSpaces, spacePermissions, users, connections, spaceSources, spaceFiles, spaceNotes, chats, queryHistory } from "../db/schema.js"
 import { eq, and, or, sql } from "drizzle-orm"
 import { ConfigService } from "../services/ConfigService.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
@@ -845,6 +845,14 @@ spaces.post("/bulk-delete", async (c) => {
                     }
                 } else if (type === 'connection') {
                     await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, userId)));
+                } else if (type === 'chat') {
+                    // Chat Deletion (handles storage cleanup if needed?)
+                    // For now basic DB delete, logic mirror chat.delete endpoint
+                    // Ideally we should reuse chat deletion service logic but for now raw delete + userId check is safe
+                    await db.delete(chats).where(and(eq(chats.id, rawId), eq(chats.userId, userId)));
+                } else if (type === 'query') {
+                    // Query History Deletion
+                    await db.delete(queryHistory).where(and(eq(queryHistory.id, rawId), eq(queryHistory.userId, userId)));
                 }
 
                 results.success.push(id);

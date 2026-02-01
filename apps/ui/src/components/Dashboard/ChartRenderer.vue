@@ -198,6 +198,55 @@ const computedOptions = computed(() => {
       return notes.join('\n')
     }
   }
+
+  // Add full label display in tooltip title (for truncated X-axis labels)
+  const fullLabels = options.plugins?.fullLabels
+  if (fullLabels && Array.isArray(fullLabels)) {
+    if (!options.plugins) options.plugins = {}
+    if (!options.plugins.tooltip) options.plugins.tooltip = {}
+    if (!options.plugins.tooltip.callbacks) options.plugins.tooltip.callbacks = {}
+    
+    options.plugins.tooltip.callbacks.title = (tooltipItems: any[]) => {
+      if (tooltipItems.length === 0) return ''
+      const index = tooltipItems[0].dataIndex
+      return fullLabels[index] || tooltipItems[0].label
+    }
+    
+    // Remove fullLabels from plugins to avoid Chart.js warnings
+    delete options.plugins.fullLabels
+  }
+
+  // Axis Visibility & Titles
+  const hideAxes = !!props.customization?.hideAxes
+  
+  if (!options.scales) {
+    // Only create scales if we are NOT a pie/doughnut chart (which don't use X/Y scales)
+    if (props.type !== 'pie' && props.type !== 'doughnut') {
+      options.scales = {
+        x: { display: !hideAxes },
+        y: { display: !hideAxes }
+      }
+    }
+  } else {
+    // Standard X/Y axes
+    if (options.scales.x) {
+      options.scales.x.display = !hideAxes
+      // Fallback title for X axis if missing
+      if (!hideAxes && !options.scales.x.title?.text && props.data?.labels?.length > 0) {
+        if (!options.scales.x.title) options.scales.x.title = { display: true }
+      }
+    }
+    if (options.scales.y) {
+      options.scales.y.display = !hideAxes
+      // Fallback title for Y axis if missing
+      if (!hideAxes && !options.scales.y.title?.text && props.data?.datasets?.[0]?.label) {
+        if (!options.scales.y.title) options.scales.y.title = { display: true, text: props.data.datasets[0].label }
+      }
+    }
+    
+    // Radial axis (Radar/PolarArea)
+    if (options.scales.r) options.scales.r.display = !hideAxes
+  }
   
   return options
 })

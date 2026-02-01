@@ -13,12 +13,12 @@ const { activeOperations, finishOperation, cancelOperation } = useProgress();
 // We track the *primary* active operation to display
 // If multiple generic operations are running, we just pick the first one or the most "important"
 const currentOp = computed(() => {
-    // Prioritize 'ai' category or 'query'
-    const aiOp = activeOperations.value.find(op => op.category === 'ai');
-    if (aiOp) return aiOp;
+    // Prioritize 'query' (AI is now handled by HaloSearch)
     const queryOp = activeOperations.value.find(op => op.category === 'query');
     if (queryOp) return queryOp;
-    return activeOperations.value[0] || null;
+    
+    // Fallback for other types, explicitly excluding 'ai'
+    return activeOperations.value.find(op => op.category !== 'ai') || null;
 });
 
 const isVisible = computed(() => !!currentOp.value);

@@ -2,8 +2,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import mammoth from 'mammoth'
 import { toast } from '@/composables/useNotifications'
-import { FileText, FileType, Image as ImageIcon, File } from 'lucide-vue-next'
+import { FileText, FileType, Image as ImageIcon, File, ScrollText } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 
 const props = defineProps<{
   file: {
@@ -22,7 +23,7 @@ const emit = defineEmits<{
 const viewerContent = ref<string>('')
 const isLoading = ref(true)
 const error = ref<string | null>(null)
-const viewMode = ref<'pdf' | 'docx' | 'image' | 'unsupported'>('unsupported')
+const viewMode = ref<'pdf' | 'docx' | 'image' | 'markdown' | 'unsupported'>('unsupported')
 
 // Determine file type
 const fileExtension = computed(() => {
@@ -35,6 +36,7 @@ const fileIcon = computed(() => {
   if (ext === 'pdf') return FileText
   if (['doc', 'docx'].includes(ext)) return FileType
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return ImageIcon
+  if (ext === 'md') return ScrollText
   return File
 })
 
@@ -59,6 +61,11 @@ const initializeViewer = async () => {
     // Images
     else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) {
       viewMode.value = 'image'
+    }
+    // Markdown
+    else if (ext === 'md') {
+      viewMode.value = 'markdown'
+      await loadMarkdown()
     }
     // Unsupported
     else {
@@ -94,6 +101,27 @@ const loadDocx = async () => {
   } catch (e: any) {
     console.error('[FileViewer] DOCX conversion failed:', e)
     throw new Error('Failed to convert DOCX file')
+  }
+}
+
+// Load Markdown
+const loadMarkdown = async () => {
+  if (!props.file.content) {
+    throw new Error('No file content provided')
+  }
+
+  try {
+    if (props.file.content instanceof Blob) {
+      viewerContent.value = await props.file.content.text()
+    } else if (props.file.content instanceof ArrayBuffer) {
+      const decoder = new TextDecoder()
+      viewerContent.value = decoder.decode(props.file.content)
+    } else {
+        viewerContent.value = String(props.file.content)
+    }
+  } catch (e: any) {
+    console.error('[FileViewer] Markdown loading failed:', e)
+    throw new Error('Failed to load Markdown file')
   }
 }
 
@@ -195,6 +223,13 @@ watch(() => props.file, () => {
         :alt="file.filename"
         class="max-w-full max-h-full object-contain rounded-lg shadow-lg"
       />
+    </div>
+
+    <!-- Markdown Viewer -->
+    <div v-else-if="viewMode === 'markdown'" class="flex-1 overflow-auto p-8">
+      <div class="max-w-4xl mx-auto bg-card p-12 shadow-sm border border-border rounded-lg">
+        <MarkdownRenderer :content="viewerContent" />
+      </div>
     </div>
 
     <!-- Unsupported -->

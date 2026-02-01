@@ -219,6 +219,11 @@
               <span v-if="isLocked" class="ml-auto text-amber-500">🔒</span>
             </DropdownMenuItem>
             
+            <DropdownMenuItem @click="openFullscreen" class="cursor-pointer">
+              <Maximize class="w-4 h-4 mr-2" />
+              <span>Open in New Window</span>
+            </DropdownMenuItem>
+            
             <!-- Dashboard Actions -->
             <DropdownMenuSeparator />
             <div class="px-2 py-1.5 text-sm font-semibold">Dashboard Actions</div>
@@ -739,7 +744,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard, BrainCircuit } from 'lucide-vue-next'
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard, BrainCircuit, Maximize } from 'lucide-vue-next'
 import DashboardElement from '@/components/Dashboard/DashboardElement.vue'
 
 defineOptions({ name: 'DashboardPage' })
@@ -1338,6 +1343,13 @@ const handleDrillDown = async (data: any) => {
       description: 'Add a parameter with a matching name to enable automatic filtering.'
     })
   }
+}
+
+// Open dashboard in fullscreen pop-out window
+const openFullscreen = () => {
+  if (!currentDashboard.value) return
+  const url = `/dashboard/${currentDashboard.value.id}/fullscreen`
+  window.open(url, `pegasus-dashboard-${currentDashboard.value.id}`, 'width=1400,height=900')
 }
 
 const handleShare = async () => {

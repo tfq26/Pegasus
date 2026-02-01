@@ -882,14 +882,7 @@ table.post("/table/:tableName/load", async (c) => {
                             if (e.message.includes('no such column: rowid')) {
                                 console.log(`[Table Load] Table ${actualTableName} has no rowid, falling back to simple SELECT`)
                                 sqlStr = `SELECT * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
-                                const rows = await adapter.query(sqlStr)
-                                if (Array.isArray(rows)) {
-                                    return rows.map((r, i) => ({
-                                        ...r,
-                                        __id: r.__id || r.id || r.ID || r.UUID || `v${Number(offset) + i}`
-                                    }))
-                                }
-                                return rows
+                                return await adapter.query(sqlStr)
                             }
                             throw e
                         }

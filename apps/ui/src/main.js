@@ -9,4 +9,8 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 
+// Initialize BugSage global log collection
+import { useBugSage } from './composables/useBugSage'
+useBugSage()
+
 app.mount('#app')

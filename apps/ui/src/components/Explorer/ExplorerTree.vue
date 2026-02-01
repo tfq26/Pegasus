@@ -25,7 +25,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Loader2
+  Loader2,
+  FolderPlus,
+  MessageSquarePlus,
+  FilePlus,
+  NotebookPen,
+  LayoutDashboard
 } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { useExplorerSchema } from '@/composables/useExplorerSchema'
@@ -74,10 +79,13 @@ const emit = defineEmits<{
   'select-chat': [id: string]
   'delete-chat': [chat: any]
   'create-chat': []
+  'delete-chats': [chats: any[]]
 
   // Queries
   'load-query': [query: string]
   'delete-query': [id: string]
+  'delete-queries': [queries: any[]]
+  'add-note-to-dashboard': [note: any]
 }>()
 
 const { schemaFor } = useExplorerSchema(computed(() => props.connections))
@@ -102,26 +110,65 @@ function getTableId(connId: string, table: string) {
   return `${connId}::${table}`
 }
 
+function isExcelOrCsv(conn: ConnectionEntry): boolean {
+  const p = conn.provider || (conn as any).type
+  if (p !== 'duckdb' && p !== 'file' && p !== 'sqlite') return false
+  
+  const c = conn as any
+  // Check ALL potential text fields for extension hints
+  const searchStr = [
+    c.nickname, 
+    c.alias, 
+    c.name, 
+    c.path, 
+    c.config?.path,
+    c.config?.filename,
+    c.duckdb?.path,
+    c.sqlite?.path,
+    c.file?.path
+  ].filter(Boolean).join(' ').toLowerCase()
+  
+  if (searchStr.includes('.xlsx') || searchStr.includes('.xls') || searchStr.includes('.csv')) {
+    return true
+  }
+
+  // If it's a DuckDB connection without an obvious extension, it's almost 
+  // certainly a file-based connection in this app's context (e.g. from an upload)
+  if (p === 'duckdb' && (c.isLocked || c.isVirtual)) {
+    return true
+  }
+  
+  return false
+}
+
 function getProviderIcon(conn: ConnectionEntry): string {
+  if (isExcelOrCsv(conn)) return 'excel'
+  
   const p = conn.provider
   if (p === 'mysql') return '/icons/mysql/mysql.svg'
   if (p === 'postgres' || p === 'surrealdb') return '/icons/postgres/postgres.svg'
   if (p === 'sqlite') return '/icons/sqlite/sqlite.svg'
   if (p === 'mongodb') return '/icons/mongo/mongo-svgrepo-com.svg'
   
-  if (p === 'duckdb' || p === 'file') {
-    // Check nickname or alias for file extension
-    const name = (conn.nickname || '').toLowerCase()
-    if (name.includes('.xlsx') || name.includes('.xls')) {
-        return '/icons/microsoft/Excel/excel-file-svgrepo-com.svg'
-    }
-    if (name.includes('.csv')) {
-        // Use Excel icon for CSVs as requested
-        return '/icons/microsoft/Excel/excel-file-svgrepo-com.svg'
-    }
-  }
-
   return 'lucide:database'
+}
+
+function getTableIcon(conn: ConnectionEntry): string {
+  return 'lucide:table'
+}
+
+function getFileIcon(filename: string): string {
+  const name = filename.toLowerCase()
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv')) {
+    return '/icons/microsoft/Excel/excel-file-svgrepo-com.svg'
+  }
+  if (name.endsWith('.json')) {
+    return '/icons/json/json-file-svgrepo-com.svg'
+  }
+  if (name.endsWith('.xml')) {
+    return '/icons/xml/xml-svgrepo-com.svg'
+  }
+  return 'lucide:file-text'
 }
 
 // Flatten all IDs for range selection
@@ -133,7 +180,6 @@ const allSelectableIds = computed(() => {
     getTables(conn.id).forEach(table => ids.push(getTableId(conn.id, table)))
   })
   ids.push('root:files')
-  props.files?.forEach(f => ids.push(`file:${f.id}`))
   props.files?.forEach(f => ids.push(`file:${f.id}`))
   ids.push('root:notes')
   props.notes?.forEach(n => ids.push(`note:${n.id}`))
@@ -171,6 +217,9 @@ function handleSelect(id: string, event?: MouseEvent) {
   const selectedItems = selectedIds.value.map(sid => {
     if (sid.startsWith('file:')) return { type: 'file', id: sid.replace('file:', '') }
     if (sid.startsWith('note:')) return { type: 'note', id: sid.replace('note:', '') }
+    if (sid.startsWith('chat:')) return { type: 'chat', id: sid.replace('chat:', '') }
+    if (sid.startsWith('query:')) return { type: 'query', id: sid.replace('query:', '') }
+
     if (sid.includes('::')) {
        const [connId, ...tableParts] = sid.split('::')
        return { type: 'table', id: sid, connectionId: connId, tableName: tableParts.join('::') }
@@ -241,15 +290,7 @@ function handleSelect(id: string, event?: MouseEvent) {
   }
 }
 
-const initialExpanded = computed(() => [
-  'root:db', 
-  'root:files', 
-  'root:notes',
-  'root:sheets',
-  'root:chats',
-  'root:queries',
-  ...props.connections.map(c => c.id)
-])
+const initialExpanded = computed(() => [])
 const handleDeleteFile = (file: any) => {
   const isSelected = selectedIds.value.includes(`file:${file.id}`)
   const fileItems = selectedIds.value
@@ -283,6 +324,40 @@ const handleDeleteNote = (note: any) => {
     emit('delete-note', note)
   }
 }
+
+const handleDeleteChat = (chat: any) => {
+  const isSelected = selectedIds.value.includes(`chat:${chat.id}`)
+  const chatItems = selectedIds.value
+    .filter(id => id.startsWith('chat:'))
+    .map(id => {
+       const cid = id.replace('chat:', '')
+       return props.chats?.find(c => c.id === cid)
+    })
+    .filter(Boolean)
+
+  if (isSelected && chatItems.length > 1) {
+    emit('delete-chats', chatItems)
+  } else {
+    emit('delete-chat', chat)
+  }
+}
+
+const handleDeleteQuery = (id: string) => {
+  const isSelected = selectedIds.value.includes(`query:${id}`)
+  const queryItems = selectedIds.value
+    .filter(sid => sid.startsWith('query:'))
+    .map(sid => {
+       const qid = sid.replace('query:', '')
+       return props.queryHistory?.find(q => q.id === qid)
+    })
+    .filter(Boolean)
+
+  if (isSelected && queryItems.length > 1) {
+    emit('delete-queries', queryItems)
+  } else {
+    emit('delete-query', id)
+  }
+}
 </script>
 
 <template>
@@ -306,18 +381,28 @@ const handleDeleteNote = (note: any) => {
            >
                <template #label>
                   <div class="flex items-center justify-between w-full">
-                     <span>Databases</span>
+                     <div class="flex items-center gap-2">
+                        <span class="text-foreground">Databases</span>
+                        <span v-if="connections.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{{ connections.length }}</span>
+                     </div>
                      <button 
                         @click.stop.prevent="emit('add-connection')" 
-                        class="mr-2 p-0.5 rounded-sm hover:bg-muted-foreground/20 text-muted-foreground transition-colors"
+                        class="mr-1 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
                         title="Add Connection"
                      >
-                        <Plus class="w-3.5 h-3.5" />
+                        <Plus class="w-4 h-4" />
                      </button>
                   </div>
                </template>
-              <div v-if="connections.length === 0" class="pl-6 py-1 text-xs text-muted-foreground italic">
-                 No connections
+              <div v-if="connections.length === 0" class="flex flex-col items-center justify-center py-6 px-4 text-center">
+                 <Database class="w-10 h-10 text-muted-foreground/30 mb-2" />
+                 <p class="text-xs text-muted-foreground mb-2">No database connections yet</p>
+                 <button 
+                    @click="emit('add-connection')" 
+                    class="text-xs text-primary hover:underline flex items-center gap-1"
+                 >
+                    <FolderPlus class="w-3.5 h-3.5" /> Add your first connection
+                 </button>
               </div>
               
               <!-- Connection Loop -->
@@ -349,7 +434,7 @@ const handleDeleteNote = (note: any) => {
                         <File
                           :id="getTableId(conn.id, table)"
                           :name="table"
-                          file-icon="lucide:table"
+                          :file-icon="getTableIcon(conn)"
                           :is-select="selectedIds.includes(getTableId(conn.id, table))"
                           class="group"
                         >
@@ -454,11 +539,14 @@ const handleDeleteNote = (note: any) => {
             >
                 <template #label>
                   <div class="flex items-center justify-between w-full">
-                     <span>Sheets</span>
+                     <div class="flex items-center gap-2">
+                        <span class="text-foreground">Sheets</span>
+                        <span v-if="sheets?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">{{ sheets.length }}</span>
+                     </div>
                   </div>
                </template>
-                <div v-if="!sheets?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
-                    No sheets
+                <div v-if="!sheets?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                    <p class="text-xs text-muted-foreground">No spreadsheets</p>
                 </div>
                 <!-- Sheets Loop -->
                 <ContextMenu v-for="sheet in sheets" :key="sheet.id">
@@ -504,18 +592,22 @@ const handleDeleteNote = (note: any) => {
             >
                 <template #label>
                   <div class="flex items-center justify-between w-full">
-                     <span>Chats</span>
+                     <div class="flex items-center gap-2">
+                        <span class="text-foreground">Chats</span>
+                        <span v-if="chats?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">{{ chats.length }}</span>
+                     </div>
                      <button 
                         @click.stop.prevent="emit('create-chat')" 
-                        class="mr-2 p-0.5 rounded-sm hover:bg-muted-foreground/20 text-muted-foreground transition-colors"
+                        class="mr-1 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
                         title="New Chat"
                      >
-                        <Plus class="w-3.5 h-3.5" />
+                        <Plus class="w-4 h-4" />
                      </button>
                   </div>
                </template>
-                <div v-if="!chats?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
-                    No chats
+                <div v-if="!chats?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                    <MessageSquarePlus class="w-8 h-8 text-muted-foreground/30 mb-2" />
+                    <p class="text-xs text-muted-foreground">Start a conversation</p>
                 </div>
                 <ContextMenu v-for="chat in chats" :key="chat.id">
                     <ContextMenuTrigger as-child>
@@ -531,7 +623,7 @@ const handleDeleteNote = (note: any) => {
                         </File>
                     </ContextMenuTrigger>
                     <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-                        <ContextMenuItem @select="emit('delete-chat', chat)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                        <ContextMenuItem @select="handleDeleteChat(chat)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
                             <Trash class="w-3.5 h-3.5 mr-2" />
                             Delete Chat
                         </ContextMenuItem>
@@ -560,11 +652,14 @@ const handleDeleteNote = (note: any) => {
             >
                 <template #label>
                   <div class="flex items-center justify-between w-full">
-                     <span>Queries</span>
+                     <div class="flex items-center gap-2">
+                        <span class="text-foreground">Queries</span>
+                        <span v-if="queryHistory?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">{{ queryHistory.length }}</span>
+                     </div>
                   </div>
                </template>
-                <div v-if="!queryHistory?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
-                    No queries
+                <div v-if="!queryHistory?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                    <p class="text-xs text-muted-foreground">No query history</p>
                 </div>
                 <ContextMenu v-for="q in queryHistory" :key="q.id">
                     <ContextMenuTrigger as-child>
@@ -581,7 +676,7 @@ const handleDeleteNote = (note: any) => {
                         </File>
                     </ContextMenuTrigger>
                     <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-                        <ContextMenuItem @select="emit('delete-query', q.id)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                        <ContextMenuItem @select="handleDeleteQuery(q.id)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
                             <Trash class="w-3.5 h-3.5 mr-2" />
                             Delete Query
                         </ContextMenuItem>
@@ -604,25 +699,29 @@ const handleDeleteNote = (note: any) => {
             >
                 <template #label>
                   <div class="flex items-center justify-between w-full">
-                     <span>Files</span>
+                     <div class="flex items-center gap-2">
+                        <span class="text-foreground">Files</span>
+                        <span v-if="files?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">{{ files.length }}</span>
+                     </div>
                      <button 
                         @click.stop.prevent="emit('upload-file')" 
-                        class="mr-2 p-0.5 rounded-sm hover:bg-muted-foreground/20 text-muted-foreground transition-colors"
+                        class="mr-1 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
                         title="Upload File"
                      >
-                        <Plus class="w-3.5 h-3.5" />
+                        <Upload class="w-4 h-4" />
                      </button>
                   </div>
                </template>
-                <div v-if="!files?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
-                    No files
+                <div v-if="!files?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                    <FilePlus class="w-8 h-8 text-muted-foreground/30 mb-2" />
+                    <p class="text-xs text-muted-foreground">Drop files here or click to upload</p>
                 </div>
                 <ContextMenu v-for="file in files" :key="file.id">
                     <ContextMenuTrigger as-child>
                         <File 
                             :id="`file:${file.id}`" 
                             :name="file.filename"
-                            file-icon="lucide:file-text"
+                            :file-icon="getFileIcon(file.filename)"
                             :is-select="selectedIds.includes(`file:${file.id}`)"
                         >
                             <div class="flex items-center justify-between w-full pr-2 overflow-hidden">
@@ -666,19 +765,23 @@ const handleDeleteNote = (note: any) => {
             >
                 <template #label>
                   <div class="flex items-center justify-between w-full">
-                     <span>Notes</span>
+                     <div class="flex items-center gap-2">
+                        <span class="text-foreground">Notes</span>
+                        <span v-if="notes?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">{{ notes.length }}</span>
+                     </div>
                      <button 
                         @click.stop.prevent="emit('add-note')" 
-                        class="mr-2 p-0.5 rounded-sm hover:bg-muted-foreground/20 text-muted-foreground transition-colors"
+                        class="mr-1 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
                         title="New Note"
                      >
-                        <Plus class="w-3.5 h-3.5" />
+                        <Plus class="w-4 h-4" />
                      </button>
                   </div>
                </template>
-                <div v-if="!notes?.length" class="pl-6 py-1 text-xs text-muted-foreground italic">
-                    No notes
-                 </div>
+                <div v-if="!notes?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                    <NotebookPen class="w-8 h-8 text-muted-foreground/30 mb-2" />
+                    <p class="text-xs text-muted-foreground">Create your first note</p>
+                </div>
                  <ContextMenu v-for="note in notes" :key="note.id">
                     <ContextMenuTrigger as-child>
                         <File 
@@ -694,6 +797,11 @@ const handleDeleteNote = (note: any) => {
                         </File>
                     </ContextMenuTrigger>
                     <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+                        <ContextMenuItem @select="emit('add-note-to-dashboard', note)">
+                            <LayoutDashboard class="w-3.5 h-3.5 mr-2" />
+                            Add to Dashboard
+                        </ContextMenuItem>
+                        <ContextMenuSeparator class="bg-border my-1" />
                         <ContextMenuItem @select="emit('delete-note', note)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
                             <Trash class="w-3.5 h-3.5 mr-2" />
                             Delete Note

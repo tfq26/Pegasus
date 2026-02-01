@@ -10,14 +10,16 @@ const props = withDefaults(defineProps<FileProps>(), {
   isSelectable: true,
 });
 
-const { id, name, isSelectable, isSelect } = toRefs(props);
+const { id, name, isSelectable, isSelect, fileIcon: propFileIcon } = toRefs(props);
 
 const treeContext = inject<TreeContextProps>(TREE_CONTEXT_SYMBOL);
 if (!treeContext) {
   throw new Error("[File] must be used inside <Tree>");
 }
 
-const { selectedId, selectItem, direction, fileIcon } = treeContext;
+const { selectedId, selectItem, direction, fileIcon: ctxFileIcon } = treeContext;
+
+const currentFileIcon = computed(() => propFileIcon?.value || ctxFileIcon);
 
 const isSelected = computed<boolean>(() => {
   return isSelect?.value || selectedId.value === id.value;
@@ -33,10 +35,10 @@ function onClickHandler(event: MouseEvent) {
   <button
     type="button"
     :disabled="!isSelectable"
-    class="flex w-fit items-center gap-1 rounded-sm pr-1 text-sm duration-200 ease-in-out rtl:pr-0 rtl:pl-1"
+    class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm duration-200 ease-out hover:bg-accent/40 group transition-all"
     :class="[
       [
-        isSelected && isSelectable ? 'bg-muted' : '',
+        isSelected && isSelectable ? 'bg-accent/60 text-accent-foreground font-medium' : 'text-foreground/80',
         isSelectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
         $props.class,
       ],
@@ -45,12 +47,12 @@ function onClickHandler(event: MouseEvent) {
     @click="onClickHandler"
   >
     <Icon
-      :name="fileIcon"
-      :size="16"
+      :name="currentFileIcon"
+      :size="18"
+      class="shrink-0"
     />
     <slot>
-      <span class="select-none">{{ name }}</span>
+      <span class="select-none truncate">{{ name }}</span>
     </slot>
   </button>
 </template>
-

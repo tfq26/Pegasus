@@ -170,10 +170,22 @@ const formatValue = (val: any) => {
     <!-- Context Chips -->
     <div v-if="meta?.contextUsed?.length" class="flex flex-wrap gap-2 mt-2 pt-2 border-t border-border/50">
       <span class="text-[10px] text-muted-foreground self-center mr-1">Sources:</span>
-      <Badge v-for="(ctx, i) in meta.contextUsed" :key="i" variant="outline" class="text-[10px] h-5 px-2 gap-1.5 font-normal bg-background/50 hover:bg-background">
-        <component :is="getIcon(ctx.type)" class="w-3 h-3 text-muted-foreground" />
-        {{ ctx.name || ctx.filename || ctx.title || 'Unknown Source' }}
-      </Badge>
+      
+      <!-- List all sources if 4 or fewer -->
+      <template v-if="meta.contextUsed.length <= 4">
+        <Badge v-for="(ctx, i) in meta.contextUsed" :key="i" variant="outline" class="text-[10px] h-5 px-2 gap-1.5 font-normal bg-background/50 hover:bg-background transition-colors cursor-default">
+          <component :is="getIcon(ctx.type)" class="w-3 h-3 text-muted-foreground" />
+          {{ ctx.name || ctx.filename || ctx.title || 'Unknown Source' }}
+        </Badge>
+      </template>
+
+      <!-- Show count summary if more than 4 -->
+      <template v-else>
+        <Badge variant="outline" class="text-[10px] h-5 px-2 gap-1.5 font-normal bg-background/50 hover:bg-background transition-colors cursor-default">
+          <Database class="w-3 h-3 text-muted-foreground" />
+          {{ meta.contextUsed.length }} Sources Used
+        </Badge>
+      </template>
     </div>
   </div>
 </template>

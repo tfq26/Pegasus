@@ -188,11 +188,11 @@ export class AIClient {
         return provider.generateQuery(prompt, context, settings)
     }
 
-    async analyzeResults(question, results, query, modelId) {
+    async analyzeResults(question, results, query, modelId, semanticContext = {}) {
         // Warning: This method signature doesn't support userId yet.
         // It should be refactored or rely on default provider.
         const provider = await this.getProviderForModel(modelId)
-        return provider.analyzeResults(question, results, query)
+        return provider.analyzeResults(question, results, query, semanticContext)
     }
 
     async disambiguate(term, candidates, modelId) {
@@ -257,14 +257,9 @@ export class AIClient {
     }
 
     async generateContent(messages, options = {}) {
-        const provider = await this.getProviderForModel(options.modelId || options.model, options.userId)
+        const provider = await this.getProviderForModel(options.model, options.userId)
         const result = await provider.generateContent(messages, options)
         return result
-    }
-
-    async *generateStream(messages, options = {}) {
-        const provider = await this.getProviderForModel(options.modelId || options.model, options.userId)
-        yield* provider.generateStream(messages, options)
     }
 
     async generateEmbedding(text, modelId, options = {}) {

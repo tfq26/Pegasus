@@ -45,6 +45,8 @@ export interface FolderProps extends BaseItemProps {
     closeIcon?: string;
 }
 
-export interface FileProps extends BaseItemProps { }
+export interface FileProps extends BaseItemProps {
+    fileIcon?: string;
+}
 
 export const TREE_CONTEXT_SYMBOL = Symbol("TREE_CONTEXT_SYMBOL");

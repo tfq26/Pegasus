@@ -150,7 +150,7 @@ const updateOption = (key: 'model' | 'temperature', value: any) => {
         :model-value="props.aiOptions.model"
         @update:model-value="updateOption('model', $event)"
       >
-        <SelectTrigger class="w-[140px] h-7 text-[11px] border-none bg-purple-500/5 hover:bg-purple-500/10 focus:ring-0 px-2 shadow-none text-purple-700 dark:text-purple-400 font-medium">
+        <SelectTrigger class="min-w-[140px] w-auto h-7 text-[11px] border-none bg-purple-500/5 hover:bg-purple-500/10 focus:ring-0 px-2 shadow-none text-purple-700 dark:text-purple-400 font-medium">
           <Sparkles class="w-3 h-3 mr-1.5 opacity-70" />
           <SelectValue placeholder="Select Model" />
         </SelectTrigger>

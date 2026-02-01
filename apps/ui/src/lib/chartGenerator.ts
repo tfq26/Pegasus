@@ -39,33 +39,59 @@ const CHART_COLORS = [
     'hsl(215, 15%, 50%)',  // Deep Slate
 ]
 
+// Label truncation settings
+const MAX_LABEL_LENGTH = 12
+
+/**
+ * Truncate a label to a maximum length with ellipsis
+ */
+function truncateLabel(label: string): string {
+    if (!label || label.length <= MAX_LABEL_LENGTH) return label
+    return label.substring(0, MAX_LABEL_LENGTH) + '...'
+}
+
 /**
  * Detect the type of a column based on sample values
  */
 function detectColumnType(values: any[]): 'numeric' | 'categorical' | 'date' | 'mixed' {
-    const sample = values.slice(0, 20).filter(v => v !== null && v !== undefined)
+    const sample = values.slice(0, 20).filter(v => v !== null && v !== undefined && v !== '')
     if (sample.length === 0) return 'mixed'
 
     let numericCount = 0
     let dateCount = 0
     let stringCount = 0
 
+    // Strict date patterns (YYYY-MM-DD, MM/DD/YYYY, DD-Mon-YYYY, etc.)
+    const datePatterns = [
+        /^\d{4}-\d{2}-\d{2}/, // ISO: 2024-01-15
+        /^\d{1,2}\/\d{1,2}\/\d{2,4}$/, // US: 1/15/2024 or 01/15/24
+        /^\d{1,2}-\d{1,2}-\d{2,4}$/, // EU: 15-01-2024
+        /^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i, // 15 Jan 2024
+    ]
+
     for (const val of sample) {
         if (typeof val === 'number') {
             numericCount++
         } else if (typeof val === 'string') {
-            const num = parseFloat(val)
-            if (!isNaN(num) && isFinite(num) && val.trim() !== '') {
-                // Check if it looks like a pure number string
-                if (/^-?\d+(\.\d+)?$/.test(val.trim())) {
-                    numericCount++
-                } else if (!isNaN(Date.parse(val)) && val.length > 6) {
-                    dateCount++
+            const trimmed = val.trim()
+
+            // Check if it looks like a pure number string
+            if (/^-?[\d,]+(\.\d+)?$/.test(trimmed.replace(/,/g, ''))) {
+                numericCount++
+            } else if (datePatterns.some(p => p.test(trimmed))) {
+                // Only count as date if it matches a strict date pattern
+                const parsed = Date.parse(trimmed)
+                if (!isNaN(parsed)) {
+                    const year = new Date(parsed).getFullYear()
+                    // Sanity check: year should be reasonable (1900-2100)
+                    if (year >= 1900 && year <= 2100) {
+                        dateCount++
+                    } else {
+                        stringCount++
+                    }
                 } else {
                     stringCount++
                 }
-            } else if (!isNaN(Date.parse(val)) && val.length > 6) {
-                dateCount++
             } else {
                 stringCount++
             }
@@ -76,7 +102,7 @@ function detectColumnType(values: any[]): 'numeric' | 'categorical' | 'date' | '
 
     const total = sample.length
     if (numericCount / total > 0.8) return 'numeric'
-    if (dateCount / total > 0.5) return 'date'
+    if (dateCount / total > 0.7) return 'date' // Raised threshold
     if (stringCount / total > 0.5) return 'categorical'
     return 'mixed'
 }
@@ -206,17 +232,21 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
     const dateColumn = dateColumns[0] || null
     const chartType = pickChartType(categoryColumn, numericColumns, dateColumn, data.length)
 
-    // Generate labels
+    // Generate labels (store both full and truncated)
     let labels: string[]
+    let fullLabels: string[]
     if (dateColumn) {
         labels = data.map(row => {
             const d = new Date(row[dateColumn])
             return isNaN(d.getTime()) ? String(row[dateColumn]) : d.toLocaleDateString()
         })
+        fullLabels = labels // Dates are usually short enough
     } else if (categoryColumn) {
-        labels = data.map(row => String(row[categoryColumn]))
+        fullLabels = data.map(row => String(row[categoryColumn]))
+        labels = fullLabels.map(truncateLabel)
     } else {
         labels = data.map((_, i) => `Row ${i + 1}`)
+        fullLabels = labels
     }
 
     // Generate datasets
@@ -270,6 +300,23 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
                     legend: {
                         display: numericColumns.length > 1 || chartType === 'pie',
                         position: 'bottom'
+                    },
+                    fullLabels // Store full labels for tooltip display
+                },
+                scales: chartType === 'pie' ? undefined : {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: dateColumn || categoryColumn || ''
+                        }
+                    },
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: numericColumns.length === 1 ? numericColumns[0] : 'Value'
+                        }
                     }
                 }
             }

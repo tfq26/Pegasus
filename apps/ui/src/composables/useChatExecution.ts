@@ -44,6 +44,7 @@ export function useChatExecution(
     const currentOpId = ref('')
     const visualizableResult = ref<any>(null)
     const suggestedChartType = ref<string | null>(null)
+    const currentExecutionSteps = ref<{ message: string, timestamp: number, progress: number }[]>([])
 
     // --- Helpers ---
     const normalizeQuery = (query: string, provider: string) => {
@@ -176,7 +177,9 @@ export function useChatExecution(
         isExecuting.value = true
         queryError.value = ''
         queryResult.value = null
+        queryResult.value = null
         lastQuery.value = payload
+        currentExecutionSteps.value = []
 
         if (abortController.value) abortController.value.abort()
         abortController.value = new AbortController()
@@ -322,118 +325,354 @@ export function useChatExecution(
             return
         }
 
-        // Standard AI Flow (Streaming)
+        // Standard AI Flow
         await withProgress('AI Query', async (update: any) => {
             update(10, 'Thinking...')
 
-            const history = [...(chatHistory.value || [])]
+            const history = chatHistory.value || []
             let activeTable = undefined
             const activeTab = workspaceStore.activeTab as any
             const tabValue = activeTab && (activeTab.value || activeTab)
             if (tabValue?.type === 'table') activeTable = tabValue.data?.tableName
             else if (tabValue?.type === 'spreadsheet') activeTable = tabValue.data?.tableName
 
+            // Validate connection ID before making request
             const connectionId = selectedConnection.value?.id
+            console.log('[Chat] AI Request:', {
+                connectionId,
+                provider: selectedConnection.value?.provider,
+                name: selectedConnection.value?.name || selectedConnection.value?.label,
+                activeTable,
+                activeTabType: tabValue?.type,
+                activeTabData: tabValue?.data
+            })
+
             if (!connectionId) {
-                toast.error('Connection error', { description: 'Please select a valid database connection.' })
+                console.error('[Chat] No valid connection ID found:', selectedConnection.value)
+                toast.error('Connection error', {
+                    description: 'Please select a valid database connection before using AI.'
+                })
                 isExecuting.value = false
                 return
             }
 
-            // Add user message to history
-            const userMsg = { role: 'user', content: userPrompt, timestamp: Date.now() }
-            chatHistory.value.push(userMsg)
-            if (selectedChatId.value) {
-                try { await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt) } catch (e) { }
-            }
+            let aiResponse: any = null;
 
-            // Create placeholder for assistant message
-            const assistantMsgIndex = chatHistory.value.length
-            chatHistory.value.push({
-                role: 'assistant',
-                content: '',
-                timestamp: Date.now(),
-                meta: { isStreaming: true }
+            const requestBody: any = {
+                prompt: userPrompt,
+                connectionId,
+                context: history,
+                activeTable,
+                ...options.aiOptions.value
+            };
+
+            currentExecutionSteps.value = [];
+
+            await api.stream<any>('/ai/generate', requestBody, (chunk) => {
+                if (chunk.type === 'progress') {
+                    update(chunk.progress, chunk.message)
+                    currentExecutionSteps.value.push({ message: chunk.message, timestamp: Date.now(), progress: chunk.progress })
+                } else if (chunk.error) {
+                    throw new Error(chunk.error)
+                } else {
+                    // This is the final result (or part of it)
+                    aiResponse = chunk
+                }
+            }, {
+                signal: abortController.value?.signal
             })
 
-            try {
-                const { generateAIQueryStream } = await import('@/lib/api')
+            if (!aiResponse) throw new Error("No response from AI")
 
-                await generateAIQueryStream(userPrompt, connectionId, history, activeTable, {
-                    model: options.aiOptions.value?.model,
-                    temperature: options.aiOptions.value?.temperature,
-                    onChunk: (chunk) => {
-                        update(40, 'Generating...')
-                        chatHistory.value[assistantMsgIndex].content += chunk
-                    },
-                    onToolCall: (toolCalls) => {
-                        console.log('[Stream] Tool Calls:', toolCalls)
-                    },
-                    onToolResult: (result) => {
-                        console.log('[Stream] Tool Result:', result)
+            // Handle generated table tool response
+            if ((aiResponse as any).type === 'generated_table' && options.onAIResponse) {
+                options.onAIResponse(aiResponse)
+                isExecuting.value = false
+                return
+            }
 
-                        // Handle data response from query_data tool
-                        if (result.type === 'data_response') {
-                            queryResult.value = result.data;
-                            lastQuery.value = result.query || 'SQL Query';
-                            chatHistory.value[assistantMsgIndex].meta = {
-                                ...chatHistory.value[assistantMsgIndex].meta,
-                                hasResults: true,
-                                query: result.query,
-                                resultPreview: Array.isArray(result.data) ? result.data.slice(0, 5) : []
-                            }
-                        }
-                        // Handle query result from execute_query tool
-                        else if (result.type === 'query_result') {
-                            queryResult.value = result.rows;
-                            lastQuery.value = result.query || 'SQL Query';
-                            chatHistory.value[assistantMsgIndex].meta = {
-                                ...chatHistory.value[assistantMsgIndex].meta,
-                                hasResults: true,
-                                query: result.query,
-                                resultPreview: Array.isArray(result.rows) ? result.rows.slice(0, 5) : []
-                            }
-                        }
-                        // Handle table generation request
-                        else if (result.type === 'generate_table_request') {
-                            chatHistory.value[assistantMsgIndex].content += `\n\n*Generating table: ${result.tableName}...*`;
-                            // This would typically involve calling another service or emitting an event
-                            // For now, we signal that results are coming
-                            chatHistory.value[assistantMsgIndex].meta = {
-                                ...chatHistory.value[assistantMsgIndex].meta,
-                                toolAction: 'generate_table',
-                                toolParams: result
-                            }
-                        }
-                    },
-                    onDone: async (usage) => {
-                        update(100, 'Done')
-                        const meta = chatHistory.value[assistantMsgIndex].meta;
-                        if (meta) {
-                            meta.isStreaming = false;
-                            meta.usage = usage;
-                            meta.canGenerateInsights = meta.hasResults;
-                        }
+            // Handle INTENT-BASED architecture responses
+            if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
+                const response = aiResponse as any;
 
-                        if (selectedChatId.value) {
-                            try {
-                                await chatStore.saveMessage(
-                                    selectedChatId.value,
-                                    'ai',
-                                    chatHistory.value[assistantMsgIndex].content,
-                                    chatHistory.value[assistantMsgIndex].meta
-                                )
-                            } catch (e) { }
+                // Handle COMPOUND response (array of results)
+                if (response.isCompound && Array.isArray(response.results)) {
+                    // Iterate and display each result
+                    // For UI simplicity, we'll set the LAST result as the "main" one for the preview panel
+                    // But we'll push multiple history items so the user sees all of them in the chat stream.
+
+                    response.results.forEach((res: any, index: number) => {
+                        const title = res.intent?.visualization?.title || (index === 0 ? "First Result" : "Next Result");
+
+                        // Push to history
+                        chatHistory.value.push({
+                            role: 'assistant',
+                            content: `**${title}**:`,
+                            timestamp: Date.now(),
+                            meta: { hasResults: true, query: res.query, resultPreview: Array.isArray(res.data) ? res.data.slice(0, 5) : res.data }
+                        });
+
+                        // If it's the last one, open the panel
+                        if (index === response.results.length - 1) {
+                            queryResult.value = res.data;
+                            lastQuery.value = res.query;
+                            resultsPanelVisible.value = true;
+                        }
+                    });
+
+                    isExecuting.value = false;
+                    return;
+                }
+
+
+                // 1. Capture the query for display/history
+                lastQuery.value = response.query;
+
+                // 2. Capture the data directly (No extra roundtrip!)
+                queryResult.value = response.data;
+
+                // 4. Handle Visualizations or Standard Data
+                if (response.type === 'visualization_request') {
+                    // ... existing visualization logic ...
+                    const aiConfig = response.config;
+                    suggestedChartType.value = aiConfig.type;
+
+                    const { generateChartConfig } = await import('@/lib/chartGenerator');
+                    const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+
+                    let finalConfig = generateChartConfig(dataArray, lastQuery.value);
+                    if (finalConfig) {
+                        if (aiConfig.type) finalConfig.type = aiConfig.type as any;
+                        if (aiConfig.title) finalConfig.title = aiConfig.title;
+                    }
+                    if (!finalConfig) {
+                        finalConfig = {
+                            type: aiConfig.type || 'bar',
+                            title: aiConfig.title || 'Visualization',
+                            config: { data: { labels: [], datasets: [] } }
                         }
                     }
+
+                    dashboardPreviewConfig.value = finalConfig;
+                    dashboardPreviewVisible.value = true;
+
+                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: response.message || `I've generated a ${aiConfig.type} chart based on your request.`,
+                        timestamp: Date.now(),
+                        meta: { hasResults: true, query: response.query }
+                    });
+                } else {
+                    // Standard Data Response
+                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
+
+                    // Use the AI's explanation if available (Analyst Loop), otherwise generic text
+                    const content = response.message || `Here is the data you requested.`;
+
+                    // 2-Step Visualization: Check for blueprint from analysis
+                    if (response.vizBlueprint) {
+                        const aiConfig = response.vizBlueprint;
+                        suggestedChartType.value = aiConfig.type;
+
+                        const { generateChartConfig } = await import('@/lib/chartGenerator');
+                        const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+
+                        let finalConfig = generateChartConfig(dataArray, lastQuery.value);
+                        if (finalConfig) {
+                            if (aiConfig.type) finalConfig.type = aiConfig.type as any;
+                            if (aiConfig.title) finalConfig.title = aiConfig.title;
+
+                            // Apply axis mapping suggestions if provided
+                            if (aiConfig.xAxis && finalConfig.config) {
+                                finalConfig.config.xAxis = aiConfig.xAxis;
+                            }
+                            if (aiConfig.yAxis && finalConfig.config) {
+                                finalConfig.config.yAxis = Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : [aiConfig.yAxis];
+                            }
+                        }
+
+                        if (finalConfig) {
+                            dashboardPreviewConfig.value = finalConfig;
+                            dashboardPreviewVisible.value = true;
+                            console.log('[useChatExecution] Auto-visualizing via blueprint:', finalConfig);
+                        }
+                    }
+
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: content,
+                        timestamp: Date.now(),
+                        meta: {
+                            hasResults: true,
+                            query: response.query,
+                            vizBlueprint: response.vizBlueprint
+                        }
+                    });
+                }
+
+                isExecuting.value = false;
+                return;
+            }
+
+            // Legacy/Fallback for text-only responses
+            update(40, 'Executing...')
+
+            // Multi-step logic from Chat.vue
+            if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
+                // ... implementation mirrors Chat.vue ...
+                const combinedResults: any[] = []
+                let combinedQuery = ''
+                let visualizableResults: any[] = []
+                let localSuggestedChartType: string | null = null
+
+                for (const step of aiResponse.steps) {
+                    const normalizedStepQuery = normalizeQuery(step.query, selectedConnection.value.provider)
+                    combinedQuery += normalizedStepQuery + (normalizedStepQuery.endsWith(';') ? '\n' : ';\n')
+                    if (step.result) {
+                        combinedResults.push({ explanation: step.explanation, result: step.result })
+                        if (step.visualizable) {
+                            if (Array.isArray(step.result)) visualizableResults.push(...step.result)
+                            else visualizableResults.push(step.result)
+                            if (step.chart_type) localSuggestedChartType = step.chart_type
+                        }
+                    } else if (step.error) {
+                        combinedResults.push({ explanation: step.explanation, error: step.error })
+                    }
+                }
+
+                queryResult.value = combinedResults
+                lastQuery.value = combinedQuery
+
+                if (visualizableResults.length > 0) {
+                    visualizableResult.value = visualizableResults
+                    suggestedChartType.value = localSuggestedChartType
+                }
+
+                // Quick summary without blocking on AI analysis
+                update(80, 'Done')
+                const stepCount = aiResponse.steps.length
+                const aiSummary = `Executed ${stepCount} step${stepCount !== 1 ? 's' : ''}. Here are the results.`
+
+                // Update history
+                chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+                if (selectedChatId.value) {
+                    try {
+                        await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
+                    } catch (e) { console.warn(e) }
+                }
+
+                chatHistory.value.push({
+                    role: 'assistant',
+                    content: aiSummary,
+                    timestamp: Date.now(),
+                    meta: { is_multi_step: true, steps: combinedResults }
                 })
-            } catch (err: any) {
-                console.error('[Chat] Streaming failed:', err)
-                chatHistory.value[assistantMsgIndex].content = `I encountered an error: ${err.message}`
-                if (chatHistory.value[assistantMsgIndex].meta) {
-                    chatHistory.value[assistantMsgIndex].meta.isStreaming = false
+                if (selectedChatId.value) {
+                    try {
+                        await chatStore.saveMessage(selectedChatId.value, 'ai', aiSummary)
+                    } catch (e) { console.warn(e) }
+                }
+
+            } else {
+                // Single step standard
+                const singleAIResponse = aiResponse as any
+
+                // If this is a mutation (edit/insert/delete)
+                if (singleAIResponse.action === 'edit') {
+                    openMutation(singleAIResponse)
+                    isExecuting.value = false
+                    // We don't push to history yet - wait for user to apply
+                    return
+                }
+
+                // Executing the query in aiResponse
+                if (!singleAIResponse.query || !singleAIResponse.query.trim()) {
+                    console.warn('[Chat] No query generated by AI')
+                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+                    const fallbackContent = singleAIResponse.text || singleAIResponse.explanation || "I'm sorry, I couldn't generate a valid query for that request."
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: fallbackContent,
+                        timestamp: Date.now()
+                    })
+                    if (selectedChatId.value) {
+                        try {
+                            await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
+                            await chatStore.saveMessage(selectedChatId.value, 'ai', fallbackContent)
+                        } catch (e) { console.warn(e) }
+                    }
+                    isExecuting.value = false
+                    return
+                }
+
+                const body = await api.post<any>('/query', {
+                    provider: selectedConnection.value.provider,
+                    connection: buildConnectionPayload(selectedConnection.value),
+                    query: normalizeQuery(singleAIResponse.query, selectedConnection.value.provider),
+                    source: 'ai',
+                    model: singleAIResponse.model
+                })
+
+                queryResult.value = body.result
+                lastQuery.value = singleAIResponse.query
+                // Generate Natural Summary
+                update(90, 'Synthesizing...')
+                let aiSummary = singleAIResponse.explanation || "Query executed successfully."
+                let prediction = null
+                try {
+                    const response = await analyzeResults(userPrompt, body.result, singleAIResponse.query)
+                    if (response) {
+                        if (typeof response === 'object') {
+                            aiSummary = response.answer
+                            prediction = response.prediction
+                        } else {
+                            // Try parsing if it's a stringified JSON (from backend)
+                            try {
+                                const parsed = JSON.parse(response)
+                                if (parsed.answer) {
+                                    aiSummary = parsed.answer
+                                    prediction = parsed.prediction
+                                } else {
+                                    aiSummary = response
+                                }
+                            } catch (e) {
+                                aiSummary = response
+                            }
+                        }
+                    }
+                } catch (err: any) {
+                    console.error('[Chat] Failed to generate single-step summary:', err)
+                }
+
+                chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+                if (selectedChatId.value) {
+                    try {
+                        await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
+                    } catch (e) { console.warn(e) }
+                }
+
+                const assistantContent = typeof aiSummary === 'object' ? JSON.stringify(aiSummary) : aiSummary
+
+                const meta = {
+                    ...(prediction ? { prediction } : {}),
+                    contextUsed: (singleAIResponse as any).contextUsed,
+                    steps: currentExecutionSteps.value
+                }
+
+                chatHistory.value.push({
+                    role: 'assistant',
+                    content: assistantContent,
+                    timestamp: Date.now(),
+                    meta
+                })
+                if (selectedChatId.value) {
+                    try {
+                        await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, meta)
+                    } catch (e) { console.warn(e) }
                 }
             }
+
         }, { category: 'ai', groupId: gid })
 
         isExecuting.value = false
@@ -448,6 +687,7 @@ export function useChatExecution(
         run,
         stopExecution,
         handleAIGenerate,
-        handleCreateDashboardElement
+        handleCreateDashboardElement,
+        currentExecutionSteps
     }
 }

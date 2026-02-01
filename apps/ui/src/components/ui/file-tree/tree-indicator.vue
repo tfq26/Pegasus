@@ -14,7 +14,7 @@ const { direction } = treeContext;
 <template>
   <div
     :dir="direction"
-    class="bg-muted absolute left-1.5 h-full w-px rounded-md py-3 duration-300 ease-in-out hover:bg-slate-300 rtl:right-1.5"
+    class="absolute left-2 h-full w-px bg-gradient-to-b from-border via-border/50 to-transparent rtl:right-2"
   />
 </template>
 

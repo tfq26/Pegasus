@@ -43,8 +43,8 @@ export class ConnectionAnalyzer {
 
                 // Special handling for DuckDB/File-uploads (remove UUID prefixes/suffixes)
                 if (provider === 'duckdb' || provider === 'sqlite') {
-                    // Match UUID patterns (with hyphens or underscores)
-                    const uuidRegex = /[a-f0-9]{8}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{12}|[a-f0-9]{32}/gi;
+                    // Match UUID patterns (with hyphens or underscores) or long hexadecimal strings
+                    const uuidRegex = /[a-f0-9]{8}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{12}|[a-f0-9]{32}|[a-f0-9]{8}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{4}_[a-f0-9]{12}/gi;
 
                     friendlyName = realName.replace(uuidRegex, '').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
 
@@ -105,7 +105,7 @@ export class ConnectionAnalyzer {
 
                         // 4. Fetch Samples
                         if (typeof adapter.sampleCollection === 'function') {
-                            const samples = await adapter.sampleCollection(realTableName, 3);
+                            const samples = await adapter.sampleCollection(realTableName, 5); // Increased to 5
                             if (samples && samples.length > 0) {
                                 normalizedSchema.sampleValues[normalizedTableName] = {};
                                 // Extract unique values per column for context
@@ -116,6 +116,13 @@ export class ConnectionAnalyzer {
                                         normalizedSchema.sampleValues[normalizedTableName][col.name] = uniqueValues;
                                     }
                                 }
+
+                                // Store raw head for AI to inspect structure (important for offset headers)
+                                normalizedSchema.detailedSchema[normalizedTableName]._rawHead = samples;
+
+                                // Run Header Detection Heuristic
+                                const headerInfo = ConnectionAnalyzer.detectHeaderRow(samples);
+                                normalizedSchema.detailedSchema[normalizedTableName]._headerInfo = headerInfo;
                             }
                         }
 
@@ -125,10 +132,15 @@ export class ConnectionAnalyzer {
                 }
             }
 
-            // 5. Attach Final Mappings to Schema
+            // 5. Attach Final Mappings & Context Metadata
             normalizedSchema.mappings = {
                 columns: Object.fromEntries(translator.columnMapping),
                 tables: Object.fromEntries(translator.tableMapping)
+            };
+
+            normalizedSchema.contextMetadata = {
+                provider,
+                analyzedAt: new Date().toISOString()
             };
 
             return {
@@ -140,5 +152,44 @@ export class ConnectionAnalyzer {
             console.error('[ConnectionAnalyzer] Analysis failed:', e);
             throw e;
         }
+    }
+
+    /**
+     * Heuristic to detect the "real" header row in a sample set.
+     * Looks for a row with the most non-null, unique string values.
+     */
+    static detectHeaderRow(samples) {
+        if (!samples || samples.length === 0) return { offset: 0, confidence: 0 };
+
+        let bestRow = 0;
+        let maxScore = -1;
+
+        samples.forEach((row, index) => {
+            const values = Object.values(row);
+            const nonNullStringValues = values.filter(v => typeof v === 'string' && v.trim().length > 0 && v.length < 100);
+            const uniqueValues = new Set(nonNullStringValues);
+
+            // Score: Density of strings + Uniqueness
+            let score = uniqueValues.size;
+
+            // Penalty for rows that look like data (contains numbers/dates)
+            const containsNumbers = values.some(v => typeof v === 'number');
+            if (containsNumbers && index > 0) score -= 5;
+
+            // Penalty for mostly empty rows
+            if (values.filter(v => v == null || v === '').length > (values.length / 2)) {
+                score -= 10;
+            }
+
+            if (score > maxScore) {
+                maxScore = score;
+                bestRow = index;
+            }
+        });
+
+        return {
+            offset: bestRow,
+            confidence: maxScore > 0 ? Math.min(maxScore / 10, 1.0) : 0
+        };
     }
 }

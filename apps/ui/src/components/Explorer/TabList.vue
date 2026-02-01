@@ -59,7 +59,11 @@ function getIcon(type: Tab['type']) {
       >
         <div class="flex items-center gap-2 overflow-hidden flex-1">
           <div class="relative shrink-0">
-            <component :is="getIcon(tab.type)" class="w-3.5 h-3.5 opacity-70" />
+            <div v-if="tab.type === 'table' || tab.type === 'spreadsheet'" class="relative w-3.5 h-3.5 shrink-0 opacity-70">
+              <img src="/icons/table/table-rows-svgrepo-com.svg" class="w-full h-full block dark:hidden" alt="Table" />
+              <img src="/icons/table/table-rows-svgrepo-com-white.svg" class="w-full h-full hidden dark:block" alt="Table" />
+            </div>
+            <component v-else :is="getIcon(tab.type)" class="w-3.5 h-3.5 opacity-70" />
             <div 
               v-if="!tab.isActive" 
               class="absolute -top-1 -right-1 bg-background rounded-full p-0.5"

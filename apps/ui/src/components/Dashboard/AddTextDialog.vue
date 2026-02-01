@@ -38,10 +38,7 @@
           <!-- Preview -->
           <div v-if="content" class="mt-2 p-3 border border-border rounded-md bg-muted/30">
             <div class="text-xs text-muted-foreground mb-2 font-semibold">Preview:</div>
-            <div 
-              class="prose dark:prose-invert prose-sm max-w-none"
-              v-html="renderMarkdown(content)"
-            ></div>
+            <MarkdownRenderer :content="content" />
           </div>
         </div>
       </div>
@@ -70,6 +67,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog'
 import RichTextToolbar from './RichTextToolbar.vue'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import MarkdownIt from 'markdown-it'
 
 const md = new MarkdownIt()

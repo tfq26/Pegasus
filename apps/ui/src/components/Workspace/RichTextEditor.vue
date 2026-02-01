@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { toast } from '@/composables/useNotifications'
+import { Eye, Edit3 } from 'lucide-vue-next'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 
 const props = defineProps<{
   content: string
@@ -133,12 +135,31 @@ const handleKeyDown = (e: KeyboardEvent) => {
 }
 
 // Lifecycle
+const isPreview = ref(false)
+
+// Sync editor content when switching back from preview
+watch(isPreview, (newVal) => {
+  if (!newVal) {
+    // Switching back to Edit mode
+    setTimeout(() => {
+      if (editorRef.value) {
+        editorRef.value.innerHTML = localContent.value
+      }
+    }, 0)
+  }
+})
+
 onMounted(() => {
   if (editorRef.value) {
-    editorRef.value.innerHTML = props.content
+    editorRef.value.innerHTML = props.content || ''
     editorRef.value.addEventListener('keydown', handleKeyDown)
   }
   document.addEventListener('selectionchange', updateFormatState)
+  
+  // Default to preview mode for markdown if it has content
+  if (props.fileType === 'md' && props.content) {
+    isPreview.value = true
+  }
 })
 
 onBeforeUnmount(() => {
@@ -153,7 +174,8 @@ onBeforeUnmount(() => {
 defineExpose({
   execCommand,
   updateFormatState,
-  handleSave
+  handleSave,
+  isPreview
 })
 </script>
 
@@ -161,90 +183,112 @@ defineExpose({
   <div class="flex flex-col h-full bg-background">
     <!-- Embedded Toolbar (for reliable formatting) -->
     <div class="flex items-center gap-1 p-1 px-2 border-b border-border flex-shrink-0">
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        :class="{ 'bg-accent': currentFormat.bold }"
-        @mousedown.prevent="execCommand('bold')"
-        title="Bold (Ctrl+B)"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>
-      </button>
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        :class="{ 'bg-accent': currentFormat.italic }"
-        @mousedown.prevent="execCommand('italic')"
-        title="Italic (Ctrl+I)"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>
-      </button>
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        :class="{ 'bg-accent': currentFormat.underline }"
-        @mousedown.prevent="execCommand('underline')"
-        title="Underline (Ctrl+U)"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
-      </button>
-      
-      <div class="w-px h-5 bg-border mx-1" />
-      
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        @mousedown.prevent="execCommand('formatBlock', 'h1')"
-        title="Heading 1"
-      >
-        <span class="text-xs font-bold">H1</span>
-      </button>
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        @mousedown.prevent="execCommand('formatBlock', 'h2')"
-        title="Heading 2"
-      >
-        <span class="text-xs font-bold">H2</span>
-      </button>
-      
-      <div class="w-px h-5 bg-border mx-1" />
-      
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        @mousedown.prevent="execCommand('insertUnorderedList')"
-        title="Bullet List"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
-      </button>
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        @mousedown.prevent="execCommand('insertOrderedList')"
-        title="Numbered List"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="3" y="7" font-size="6" fill="currentColor">1</text><text x="3" y="13" font-size="6" fill="currentColor">2</text><text x="3" y="19" font-size="6" fill="currentColor">3</text></svg>
-      </button>
-      
-      <div class="w-px h-5 bg-border mx-1" />
-      
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        @mousedown.prevent="execCommand('formatBlock', 'blockquote')"
-        title="Quote"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
-      </button>
-      <button
-        type="button"
-        class="p-1.5 rounded hover:bg-muted transition-colors"
-        @mousedown.prevent="execCommand('formatBlock', 'pre')"
-        title="Code Block"
-      >
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/></svg>
-      </button>
+      <!-- Edit/Preview Toggle -->
+      <div v-if="fileType === 'md'" class="flex bg-muted/50 p-1 rounded-lg mr-2 border border-border/50">
+          <button 
+            @click="isPreview = false"
+            class="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all"
+            :class="!isPreview ? 'bg-background text-foreground shadow-sm shadow-black/20' : 'text-muted-foreground hover:text-foreground'"
+          >
+            <Edit3 class="w-3 h-3" />
+            Edit
+          </button>
+          <button 
+            @click="isPreview = true"
+            class="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all"
+            :class="isPreview ? 'bg-background text-foreground shadow-sm shadow-black/20' : 'text-muted-foreground hover:text-foreground'"
+          >
+            <Eye class="w-3 h-3" />
+            Preview
+          </button>
+      </div>
+
+      <template v-if="!isPreview">
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          :class="{ 'bg-accent': currentFormat.bold }"
+          @mousedown.prevent="execCommand('bold')"
+          title="Bold (Ctrl+B)"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>
+        </button>
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          :class="{ 'bg-accent': currentFormat.italic }"
+          @mousedown.prevent="execCommand('italic')"
+          title="Italic (Ctrl+I)"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg>
+        </button>
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          :class="{ 'bg-accent': currentFormat.underline }"
+          @mousedown.prevent="execCommand('underline')"
+          title="Underline (Ctrl+U)"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
+        </button>
+        
+        <div class="w-px h-5 bg-border mx-1" />
+        
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          @mousedown.prevent="execCommand('formatBlock', 'h1')"
+          title="Heading 1"
+        >
+          <span class="text-xs font-bold">H1</span>
+        </button>
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          @mousedown.prevent="execCommand('formatBlock', 'h2')"
+          title="Heading 2"
+        >
+          <span class="text-xs font-bold">H2</span>
+        </button>
+        
+        <div class="w-px h-5 bg-border mx-1" />
+        
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          @mousedown.prevent="execCommand('insertUnorderedList')"
+          title="Bullet List"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
+        </button>
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          @mousedown.prevent="execCommand('insertOrderedList')"
+          title="Numbered List"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="3" y="7" font-size="6" fill="currentColor">1</text><text x="3" y="13" font-size="6" fill="currentColor">2</text><text x="3" y="19" font-size="6" fill="currentColor">3</text></svg>
+        </button>
+        
+        <div class="w-px h-5 bg-border mx-1" />
+        
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          @mousedown.prevent="execCommand('formatBlock', 'blockquote')"
+          title="Quote"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
+        </button>
+        <button
+          type="button"
+          class="p-1.5 rounded hover:bg-muted transition-colors"
+          @mousedown.prevent="execCommand('formatBlock', 'pre')"
+          title="Code Block"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16,18 22,12 16,6"/><polyline points="8,6 2,12 8,18"/></svg>
+        </button>
+      </template>
 
       <!-- Spacer -->
       <div class="flex-1" />
@@ -293,8 +337,12 @@ defineExpose({
     </div>
 
     <!-- Editor -->
-    <div class="flex-1 overflow-auto p-6">
+    <div class="flex-1 overflow-auto p-6 scroll-smooth">
+      <div v-if="isPreview" class="max-w-4xl mx-auto cursor-text px-4" @click="isPreview = false">
+        <MarkdownRenderer :content="localContent || '*Start typing...*'" />
+      </div>
       <div
+        v-else
         ref="editorRef"
         class="min-h-full outline-none prose prose-sm dark:prose-invert max-w-none focus:outline-none"
         contenteditable="true"

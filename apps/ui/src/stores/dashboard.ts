@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, unref } from 'vue'
+import { useConnectionStore } from './connection'
 import {
     fetchDashboards,
     createDashboard,
@@ -95,10 +96,49 @@ export const useDashboardStore = defineStore('dashboard', () => {
             role: u.access_level
         }))
     })
-
     const isSaving = ref(false)
     const isAnalyzing = ref(false)
     const analysisResult = ref<string | null>(null)
+
+    // Helper: Identify if a connection is likely a static file upload
+    const isStaticSource = (conn: any): boolean => {
+        if (!conn) return false
+        const p = conn.provider || conn.type
+        if (p !== 'duckdb' && p !== 'file' && p !== 'sqlite') return false
+
+        // Check if explicitly marked as locked/virtual
+        if (conn.isLocked || conn.isVirtual) {
+            return true
+        }
+
+        // Check for file extension hints
+        const searchStr = [
+            conn.nickname,
+            conn.alias,
+            conn.name,
+            conn.path,
+            conn.config?.path,
+            conn.config?.filename,
+            conn.duckdb?.path,
+            conn.sqlite?.path,
+            conn.file?.path
+        ].filter(Boolean).join(' ').toLowerCase()
+
+        if (searchStr.includes('.xlsx') || searchStr.includes('.xls') || searchStr.includes('.csv') || searchStr.includes('.db')) {
+            return true
+        }
+
+        // Check if it's a local file (not a remote database like turso.io)
+        const rawPath = conn.path || conn.config?.path || conn.sqlite?.path || conn.duckdb?.path || ''
+        const isRemoteDb = rawPath.includes('turso.io') || (rawPath.includes('://') && !rawPath.startsWith('file:'))
+
+        // If it's a file-based provider with no remote URL, it's a static source
+        if (!isRemoteDb) {
+            return true
+        }
+
+        return false
+    }
 
     // Helper: Migrate legacy dashboard to have pages
     const migrateDashboard = (dashboard: Dashboard) => {
@@ -129,8 +169,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         } else if (dashboard.data.pages && dashboard.data.pages.length > 0) {
             // Already has pages
             // Ensure they are sorted
-            dashboard.data.pages.sort((a, b) => a.order - b.order)
-            return dashboard.data.pages[0].id
+            dashboard.data.pages!.sort((a, b) => a.order - b.order)
+            return dashboard.data.pages![0].id
         } else {
             // Empty dashboard, create first page
             const pageId = crypto.randomUUID()
@@ -314,7 +354,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         currentDashboard.value.data.pages.splice(index, 1)
 
         // If we deleted the active page, switch to the first available
-        if (activePageId.value === pageId) {
+        if (activePageId.value === pageId && currentDashboard.value.data.pages.length > 0) {
             activePageId.value = currentDashboard.value.data.pages[0].id
         }
 
@@ -488,6 +528,15 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
         const element = foundElement
         if (!element || !element.query || !element.connectionId) return
+
+        // Skip refresh for static file uploads
+        const connectionStore = useConnectionStore()
+        const connections = unref(connectionStore.connections)
+        const conn = (connections as any[]).find((c: any) => c.id === element.connectionId)
+        if (isStaticSource(conn)) {
+            console.log(`[DashboardStore] Skipping execution for static source: ${element.title}`)
+            return element.lastResult
+        }
 
         // Check cache
         const now = Date.now()
@@ -682,8 +731,20 @@ export const useDashboardStore = defineStore('dashboard', () => {
         })
 
         // Execute all queries in parallel
+        const connectionStore = useConnectionStore()
         const promises = elements
-            .filter(el => el.query && el.connectionId)
+            .filter(el => {
+                if (!el.query || !el.connectionId) return false
+
+                // Skip refresh for static file uploads
+                const connections = unref(connectionStore.connections)
+                const conn = (connections as any[]).find((c: any) => c.id === el.connectionId)
+                if (isStaticSource(conn)) {
+                    console.log(`[DashboardStore] Skipping refresh for static source: ${el.title}`)
+                    return false
+                }
+                return true
+            })
             .map(el => executeElementQuery(el.id, forceRefresh))
 
         try {

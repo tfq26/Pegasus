@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const md = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   breaks: true,
 })
@@ -80,5 +80,28 @@ const renderedContent = computed(() => {
 .markdown-body :deep(strong) {
   font-weight: 600;
   color: hsl(var(--foreground));
+}
+
+.markdown-body :deep(table) {
+  width: 100%;
+  margin-bottom: 1rem;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  padding: 0.5rem;
+  border: 1px solid hsl(var(--border) / 0.5);
+  text-align: left;
+}
+
+.markdown-body :deep(th) {
+  background-color: hsl(var(--muted) / 0.5);
+  font-weight: 600;
+}
+
+.markdown-body :deep(tr:nth-child(even)) {
+  background-color: hsl(var(--muted) / 0.2);
 }
 </style>

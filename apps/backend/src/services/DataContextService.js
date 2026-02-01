@@ -57,35 +57,93 @@ export class DataContextService {
             }
         }
 
-        let normalizedSchema = { tables: [], detailedSchema: {}, mappings: { tables: {}, columns: {} } };
+        let normalizedSchema = {
+            tables: [],
+            detailedSchema: {},
+            mappings: { tables: {}, columns: {} },
+            sourceRegistry: {}, // Unified registry for all sources
+            semanticContext: { knowledgeBase: [], sourceInsights: {} }
+        };
         let adapter = null;
         const extraAdapters = [];
         const resourceToAdapter = {};
         const resourceToProvider = {};
 
         // Helper to analyze
-        const analyzeConnection = async (targetAdapter, targetProvider, isActive) => {
+        const analyzeConnection = async (targetAdapter, targetProvider, isActive, metadata = {}) => {
             try {
                 await targetAdapter.connect();
                 console.log(`[DataContext] Analyzing ${isActive ? 'active' : 'extra'} connection (${targetProvider})...`);
                 const result = await ConnectionAnalyzer.analyze(targetAdapter, targetProvider, isActive ? activeTable : null);
 
+                // Determine structure type
+                let structureType = 'STRUCTURED';
+                if (['duckdb', 'sqlite'].includes(targetProvider.toLowerCase())) structureType = 'SEMI_STRUCTURED';
+                if (metadata.type === 'note') structureType = 'UNSTRUCTURED';
+
                 // Merge Results
                 normalizedSchema.tables = [...new Set([...normalizedSchema.tables, ...result.normalizedSchema.tables])];
                 Object.assign(normalizedSchema.detailedSchema, result.normalizedSchema.detailedSchema);
+
+                // Populate Registry
+                result.normalizedSchema.tables.forEach(t => {
+                    normalizedSchema.sourceRegistry[t] = {
+                        name: t,
+                        origin: metadata.name || targetProvider,
+                        type: structureType,
+                        provider: targetProvider,
+                        id: metadata.id || 'primary'
+                    };
+                });
+
+                // Populate AI Insights
+                if (metadata.aiInsights && metadata.aiInsights.length > 0) {
+                    result.normalizedSchema.tables.forEach(t => {
+                        normalizedSchema.semanticContext.sourceInsights[t] = metadata.aiInsights;
+                    });
+                }
+
                 if (result.normalizedSchema.mappings) {
                     Object.assign(normalizedSchema.mappings.tables, result.normalizedSchema.mappings.tables || {});
                     Object.assign(normalizedSchema.mappings.columns, result.normalizedSchema.mappings.columns || {});
                 }
 
-                // Routing Maps
+                // Routing Maps: Populate with all possible variants for robust lookup
                 result.normalizedSchema.tables.forEach(t => {
                     const slug = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const underscoreSlug = t.toLowerCase().replace(/[^a-z0-9_]/g, '');
+
                     resourceToAdapter[t] = targetAdapter;
                     resourceToAdapter[slug] = targetAdapter;
+                    resourceToAdapter[underscoreSlug] = targetAdapter;
+
                     resourceToProvider[t] = targetProvider;
                     resourceToProvider[slug] = targetProvider;
+                    resourceToProvider[underscoreSlug] = targetProvider;
+
+                    // If it was a file, register the title slug too
+                    if (metadata.name) {
+                        const titleSlug = metadata.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        resourceToAdapter[titleSlug] = targetAdapter;
+                        resourceToProvider[titleSlug] = targetProvider;
+                    }
                 });
+
+                // Also register real table names from mappings to support direct querying of raw tables
+                if (result.normalizedSchema.mappings?.tables) {
+                    Object.entries(result.normalizedSchema.mappings.tables).forEach(([norm, realName]) => {
+                        const realSlug = realName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const realUnderscoreSlug = realName.toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+                        resourceToAdapter[realName] = targetAdapter;
+                        resourceToAdapter[realSlug] = targetAdapter;
+                        resourceToAdapter[realUnderscoreSlug] = targetAdapter;
+
+                        resourceToProvider[realName] = targetProvider;
+                        resourceToProvider[realSlug] = targetProvider;
+                        resourceToProvider[realUnderscoreSlug] = targetProvider;
+                    });
+                }
             } catch (e) {
                 console.warn(`[DataContext] Analysis failed for ${targetProvider}:`, e.message);
             }
@@ -94,10 +152,13 @@ export class DataContextService {
         // 3. Initialize Active Adapter
         if (provider === 'local' && connRow.is_virtual) {
             if (adHocSchema) {
-                normalizedSchema = {
-                    tables: [activeTable],
-                    detailedSchema: { [activeTable]: adHocSchema },
-                    mappings: { tables: {}, columns: {} }
+                normalizedSchema.detailedSchema[activeTable] = adHocSchema;
+                normalizedSchema.sourceRegistry[activeTable] = {
+                    name: activeTable,
+                    origin: 'Ad-hoc Schema',
+                    type: 'STRUCTURED',
+                    provider: 'local',
+                    id: 'ad-hoc'
                 };
                 resourceToAdapter[activeTable] = null;
             }
@@ -110,7 +171,11 @@ export class DataContextService {
                     finalAdapterConfig = config;
                 }
                 adapter = new AdapterClass(finalAdapterConfig);
-                await analyzeConnection(adapter, provider, true);
+                await analyzeConnection(adapter, provider, true, {
+                    name: connRow.name,
+                    id: connRow.id,
+                    aiInsights: connRow.aiInsights
+                });
             }
         }
 
@@ -118,30 +183,67 @@ export class DataContextService {
         // The chat.js logic resolves OneContext BEFORE calling this, usually. 
         // But if we want to encapsulate logic...
         // Let's allow passing resolvedResources if already resolved.
-        // 4. OneContext Integration
-        const otherDbResources = (options.resolvedResources || []).filter(r => (r.type === 'database' || r.type === 'file') && r.id !== connectionId);
+        // 4. OneContext Integration (Databases, Files, Notes)
+        const allResolved = options.resolvedResources || [];
 
-        for (const meta of otherDbResources) {
-            let otherProvider = meta.provider || meta.type;
-            if (meta.type === 'file' && !meta.provider) otherProvider = 'duckdb';
+        for (const meta of allResolved) {
+            // Avoid re-analyzing the primary connection
+            if (meta.id === connectionId && meta.type === 'database') continue;
 
-            const OtherAdapterClass = adapters[otherProvider] || adapters[otherProvider?.toLowerCase()];
-            if (OtherAdapterClass) {
-                let otherCfg = typeof meta.config === 'string' ? JSON.parse(meta.config) : meta.config || {};
+            if (meta.type === 'note') {
+                // 1. Register UNSTRUCTURED note in registry
+                const noteName = meta.title || meta.name || 'Untitled Note';
+                const normName = noteName.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
-                // For files found via OneContext discovery, map storageId to path
-                if (meta.type === 'file' && !otherCfg.path) {
-                    const sid = meta.storage_id || meta.storageId;
-                    if (sid) {
-                        otherCfg = { path: sid, ...otherCfg };
+                normalizedSchema.sourceRegistry[normName] = {
+                    name: noteName,
+                    origin: 'User Note',
+                    type: 'UNSTRUCTURED',
+                    provider: 'notes',
+                    id: meta.id
+                };
+
+                // 2. Inject into Knowledge Base (System Prompt)
+                if (meta.content) {
+                    if (!normalizedSchema.semanticContext.knowledgeBase) {
+                        normalizedSchema.semanticContext.knowledgeBase = [];
                     }
+                    normalizedSchema.semanticContext.knowledgeBase.push({
+                        id: meta.id,
+                        source: noteName,
+                        content: meta.content
+                    });
                 }
+                continue;
+            }
 
-                const nestedCfg = otherCfg[otherProvider] || otherCfg[otherProvider?.toLowerCase()] || otherCfg;
+            if (meta.type === 'database' || meta.type === 'file') {
+                let otherProvider = meta.provider || meta.type;
+                if (meta.type === 'file' && !meta.provider) otherProvider = 'duckdb';
 
-                const otherAdapter = new OtherAdapterClass(nestedCfg, userId);
-                extraAdapters.push(otherAdapter);
-                await analyzeConnection(otherAdapter, otherProvider, false);
+                const OtherAdapterClass = adapters[otherProvider] || adapters[otherProvider?.toLowerCase()];
+                if (OtherAdapterClass) {
+                    let otherCfg = typeof meta.config === 'string' ? JSON.parse(meta.config) : meta.config || {};
+
+                    // For files found via OneContext discovery, map storageId to path
+                    if (meta.type === 'file' && !otherCfg.path) {
+                        const sid = meta.storage_id || meta.storageId;
+                        if (sid) {
+                            otherCfg = { path: sid, ...otherCfg };
+                        }
+                    }
+
+                    const nestedCfg = otherCfg[otherProvider] || otherCfg[otherProvider?.toLowerCase()] || otherCfg;
+
+                    const otherAdapter = new OtherAdapterClass(nestedCfg, userId);
+                    extraAdapters.push(otherAdapter);
+                    await analyzeConnection(otherAdapter, otherProvider, false, {
+                        name: meta.name || meta.title,
+                        id: meta.id,
+                        type: meta.type,
+                        aiInsights: meta.aiInsights
+                    });
+                }
             }
         }
 
@@ -185,6 +287,27 @@ export class DataContextService {
         } catch (e) {
             console.warn("[DataContext] Failed to fetch descriptions:", e);
         }
+
+        // 6. Minimal Semantic Spark (For generic headers)
+        try {
+            for (const tableName of normalizedSchema.tables) {
+                const schema = normalizedSchema.detailedSchema[tableName];
+                const hasGenericHeaders = schema?.some(c => (/^field[0-9]+$/i.test(c.name) || /^column_[0-9]+$/i.test(c.name) || /^[A-Z]$/.test(c.name)));
+
+                if (hasGenericHeaders) {
+                    const targetAdapter = resourceToAdapter[tableName] || adapter;
+                    const targetProvider = resourceToProvider[tableName] || provider;
+                    if (targetAdapter) {
+                        const realName = normalizedSchema.mappings?.tables?.[tableName] || tableName;
+                        const samples = await targetAdapter.query(`SELECT * FROM "${realName}" LIMIT 3`);
+                        if (samples?.length > 0) {
+                            if (!normalizedSchema.semanticContext.samples) normalizedSchema.semanticContext.samples = {};
+                            normalizedSchema.semanticContext.samples[tableName] = samples;
+                        }
+                    }
+                }
+            }
+        } catch (e) { /* Ignore - non-critical */ }
 
         return {
             provider,

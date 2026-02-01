@@ -102,7 +102,10 @@ function formatTableName(tableName: string): string {
               @click="emit('table-click', props.connection, table!)"
             >
               <div class="flex items-center gap-2 overflow-hidden">
-                <Table class="w-3.5 h-3.5 text-muted-foreground group-hover/table:text-purple-500 shrink-0" />
+                <div class="relative w-3.5 h-3.5 shrink-0">
+                  <img src="/icons/table/table-rows-svgrepo-com.svg" class="w-full h-full block dark:hidden" alt="Table" />
+                  <img src="/icons/table/table-rows-svgrepo-com-white.svg" class="w-full h-full hidden dark:block" alt="Table" />
+                </div>
                 <span class="truncate text-muted-foreground group-hover/table:text-foreground transition-colors text-[12px]">
                   {{ formatTableName(table!) }}
                 </span>

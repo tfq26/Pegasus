@@ -110,7 +110,7 @@
               v-else-if="element?.type === 'text'" 
               class="p-4 h-full overflow-auto prose dark:prose-invert text-sm max-w-none"
             >
-               <div v-html="renderMarkdown(element.config.content)"></div>
+               <MarkdownRenderer :content="element.config.content" />
             </div>
 
             <!-- Table Element -->
@@ -163,6 +163,15 @@
           <RefreshCw class="w-4 h-4 mr-2" :class="{ 'animate-spin': isRefreshing }" />
           Refresh Data
         </ContextMenuItem>
+        
+        <!-- Toggle Axis Intervals (Only for Viz) -->
+        <ContextMenuItem 
+          v-if="element?.type !== 'table' && element?.type !== 'text' && element?.type !== 'file' && element?.type !== 'stat'"
+          @select="toggleAxes"
+        >
+          <component :is="element?.customization?.hideAxes ? Eye : EyeOff" class="w-4 h-4 mr-2" />
+          {{ element?.customization?.hideAxes ? 'Show Axis Labels' : 'Hide Axis Labels' }}
+        </ContextMenuItem>
       </template>
       <ContextMenuSeparator class="bg-border" />
       <ContextMenuItem @select="$emit('remove')" class="text-destructive focus:text-destructive focus:bg-destructive/10">
@@ -197,8 +206,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { Pencil, Trash2, Code, Settings, File, Move, MoreVertical } from 'lucide-vue-next'
-import { renderMarkdown } from '@/lib/markdown'
+import { Pencil, Trash2, Code, Settings, File, Move, MoreVertical, Eye, EyeOff } from 'lucide-vue-next'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { useIntersectionObserver } from '@vueuse/core'
 
 const props = defineProps<{
@@ -239,6 +248,23 @@ const handleRefresh = async (force = false) => {
         toast.error(`Failed to refresh ${props.element.title || 'element'}: ${e.message}`)
     } finally {
         isRefreshing.value = false
+    }
+}
+
+const toggleAxes = () => {
+    if (!props.element?.id) return
+    
+    // Find the element in the store to mutate it properly
+    const page = store.activePage as any
+    if (!page) return
+    
+    const element = page.elements.find((el: any) => el.id === props.element.id)
+    if (element) {
+        const customization = { ...element.customization || {} }
+        customization.hideAxes = !customization.hideAxes
+        element.customization = customization
+        store.saveCurrentDashboard()
+        toast.success(`${element.customization.hideAxes ? 'Hidden' : 'Shown'} axis labels`)
     }
 }
 

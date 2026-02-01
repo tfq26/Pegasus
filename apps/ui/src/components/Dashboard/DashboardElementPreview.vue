@@ -10,14 +10,52 @@
 
       <div class="grid gap-4 py-4">
         <!-- Chart Preview -->
-        <div class="h-[400px] w-full bg-muted/30 rounded-lg p-4 border border-border flex items-center justify-center">
+        <div :class="showData ? 'h-[280px]' : 'h-[400px]'" class="w-full bg-muted/30 rounded-lg p-4 border border-border transition-all duration-200">
           <ChartRenderer 
             v-if="config" 
             :type="config.type" 
             :data="config.type === 'stat' ? config.config : config.config.data" 
-            :options="config.type === 'stat' ? config.config : config.config.options" 
+            :options="config.type === 'stat' ? config.config : config.config.options"
+            class="w-full h-full"
           />
-          <div v-else class="text-muted-foreground">Loading preview...</div>
+          <div v-else class="flex items-center justify-center h-full text-muted-foreground">Loading preview...</div>
+        </div>
+
+        <!-- View Data Toggle -->
+        <div class="flex items-center gap-2">
+          <button 
+            @click="showData = !showData"
+            class="px-3 py-1.5 text-xs font-medium rounded border transition-colors"
+            :class="showData ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted'"
+          >
+            {{ showData ? 'Hide Data' : 'View Data' }}
+          </button>
+          <span v-if="results?.length" class="text-xs text-muted-foreground">
+            {{ results.length }} rows
+          </span>
+        </div>
+
+        <!-- Data Table -->
+        <div v-if="showData && results?.length > 0" class="max-h-[200px] overflow-auto border border-border rounded-lg">
+          <table class="w-full text-xs">
+            <thead class="sticky top-0 bg-muted/80 backdrop-blur-sm">
+              <tr>
+                <th v-for="col in dataColumns" :key="col" class="px-3 py-2 text-left font-medium text-foreground border-b border-border">
+                  {{ col }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, idx) in results.slice(0, 50)" :key="idx" class="border-b border-border/50 hover:bg-muted/30">
+                <td v-for="col in dataColumns" :key="col" class="px-3 py-1.5 text-muted-foreground">
+                  {{ formatCellValue(row[col]) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="results.length > 50" class="px-3 py-2 text-xs text-muted-foreground text-center bg-muted/30">
+            Showing first 50 of {{ results.length }} rows
+          </div>
         </div>
       </div>
 
@@ -177,6 +215,28 @@ const showCreateDashboardModal = ref(false)
 const newDashboardName = ref('')
 const isCreatingDashboard = ref(false)
 
+// View Data State
+const showData = ref(false)
+
+// Computed column names from results
+const dataColumns = computed(() => {
+  if (!props.results || props.results.length === 0) return []
+  return Object.keys(props.results[0])
+})
+
+// Format cell values for display
+const formatCellValue = (value: any): string => {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'number') {
+    // Format large numbers with commas
+    return value.toLocaleString()
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value)
+  }
+  return String(value)
+}
+
 watch(() => props.initialConfig, (newConfig) => {
   if (newConfig) {
     config.value = JSON.parse(JSON.stringify(newConfig))
@@ -199,8 +259,9 @@ watch(() => props.open, async (isOpen) => {
             selectedDashboardId.value = dashboardsList.value[0]!.id
         }
         
-        // Reset original data when dialog opens
+        // Reset original data and view state when dialog opens
         originalChartData.value = null
+        showData.value = false
     }
 })
 

@@ -39,12 +39,17 @@ export class DuckDBAdapter {
 
         // Resolve absolute path (downloads from S3 if needed)
         // Optimization: Try to get a signed URL for Zero-Copy if applicable
+        // NOTE: Excel files (.xlsx, .xls) are EXCLUDED from zero-copy because st_read
+        // cannot detect custom header rows. They must use local ExcelJS conversion.
         let resolvedPath;
         this.isZeroCopy = false; // Reset flag
 
-        if (this.isDataFile) {
+        const ext = path.extname(this.rawPath).toLowerCase();
+        const isExcel = ext === '.xlsx' || ext === '.xls';
+
+        if (this.isDataFile && !isExcel) {
             try {
-                // Try to get a public URL first
+                // Try to get a public URL first (CSV, Parquet, JSON only)
                 resolvedPath = await resolveDatabasePath(this.rawPath, this.userId, { preferSignedUrl: true });
                 if (resolvedPath.startsWith('http')) {
                     this.isZeroCopy = true;
@@ -53,6 +58,8 @@ export class DuckDBAdapter {
             } catch (e) {
                 console.warn("[DuckDB] Zero-Copy resolution failed, falling back to local download:", e.message);
             }
+        } else if (isExcel) {
+            console.log(`[DuckDB] Excel file detected, using local conversion (Zero-Copy disabled for header detection)`);
         }
 
         if (!resolvedPath) {
@@ -134,15 +141,17 @@ export class DuckDBAdapter {
                 // If we are hosting a specific data file, register it as a table/view now
                 if (this.dataFileSource) {
                     const ext = path.extname(this.rawPath).toLowerCase(); // Use rawPath ext, as URL might not have it
-                    // Sanitize table name from raw filename
+                    // Sanitize table name from raw filename (Aggressively remove UUIDs)
                     const baseName = path.basename(this.rawPath, ext);
-                    const tableName = baseName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                    const uuidRegex = /[a-f0-9]{8}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{12}|[a-f0-9]{32}/gi;
+                    const cleanBaseName = baseName.replace(uuidRegex, '').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
+                    const tableName = (cleanBaseName || baseName).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
                     let query = "";
 
                     console.log(`[DuckDB] Attempting to register data file: ${this.dataFileSource} as table: ${tableName} (ZeroCopy: ${this.isZeroCopy})`);
 
                     if (ext === '.csv') {
-                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${this.dataFileSource}')`;
+                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${this.dataFileSource}', header=True, all_varchar=True, sample_size=1000)`;
                     } else if (ext === '.parquet') {
                         query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_parquet('${this.dataFileSource}')`;
                     } else if (ext === '.json') {
@@ -187,7 +196,7 @@ export class DuckDBAdapter {
                                 let headerRowIndex = 1;
                                 let bestScore = 0;
                                 const rowLimit = Math.min(30, worksheet.rowCount);
-                                const MIN_FILLED_THRESHOLD = 5;
+                                const MIN_FILLED_THRESHOLD = 2; // Lowered from 5 to support narrower reports
 
                                 for (let i = 1; i <= rowLimit; i++) {
                                     const row = worksheet.getRow(i);
@@ -291,6 +300,7 @@ export class DuckDBAdapter {
 
                                 query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${tempCsvPath}')`;
                                 console.log(`[DuckDB] Manually converted Excel to CSV. Headers from row ${headerRowIndex}, ${csvLines.length - 1} data rows.`);
+                                console.log(`[DuckDB] Extracted headers:`, headers.slice(0, 10).join(', '));
                             } catch (conversionErr) {
                                 console.error(`[DuckDB] Excel conversion failed: ${conversionErr.message}`);
                                 // Last ditch attempt with st_read on local file

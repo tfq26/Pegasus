@@ -44,6 +44,46 @@ export class SpreadsheetToolService {
         });
 
         this.registerTool({
+            name: "get_sample_data",
+            description: "Retrieve a few sample rows (default 3) from a table. Use this to identify column meanings when headers are generic (Field1, Field2), and to confirm data types before joining.",
+            category: "database",
+            parameters: {
+                type: "object",
+                properties: {
+                    tableName: { type: "string", description: "Name of the table to sample" },
+                    limit: { type: "number", description: "Number of rows to sample (default 3, max 10)" }
+                },
+                required: ["tableName"]
+            },
+            handler: async ({ tableName, limit = 10 }, context) => {
+                if (!context?.adapter) {
+                    throw new Error("No database adapter available in context");
+                }
+                const safeLimit = Math.min(limit, 20);
+                console.log(`[SpreadsheetToolService] Sampling ${safeLimit} rows from ${tableName}`);
+
+                // Get the real table name from mappings if available
+                const realName = context.schema?.mappings?.tables?.[tableName] || tableName;
+
+                // Handle different dialects for quoting
+                const quote = (name) => {
+                    const d = context.dialect?.toLowerCase() || '';
+                    if (d.includes('postgres') || d.includes('duckdb')) return `"${name}"`;
+                    if (d.includes('mysql')) return `\`${name}\``;
+                    return `"${name}"`; // default
+                };
+
+                const result = await context.adapter.query(`SELECT * FROM ${quote(realName)} LIMIT ${safeLimit}`);
+                return {
+                    type: "sample_data_result",
+                    tableName,
+                    rows: Array.isArray(result) ? result : [result],
+                    note: `Sampled ${safeLimit} rows for analysis.`
+                };
+            }
+        });
+
+        this.registerTool({
             name: "get_table_schema",
             description: "Fetch the detailed schema (columns and types) for a specific table when needed for JOINs or context",
             category: "database",
@@ -58,7 +98,7 @@ export class SpreadsheetToolService {
                 required: ["tableName"]
             },
             handler: async ({ tableName }, context) => {
-                let columns = context?.schemaInfo?.detailedSchema?.[tableName];
+                let columns = context?.schema?.detailedSchema?.[tableName];
                 let ddl = null;
 
                 // Lazy fetch if not in initial context
@@ -89,6 +129,86 @@ export class SpreadsheetToolService {
                     columns: columns || [],
                     ddl: ddl,
                     note: "Table structure fetched successfully"
+                };
+            }
+        });
+
+        this.registerTool({
+            name: "record_data_insight",
+            description: "Persist an observation or fact about a data source (table) to AI memory. Use this when you discover important mappings, data patterns, or anomalies that will help future queries.",
+            category: "system",
+            parameters: {
+                type: "object",
+                properties: {
+                    tableName: { type: "string", description: "Name of the table this insight relates to" },
+                    insight: { type: "string", description: "The fact or observation to record (concise)" },
+                    category: { type: "string", enum: ["mapping", "data_quality", "anomaly", "logic"], description: "Category of the insight" },
+                    confidence: { type: "number", description: "Confidence score (0.0 to 1.0)" }
+                },
+                required: ["tableName", "insight", "category", "confidence"]
+            },
+            handler: async ({ tableName, insight, category, confidence }, context) => {
+                const { db } = await import('../db/index.js');
+                const { connections, spaceFiles, dataSources } = await import('../db/schema.js');
+                const { eq } = await import('drizzle-orm');
+                const { v4: uuidv4 } = await import('uuid');
+
+                const registry = context.schema?.sourceRegistry?.[tableName];
+                if (!registry) throw new Error(`Source not found in registry: ${tableName}`);
+
+                const newInsight = {
+                    id: uuidv4(),
+                    insight,
+                    category,
+                    confidence,
+                    updatedAt: new Date().toISOString()
+                };
+
+                // Resolve the correct ID based on registry entry
+                let sid = registry.id;
+                if (sid === 'primary') sid = context.connectionId;
+
+                let updated = false;
+
+                try {
+                    // Try spaceFiles
+                    const file = await db.query.spaceFiles.findFirst({ where: eq(spaceFiles.id, sid) });
+                    if (file) {
+                        const insights = Array.isArray(file.aiInsights) ? file.aiInsights : [];
+                        insights.push(newInsight);
+                        await db.update(spaceFiles).set({ aiInsights: insights }).where(eq(spaceFiles.id, sid));
+                        updated = true;
+                    }
+
+                    if (!updated) {
+                        // Try connections
+                        const conn = await db.query.connections.findFirst({ where: eq(connections.id, sid) });
+                        if (conn) {
+                            const insights = Array.isArray(conn.aiInsights) ? conn.aiInsights : [];
+                            insights.push(newInsight);
+                            await db.update(connections).set({ aiInsights: insights }).where(eq(connections.id, sid));
+                            updated = true;
+                        }
+                    }
+
+                    if (!updated) {
+                        // Try dataSources
+                        const ds = await db.query.dataSources.findFirst({ where: eq(dataSources.id, sid) });
+                        if (ds) {
+                            const insights = Array.isArray(ds.aiInsights) ? ds.aiInsights : [];
+                            insights.push(newInsight);
+                            await db.update(dataSources).set({ aiInsights: insights }).where(eq(dataSources.id, sid));
+                            updated = true;
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[SpreadsheetToolService] record_data_insight failed:`, e);
+                }
+
+                return {
+                    status: updated ? "success" : "failure",
+                    message: updated ? `Recorded insight for ${tableName}` : `Could not find persistent source record for ${tableName} (ID: ${sid})`,
+                    insight: newInsight
                 };
             }
         });
@@ -364,7 +484,7 @@ export class SpreadsheetToolService {
 
         this.registerTool({
             name: "query_data",
-            description: "Fetch or analyze data from the database using a structured intent. Use this for ANY data retrieval (tables, charts, lists). Do NOT write SQL.",
+            description: "Fetch or analyze data from the database using a structured intent. Use this for ANY data retrieval (tables, comparisons, aggregations).",
             category: "data",
             parameters: {
                 type: "object",
@@ -413,17 +533,7 @@ export class SpreadsheetToolService {
                             }
                         }
                     },
-                    limit: { type: "number", description: "Max rows to return (default 1000)" },
-                    visualization: {
-                        type: "object",
-                        description: "If a chart is needed, specify config here",
-                        properties: {
-                            type: { type: "string", enum: ["bar", "line", "pie", "doughnut", "area", "scatter"] },
-                            title: { type: "string" },
-                            xAxis: { type: "string" },
-                            yAxis: { type: "array", items: { type: "string" } }
-                        }
-                    }
+                    limit: { type: "number", description: "Max rows to return (default 1000)" }
                 },
                 required: ["resource"]
             },
@@ -451,15 +561,6 @@ export class SpreadsheetToolService {
                         // Handle Single Intent
                         const result = await context.adapter.query(sqlOrSqls);
 
-                        if (intent.visualization) {
-                            return {
-                                type: "visualization_request",
-                                query: sqlOrSqls,
-                                config: { type: intent.visualization.type, ...intent.visualization },
-                                data: result
-                            };
-                        }
-
                         return {
                             type: "data_response",
                             query: sqlOrSqls,
@@ -468,7 +569,19 @@ export class SpreadsheetToolService {
                     }
 
                 } catch (e) {
-                    throw new Error(`Intent Compilation Failed: ${e.message}`);
+                    // Self-Correction for "Candidate bindings" (DuckDB/Postgres column errors)
+                    if (e.message && e.message.includes("Candidate bindings")) {
+                        const candidatesMatch = e.message.match(/Candidate bindings: (.*)/);
+                        if (candidatesMatch) {
+                            const candidates = candidatesMatch[1].split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+
+                            // Simple heuristic: If user asked for "current_value" and "funds_held" is available, suggest it
+                            // Or just return the available columns to the user
+                            throw new Error(`Column not found. Available columns in '${intent.resource}': ${candidates.join(', ')}. Please refine your query.`);
+                        }
+                    }
+
+                    throw new Error(`Intent Compilation or Execution Failed: ${e.message}`);
                 }
             }
         });

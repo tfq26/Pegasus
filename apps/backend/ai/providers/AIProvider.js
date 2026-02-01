@@ -36,6 +36,11 @@ export class AIProvider {
     async generateQuery(prompt, context, settings = {}) {
         const systemInstruction = PromptBuilder.buildQueryPrompt(context, settings)
 
+        // Debug: Log what schema context the AI is receiving
+        console.log(`[AIProvider] System prompt length: ${systemInstruction.length} chars`);
+        console.log(`[AIProvider] Schema tables:`, context.schema?.tables?.slice(0, 5));
+        console.log(`[AIProvider] Schema columns for first table:`, context.schema?.detailedSchema?.[context.schema?.tables?.[0]]?.slice(0, 5)?.map(c => c.name));
+
         const history = (context.previousContext || [])
             .filter(msg => msg.content)
             .slice(-10) // LAZY HISTORY: Only keep last 10 messages (approx 5 turns)
@@ -65,8 +70,8 @@ export class AIProvider {
     /**
      * Analyzes query results to answer a user question.
      */
-    async analyzeResults(question, results, query) {
-        const prompt = PromptBuilder.buildAnalysisPrompt(question, results, query)
+    async analyzeResults(question, results, query, semanticContext = {}) {
+        const prompt = PromptBuilder.buildAnalysisPrompt(question, results, query, semanticContext)
         const messages = [{ role: 'user', content: prompt }]
 
         const response = await this.generateContent(messages, { json: true })

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { Note } from './Engine/types'
 import { Check, Trash2, User, Clock, CheckCircle2 } from 'lucide-vue-next'
 import NoteInput from './NoteInput.vue'
+import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 
 const props = defineProps<{
     notes: Note[]
@@ -63,8 +64,8 @@ const formatTime = (ts: number) => new Date(ts).toLocaleString()
                     </div>
                 </div>
                 
-                <div class="text-sm pl-0.5" :class="{'line-through text-muted-foreground': note.resolved}">
-                    {{ note.content }}
+                <div class="text-[13px] pl-0.5 leading-relaxed" :class="{'line-through text-muted-foreground opacity-50': note.resolved}">
+                    <MarkdownRenderer :content="note.content" />
                 </div>
             </div>
         </div>

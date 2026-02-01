@@ -18,6 +18,7 @@ import { StorageManager } from "../services/storage/StorageManager.js"
 import { ConnectionAnalyzer } from "../services/ConnectionAnalyzer.js"
 import { OneContext } from "../services/OneContext.js"
 import { DataContextService } from "../services/DataContextService.js"
+import { VisualizationAnalyzer } from "../../ai/VisualizationAnalyzer.js"
 
 // Fix BigInt serialization for JSON.stringify
 BigInt.prototype.toJSON = function () { return this.toString() }
@@ -124,6 +125,28 @@ const logAiUsage = async (userId, tokens, model, type, content, connectionId) =>
         console.log(`[Usage] Logged ${tokens} tokens for ${userId} (${type})`);
     } catch (e) {
         console.error("Failed to log AI usage:", e);
+    }
+}
+
+// Log actually executed SQL queries (these appear in the Queries tab)
+const logExecutedQuery = async (userId, sqlQuery, connectionId, status = 'success') => {
+    if (!sqlQuery || typeof sqlQuery !== 'string') return;
+    try {
+        const rawConnId = connectionId ? (connectionId.includes(':') ? connectionId.split(':')[1] : connectionId) : null;
+
+        await db.insert(queryHistory).values({
+            userId,
+            query: sqlQuery.substring(0, 2000), // Allow longer SQL
+            source: 'user', // Mark as 'user' so it shows in Queries tab
+            model: null,
+            status,
+            connectionId: rawConnId,
+            tokensUsed: 0,
+            createdAt: new Date()
+        });
+        console.log(`[Query] Logged SQL for ${userId}: ${sqlQuery.substring(0, 80)}...`);
+    } catch (e) {
+        console.error("Failed to log executed query:", e);
     }
 }
 
@@ -291,17 +314,26 @@ chat.post("/chats/:id/messages", async (c) => {
                 .where(eq(chats.id, rawChatId));
         }
 
+        // Generate smart title after first user+assistant exchange
+        let generatedTitle = null;
         if (existingChat.title === 'New Chat' && updatedMessages.length >= 2) {
-            setImmediate(async () => {
-                try {
-                    const newTitle = await aiClient.generateTitle(updatedMessages)
-                    if (newTitle && newTitle.trim() && newTitle !== 'New Chat') {
-                        await db.update(chats).set({ title: newTitle.trim() }).where(eq(chats.id, rawChatId));
-                    }
-                } catch (e) { console.error("[Chat] Failed to auto-label chat:", e) }
-            })
+            try {
+                console.log('[Chat] Generating smart title for chat:', rawChatId);
+                const newTitle = await aiClient.generateTitle(updatedMessages);
+                if (newTitle && newTitle.trim() && newTitle !== 'New Chat') {
+                    generatedTitle = newTitle.trim().substring(0, 100); // Limit to 100 chars
+                    await db.update(chats).set({ title: generatedTitle }).where(eq(chats.id, rawChatId));
+                    console.log('[Chat] Generated title:', generatedTitle);
+                }
+            } catch (e) {
+                console.error("[Chat] Failed to auto-label chat:", e);
+            }
         }
-        return c.json({ id: newMessage.id })
+
+        return c.json({
+            id: newMessage.id,
+            ...(generatedTitle && { title: generatedTitle })
+        });
     } catch (e) {
         console.error("[Chat] Message send error:", e);
         return c.json({ error: "Failed to send message" }, 500)
@@ -572,285 +604,531 @@ chat.post("/ai/data-wrangler", async (c) => {
 chat.post("/ai/generate", async (c) => {
     const token = getAuthToken(c)
     if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    // Pre-stream: Auth & Validation
+    let payload, body, userId;
     try {
-        const payload = await verify(token, jwtSecret)
-        let userId = payload.sub
+        payload = await verify(token, jwtSecret)
+
+        // Resolve User ID
+        let rawUserId = payload.sub
         const resolvedId = await upsertUser(payload)
         if (resolvedId) {
             const parts = resolvedId.toString().split(':')
-            userId = parts.length > 1 ? parts[1] : resolvedId
+            rawUserId = parts.length > 1 ? parts[1] : resolvedId
         }
+        userId = rawUserId;
+
+        // Quota Check
         const quota = await checkAiQuota(userId);
         if (!quota.allowed) return c.json(quota, 403);
-        const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = await c.req.json()
 
-        // Handle connexion ID
-        let connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
+        body = await c.req.json()
+    } catch (e) {
+        return c.json({ error: "Unauthorized or Invalid Request" }, 401)
+    }
 
-        // --- OneContext Integration ---
-        console.log(`[OneContext] Resolving context for prompt: "${prompt.substring(0, 50)}..."`);
-        const resolvedResources = await OneContext.resolveContext(prompt, userId, connectionId);
-        const contextBlock = OneContext.buildContextBlock(resolvedResources);
-
-        if (contextBlock) {
-            console.log(`[OneContext] Injected ${resolvedResources.length} resources.`);
+    return stream(c, async (stream) => {
+        // Helper to send progress chunks
+        const sendProgress = async (progress, message, details = null) => {
+            await stream.write(JSON.stringify({ type: 'progress', progress, message, details }) + '\n');
         }
 
-        // Auto-select DB if mentioned and no explicit connection selected
-        const dbResource = resolvedResources.find(r => r.type === 'database');
-        if (!connectionId && dbResource) {
-            console.log(`[OneContext] Auto-selecting DB: ${dbResource.name} (${dbResource.id})`);
-            connectionId = dbResource.id;
+        const sendResult = async (data) => {
+            await stream.write(JSON.stringify(data) + '\n');
         }
-        // -----------------------------
 
-        console.log(`[AI Generate] User: ${userId}, ConnectionId: ${connectionId || 'none'}, ActiveTable: ${activeTable || 'none'}`)
+        const sendError = async (message) => {
+            await stream.write(JSON.stringify({ error: message }) + '\n');
+        }
 
-
-        let userSettings = null
-        let activeModel = null
-
-        // Fetch user first to get settings
-        const userRow = await db.query.users.findFirst({
-            where: eq(users.id, userId),
-            columns: { config: true }
-        });
-
-        userSettings = userRow?.config || null
-        activeModel = userSettings?.activeModel || null
-
-        // --- Data Context Service ---
-        let contextData;
         try {
-            // Combine OneContext resolved resources with any context explicitly sent by the client
-            const allResolved = [...resolvedResources];
-            if (context && Array.isArray(context)) {
-                context.forEach(c => {
-                    if (!allResolved.find(r => r.id === c.id)) {
-                        allResolved.push(c);
-                    }
-                });
+            const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = body
+
+            let basePrompt = prompt;
+            let forceVisualization = false;
+            let forceQuery = false;
+            let forceText = false;
+            let isExplicitAction = false;
+
+            // Handle Slash Commands
+            if (prompt.trim().startsWith('/visualization') || prompt.trim().startsWith('/chart') || prompt.trim().startsWith('/plot')) {
+                forceVisualization = true;
+                isExplicitAction = true;
+                const corePrompt = prompt.trim().replace(/^\/(visualization|chart|plot)\s*/i, '');
+                basePrompt = `[USER REQUESTS VISUALIZATION]: ${corePrompt}`;
+                console.log(`[AI Generate] Slash command detected. Forcing visualization for: ${corePrompt}`);
+            } else if (prompt.trim().startsWith('/query')) {
+                forceQuery = true;
+                isExplicitAction = true;
+                const corePrompt = prompt.trim().replace(/^\/query\s*/i, '');
+                basePrompt = `[USER REQUESTS SQL QUERY ONLY - DO NOT EXECUTE]: ${corePrompt}`;
+                console.log(`[AI Generate] Slash command detected. Forcing query representation for: ${corePrompt}`);
+            } else if (prompt.trim().startsWith('/text')) {
+                forceText = true;
+                isExplicitAction = true;
+                const corePrompt = prompt.trim().replace(/^\/text\s*/i, '');
+                basePrompt = `[USER REQUESTS TEXT RESPONSE ONLY - NO VISUALS]: ${corePrompt}`;
+                console.log(`[AI Generate] Slash command detected. Forcing text response for: ${corePrompt}`);
             }
 
-            contextData = await DataContextService.buildContext(userId, connectionId, {
-                activeTable,
-                adHocSchema,
-                resolvedResources: allResolved
-            });
-        } catch (e) {
-            console.error(`[AI Generate] DataContext build failed:`, e);
-            return c.json({
-                error: e.message || "Connection not found.",
-                hint: "Please select a valid connection or ensure the data is loaded."
-            }, 404);
-        }
+            // If no explicit command, default to text response behavior
+            if (!isExplicitAction) {
+                forceText = true;
+                console.log(`[AI Generate] No slash command. Defaulting to forceText=true.`);
+            }
 
-        const { provider, adapter, normalizedSchema, resourceToAdapter, resourceToProvider, extraAdapters } = contextData;
+            // Handle connexion ID
+            let connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
 
-        console.log(`[AI Generate] Context built. Provider: ${provider}, Tables: ${normalizedSchema.tables.length}`);
+            await sendProgress(10, 'Resolving context...');
 
-        const aiSettings = { modelId: activeModel, temperature: Number(temperature || 0.7), maxTokens: Number(maxTokens || 1000), activeTable }
-        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
-        aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
+            // --- OneContext Integration ---
+            console.log(`[OneContext] Resolving context for prompt: "${basePrompt.substring(0, 50)}..."`);
+            const resolvedResources = await OneContext.resolveContext(basePrompt, userId, connectionId);
 
-        const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
-        let currentPrompt = finalPrompt;
-        let lastResult = null;
-        let iterations = 0;
-        const maxIterations = 3;
+            // Note: We no longer build a contextBlock for the user prompt text.
+            // DataContextService now injects these into the Knowledge Base (System Prompt).
+            let contextBlock = "";
 
-        try {
-            while (iterations < maxIterations) {
-                iterations++;
-                console.log(`[AI Generate] Iteration ${iterations}...`);
+            // Fetch all user connections to provide "Available Databases" context
+            // BUT we need to filter out anything that's already loaded via OneContext
+            // KEY: If OneContext found relevant files, we DON'T show "not loaded" list to avoid confusion
+            const hasRelevantFiles = resolvedResources.some(r => r.type === 'file');
 
-                const result = await aiClient.generateQuery(currentPrompt, {
-                    dialect: provider,
-                    schema: normalizedSchema,
-                    previousContext: context
-                }, aiSettings);
+            if (!hasRelevantFiles) {
+                try {
+                    const allConnections = await db.query.connections.findMany({
+                        where: eq(connections.userId, userId),
+                        columns: { id: true, name: true, type: true, config: true }
+                    });
 
-                lastResult = result;
+                    // Build a set of "known slugs" from resolved resources
+                    const makeSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const knownSlugs = new Set();
 
-                if (!result.toolCalls || result.toolCalls.length === 0) {
-                    break;
-                }
+                    // Add resolved resource names/titles
+                    resolvedResources.forEach(r => {
+                        if (r.name) knownSlugs.add(makeSlug(r.name));
+                        if (r.title) knownSlugs.add(makeSlug(r.title));
+                        if (r.id) knownSlugs.add(makeSlug(r.id));
+                    });
 
-                console.log(`[AI Generate] Tool calls found:`, result.toolCalls.map(t => t.function.name));
+                    console.log(`[Chat] Known slugs from resolved resources:`, [...knownSlugs].slice(0, 5));
 
-                // 1. Check for generate_table (Immediate Exit)
-                const tableTool = result.toolCalls.find(t => t.function.name === 'generate_table')
-                if (tableTool) {
-                    const args = JSON.parse(tableTool.function.arguments)
-                    const genPrompt = `Generate table for "${args.tableName}". Return JSON: { "tableName": "...", "headers": [], "rows": [] }`
-                    const dataRes = await aiClient.generateContent([{ role: 'user', content: genPrompt }], { model: activeModel, json: true })
-                    const finalData = JSON.parse(dataRes.text.replace(/```json | ```/g, '').trim())
-                    return c.json({ type: 'generated_table', ...finalData, usage: dataRes.usage })
-                }
+                    // Filter out current active or already resolved connections
+                    const otherConnections = allConnections.filter(c => {
+                        if (c.id === connectionId) return false;
 
-                // 2. Check for get_table_schema (Continue Loop)
-                const schemaTool = result.toolCalls.find(t => t.function.name === 'get_table_schema')
-                if (schemaTool) {
-                    const args = JSON.parse(schemaTool.function.arguments)
-                    const tableName = args.tableName
-                    const slug = tableName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const targetAdapter = resourceToAdapter[tableName] || resourceToAdapter[slug] || adapter;
-                    const targetProvider = resourceToProvider[tableName] || resourceToProvider[slug] || provider;
+                        const nameSlug = makeSlug(c.name);
+                        const cfg = typeof c.config === 'string' ? JSON.parse(c.config) : c.config || {};
+                        const pathSlug = makeSlug(cfg.path || cfg.database || '');
 
-                    const schemaRes = await spreadsheetToolService.callTool('get_table_schema', { tableName }, {
-                        adapter: targetAdapter,
-                        dialect: targetProvider,
-                        schemaInfo: normalizedSchema
-                    })
+                        // Check if any slug variant is already known
+                        const isKnown = knownSlugs.has(nameSlug) || knownSlugs.has(pathSlug) ||
+                            [...knownSlugs].some(known => {
+                                return (nameSlug.includes(known) && known.length > 8) ||
+                                    (known.includes(nameSlug) && nameSlug.length > 8);
+                            });
 
-                    if (schemaRes && schemaRes.columns) {
-                        const schemaDescription = `Structure of '${tableName}':\nColumns: ${schemaRes.columns.map(c => `${c.name} (${c.type})`).join(', ')}`;
-                        currentPrompt += `\n\n[System Context - Table Schema]:\n${schemaDescription}`;
-                        console.log(`[AI Generate] Schema added for ${tableName}, retrying...`);
-                        continue; // Go to next iteration with updated prompt
+                        if (isKnown) {
+                            console.log(`[Chat] Filtering out already-loaded connection: ${c.name}`);
+                        }
+
+                        return !isKnown;
+                    });
+
+                    if (otherConnections.length > 0) {
+                        const dbList = otherConnections.map(c => {
+                            const cfg = typeof c.config === 'string' ? JSON.parse(c.config) : c.config;
+                            const alias = cfg?.alias || cfg?.nickname || c.name;
+                            return `- ${alias} (Type: ${c.type})`;
+                        }).join('\n');
+
+                        const dbContext = `\n[System: Available Databases (Not Loaded)]\nThe following databases are available but not currently loaded. If the user's query refers to one of these, ask them to mention it explicitly using $Name:\n${dbList}`;
+
+                        contextBlock = contextBlock ? contextBlock + dbContext : dbContext;
                     }
+                } catch (e) { console.warn("[Chat] Failed to list other connections:", e); }
+            } else {
+                console.log(`[Chat] OneContext found ${resolvedResources.filter(r => r.type === 'file').length} relevant files - skipping "Available Databases" to avoid confusion.`);
+            }
+
+            if (resolvedResources.length > 0) {
+                console.log(`[OneContext] Injected ${resolvedResources.length} resources.`);
+                await sendProgress(15, `Found ${resolvedResources.length} relevant resources...`);
+            }
+
+            // Auto-select DB if mentioned and no explicit connection selected
+            const dbResource = resolvedResources.find(r => r.type === 'database');
+            if (!connectionId && dbResource) {
+                console.log(`[OneContext] Auto-selecting DB: ${dbResource.name} (${dbResource.id})`);
+                connectionId = dbResource.id;
+            }
+
+            console.log(`[AI Generate] User: ${userId}, ConnectionId: ${connectionId || 'none'}, ActiveTable: ${activeTable || 'none'}`)
+
+            let userSettings = null
+            let activeModel = null
+
+            // Fetch user first to get settings
+            const userRow = await db.query.users.findFirst({
+                where: eq(users.id, userId),
+                columns: { config: true }
+            });
+
+            userSettings = userRow?.config || null
+            activeModel = userSettings?.activeModel || null
+
+            // --- Data Context Service ---
+            await sendProgress(20, 'Building schema context...');
+            let contextData;
+            try {
+                // Combine OneContext resolved resources with any context explicitly sent by the client
+                const allResolved = [...resolvedResources];
+                if (context && Array.isArray(context)) {
+                    context.forEach(c => {
+                        if (!allResolved.find(r => r.id === c.id)) {
+                            allResolved.push(c);
+                        }
+                    });
                 }
 
-                // 3. Check for query_data (Immediate Exit or Analyst Loop)
-                const dataTool = result.toolCalls.find(t => t.function.name === 'query_data')
-                if (dataTool) {
+                contextData = await DataContextService.buildContext(userId, connectionId, {
+                    activeTable,
+                    adHocSchema,
+                    resolvedResources: allResolved
+                });
+            } catch (e) {
+                console.error(`[AI Generate] DataContext build failed:`, e);
+                return sendError(e.message || "Connection not found.");
+            }
+
+            const { provider, adapter, normalizedSchema, resourceToAdapter, resourceToProvider, extraAdapters } = contextData;
+
+            console.log(`[AI Generate] Context built. Provider: ${provider}, Tables: ${normalizedSchema.tables.length}`);
+
+            const aiSettings = {
+                modelId: activeModel,
+                temperature: Number(temperature || 0.7),
+                maxTokens: Number(maxTokens || 1000),
+                activeTable
+            }
+            console.log('[AI Generate] Settings:', { modelId: activeModel, tablesCount: normalizedSchema?.tables?.length });
+            // Lazy import to avoid circular dep issues at top level if any
+            const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
+            aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
+
+            const finalPrompt = contextBlock ? `${basePrompt}\n\n${contextBlock}` : basePrompt;
+            let currentPrompt = finalPrompt;
+
+
+            let lastResult = null;
+            let iterations = 0;
+            const maxIterations = 3;
+
+            try {
+                while (iterations < maxIterations) {
+                    iterations++;
+                    const progressBase = 30 + (iterations * 15);
+                    await sendProgress(Math.min(progressBase, 90), `Thinking (Step ${iterations})...`);
+                    console.log(`[AI Generate] Iteration ${iterations}...`);
+                    console.log(`[AI Generate] Prompt preview (first 500 chars):`, currentPrompt.substring(0, 500));
+                    console.log(`[AI Generate] Total prompt length:`, currentPrompt.length);
+                    console.log(`[AI Generate] Model:`, aiSettings.modelId || 'default');
+                    console.log(`[AI Generate] Tools available:`, aiSettings.tools?.length || 0);
+
+                    let result;
                     try {
-                        const args = JSON.parse(dataTool.function.arguments)
-                        console.log('[AI Generate] Query Intent:', args)
+                        result = await aiClient.generateQuery(currentPrompt, {
+                            dialect: provider,
+                            schema: normalizedSchema,
+                            previousContext: context
+                        }, aiSettings);
+                        console.log(`[AI Generate] Result received:`, { hasText: !!result.text, hasToolCalls: !!result.toolCalls?.length });
+                    } catch (aiError) {
+                        console.error(`[AI Generate] AI call failed:`, aiError.message);
+                        console.error(`[AI Generate] Error stack:`, aiError.stack);
+                        console.error(`[AI Generate] Prompt length:`, currentPrompt.length);
+                        console.error(`[AI Generate] Schema tables:`, normalizedSchema.tables.length);
+                        throw aiError;
+                    }
 
-                        const slug = args.resource?.toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const targetAdapter = resourceToAdapter[args.resource] || resourceToAdapter[slug] || adapter;
-                        const targetProvider = resourceToProvider[args.resource] || resourceToProvider[slug] || provider;
+                    lastResult = result;
 
-                        const toolResult = await spreadsheetToolService.callTool('query_data', args, {
+                    if (!result.toolCalls || result.toolCalls.length === 0) {
+                        break;
+                    }
+
+                    console.log(`[AI Generate] Tool calls found:`, result.toolCalls.map(t => t.function.name));
+                    await sendProgress(Math.min(progressBase + 5, 95), `Executing tools (${result.toolCalls.length})...`);
+
+                    // 1. Check for generate_table (Immediate Exit)
+                    const tableTool = result.toolCalls.find(t => t.function.name === 'generate_table')
+                    if (tableTool) {
+                        const args = JSON.parse(tableTool.function.arguments)
+                        const genPrompt = `Generate table for "${args.tableName}". Return JSON: { "tableName": "...", "headers": [], "rows": [] }`
+                        const dataRes = await aiClient.generateContent([{ role: 'user', content: genPrompt }], { model: activeModel, json: true })
+                        const finalData = JSON.parse(dataRes.text.replace(/```json | ```/g, '').trim())
+                        return sendResult({ type: 'generated_table', ...finalData, usage: dataRes.usage })
+                    }
+
+                    // 2. Check for get_table_schema or get_sample_data (Continue Loop)
+                    const schemaTool = result.toolCalls.find(t => t.function.name === 'get_table_schema' || t.function.name === 'get_sample_data')
+                    if (schemaTool) {
+                        const toolName = schemaTool.function.name;
+                        const args = JSON.parse(schemaTool.function.arguments)
+                        const tableName = args.tableName
+                        const slug = tableName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const targetAdapter = resourceToAdapter[tableName] || resourceToAdapter[slug] || adapter;
+                        const targetProvider = resourceToProvider[tableName] || resourceToProvider[slug] || provider;
+
+                        const toolRes = await spreadsheetToolService.callTool(toolName, args, {
                             adapter: targetAdapter,
                             dialect: targetProvider,
-                            schema: normalizedSchema
+                            schema: normalizedSchema,
+                            connectionId,
+                            userId,
+                            activeTable
                         })
 
-                        const isVisual = !!toolResult.config;
-                        const isSmallData = !isVisual && (
-                            (Array.isArray(toolResult.data) && toolResult.data.length <= 10) ||
-                            (toolResult.isCompound && toolResult.results.every(r => r.data.length <= 5))
-                        );
+                        if (toolRes) {
+                            if (toolName === 'get_table_schema' && toolRes.columns) {
+                                const schemaDescription = `Structure of '${tableName}':\nColumns: ${toolRes.columns.map(c => `${c.name} (${c.type})`).join(', ')}`;
+                                currentPrompt += `\n\n[System Context - Table Schema]:\n${schemaDescription}`;
+                                console.log(`[AI Generate] Schema added for ${tableName}, retrying...`);
+                            } else if (toolName === 'get_sample_data' && toolRes.rows) {
+                                const sampleDescription = `Sample Data from '${tableName}':\n${JSON.stringify(toolRes.rows, null, 2)}`;
+                                currentPrompt += `\n\n[System Context - Sample Data]:\n${sampleDescription}`;
+                                console.log(`[AI Generate] Sample data added for ${tableName}, retrying...`);
+                            }
+                            continue; // Go to next iteration with updated prompt
+                        }
+                    }
 
-                        if (isSmallData) {
-                            console.log(`[AI Generate] Data is small. Explaining...`);
-                            const dataContext = JSON.stringify(toolResult.data || toolResult.results);
-                            const answerRes = await aiClient.generateContent([{
-                                role: 'user',
-                                content: prompt + '\n' + `Data results:\n${dataContext}\nExplain findings briefly.`
-                            }], { model: activeModel });
+                    // 3. Check for query_data (Immediate Exit or Analyst Loop)
+                    const dataTool = result.toolCalls.find(t => t.function.name === 'query_data')
+                    if (dataTool) {
+                        try {
+                            const args = JSON.parse(dataTool.function.arguments)
+                            console.log('[AI Generate] Query Intent:', args)
 
-                            return c.json({
+                            const slug = args.resource?.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                            console.log(`[AI Generate] Adapter Routing Debug:`);
+                            console.log(`  - Requested resource: "${args.resource}"`);
+                            console.log(`  - Slug: "${slug}"`);
+                            console.log(`  - Available adapters:`, Object.keys(resourceToAdapter));
+
+                            // Fuzzy Lookup for Adapter
+                            let targetAdapter = resourceToAdapter[args.resource] || resourceToAdapter[slug];
+                            let targetProvider = resourceToProvider[args.resource] || resourceToProvider[slug];
+
+                            // Prioritize underscore-slug for data files
+                            const underscoreSlug = args.resource?.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                            if (!targetAdapter && underscoreSlug) {
+                                targetAdapter = resourceToAdapter[underscoreSlug];
+                                targetProvider = resourceToProvider[underscoreSlug];
+                            }
+
+                            if (!targetAdapter && slug) {
+                                // Try partial match in resources
+                                const candidates = Object.keys(resourceToAdapter);
+                                const bestMatch = candidates.find(c => slug.includes(c) || c.includes(slug));
+                                if (bestMatch) {
+                                    targetAdapter = resourceToAdapter[bestMatch];
+                                    targetProvider = resourceToProvider[bestMatch];
+                                    console.log(`[AI Generate] Fuzzy matched adapter for '${args.resource}' to '${bestMatch}' (${targetProvider})`);
+                                }
+                            }
+
+                            // Final Fallback
+                            targetAdapter = targetAdapter || adapter;
+                            targetProvider = targetProvider || provider;
+
+                            const toolResult = await spreadsheetToolService.callTool('query_data', args, {
+                                adapter: targetAdapter,
+                                dialect: targetProvider,
+                                schema: normalizedSchema,
+                                connectionId,
+                                userId,
+                                activeTable
+                            })
+
+                            console.log(`[AI Generate] Execution Debug:`);
+                            console.log(`  - Target Provider: ${targetProvider}`);
+                            console.log(`  - SQL: ${toolResult.query || 'N/A'}`);
+                            console.log(`  - Results Count: ${Array.isArray(toolResult.data) ? toolResult.data.length : 'N/A'}`);
+                            if (Array.isArray(toolResult.data) && toolResult.data.length > 0) {
+                                console.log(`  - First Result:`, toolResult.data[0]);
+                            }
+
+                            // Log the executed SQL to the Queries tab
+                            if (toolResult.query) {
+                                logExecutedQuery(userId, toolResult.query, connectionId, 'success');
+                            } else if (toolResult.isCompound && toolResult.results) {
+                                // Log each query in compound results
+                                toolResult.results.forEach(r => {
+                                    if (r.query) logExecutedQuery(userId, r.query, connectionId, 'success');
+                                });
+                            }
+
+                            const isVisual = !!toolResult.config;
+                            const isSmallData = (forceText || !forceVisualization) && !isVisual && (
+                                (Array.isArray(toolResult.data) && toolResult.data.length <= 10) ||
+                                (toolResult.isCompound && toolResult.results.every(r => r.data.length <= 5))
+                            );
+
+                            if (isSmallData || forceText) {
+                                console.log(`[AI Generate] Data is small or forceText is true. Explaining...`);
+                                await sendProgress(95, 'Analyzing results...');
+
+                                const analysis = await aiClient.analyzeResults(
+                                    finalPrompt,
+                                    toolResult.data || toolResult.results,
+                                    JSON.stringify(args),
+                                    activeModel,
+                                    normalizedSchema.semanticContext
+                                );
+
+                                let message = analysis.text;
+                                try {
+                                    const parsed = JSON.parse(analysis.text.replace(/```json | ```/g, '').trim());
+                                    message = parsed.answer || analysis.text;
+                                } catch (e) { /* Fallback to raw text */ }
+
+                                return sendResult({
+                                    ...toolResult,
+                                    message,
+                                    usage: result.usage,
+                                    contextUsed: resolvedResources
+                                });
+                            }
+
+                            // If forceQuery is true, we skip visualization entirely as the user just wants the SQL
+                            if (forceQuery) {
+                                return sendResult({
+                                    ...toolResult,
+                                    usage: result.usage,
+                                    contextUsed: resolvedResources
+                                });
+                            }
+
+                            // 2-Step Visualization Analysis
+                            const vizResult = await VisualizationAnalyzer.analyze(finalPrompt, toolResult.data || toolResult.results, activeModel, userId, forceVisualization);
+
+                            return sendResult({
                                 ...toolResult,
-                                message: answerRes.text,
+                                vizBlueprint: vizResult.shouldVisualize ? vizResult.blueprint : null,
                                 usage: result.usage,
                                 contextUsed: resolvedResources
                             });
+                        } catch (e) {
+                            console.error("[AI Generate] query_data failed:", e.message);
+                            // Error Recovery Loop: Feed error back to AI to fix (e.g. wrong column name)
+                            currentPrompt += `\n\n[System Error - Query Execution Failed]:\n${e.message}\nPlease fix your query intent and try again.`;
+                            continue;
                         }
+                    }
 
-                        return c.json({
-                            ...toolResult,
-                            usage: result.usage,
-                            contextUsed: resolvedResources
-                        });
+                    // 4. Check for execute_query (Immediate Exit)
+                    const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
+                    if (queryTool) {
+                        const args = JSON.parse(queryTool.function.arguments)
+                        return sendResult({ query: args.query, usage: result.usage, contextUsed: resolvedResources })
+                    }
+
+                    // If none of the specific tools matched but we have tool calls, just break
+                    break;
+                }
+
+                await sendProgress(98, 'Finalizing response...');
+
+                const finalResult = lastResult;
+                let generatedQuery = typeof finalResult === 'string' ? finalResult : (finalResult.text || '');
+                if (finalResult.usage) await logAiUsage(userId, finalResult.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
+
+                console.log(`[AI Generate] No tools called. Response text preview: ${generatedQuery.substring(0, 200)}...`);
+
+                if (generatedQuery) {
+                    generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
+                }
+
+                // Handle multi_step JSON response - extract first query
+                if (generatedQuery.startsWith('{')) {
+                    try {
+                        const parsed = JSON.parse(generatedQuery)
+                        if (parsed.multi_step && parsed.steps?.length > 0) {
+                            console.log(`[AI Generate] Multi-step response detected, extracting first query`)
+                            generatedQuery = parsed.steps[0].query
+                        } else if (parsed.query) {
+                            generatedQuery = parsed.query
+                        } else if (parsed.ambiguous) {
+                            return sendResult({ ambiguous: true, message: parsed.message, choices: parsed.choices, usage: finalResult.usage })
+                        }
                     } catch (e) {
-                        console.error("[AI Generate] query_data failed:", e)
-                        return c.json({ error: e.message }, 500)
+                        console.warn(`[AI Generate] Failed to parse JSON response:`, e.message)
                     }
                 }
 
-                // 4. Check for execute_query (Immediate Exit)
-                const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
-                if (queryTool) {
-                    const args = JSON.parse(queryTool.function.arguments)
-                    return c.json({ query: args.query, usage: result.usage, contextUsed: resolvedResources })
+                const translator = new SchemaTranslator();
+                translator.tableMapping = new Map(Object.entries(normalizedSchema.mappings.tables || {}));
+                translator.columnMapping = new Map(Object.entries(normalizedSchema.mappings.columns || {}));
+
+                // Denormalize the query - replace AI's normalized names with original column names
+                if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
+                    const originalQuery = generatedQuery
+                    generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
+                    console.log(`[AI Generate] Denormalized query:`)
+                    console.log(`  Before: ${originalQuery}`)
+                    console.log(`  After:  ${generatedQuery}`)
                 }
 
-                // If none of the specific tools matched but we have tool calls, just break
-                break;
-            }
+                // Detect if the result is a refusal message or plain text rather than a query
+                const lowerQuery = generatedQuery.toLowerCase();
+                const isPlainExplanation = (generatedQuery.length > 20 &&
+                    !lowerQuery.includes('select ') &&
+                    !lowerQuery.includes('update ') &&
+                    !lowerQuery.includes('delete from') &&
+                    !lowerQuery.includes('insert into') &&
+                    !generatedQuery.startsWith('{')) ||
+                    lowerQuery.startsWith('i cannot') ||
+                    lowerQuery.startsWith('i am sorry') ||
+                    lowerQuery.startsWith("i'm sorry");
 
-            const finalResult = lastResult;
-            let generatedQuery = typeof finalResult === 'string' ? finalResult : (finalResult.text || '');
-            if (finalResult.usage) await logAiUsage(userId, finalResult.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
+                if (isPlainExplanation) {
+                    return sendResult({ message: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources });
+                }
 
-            console.log(`[AI Generate] No tools called. Response text preview: ${generatedQuery.substring(0, 200)}...`);
+                if (!generatedQuery) {
+                    return sendResult({
+                        message: "I'm having trouble phrasing that as a query. Could you try being more specific, or mention the data source using symbols like !filename or #database?",
+                        usage: finalResult.usage,
+                        contextUsed: resolvedResources
+                    });
+                }
 
-            if (generatedQuery) {
-                generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
-            }
+                if (forceQuery) {
+                    return sendResult({
+                        message: `Here is the SQL query for your request:\n\n\`\`\`sql\n${generatedQuery}\n\`\`\``,
+                        usage: finalResult.usage,
+                        contextUsed: resolvedResources
+                    });
+                }
 
-            // Handle multi_step JSON response - extract first query
-            if (generatedQuery.startsWith('{')) {
-                try {
-                    const parsed = JSON.parse(generatedQuery)
-                    if (parsed.multi_step && parsed.steps?.length > 0) {
-                        console.log(`[AI Generate] Multi-step response detected, extracting first query`)
-                        generatedQuery = parsed.steps[0].query
-                    } else if (parsed.query) {
-                        // Handle other JSON formats with a query field
-                        generatedQuery = parsed.query
-                    } else if (parsed.ambiguous) {
-                        // Return ambiguous response as-is for frontend to handle
-                        return c.json({ ambiguous: true, message: parsed.message, choices: parsed.choices, usage: finalResult.usage })
-                    }
-                } catch (e) {
-                    console.warn(`[AI Generate] Failed to parse JSON response:`, e.message)
+                return sendResult({ query: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources })
+
+            } finally {
+                if (adapter) await adapter.disconnect().catch(() => { })
+                for (const extra of extraAdapters) {
+                    await extra.disconnect().catch(() => { })
                 }
             }
-
-            const translator = new SchemaTranslator();
-            translator.tableMapping = new Map(Object.entries(normalizedSchema.mappings.tables || {}));
-            translator.columnMapping = new Map(Object.entries(normalizedSchema.mappings.columns || {}));
-
-            // Denormalize the query - replace AI's normalized names with original column names
-            if (translator.hasNormalizations() && generatedQuery && !generatedQuery.startsWith('{')) {
-                const originalQuery = generatedQuery
-                generatedQuery = translator.denormalizeQuery(generatedQuery, provider)
-                console.log(`[AI Generate] Denormalized query:`)
-                console.log(`  Before: ${originalQuery}`)
-                console.log(`  After:  ${generatedQuery}`)
-            }
-
-            // Detect if the result is a refusal message or plain text rather than a query
-            const lowerQuery = generatedQuery.toLowerCase();
-            const isPlainExplanation = (generatedQuery.length > 20 &&
-                !lowerQuery.includes('select ') &&
-                !lowerQuery.includes('update ') &&
-                !lowerQuery.includes('delete from') &&
-                !lowerQuery.includes('insert into') &&
-                !generatedQuery.startsWith('{')) ||
-                lowerQuery.startsWith('i cannot') ||
-                lowerQuery.startsWith('i am sorry') ||
-                lowerQuery.startsWith("i'm sorry");
-
-            if (isPlainExplanation) {
-                console.log(`[AI Generate] Result appears to be a plain explanation/refusal. Returning as message. Text: ${generatedQuery.substring(0, 50)}...`);
-                return c.json({ message: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources });
-            }
-
-            if (!generatedQuery) {
-                console.warn(`[AI Generate] AI returned an empty response. Raw result:`, JSON.stringify(finalResult));
-                return c.json({
-                    message: "I'm having trouble phrasing that as a query. Could you try being more specific, or mention the data source using symbols like !filename or #database?",
-                    usage: finalResult.usage,
-                    contextUsed: resolvedResources
-                });
-            }
-
-            console.log(`[AI Generate] Final query: [${generatedQuery}]`);
-            return c.json({ query: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources })
-
-        } finally {
-            if (adapter) await adapter.disconnect().catch(() => { })
-            for (const extra of extraAdapters) {
-                await extra.disconnect().catch(() => { })
-            }
+        } catch (e) {
+            console.error(`[AI Generate] CRITICAL STREAM ERROR:`, e);
+            return sendError(e.message)
         }
-    } catch (e) { return c.json({ error: e.message }, 500) }
-
+    })
 })
 
 chat.post("/ai/recommend-visualization", async (c) => {
@@ -950,114 +1228,5 @@ chat.post("/ai/search", async (c) => {
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
 
-
-chat.post("/ai/generate/stream", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        let userId = payload.sub
-        const resolvedId = await upsertUser(payload)
-        if (resolvedId) {
-            const parts = resolvedId.toString().split(':')
-            userId = parts.length > 1 ? parts[1] : resolvedId
-        }
-
-        const quota = await checkAiQuota(userId);
-        if (!quota.allowed) return c.json(quota, 403);
-
-        const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema, model } = await c.req.json()
-        let connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
-
-        // 1. Resolve Context
-        const resolvedResources = await OneContext.resolveContext(prompt, userId, connectionId);
-        const contextBlock = OneContext.buildContextBlock(resolvedResources);
-
-        if (!connectionId && resolvedResources.find(r => r.type === 'database')) {
-            connectionId = resolvedResources.find(r => r.type === 'database').id;
-        }
-
-        const userRow = await db.query.users.findFirst({
-            where: eq(users.id, userId),
-            columns: { config: true }
-        });
-        const activeModel = model || userRow?.config?.activeModel || null;
-
-        const contextData = await DataContextService.buildContext(userId, connectionId, {
-            activeTable,
-            adHocSchema,
-            resolvedResources: [...resolvedResources, ...(context || [])]
-        });
-
-        const { provider, adapter, normalizedSchema, resourceToAdapter, resourceToProvider } = contextData;
-        const aiSettings = {
-            modelId: activeModel,
-            userId,
-            temperature: Number(temperature || 0.7),
-            maxTokens: Number(maxTokens || 1000),
-            activeTable
-        };
-
-        const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
-        aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
-
-        const finalPrompt = contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
-
-        return stream(c, async (stream) => {
-            stream.onAbort(() => {
-                console.log(`[Stream] Client aborted stream for user ${userId}`);
-            });
-
-            try {
-                const streamIter = aiClient.generateStream([{ role: 'system', content: 'You are Pegasus, an expert data analyst.' }, { role: 'user', content: finalPrompt }], {
-                    dialect: provider,
-                    schema: normalizedSchema,
-                    ...aiSettings
-                });
-
-                for await (const chunk of streamIter) {
-                    if (chunk.text) {
-                        await stream.write(JSON.stringify({ type: 'text', content: chunk.text }) + "\n");
-                    }
-                    if (chunk.toolCalls) {
-                        await stream.write(JSON.stringify({ type: 'tool_calls', content: chunk.toolCalls }) + "\n");
-
-                        // Handle tool calls in stream (simplified)
-                        for (const tool of chunk.toolCalls) {
-                            if (tool.function.name === 'query_data') {
-                                try {
-                                    const args = JSON.parse(tool.function.arguments);
-                                    const targetAdapter = resourceToAdapter[args.resource] || adapter;
-                                    const targetProvider = resourceToProvider[args.resource] || provider;
-
-                                    const toolResult = await spreadsheetToolService.callTool('query_data', args, {
-                                        adapter: targetAdapter,
-                                        dialect: targetProvider,
-                                        schema: normalizedSchema
-                                    });
-
-                                    await stream.write(JSON.stringify({ type: 'tool_result', tool: 'query_data', content: toolResult }) + "\n");
-                                } catch (e) {
-                                    console.error(`[Stream] Tool call failed:`, e);
-                                }
-                            }
-                        }
-                    }
-                    if (chunk.done) {
-                        await stream.write(JSON.stringify({ type: 'done', usage: chunk.usage }) + "\n");
-                    }
-                }
-            } catch (e) {
-                console.error(`[Stream] Error during streaming:`, e);
-                await stream.write(JSON.stringify({ type: 'error', content: e.message }) + "\n");
-            }
-        });
-
-    } catch (e) {
-        console.error(`[Chat Stream] Fatal error:`, e);
-        return c.json({ error: e.message }, 500);
-    }
-});
-
 export { chat as chatRoutes }
+

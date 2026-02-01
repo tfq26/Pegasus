@@ -184,6 +184,74 @@ export class ApiClient {
 
         return response.json()
     }
+    /**
+     * STREAM request (NDJSON)
+     */
+    async stream<T>(
+        path: string,
+        body: unknown,
+        onChunk: (chunk: T) => void,
+        options?: RequestOptions
+    ): Promise<void> {
+        const url = `${this.baseUrl}${path}`
+        const headers = this.getHeaders(options?.headers)
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: options?.signal
+        })
+
+        if (response.status === 401) {
+            console.warn('[ApiClient] Unauthorized (401). Redirecting.')
+            localStorage.removeItem('auth_token')
+            window.location.href = '/login'
+            throw new Error('Unauthorized')
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            let errorMessage = `Stream failed: ${response.status}`
+            try {
+                const errorJson = JSON.parse(errorText)
+                errorMessage = errorJson.error || errorMessage
+            } catch { }
+            throw new Error(errorMessage)
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) return
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split('\n')
+
+                // Keep the last partial line in the buffer
+                buffer = lines.pop() || ''
+
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            const chunk = JSON.parse(line)
+                            onChunk(chunk)
+                        } catch (e) {
+                            console.error('Failed to parse stream chunk', e)
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock()
+        }
+    }
 }
 
 // Export singleton instance

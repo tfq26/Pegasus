@@ -55,10 +55,7 @@ export class SQLiteAdapter extends DatabaseAdapter {
         }
       }
     } catch (error) {
-      // Don't log expected errors like missing rowid (common for views)
-      if (!error.message.includes('no such column: rowid')) {
-        console.error(`[SQLite] Query failed: ${query}`, error)
-      }
+      console.error(`[SQLite] Query failed: ${query}`, error)
       throw new Error(`SQLite query error: ${error.message}`)
     }
   }

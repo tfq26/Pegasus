@@ -114,6 +114,7 @@
         :has-recommendation="hasRecommendation"
         :settings="settings"
         :analysis="lastAssistantMessage?.meta"
+        :live-steps="currentExecutionSteps"
       />
 
       <DialogManager
@@ -203,7 +204,6 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
 import { useCollaboration } from '@/composables/useCollaboration' 
 import { useConnectionStore } from '@/stores/connection'
-import { useSettingsStore } from '@/stores/settings'
 import { useChatDialogs } from '@/composables/useChatDialogs'
 import { useChat } from '@/composables/useChat'
 import { useChatExecution } from '@/composables/useChatExecution'
@@ -224,26 +224,11 @@ import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 const workspaceStore = useWorkspaceStore()
 const { tabs: workspaceTabs } = storeToRefs(workspaceStore)
 const chatStore = useChatStore()
-const settingsStore = useSettingsStore()
-const { settings, usableModels } = storeToRefs(settingsStore)
-
 // Connection state from store (synced manually to avoid type issues with template)
 const connectionStore = useConnectionStore()
 const connections = ref<ConnectionEntry[]>([])
 const selectedConnection = ref<ConnectionEntry | null>(null)
 const selectedConnectionId = ref<string>('')
-
-// Options
-const aiOptions = ref({ 
-    model: settings.value?.activeModel || 'gemini-3-flash-preview', 
-    temperature: settings.value?.temperature || 0.7 
-})
-
-// Sync aiOptions with global settings
-watch(() => [settings.value?.activeModel, settings.value?.temperature], ([newModel, newTemp]) => {
-    if (newModel) aiOptions.value.model = newModel as string;
-    if (newTemp !== undefined) aiOptions.value.temperature = newTemp as number;
-}, { immediate: true });
 
 watch(() => connectionStore.connections, (val) => { connections.value = val as any }, { immediate: true })
 watch(() => connectionStore.selectedConnection, (val) => { selectedConnection.value = val as any }, { immediate: true })
@@ -298,6 +283,17 @@ const {
   continueChat,
 } = useChat()
 
+// Auto-refresh logic for lists
+onMounted(() => {
+    window.addEventListener('pegasus:queries-updated', () => fetchQueries())
+    window.addEventListener('pegasus:chats-updated', () => loadChats())
+})
+
+onBeforeUnmount(() => {
+    window.removeEventListener('pegasus:queries-updated', () => fetchQueries())
+    window.removeEventListener('pegasus:chats-updated', () => loadChats())
+})
+
 const {
   previewVisible,
   previewChat,
@@ -328,9 +324,12 @@ const aiMode = ref(false)
 const autoExecute = ref(false)
 const privateMode = ref(false)
 const saveStatus = ref<'saved' | 'saving' | 'error'>('saved')
-
+// Options
+const aiOptions = ref({ model: null as string | null, temperature: 0.7 })
 const queryOptions = ref({ limit: 1000, timeout: 30000, autoCommit: true })
 const encryptionKey = ref<any>('') 
+const availableModels = ref<any[]>([])
+const settings = ref<any>(null)
 const isInitializing = ref(true)
 
 // Collaboration state
@@ -524,7 +523,8 @@ const {
     run,
     stopExecution,
     handleAIGenerate,
-    handleCreateDashboardElement
+    handleCreateDashboardElement,
+    currentExecutionSteps
 } = useChatExecution(
     mode,
     chatInput,
@@ -1063,15 +1063,22 @@ onMounted(async () => {
     const key = await generateKey()
     encryptionKey.value = key
 
-    // 3. Load models and settings via Store  
-    await Promise.all([
-      settingsStore.loadSettings(),
-      settingsStore.loadAvailableModels()
+    // 3. Load models and settings in parallel
+    const [models, s] = await Promise.all([
+      getAIModels(),
+      fetchSettings()
     ])
     
-    // Auto-select model if needed
-    if (usableModels.value.length && !aiOptions.value.model) {
-        aiOptions.value.model = usableModels.value[0].id
+    // Filter models if settings restrict them
+    if (s.enabledModels?.length) {
+      availableModels.value = models.filter((m: any) => s.enabledModels.includes(m.id))
+    } else {
+      availableModels.value = models
+    }
+    settings.value = s
+    
+    if (availableModels.value.length && !aiOptions.value.model) {
+        aiOptions.value.model = availableModels.value[0].id
     }
     
     // 4. Handle connection & workspace selection

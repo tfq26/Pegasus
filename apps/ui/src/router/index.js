@@ -39,6 +39,7 @@ const router = createRouter({
 
     { path: '/dashboard', component: () => import('@/views/DashboardHome.vue') },
     { path: '/dashboard/:id', component: () => import('@/views/Dashboard.vue') },
+    { path: '/dashboard/:id/fullscreen', component: () => import('@/views/DashboardFullscreen.vue') },
     { path: '/shared/dashboard/:token', component: () => import('../views/SharedDashboard.vue') },
     { path: '/profile', component: () => import('../views/profile.vue') },
     { path: '/settings', component: () => import('../views/settings/settings.vue') },

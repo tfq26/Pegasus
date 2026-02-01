@@ -11,7 +11,7 @@ import {
 export interface MentionItem {
   id: string
   label: string
-  type: 'file' | 'table' | 'note'
+  type: 'file' | 'table' | 'note' | 'database' | 'command'
   icon?: any
   value?: string
   meta?: any
@@ -64,8 +64,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
     scrollToSelected()
   } else if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault()
-    if (filteredItems.value[selectedIndex.value]) {
-       emit('select', filteredItems.value[selectedIndex.value])
+    const selected = filteredItems.value[selectedIndex.value]
+    if (selected) {
+       emit('select', selected)
     }
   } else if (e.key === 'Escape') {
     e.preventDefault()
@@ -127,7 +128,9 @@ defineExpose({ handleKeyDown })
             :class="{
                'bg-blue-500/10 text-blue-500': item.type === 'file',
                'bg-green-500/10 text-green-500': item.type === 'table',
-               'bg-yellow-500/10 text-yellow-500': item.type === 'note'
+               'bg-yellow-500/10 text-yellow-500': item.type === 'note',
+               'bg-purple-500/10 text-purple-500': item.type === 'database',
+               'bg-violet-500/10 text-violet-500': item.type === 'command'
             }"
           >
              <component :is="item.icon || FileText" class="w-3.5 h-3.5" />

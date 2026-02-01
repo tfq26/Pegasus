@@ -95,11 +95,11 @@ onMounted(() => {
 
 <template>
   <div
-    class="size-full"
+    class="size-full explorer-tree"
     :class="[$props.class]"
   >
     <div
-      class="relative h-full overflow-auto px-2"
+      class="relative h-full overflow-auto px-1 py-2"
       :dir="direction"
     >
       <div class="flex flex-col gap-1">
@@ -109,3 +109,27 @@ onMounted(() => {
   </div>
 </template>
 
+<style scoped>
+.explorer-tree {
+  /* Custom scrollbar for the explorer */
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+
+.explorer-tree::-webkit-scrollbar {
+  width: 6px;
+}
+
+.explorer-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.explorer-tree::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+
+.explorer-tree::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}
+</style>

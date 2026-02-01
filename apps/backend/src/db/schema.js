@@ -119,6 +119,7 @@ export const connections = pgTable("connection", {
     type: text("type").notNull(), // 'postgres', 'mongodb', etc.
     config: jsonb("config").notNull(),
     isVirtual: boolean("is_virtual").default(false),
+    aiInsights: jsonb("ai_insights").default([]),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -146,6 +147,7 @@ export const spaceFiles = pgTable("space_file", {
     version: integer("version").default(1),
     versions: jsonb("versions").default([]), // [{ version: 1, storageId: '...', createdAt: ... }]
     isRagIndexed: boolean("is_rag_indexed").default(false),
+    aiInsights: jsonb("ai_insights").default([]),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -164,7 +166,11 @@ export const spaceNotes = pgTable("space_note", {
 
 import { relations } from 'drizzle-orm';
 
-export const dashboardRelations = relations(dashboards, ({ many }) => ({
+export const dashboardRelations = relations(dashboards, ({ one, many }) => ({
+    owner: one(users, {
+        fields: [dashboards.ownerId],
+        references: [users.id],
+    }),
     elements: many(dashboardElements),
     permissions: many(dashboardPermissions),
 }));
@@ -266,6 +272,7 @@ export const chats = pgTable("chat", {
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
     title: text("title").default('New Chat'),
     messages: jsonb("messages").default([]),
+    connectionId: uuid("connection_id"),
     storageId: text("storage_id"), // Hybrid Storage
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
@@ -296,6 +303,7 @@ export const dataSources = pgTable("data_source", {
     lastResult: jsonb("last_result"),
     lastFetched: timestamp("last_fetched"),
     error: text("error"),
+    aiInsights: jsonb("ai_insights").default([]),
     createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -473,3 +481,14 @@ export const storageCredentials = pgTable("storage_credential", {
 }, (t) => ({
     unq: unique().on(t.userId, t.name),
 }));
+// --- Support ---
+export const supportReports = pgTable("support_report", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'set null' }),
+    url: text("url"),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    errorDetails: text("error_details"),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at").defaultNow(),
+});

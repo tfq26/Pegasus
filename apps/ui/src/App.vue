@@ -13,12 +13,15 @@ import { useDesktopMenu } from '@/composables/useDesktopMenu'
 import { usePlatform } from '@/composables/usePlatform'
 import { useColorMode } from '@vueuse/core'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
+import { useBugSage } from '@/composables/useBugSage'
 import ErrorPage from '@/views/ErrorPage.vue'
 import AILoadingIsland from '@/components/AILoadingIsland.vue'
+import BugSageDialog from '@/components/Support/BugSageDialog.vue'
 import 'vue-sonner/style.css'
 
 const { isTauri } = usePlatform()
 const { setUser } = useFeatureFlags()
+const { triggerAutoReport } = useBugSage()
 const isDesktop = ref(false)
 const route = useRoute()
 
@@ -55,6 +58,11 @@ const handleGlobalError = (error: any, info?: string) => {
         details: `${error?.stack || String(error)}\n\nContext: ${info || 'Global Scope'}`,
         fatal: true
     }
+
+    // Automatically trigger BugSage analysis for fatal errors
+    if (!error?.message?.includes('ResizeObserver')) {
+        triggerAutoReport(error);
+    }
     
     return false // propagate if needed, or false to stop propagation in onErrorCaptured
 }
@@ -74,8 +82,12 @@ const handleWindowError = (event: ErrorEvent) => {
 }
 
 // Routes that should be minimal (no navbar)
-const minimalRoutes = ['/auth/device', '/signin', '/local-auth']
-const isMinimalRoute = computed(() => minimalRoutes.some(r => route.path.startsWith(r)))
+const minimalRoutes = ['/auth/device', '/signin', '/local-auth', '/dashboard/']
+const isMinimalRoute = computed(() => {
+  // Check for fullscreen dashboard route specifically
+  if (route.path.includes('/fullscreen')) return true
+  return minimalRoutes.some(r => route.path === r || (r !== '/dashboard/' && route.path.startsWith(r)))
+})
 
 // Enable McMaster-Carr style link prefetching
 usePrefetch()
@@ -188,6 +200,9 @@ onUnmounted(() => {
         <router-view v-else class="w-full" />
       </main>
     </div>
+
+    <!-- Smart BugSage Reporting -->
+    <BugSageDialog />
   </div>
 </template>
 

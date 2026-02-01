@@ -45,6 +45,8 @@ import adminFixTier from "./src/routes/admin-fix-tier.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import { storageRoutes } from "./src/routes/storage.js"
 import importRoutes from "./src/routes/import.js"
+import supportRoutes from "./src/routes/support.js"
+import bugSageRoutes from "./src/routes/bugSage.js"
 import {
     EXPERIMENTAL_FEATURES,
     initExperimentalTables,
@@ -64,6 +66,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
 import crypto from "node:crypto"
+import { analyzeAndPrintToTerminal } from "./src/lib/bugSageTerminal.js"
 
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 
@@ -126,6 +129,25 @@ app.use("/ai/chat/*", cors(corsConfig))
 // Apply CORS globally
 app.use("*", cors(corsConfig))
 
+// --- Unhandled Error Capture (Jobs, Async, etc.) ---
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('😱 [Unhandled Rejection]', reason);
+    analyzeAndPrintToTerminal(reason instanceof Error ? reason : new Error(String(reason)), {
+        path: 'UNHANDLED_REJECTION',
+        context: 'Global Process'
+    });
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('💀 [Uncaught Exception]', err);
+    analyzeAndPrintToTerminal(err, {
+        path: 'UNCAUGHT_EXCEPTION',
+        context: 'Global Process'
+    });
+    // Give some time for analysis to print before exiting if it's fatal
+    setTimeout(() => process.exit(1), 2000);
+});
+
 // DEV_MODE Middleware: Injects mock user for all protected operations
 if (process.env.PEGASUS_DEV_MODE === 'true') {
     console.log("🛠️  [DEV_MODE] Authentication bypass middleware active");
@@ -163,9 +185,15 @@ app.use('*', async (c, next) => {
 });
 
 if (typeof CompressionStream !== 'undefined') {
-    app.use('*', compress())
+    app.use('*', async (c, next) => {
+        if (c.req.path === '/ai/generate') return next()
+        return compress()(c, next)
+    })
 }
-app.use('*', etag())
+app.use('*', async (c, next) => {
+    if (c.req.path === '/ai/generate') return next()
+    return etag()(c, next)
+})
 
 // Ensure database connection on Vercel (serverless environment)
 // On Vercel, startServer() is NOT called, so we need to connect on first request
@@ -192,6 +220,12 @@ app.onError((err, c) => {
         c.header('Access-Control-Allow-Origin', origin)
         c.header('Access-Control-Allow-Credentials', 'true')
     }
+
+    // Trigger BugSage terminal analysis in development
+    analyzeAndPrintToTerminal(err, {
+        path: c.req.path,
+        method: c.req.method
+    });
 
     return c.json({
         error: 'Internal Server Error',
@@ -292,6 +326,8 @@ app.route('/api/cloud-provision', cloudProvision)
 app.route('/spaces', spaceRoutes)
 app.route('/storage', storageRoutes) // Modular Storage (Upload/Download/Config)
 app.route('/import', importRoutes) // Smart Batch Import
+app.route('/support', supportRoutes) // Automated Support Reporting
+app.route('/support', bugSageRoutes) // Smart BugSage Analysis
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -530,7 +566,7 @@ app.post("/upload", async (c) => {
                             path: duckdbPath,
                             tables: createdTables
                         },
-                        isVirtual: false,
+                        isVirtual: true,
                         createdAt: new Date(),
                         updatedAt: new Date()
                     }).returning()
@@ -1645,7 +1681,23 @@ app.post("/api/query-by-id", async (c) => {
         const provider = connRow.type || connRow.provider
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
 
-        const adapter = await createAdapter(provider, connection, userId)
+        // Skip query for static/locked connections - return empty result
+        // Check 1: Explicit isVirtual flag
+        // Check 2: Provider is file-based (sqlite/duckdb/file) with a local file path
+        //          (not a remote URL like turso.io)
+        const configStr = JSON.stringify(config || {})
+        const rawPath = config?.path || config?.sqlite?.path || config?.duckdb?.path || ''
+        const isRemoteDb = rawPath.includes('turso.io') || rawPath.includes('://') && !rawPath.startsWith('file:')
+        const isLocalFileDb = (provider === 'sqlite' || provider === 'duckdb' || provider === 'file') && !isRemoteDb
+        const isStaticSource = connRow.isVirtual || isLocalFileDb
+        console.log(`[query-by-id] Connection isVirtual=${connRow.isVirtual}, provider=${provider}, rawPath=${rawPath}, isRemoteDb=${isRemoteDb}, isLocalFileDb=${isLocalFileDb}, isStaticSource=${isStaticSource}`)
+
+        if (isStaticSource) {
+            console.log(`[query-by-id] Skipping query for static source: ${connId}`)
+            return c.json({ ok: true, result: [], message: 'Static source - no live query' })
+        }
+
+        const adapter = await createAdapter(provider, config, userId)
         if (!adapter) {
             return c.json({ error: `Provider '${provider}' not supported` }, 400)
         }
@@ -1869,9 +1921,15 @@ app.get("/queries", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
 
+        // Only fetch queries with 'user' source - these are actual SQL queries
+        // AI usage logs (ai_generation, ai_spreadsheet, etc.) contain natural language prompts
+        // and should not be shown in the Queries tab
         const results = await db.select()
             .from(queryHistory)
-            .where(eq(queryHistory.userId, userId))
+            .where(and(
+                eq(queryHistory.userId, userId),
+                eq(queryHistory.source, 'user')
+            ))
             .orderBy(desc(queryHistory.createdAt))
             .limit(50);
 

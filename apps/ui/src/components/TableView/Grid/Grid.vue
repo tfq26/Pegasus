@@ -2146,8 +2146,9 @@ defineExpose({
       <div v-if="internalIsAIMode" class="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-200">
          <div class="relative">
              <select 
-               v-model="selectedAIModel"
-               class="h-7 text-xs border border-border rounded bg-background pl-2 pr-7 appearance-none focus:outline-none focus:ring-1 focus:ring-primary w-[130px] cursor-pointer"
+               :value="selectedAIModel"
+               @change="(e) => $emit('save-query', (e.target as HTMLSelectElement).value, 'formula')" 
+               class="h-7 text-xs border border-border rounded bg-background pl-2 pr-7 appearance-none focus:outline-none focus:ring-1 focus:ring-primary min-w-[140px] w-auto cursor-pointer"
              >
                 <option v-for="model in aiModels" :key="model.id" :value="model.id">
                   {{ model.name }}
