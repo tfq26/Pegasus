@@ -3,8 +3,16 @@ import { ref, toRefs, computed, onMounted, watch, unref } from 'vue'
 import { toast } from '@/composables/useNotifications'
 import { 
   Database, Plus, Trash, Search, Sparkles, FolderOpen, Lock, Unlock,
-  FileText, Notebook, FileUp, StickyNote
+  FileText, Notebook, FileUp, StickyNote, RefreshCw,
+  MoreHorizontal
 } from 'lucide-vue-next'
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useStorage } from '@vueuse/core'
 import { isTauri } from '@/composables/usePlatform'
 
@@ -26,6 +34,11 @@ const dashboardStore = useDashboardStore()
 // Add state for selected table
 const selectedTable = ref<{ connectionId: string; tableName: string } | null>(null)
 const selectedItems = ref<{ type: string, id: string, connectionId?: string, tableName?: string }[]>([])
+const isDeleteMode = ref(false)
+
+// Explorer enhancements state
+const searchFilter = ref('')
+const isRefreshing = ref(false)
 
 const handleHealthCheck = async (conn: ConnectionEntry) => {
    try {
@@ -183,6 +196,24 @@ const onTableAdded = () => {
   }
   // Also do a general refresh to be safe
   refreshSchemas(true)
+}
+
+// --- Global Refresh Logic ---
+const handleGlobalRefresh = async () => {
+  isRefreshing.value = true
+  try {
+    await Promise.all([
+      refreshSchemas(true),
+      spaceStore.loadSpaces(),
+      sheetStore.loadSheets(unref(spaceStore.currentSpaceId) || ''),
+      connectionStore.loadConnections(true)
+    ])
+    toast.success('Refreshed', { description: 'All sources updated' })
+  } catch (err: any) {
+    toast.error('Refresh failed', { description: err.message })
+  } finally {
+    isRefreshing.value = false
+  }
 }
 
 const renamingTable = ref<{ conn: ConnectionEntry; oldName: string; newName: string } | null>(null)
@@ -700,32 +731,77 @@ const handleSelectSheet = (sheet: any) => {
   <aside 
     class="flex flex-col h-full bg-background border-r border-border w-full"
   >
+   <!-- QUICK HEADER & ACTIONS -->
     <div class="flex items-center gap-2 p-3 border-b border-border">
       <!-- Space Selector (Flex Grow) -->
       <div class="flex-1 min-w-0">
          <SpaceSelector />
       </div>
 
-      <!-- Action Buttons -->
+      <!-- Action Menu (3 Dots) -->
       <div class="flex items-center gap-1 shrink-0">
-          <button 
-            @click="emit('toggle-pin')"
-            class="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all active:scale-95"
-            :title="isPinned ? 'Unlock Sidebar (Auto-hide)' : 'Lock Sidebar (Always show)'"
-          >
-            <Unlock v-if="!isPinned" class="w-3.5 h-3.5" />
-            <Lock v-else class="w-3.5 h-3.5 text-purple-500" />
-          </button>
+           <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <button 
+                class="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all active:scale-95 outline-none focus:ring-2 focus:ring-ring/20"
+                title="Options"
+              >
+                <MoreHorizontal class="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-48">
+              <DropdownMenuItem @select="handleGlobalRefresh">
+                <RefreshCw class="w-3.5 h-3.5 mr-2" :class="{ 'animate-spin': isRefreshing }" />
+                Refresh Data
+              </DropdownMenuItem>
+              <DropdownMenuItem @select="emit('toggle-pin')">
+                <component :is="isPinned ? Unlock : Lock" class="w-3.5 h-3.5 mr-2" />
+                {{ isPinned ? 'Unlock Sidebar' : 'Lock Sidebar' }}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @select="isDeleteMode = !isDeleteMode" :class="{ 'bg-rose-500/10 text-rose-500': isDeleteMode }">
+                 <Trash class="w-3.5 h-3.5 mr-2" />
+                 {{ isDeleteMode ? 'Exit Delete Mode' : 'Delete Items' }}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+      </div>
+    </div>
+    
+    <!-- DELETE MODE BAR -->
+    <div v-if="isDeleteMode" class="px-3 py-2 bg-rose-500/10 border-b border-rose-500/20 flex items-center justify-between animate-in slide-in-from-top-2">
+        <span class="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+            <Trash class="w-3.5 h-3.5" />
+            Delete items
+        </span>
+        <div class="flex items-center gap-2">
+             <button 
+                @click="isDeleteMode = false; selectedItems = []"
+                class="text-[10px] font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded transition-colors"
+             >
+                Cancel
+             </button>
+             <button 
+                @click="handleBulkDelete"
+                :disabled="selectedItems.length === 0"
+                class="text-[10px] font-bold bg-rose-500 hover:bg-rose-600 text-white px-2.5 py-1 rounded shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+             >
+                Delete {{ selectedItems.length ? `(${selectedItems.length})` : '' }}
+             </button>
+        </div>
+    </div>
 
-          <button
-              v-if="selectedItems.length > 0"
-              @click="handleBulkDelete"
-              class="p-2 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all active:scale-95 flex items-center gap-1.5"
-              title="Delete Selected Items"
-          >
-              <Trash class="w-3.5 h-3.5" />
-              <span class="text-[10px] font-bold">{{ selectedItems.length }}</span>
-          </button>
+    <!-- Quick Search Bar (Hidden in delete mode to reduce clutter?) -->
+    <!-- Keeping it visible as searching might help find items to delete -->
+    <div v-if="!isDeleteMode" class="px-3 pb-2 pt-2">
+      <div class="relative">
+        <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <input
+          v-model="searchFilter"
+          type="text"
+          placeholder="Search connections, tables, notes..."
+          class="w-full h-8 pl-8 pr-3 text-xs rounded-lg bg-muted/50 border border-border/50 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none placeholder:text-muted-foreground/60 transition-all"
+        />
       </div>
     </div>
 
@@ -742,6 +818,9 @@ const handleSelectSheet = (sheet: any) => {
               :query-history="queryHistory"
               
               :selected-table="selectedTable"
+              :search-filter="searchFilter"
+              :is-delete-mode="isDeleteMode"
+              
               @select-connection="(conn: any) => emit('update:selectedConnectionId', conn.id)"
               @select-table="(conn: any, table: string) => { selectedTable = { connectionId: conn.id, tableName: table }; emit('edit-table', conn, table) }"
               @preview-table="openViewer"

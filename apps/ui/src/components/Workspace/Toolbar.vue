@@ -37,6 +37,7 @@ const props = defineProps<{
   noteSaving?: boolean
   zoomLevel?: number
   isSheet?: boolean
+  chatName?: string
 }>()
 
 const emit = defineEmits<{
@@ -115,6 +116,7 @@ const models = computed(() => {
           @clear="emit('clear')"
           @export-chat="emit('export-chat')"
           @toggle-wrangler="emit('toggle-wrangler')"
+          :chat-name="chatName"
         />
 
         <!-- Query Mode -->

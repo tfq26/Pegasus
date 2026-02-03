@@ -125,6 +125,7 @@
         "handsontable": "^16.2.0",
         "hyperformula": "^3.1.0",
         "interactjs": "^1.10.27",
+        "jszip": "^3.10.1",
         "lucide-vue-next": "^0.553.0",
         "mammoth": "^1.11.0",
         "markdown-it": "^14.1.0",
@@ -149,6 +150,7 @@
       },
       "devDependencies": {
         "@eslint/js": "^9.37.0",
+        "@types/jszip": "^3.4.1",
         "@vitejs/plugin-vue": "^6.0.1",
         "@vitest/eslint-plugin": "^1.3.23",
         "@vue/eslint-config-prettier": "^10.2.0",
@@ -190,6 +192,10 @@
         "lightningcss-linux-x64-gnu": "^1.28.2",
         "lightningcss-win32-x64-msvc": "^1.28.2",
       },
+    },
+    "packages/bug-sage": {
+      "name": "@pegasus/bug-sage",
+      "version": "1.0.0",
     },
   },
   "packages": {
@@ -615,6 +621,8 @@
 
     "@peculiar/webcrypto": ["@peculiar/webcrypto@1.5.0", "", { "dependencies": { "@peculiar/asn1-schema": "^2.3.8", "@peculiar/json-schema": "^1.1.12", "pvtsutils": "^1.3.5", "tslib": "^2.6.2", "webcrypto-core": "^1.8.0" } }, "sha512-BRs5XUAwiyCDQMsVA9IDvDa7UBR9gAvPHgugOeGng3YN6vJ9JYonyDc0lNczErgtCWtucjR5N7VtaonboD/ezg=="],
 
+    "@pegasus/bug-sage": ["@pegasus/bug-sage@workspace:packages/bug-sage"],
+
     "@pegasus/db": ["@pegasus/db@workspace:apps/db"],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
@@ -892,6 +900,8 @@
     "@types/json-schema": ["@types/json-schema@7.0.15", "", {}, "sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA=="],
 
     "@types/jsonwebtoken": ["@types/jsonwebtoken@9.0.10", "", { "dependencies": { "@types/ms": "*", "@types/node": "*" } }, "sha512-asx5hIG9Qmf/1oStypjanR7iKTv0gXQ1Ov/jfrX6kS/EO0OFni8orbmGCn0672NHR3kXHwpAwR+B368ZGN/2rA=="],
+
+    "@types/jszip": ["@types/jszip@3.4.1", "", { "dependencies": { "jszip": "*" } }, "sha512-TezXjmf3lj+zQ651r6hPqvSScqBLvyPI9FxdXBqpEwBijNGQ2NXpaFW/7joGzveYkKQUil7iiDHLo6LV71Pc0A=="],
 
     "@types/keygrip": ["@types/keygrip@1.0.6", "", {}, "sha512-lZuNAY9xeJt7Bx4t4dx0rYCDqGPW8RXhQZK1td7d4H6E9zYbLoOtjBvfwdTKpsyxQI/2jv+armjX/RW+ZNpXOQ=="],
 

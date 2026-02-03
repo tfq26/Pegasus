@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Tree, Folder, File } from '@/components/ui/file-tree'
 import { 
   ContextMenu,
@@ -30,10 +30,12 @@ import {
   MessageSquarePlus,
   FilePlus,
   NotebookPen,
-  LayoutDashboard
+  LayoutDashboard,
+  Star
 } from 'lucide-vue-next'
 import type { ConnectionEntry } from '@/lib/db-connections'
 import { useExplorerSchema } from '@/composables/useExplorerSchema'
+import { useFavorites } from '@/composables/useFavorites'
 
 const props = defineProps<{
   connections: ConnectionEntry[]
@@ -44,6 +46,8 @@ const props = defineProps<{
   queryHistory?: any[]
   sheets?: any[]
   selectedTable?: { connectionId: string; tableName: string } | null
+  searchFilter?: string
+  isDeleteMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -86,6 +90,9 @@ const emit = defineEmits<{
   'delete-query': [id: string]
   'delete-queries': [queries: any[]]
   'add-note-to-dashboard': [note: any]
+  
+  // Drag & Drop
+  'reorder-favorites': [fromIndex: number, toIndex: number]
 }>()
 
 const { schemaFor } = useExplorerSchema(computed(() => props.connections))
@@ -93,17 +100,137 @@ const { schemaFor } = useExplorerSchema(computed(() => props.connections))
 const selectedIds = ref<string[]>([])
 const lastSelectedId = ref<string | null>(null)
 
+// --- Favorites ---
+const { favorites, isFavorite, toggleFavorite, reorderFavorites } = useFavorites()
+
+// Build favorite items from IDs
+const favoriteItems = computed(() => {
+  const items = favorites.value.map(id => {
+    // Connection
+    const conn = props.connections.find(c => c.id === id)
+    if (conn) return { type: 'connection', id, name: conn.nickname || (conn as any).alias, icon: 'lucide:database' }
+    
+    // Table (format: connId::tableName)
+    if (id.includes('::')) {
+      const [connId, tableName] = id.split('::')
+      return { type: 'table', id, name: tableName, icon: 'lucide:table' }
+    }
+    
+    // File
+    if (id.startsWith('file:')) {
+      const fileId = id.replace('file:', '')
+      const file = props.files?.find(f => f.id === fileId)
+      if (file) return { type: 'file', id, name: file.filename, icon: 'lucide:file-text' }
+    }
+    
+    // Note
+    if (id.startsWith('note:')) {
+      const noteId = id.replace('note:', '')
+      const note = props.notes?.find(n => n.id === noteId)
+      if (note) return { type: 'note', id, name: note.title, icon: 'lucide:sticky-note' }
+    }
+    
+    // Sheet
+    if (id.startsWith('sheet:')) {
+      const sheetId = id.replace('sheet:', '')
+      const sheet = props.sheets?.find(s => s.id === sheetId)
+      if (sheet) return { type: 'sheet', id, name: sheet.name, icon: 'lucide:grid' }
+    }
+    
+    // Chat
+    if (id.startsWith('chat:')) {
+      const chatId = id.replace('chat:', '')
+      const chat = props.chats?.find(c => c.id === chatId)
+      if (chat) return { type: 'chat', id, name: chat.title || 'Untitled', icon: 'lucide:message-circle' }
+    }
+    
+    return null
+  })
+  return items.filter((item): item is NonNullable<typeof item> => item !== null)
+})
+
 function getTables(connId: string) {
   return schemaFor(connId).tables || []
+}
+
+// --- Search Filtering ---
+const normalizeSearch = (str: string) => str.toLowerCase().trim()
+
+const filteredConnections = computed(() => {
+  const q = normalizeSearch(props.searchFilter || '')
+  if (!q) return props.connections
+  return props.connections.filter(conn => {
+    const connName = (conn.nickname || (conn as any).alias || '').toLowerCase()
+    if (connName.includes(q)) return true
+    // Also check if any table matches
+    const tables = getTables(conn.id)
+    return tables.some(t => t.toLowerCase().includes(q))
+  })
+})
+
+const filteredFiles = computed(() => {
+  const q = normalizeSearch(props.searchFilter || '')
+  if (!q) return props.files || []
+  return (props.files || []).filter(f => 
+    (f.filename || f.name || '').toLowerCase().includes(q)
+  )
+})
+
+const filteredNotes = computed(() => {
+  const q = normalizeSearch(props.searchFilter || '')
+  if (!q) return props.notes || []
+  return (props.notes || []).filter(n => 
+    (n.title || '').toLowerCase().includes(q) ||
+    (n.content || '').toLowerCase().includes(q)
+  )
+})
+
+const filteredSheets = computed(() => {
+  const q = normalizeSearch(props.searchFilter || '')
+  if (!q) return props.sheets || []
+  return (props.sheets || []).filter(s => 
+    (s.name || s.title || '').toLowerCase().includes(q)
+  )
+})
+
+const filteredChats = computed(() => {
+  const q = normalizeSearch(props.searchFilter || '')
+  if (!q) return props.chats || []
+  return (props.chats || []).filter(c => 
+    (c.title || c.name || '').toLowerCase().includes(q)
+  )
+})
+
+const filteredQueries = computed(() => {
+  const q = normalizeSearch(props.searchFilter || '')
+  if (!q) return props.queryHistory || []
+  return (props.queryHistory || []).filter(qh => 
+    (qh.query || '').toLowerCase().includes(q)
+  )
+})
+
+function getFilteredTables(connId: string) {
+  const q = normalizeSearch(props.searchFilter || '')
+  const tables = getTables(connId)
+  if (!q) return tables
+  return tables.filter(t => t.toLowerCase().includes(q))
 }
 
 function getDisplayName(connId: string, table: string) {
   return schemaFor(connId).tableMetadata?.[table]?.displayName || table
 }
 
-function getRowCount(connId: string, table: string): string | undefined {
+function getRowCount(connId: string, table: string): number | undefined {
   const meta = schemaFor(connId).tableMetadata?.[table] as any
-  return meta?.rowCount
+  const count = meta?.rowCount
+  if (count === undefined || count === null) return undefined
+  return typeof count === 'number' ? count : parseInt(count, 10)
+}
+
+function formatRowCount(count: number | undefined): string | undefined {
+  if (count === undefined) return undefined
+  if (count < 1000) return `${count}`
+  return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(count)
 }
 
 function getTableId(connId: string, table: string) {
@@ -174,6 +301,7 @@ function getFileIcon(filename: string): string {
 // Flatten all IDs for range selection
 const allSelectableIds = computed(() => {
   const ids: string[] = []
+  if (favoriteItems.value.length > 0) ids.push('root:favorites')
   ids.push('root:db')
   props.connections.forEach(conn => {
     ids.push(conn.id)
@@ -192,8 +320,67 @@ const allSelectableIds = computed(() => {
   return ids
 })
 
+// --- Keyboard Navigation ---
+const focusedIndex = ref(0)
+const treeRef = ref<HTMLElement | null>(null)
+
+function handleKeyDown(event: KeyboardEvent) {
+  const ids = allSelectableIds.value
+  if (ids.length === 0) return
+
+  switch (event.key) {
+    case 'ArrowDown': {
+      event.preventDefault()
+      focusedIndex.value = Math.min(focusedIndex.value + 1, ids.length - 1)
+      const nextId = ids[focusedIndex.value]
+      if (nextId) handleSelect(nextId)
+      break
+    }
+    case 'ArrowUp': {
+      event.preventDefault()
+      focusedIndex.value = Math.max(focusedIndex.value - 1, 0)
+      const prevId = ids[focusedIndex.value]
+      if (prevId) handleSelect(prevId)
+      break
+    }
+    case 'Enter': {
+      event.preventDefault()
+      const currentId = ids[focusedIndex.value]
+      if (currentId) handleSelect(currentId)
+      break
+    }
+    case 'Delete':
+    case 'Backspace':
+      // Trigger delete for selected items (existing selection handles this)
+      break
+    case 'n':
+      if (!event.metaKey && !event.ctrlKey) {
+        event.preventDefault()
+        emit('add-note')
+      }
+      break
+    case 'c':
+      if (!event.metaKey && !event.ctrlKey) {
+        event.preventDefault()
+        emit('create-chat')
+      }
+      break
+    case 'f':
+      if (event.metaKey || event.ctrlKey) {
+        event.preventDefault()
+        // Focus search - parent component handles this
+      }
+      break
+  }
+}
+
+// Focus management
+onMounted(() => {
+  // Optional: auto-focus the tree on mount
+})
+
 function handleSelect(id: string, event?: MouseEvent) {
-  if (event?.shiftKey && lastSelectedId.value) {
+  if (event?.shiftKey && lastSelectedId.value && !props.isDeleteMode) {
     const all = allSelectableIds.value
     const start = all.indexOf(lastSelectedId.value)
     const end = all.indexOf(id)
@@ -201,7 +388,7 @@ function handleSelect(id: string, event?: MouseEvent) {
       const range = all.slice(Math.min(start, end), Math.max(start, end) + 1)
       selectedIds.value = Array.from(new Set([...selectedIds.value, ...range]))
     }
-  } else if (event?.ctrlKey || event?.metaKey) {
+  } else if (event?.ctrlKey || event?.metaKey || props.isDeleteMode) {
     if (selectedIds.value.includes(id)) {
       selectedIds.value = selectedIds.value.filter(i => i !== id)
     } else {
@@ -239,6 +426,9 @@ function handleSelect(id: string, event?: MouseEvent) {
   else if (id.startsWith('root:queries') || id.startsWith('query:')) context = 'queries'
   
   emit('update:context', context)
+
+  // Stop here if in Delete Mode (do not open items)
+  if (props.isDeleteMode) return
 
   if (id.startsWith('file:')) {
     const fileId = id.replace('file:', '')
@@ -361,14 +551,59 @@ const handleDeleteQuery = (id: string) => {
 </script>
 
 <template>
-  <div class="h-full w-full overflow-hidden">
+  <div 
+    ref="treeRef"
+    class="h-full w-full overflow-hidden focus:outline-none"
+    tabindex="0"
+    @keydown="handleKeyDown"
+  >
     <Tree
       :elements="[]"
       :initial-selected-id="selectedTable ? getTableId(selectedTable.connectionId, selectedTable.tableName) : ''"
       :initial-expanded-items="initialExpanded"
+      :is-delete-mode="isDeleteMode"
       class="h-full w-full"
       @select="(id, ev) => handleSelect(id, ev)"
     >
+      <!-- FAVORITES ROOT -->
+      <Folder
+        v-if="favoriteItems.length > 0"
+        id="root:favorites"
+        name="Favorites"
+        open-icon="lucide:star"
+        close-icon="lucide:star"
+        class="font-medium"
+      >
+        <template #label>
+          <div class="flex items-center gap-2">
+            <Star class="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+            <span class="text-foreground">Favorites</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">{{ favoriteItems.length }}</span>
+          </div>
+        </template>
+        <ContextMenu v-for="item in favoriteItems" :key="item.id">
+          <ContextMenuTrigger as-child>
+            <File
+              :id="item.id"
+              :name="item.name"
+              :file-icon="item.icon"
+              :is-select="selectedIds.includes(item.id)"
+            >
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="truncate">{{ item.name }}</span>
+                <Star class="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+              </div>
+            </File>
+          </ContextMenuTrigger>
+          <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
+            <ContextMenuItem @select="toggleFavorite(item.id)" class="text-amber-600">
+              <Star class="w-3.5 h-3.5 mr-2" />
+              Remove from Favorites
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      </Folder>
+
       <!-- DATABASES ROOT -->
       <ContextMenu>
         <ContextMenuTrigger as-child>
@@ -383,7 +618,7 @@ const handleDeleteQuery = (id: string) => {
                   <div class="flex items-center justify-between w-full">
                      <div class="flex items-center gap-2">
                         <span class="text-foreground">Databases</span>
-                        <span v-if="connections.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{{ connections.length }}</span>
+                        <span v-if="filteredConnections.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{{ filteredConnections.length }}</span>
                      </div>
                      <button 
                         @click.stop.prevent="emit('add-connection')" 
@@ -394,7 +629,7 @@ const handleDeleteQuery = (id: string) => {
                      </button>
                   </div>
                </template>
-              <div v-if="connections.length === 0" class="flex flex-col items-center justify-center py-6 px-4 text-center">
+              <div v-if="filteredConnections.length === 0" class="flex flex-col items-center justify-center py-6 px-4 text-center">
                  <Database class="w-10 h-10 text-muted-foreground/30 mb-2" />
                  <p class="text-xs text-muted-foreground mb-2">No database connections yet</p>
                  <button 
@@ -406,7 +641,7 @@ const handleDeleteQuery = (id: string) => {
               </div>
               
               <!-- Connection Loop -->
-              <ContextMenu v-for="conn in connections" :key="conn.id">
+              <ContextMenu v-for="conn in filteredConnections" :key="conn.id">
                 <ContextMenuTrigger as-child>
                   <Folder
                     :id="conn.id"
@@ -429,7 +664,7 @@ const handleDeleteQuery = (id: string) => {
                            <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500/80" />
                        </div>
                     </template>
-                    <ContextMenu v-for="table in getTables(conn.id)" :key="getTableId(conn.id, table)">
+                    <ContextMenu v-for="table in getFilteredTables(conn.id)" :key="getTableId(conn.id, table)">
                       <ContextMenuTrigger as-child>
                         <File
                           :id="getTableId(conn.id, table)"
@@ -441,13 +676,13 @@ const handleDeleteQuery = (id: string) => {
                           <div class="flex items-center justify-between w-full pr-2 overflow-hidden">
                               <div class="flex items-center gap-1.5 min-w-0">
                                 <span class="truncate">{{ getDisplayName(conn.id, table) }}</span>
-                                <CheckCircle2 class="w-3 h-3 text-muted-foreground/30" />
+                                <Star v-if="isFavorite(getTableId(conn.id, table))" class="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
                               </div>
                               <span 
-                                v-if="getRowCount(conn.id, table)"
-                                class="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap ml-2"
+                                v-if="getRowCount(conn.id, table) !== undefined"
+                                class="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap ml-2"
                               >
-                                  {{ getRowCount(conn.id, table) }}
+                                  {{ formatRowCount(getRowCount(conn.id, table)) }}
                               </span>
                           </div>
                         </File>
@@ -460,6 +695,10 @@ const handleDeleteQuery = (id: string) => {
                          <ContextMenuItem @select="emit('select-table', conn, table)">
                             <Edit class="w-3.5 h-3.5 mr-2" />
                             Open in Editor
+                         </ContextMenuItem>
+                         <ContextMenuItem @select="toggleFavorite(getTableId(conn.id, table))" :class="isFavorite(getTableId(conn.id, table)) ? 'text-amber-600' : ''">
+                            <Star class="w-3.5 h-3.5 mr-2" :class="isFavorite(getTableId(conn.id, table)) ? 'fill-amber-500 text-amber-500' : ''" />
+                            {{ isFavorite(getTableId(conn.id, table)) ? 'Remove from Favorites' : 'Add to Favorites' }}
                          </ContextMenuItem>
                          <ContextMenuSeparator class="bg-border my-1" />
                          <ContextMenuItem @select="emit('rename-table', conn, table)">
@@ -541,15 +780,15 @@ const handleDeleteQuery = (id: string) => {
                   <div class="flex items-center justify-between w-full">
                      <div class="flex items-center gap-2">
                         <span class="text-foreground">Sheets</span>
-                        <span v-if="sheets?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">{{ sheets.length }}</span>
+                        <span v-if="filteredSheets?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">{{ filteredSheets.length }}</span>
                      </div>
                   </div>
                </template>
-                <div v-if="!sheets?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                <div v-if="!filteredSheets?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
                     <p class="text-xs text-muted-foreground">No spreadsheets</p>
                 </div>
                 <!-- Sheets Loop -->
-                <ContextMenu v-for="sheet in sheets" :key="sheet.id">
+                <ContextMenu v-for="sheet in filteredSheets" :key="sheet.id">
                     <ContextMenuTrigger as-child>
                         <File 
                             :id="`sheet:${sheet.id}`" 
@@ -594,7 +833,7 @@ const handleDeleteQuery = (id: string) => {
                   <div class="flex items-center justify-between w-full">
                      <div class="flex items-center gap-2">
                         <span class="text-foreground">Chats</span>
-                        <span v-if="chats?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">{{ chats.length }}</span>
+                        <span v-if="filteredChats?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">{{ filteredChats.length }}</span>
                      </div>
                      <button 
                         @click.stop.prevent="emit('create-chat')" 
@@ -605,11 +844,11 @@ const handleDeleteQuery = (id: string) => {
                      </button>
                   </div>
                </template>
-                <div v-if="!chats?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                <div v-if="!filteredChats?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
                     <MessageSquarePlus class="w-8 h-8 text-muted-foreground/30 mb-2" />
                     <p class="text-xs text-muted-foreground">Start a conversation</p>
                 </div>
-                <ContextMenu v-for="chat in chats" :key="chat.id">
+                <ContextMenu v-for="chat in filteredChats" :key="chat.id">
                     <ContextMenuTrigger as-child>
                         <File 
                             :id="`chat:${chat.id}`" 
@@ -654,14 +893,14 @@ const handleDeleteQuery = (id: string) => {
                   <div class="flex items-center justify-between w-full">
                      <div class="flex items-center gap-2">
                         <span class="text-foreground">Queries</span>
-                        <span v-if="queryHistory?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">{{ queryHistory.length }}</span>
+                        <span v-if="filteredQueries?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">{{ filteredQueries.length }}</span>
                      </div>
                   </div>
                </template>
-                <div v-if="!queryHistory?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                <div v-if="!filteredQueries?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
                     <p class="text-xs text-muted-foreground">No query history</p>
                 </div>
-                <ContextMenu v-for="q in queryHistory" :key="q.id">
+                <ContextMenu v-for="q in filteredQueries" :key="q.id">
                     <ContextMenuTrigger as-child>
                         <File 
                             :id="`query:${q.id}`" 
@@ -701,7 +940,7 @@ const handleDeleteQuery = (id: string) => {
                   <div class="flex items-center justify-between w-full">
                      <div class="flex items-center gap-2">
                         <span class="text-foreground">Files</span>
-                        <span v-if="files?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">{{ files.length }}</span>
+                        <span v-if="filteredFiles?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">{{ filteredFiles.length }}</span>
                      </div>
                      <button 
                         @click.stop.prevent="emit('upload-file')" 
@@ -712,11 +951,11 @@ const handleDeleteQuery = (id: string) => {
                      </button>
                   </div>
                </template>
-                <div v-if="!files?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                <div v-if="!filteredFiles?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
                     <FilePlus class="w-8 h-8 text-muted-foreground/30 mb-2" />
                     <p class="text-xs text-muted-foreground">Drop files here or click to upload</p>
                 </div>
-                <ContextMenu v-for="file in files" :key="file.id">
+                <ContextMenu v-for="file in filteredFiles" :key="file.id">
                     <ContextMenuTrigger as-child>
                         <File 
                             :id="`file:${file.id}`" 
@@ -767,7 +1006,7 @@ const handleDeleteQuery = (id: string) => {
                   <div class="flex items-center justify-between w-full">
                      <div class="flex items-center gap-2">
                         <span class="text-foreground">Notes</span>
-                        <span v-if="notes?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">{{ notes.length }}</span>
+                        <span v-if="filteredNotes?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">{{ filteredNotes.length }}</span>
                      </div>
                      <button 
                         @click.stop.prevent="emit('add-note')" 
@@ -778,11 +1017,11 @@ const handleDeleteQuery = (id: string) => {
                      </button>
                   </div>
                </template>
-                <div v-if="!notes?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
+                <div v-if="!filteredNotes?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
                     <NotebookPen class="w-8 h-8 text-muted-foreground/30 mb-2" />
                     <p class="text-xs text-muted-foreground">Create your first note</p>
                 </div>
-                 <ContextMenu v-for="note in notes" :key="note.id">
+                 <ContextMenu v-for="note in filteredNotes" :key="note.id">
                     <ContextMenuTrigger as-child>
                         <File 
                             :id="`note:${note.id}`" 

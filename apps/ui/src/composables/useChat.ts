@@ -1,8 +1,9 @@
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { fetchChats, fetchChatHistory } from '@/lib/api'
 import { useChatDialogs } from './useChatDialogs'
+import type { Chat } from '@/stores/chat'
 
 /**
  * Composable for managing chat operations
@@ -12,9 +13,12 @@ export function useChat() {
     const chatStore = useChatStore()
     const workspaceStore = useWorkspaceStore()
 
-    // Local refs synced with store
-    const chats = ref<any[]>([])
-    const selectedChatId = ref('')
+    // Reactive bridge to store
+    const chats = computed(() => chatStore.chats)
+    const selectedChatId = computed({
+        get: () => chatStore.selectedChatId || '',
+        set: (val: string) => { chatStore.selectedChatId = val || null }
+    })
     const chatHistory = ref<any[]>([])
 
     const {
@@ -31,8 +35,6 @@ export function useChat() {
     async function loadChats() {
         try {
             await chatStore.loadChats()
-            // Sync store data to local ref for reactivity
-            chats.value = [...(chatStore as any).chats]
         } catch (e) {
             console.error('Failed to load chats', e)
         }
@@ -44,10 +46,7 @@ export function useChat() {
     async function createChat(title: string = 'New Chat') {
         try {
             const newChat = await chatStore.createChat(title)
-            console.log('[useChat] New chat created:', newChat)
-
-            // Sync store data to local ref
-            chats.value = [...(chatStore as any).chats]
+            console.log('[useChat] New chat created:', newChat.id)
 
             // Switch to the new chat
             selectedChatId.value = newChat.id
@@ -71,7 +70,7 @@ export function useChat() {
      */
     async function selectChat(id: string) {
         try {
-            const chat = chats.value.find(c => c.id === id)
+            const chat = chats.value.find((c: Chat) => c.id === id)
             if (!chat) return
 
             // Load chat history
@@ -89,7 +88,7 @@ export function useChat() {
      * Continue with selected chat (from preview)
      */
     function continueChat(id: string) {
-        const chat = chats.value.find(c => c.id === id)
+        const chat = chats.value.find((c: Chat) => c.id === id)
         const messagesToLoad = [...previewMessages.value]
 
         closeChatPreview()
@@ -116,7 +115,6 @@ export function useChat() {
     async function deleteChat(id: string) {
         try {
             await chatStore.deleteChat(id)
-            chats.value = [...(chatStore as any).chats]
 
             if (selectedChatId.value === id) {
                 selectedChatId.value = ''
@@ -166,26 +164,24 @@ export function useChat() {
             const { buildConnectionPayload } = await import('@/lib/db-connections')
             const { useConnectionStore } = await import('@/stores/connection')
             const { useSettingsStore } = await import('@/stores/settings')
-            const { storeToRefs } = await import('pinia')
 
             onProgress?.(10, 'Thinking...')
 
             // Get connection
             const connectionStore = useConnectionStore()
-            const connection = connectionStore.connections.value.find(c => c.id === connectionId)
+            const connection = connectionStore.connections.find((c: any) => c.id === connectionId)
             if (!connection) {
                 throw new Error('Connection not found')
             }
 
             // Get Settings
             const settingsStore = useSettingsStore()
-            const { settings } = storeToRefs(settingsStore)
 
             // Ensure settings are loaded or use current value
-            if (!settings.value.activeModel) {
+            if (!settingsStore.settings.activeModel) {
                 await settingsStore.loadSettings()
             }
-            const { temperature, maxTokens } = settings.value
+            const { temperature, maxTokens } = settingsStore.settings
 
             // Generate SQL from natural language
             const aiResponse = await generateAIQuery(prompt, connectionId, chatHistory.value, undefined, {

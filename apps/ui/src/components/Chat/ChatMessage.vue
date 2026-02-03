@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import JsonViewer from '@/components/JsonViewer.vue'
-import { ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Sparkles, Loader2, AlertTriangle } from 'lucide-vue-next'
 
 const props = defineProps<{
   content: string
@@ -102,9 +102,16 @@ const formatValue = (val: any) => {
 <template>
   <div class="space-y-3 w-full overflow-hidden">
     <!-- Text Part -->
-    <div v-if="parsedContent.text" class="whitespace-pre-wrap break-words">{{ parsedContent.text }}</div>
+    <div v-if="parsedContent.text" class="whitespace-pre-wrap break-words leading-relaxed">{{ parsedContent.text }}</div>
     
-    <!-- Generate Insights Button -->
+    <!-- Professional Disclaimer -->
+    <div v-if="meta?.needsDisclaimer" class="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 flex gap-3 text-xs leading-normal text-amber-800 dark:text-amber-200/80 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+      <AlertTriangle class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+      <div class="space-y-1">
+        <p class="font-bold uppercase tracking-wider text-[10px]">Investment Disclaimer</p>
+        <p>This information is for informational purposes only and does not constitute financial, investment, or legal advice. All investments carry risk. Please consult with a professional advisor before making any financial decisions.</p>
+      </div>
+    </div>
     <div v-if="canGenerateInsights" class="flex items-center gap-2">
       <button
         @click="handleGenerateInsights"

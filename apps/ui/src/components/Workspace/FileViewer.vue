@@ -5,9 +5,11 @@ import { toast } from '@/composables/useNotifications'
 import { FileText, FileType, Image as ImageIcon, File, ScrollText } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import { QUERY_API_URL } from '@/lib/api'
 
 const props = defineProps<{
   file: {
+    id?: string
     filename: string
     file_type: string
     storage_path?: string
@@ -107,6 +109,8 @@ const loadDocx = async () => {
 // Load Markdown
 const loadMarkdown = async () => {
   if (!props.file.content) {
+    // If we have an ID, we might want to fetch it textually?
+    // For now, keep requirement for content for text files
     throw new Error('No file content provided')
   }
 
@@ -127,17 +131,24 @@ const loadMarkdown = async () => {
 
 // Get file URL for rendering
 const fileUrl = computed(() => {
-  if (!props.file.content) return ''
-  
-  if (props.file.content instanceof Blob) {
-    return URL.createObjectURL(props.file.content)
+  // 1. Content-based Blob URL (Priority)
+  if (props.file.content) {
+    if (props.file.content instanceof Blob) {
+      return URL.createObjectURL(props.file.content)
+    }
+    // ArrayBuffer -> Blob
+    const blob = new Blob([props.file.content], { 
+      type: getMimeType(fileExtension.value) 
+    })
+    return URL.createObjectURL(blob)
   }
-  
-  // If ArrayBuffer, convert to Blob
-  const blob = new Blob([props.file.content], { 
-    type: getMimeType(fileExtension.value) 
-  })
-  return URL.createObjectURL(blob)
+
+  // 2. ID-based Remote URL (Fallback)
+  if (props.file.id) {
+    return `${QUERY_API_URL}/files/${props.file.id}`
+  }
+
+  return ''
 })
 
 const getMimeType = (ext: string): string => {

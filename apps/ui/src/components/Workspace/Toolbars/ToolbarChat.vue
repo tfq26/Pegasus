@@ -24,6 +24,7 @@ const props = defineProps<{
   aiOptions: { model: string | null; temperature: number }
   availableModels: { id: string; name: string }[]
   isExecuting: boolean
+  chatName?: string
 }>()
 
 const emit = defineEmits<{
@@ -106,7 +107,16 @@ const contextUsage = 45
         </div>
     </div>
 
-    <div class="flex-1"></div>
+    <!-- Chat Name -->
+    <div class="flex-1 flex justify-center items-center px-4 min-w-0">
+        <span 
+          v-if="chatName" 
+          class="text-xs font-medium text-muted-foreground truncate max-w-[200px]"
+          :title="chatName"
+        >
+            {{ chatName }}
+        </span>
+    </div>
 
     <!-- Actions -->
     <div class="flex items-center gap-1">

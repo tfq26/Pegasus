@@ -213,7 +213,7 @@
             ref="inputRef"
             v-model="newMessage"
             placeholder="Type @ to mention..."
-            class="w-full bg-muted rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary h-[60px] resize-none overflow-y-auto pt-[10px]"
+            class="w-full bg-muted rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary min-h-[40px] max-h-[150px] transition-all duration-200"
             @input="handleInput"
             @keydown="handleKeydown"
             @paste="handlePaste"
@@ -417,6 +417,11 @@ const renderContent = (content: string, msgMentions?: Mention[]) => {
 const handleInput = (e: Event) => {
   const input = e.target as HTMLTextAreaElement
   const value = input.value
+
+  // Auto-expand height
+  input.style.height = 'auto'
+  input.style.height = `${input.scrollHeight}px`
+
   const cursorPos = input.selectionStart || 0
   
   // Find @ symbol before cursor

@@ -183,7 +183,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref, unref } from 'vue'
+import { useSpaceStore } from '@/stores/space'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRoute } from 'vue-router'
 import { toast } from '@/composables/useNotifications'
@@ -208,6 +209,8 @@ import { useChatDialogs } from '@/composables/useChatDialogs'
 import { useChat } from '@/composables/useChat'
 import { useChatExecution } from '@/composables/useChatExecution'
 import { useChatToolbar } from '@/composables/useChatToolbar'
+
+const spaceStore = useSpaceStore()
 import { useTableActions } from '@/composables/useTableActions'
 import { useProgress } from '@/lib/progress'
 import { getAuthHeaders, api } from '@/lib/apiClient'
@@ -282,6 +285,14 @@ const {
   selectChat,
   continueChat,
 } = useChat()
+
+// Watch for space changes to reload data
+watch(() => spaceStore.currentSpaceId, async () => {
+    await Promise.all([
+        loadChats(),
+        loadQueries()
+    ])
+})
 
 // Auto-refresh logic for lists
 onMounted(() => {
@@ -790,7 +801,12 @@ const handleUpdateInput = (val: string) => {
 
 const loadQueries = async () => {
     try {
-        queryHistory.value = await fetchQueries() as any[]
+        const spaceId = unref(spaceStore.currentSpaceId)?.split(':').pop()
+        if (!spaceId) {
+            queryHistory.value = []
+            return
+        }
+        queryHistory.value = await fetchQueries(spaceId) as any[]
     } catch (e) {
         console.error('Failed to load queries', e)
     }
@@ -839,7 +855,8 @@ const handleWorkspaceAIResponse = (response: any) => {
     // Show AI response in the Results Panel
     queryResult.value = response
     resultsPanelPosition.value = 'right'
-    resultsPanelVisible.value = true
+    // Do NOT auto-open. User must click "Inspect Data"
+    // resultsPanelVisible.value = true
     
     // Also log to history if needed, but primarily show in panel
     // If not a complex object, we might want to sanitize or format it
@@ -882,7 +899,8 @@ const handleLoadQuery = async (query: string) => {
 const handleSaveFormulaQuery = async (query: string) => {
     if (!selectedConnection.value) return
     try {
-        await saveQuery(query, 'user', 'success', selectedConnection.value.id)
+        const spaceId = unref(spaceStore.currentSpaceId)?.split(':').pop()
+        await saveQuery(query, 'user', 'success', selectedConnection.value.id, spaceId)
         toast.success('Query saved')
     } catch (e) { console.error(e) }
 }

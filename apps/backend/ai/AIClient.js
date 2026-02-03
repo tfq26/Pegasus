@@ -188,11 +188,9 @@ export class AIClient {
         return provider.generateQuery(prompt, context, settings)
     }
 
-    async analyzeResults(question, results, query, modelId, semanticContext = {}) {
-        // Warning: This method signature doesn't support userId yet.
-        // It should be refactored or rely on default provider.
+    async analyzeResults(question, results, query, modelId, schemaContext = {}) {
         const provider = await this.getProviderForModel(modelId)
-        return provider.analyzeResults(question, results, query, semanticContext)
+        return provider.analyzeResults(question, results, query, modelId, schemaContext)
     }
 
     async disambiguate(term, candidates, modelId) {

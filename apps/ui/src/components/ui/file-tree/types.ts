@@ -17,6 +17,7 @@ export interface TreeProps {
     closeIcon?: string;
     fileIcon?: string;
     direction?: "rtl" | "ltr";
+    isDeleteMode?: boolean;
 }
 
 export interface TreeContextProps {
@@ -27,6 +28,7 @@ export interface TreeContextProps {
     closeIcon: string;
     fileIcon: string;
     direction: "rtl" | "ltr";
+    isDeleteMode: Ref<boolean>;
     handleExpand: (id: string) => void;
     selectItem: (id: string, event?: MouseEvent) => void;
     setExpandedItems: (items: string[] | undefined) => void;
@@ -38,6 +40,7 @@ export interface BaseItemProps {
     name: string;
     isSelectable?: boolean;
     isSelect?: boolean;
+    isDeleteMode?: boolean;
 }
 
 export interface FolderProps extends BaseItemProps {

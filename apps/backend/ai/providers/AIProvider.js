@@ -70,11 +70,11 @@ export class AIProvider {
     /**
      * Analyzes query results to answer a user question.
      */
-    async analyzeResults(question, results, query, semanticContext = {}) {
-        const prompt = PromptBuilder.buildAnalysisPrompt(question, results, query, semanticContext)
+    async analyzeResults(question, results, query, activeModel, schemaContext = {}) {
+        const prompt = PromptBuilder.buildAnalysisPrompt(question, results, query, schemaContext)
         const messages = [{ role: 'user', content: prompt }]
 
-        const response = await this.generateContent(messages, { json: true })
+        const response = await this.generateContent(messages, { json: true, model: activeModel })
         const text = typeof response === 'string' ? response : response.text
         const usage = typeof response === 'string' ? null : response.usage
         return { text, usage }

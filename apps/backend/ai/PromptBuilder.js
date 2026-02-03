@@ -22,12 +22,16 @@
     let knowledgeBaseContext = ''
     if (schema?.semanticContext?.knowledgeBase) {
       const kb = schema.semanticContext.knowledgeBase
-      knowledgeBaseContext = `\nKNOWLEDGE BASE (Your PRIMARY reference for context):\n`
-      knowledgeBaseContext += `This contains facts about the system, data mappings, and documentation.\nALWAYS check here FIRST before making assumptions.\n\n`
+      knowledgeBaseContext = `\n[KNOWLEDGE BASE - MANDATORY GROUNDING]\n`
+      knowledgeBaseContext += `The following information has been extracted from the user's notes and workspace. You MUST prioritize this information over your general training data.\n\n`
       kb.forEach((item, i) => {
-        knowledgeBaseContext += `[Source ${i + 1}: ${item.source}${item.tableName ? ` table ${item.tableName}` : ''}]\n${item.content}\n\n`
+        knowledgeBaseContext += `### Source ${i + 1}: ${item.source}${item.tableName ? ` (Table: ${item.tableName})` : ''}\n${item.content}\n\n`
       })
-      knowledgeBaseContext += `GROUNDING RULES:\n1. If KB contains relevant info, treat it as source of truth\n2. ALWAYS cite sources using [Source X] format\n3. If answer not in KB or schema, state "I cannot find this information in the available sources after checking [list sources checked]"\n4. NEVER hallucinate - if you don't know, say so explicitly\n`
+      knowledgeBaseContext += `GROUNDING RULES:\n`
+      knowledgeBaseContext += `1. **GROUNDING IS MANDATORY**: Before saying you don't have enough information or asking the user for details (like "what funds are you in?"), you MUST check the KNOWLEDGE BASE above. If the info is there, you MUST use it.\n`
+      knowledgeBaseContext += `2. **QUALITATIVE ANSWERS**: If a user asks for advice, strategy, or recommendations, synthesize an answer immediately from the KNOWLEDGE BASE. Do NOT ask for more info if the KB already identifies their holdings, strategy, or goals.\n`
+      knowledgeBaseContext += `3. **CITE SOURCES**: Always cite using [Source X] format.\n`
+      knowledgeBaseContext += `4. **STRICT TRUTH**: If the answer is truly not in the KB or a database table, then and only then should you ask for more information.\n`
     }
 
     // Semantic Context
@@ -102,46 +106,89 @@ CONTEXT HIERARCHY (Always check in this order):
 1. KNOWLEDGE BASE - Domain facts, data mappings, documentation, definitions
 2. SCHEMA - Available tables/collections, column names, data types
 3. SAMPLE VALUES - Example data for fuzzy matching and understanding content
-4. QUERY RESULTS - Actual data fetched via query_data tool
+4. WEB RESEARCH - Real-time market data, competitive analysis, general knowledge
+5. QUERY RESULTS - Actual data fetched via query_data tool
 
 When answering questions:
 - First check if Knowledge Base explains the term/concept
 - Then identify which schema objects (tables/collections) are relevant
 - Use samples to understand data patterns and for fuzzy matching
+- Use 'search_web' if the query requires external information, market trends, or brands not in the database
 - Finally execute queries to get actual data
+
+REASONING GUIDELINES:
+- **NO LAZINESS**: If you find yourself about to say "I need more information" or "What are you invested in?", STOP. Look at the Knowledge Base and listed Data Sources again.
+- **EXPLORATION FIRST**: If there are files listed in the registry that you haven't queried yet, and they seem relevant to the question (e.g., a file named 'portfolio' when asked about investments), YOU MUST use 'get_sample_data' or 'query_data' to inspect them before giving up.
+- **SELF-CORRECTION**: If the user mentions a directory like @[demo-data], assume the answer is inside one of those files and hunt for it.
 `.trim()
   }
-
   static buildDataSourceStrategy(schema) {
     const tables = schema.tables || schema.collections || []
     const registry = schema.sourceRegistry || {}
+    const unloaded = schema.unloadedResources || []
 
-    let strategy = `
+    // Group tables by origin
+    const grouped = {}
+    tables.forEach(t => {
+      const origin = registry[t]?.origin || 'Main Connection'
+      if (!grouped[origin]) grouped[origin] = []
+      grouped[origin].push(t)
+    })
+
+    let tableList = ''
+    Object.entries(grouped).forEach(([origin, tables]) => {
+      tableList += `- DATASET: ${origin} (Provider: ${registry[tables[0]]?.provider || 'default'})\n`
+      tables.forEach(t => {
+        tableList += `   |_ ${t}\n`
+      })
+    })
+
+    return `
 SOURCE ORCHESTRATION ENGINE:
-You have access to the following data sources. Use the query_data tool on LOADED sources.
+[STATUS: ALL LISTED SOURCES ARE LOADED AND READY FOR QUERYING]
 
-LOADED & READY (Use These Directly):
-${tables.map(t => `- ${t} (${registry[t]?.provider || 'default'})`).join('\n')}
+LOADED & READY (Use 'query_data' tool on these immediately):
+${tableList}
 
-FULL REGISTRY (For Reference):
-${Object.entries(registry).map(([name, meta]) => `- ${name} | Origin: ${meta.origin} | Type: ${meta.type} | Dialect: ${meta.provider || 'default'}`).join('\n')}
+UNAVAILABLE / NOT IN CONTEXT (Do NOT mention these unless the user specifically asks to load them):
+${unloaded.length > 0
+        ? unloaded.map(u => `- ${u.name} (Type: ${u.type || 'unknown'})`).join('\n')
+        : '- (None)'}
+
+MANDATORY DATA TRUST:
+1. If a table is listed in "LOADED & READY", you have FULL permissions. NEVER say "I don't have access".
+2. If the user asks for a Dataset (e.g. "US Sales"), find the tables grouped under that dataset. 
+3. DO NOT ASK for more information if a relevant dataset is listed. Just QUERY the tables.
 
 ROUTING RULES:
 1. QUANTITATIVE (How much, total, sum, growth) → Focus on STRUCTURED/SEMI_STRUCTURED sources. Use the query_data tool.
-2. QUALITATIVE (What is the strategy, recommended, notes) → Focus on UNSTRUCTURED sources. Reference the provided content summaries.
+2. QUALITATIVE (What is the strategy, recommended, notes) → Focus on UNSTRUCTURED sources. Reference the provided content summaries in the KNOWLEDGE BASE. NEVER try to use SQL (SELECT/FROM) on UNSTRUCTURED sources.
 3. CROSS-SOURCE JOINS (e.g. "Do my holdings match research picks?"):
    - Step A: Query STRUCTURED to get identifiers (e.g. Fund Names).
    - Step B: Search UNSTRUCTURED for those exact identifiers to extract facts.
    - Step C: Synthesize by joining identifier-to-fact.
+4. SOURCE/TABLE MAPPING (CRITICAL for "Missing" Data):
+   - If the user asks for a specific dataset (e.g., "US Sales") and you do NOT see a table with that exact name, CHECK THE "Source:" TAGS in the "LOADED & READY" list.
+   - Example: User asks for "US Sales". valid tables are: \`sales_west (Source: US_Sales_2025)\` (and sales_east, etc).
+   - ACTION: You MUST query \`sales_west\` (and any others with that Source) to answer the question.
+   - Do NOT say "I do not have access" if the Source matches the request. Aggregate the data from the tables belonging to that Source.
+5. WEB SEARCH & EXTERNAL INTEL:
+   - If a query involves brands, companies, market trends, competitors, or general knowledge NOT specific to the user's uploaded files, YOU MUST use the 'search_web' tool.
+   - MANDATORY INDUSTRY SCOPING: Before searching, identify the "Industry Domain" from the user's local data. You MUST include this domain in your search query.
+   - QUERY REFINEMENT: Do NOT use generic terms like "top performing" (which can yield irrelevant results). Instead, use specific market research terms: "market share", "leading brands", "best selling", "major players", or "rankings".
+   - Example: "major fashion brands in Asia market share" (Good) vs "top performing brands" (Bad).
+   - RELEVANCE FILTERING: Discard any search results that do not match the industry context of the user's data.
+   - COMBINATION: When answering questions that combine local data with market context, use BOTH local queries and web search to provide a comprehensive response.
+6. MANDATORY GROUNDING:
+   - If a source (database or file) is mentioned in the prompt (even if !named), it means the system has already resolved that context for you.
+   - NEVER say "I don't have access to X" if X is listed as a 'Source' in the LOADED & READY list.
 
 STRICT ANCHORING & NAMING:
 - USE REGISTRY NAMES: You MUST use the exact name from the "REGISTRY" list above (e.g. if the registry says 'funds_2023', do NOT use 'funds' or 'Funds').
 - MAPPING: If a user mentions a file by its visual name (e.g. "my portfolio"), look for the most similar entry in the REGISTRY (e.g. 'portfolio_report') and use that name in your tool call.
 - NEVER use training data/general knowledge for sources listed above. 
 - CITE ORIGINS: Use [Source: OriginName] for every primary fact.
-`
-
-    return strategy.trim()
+`.trim()
   }
 
   static buildUniversalQueryPrinciples() {
@@ -316,25 +363,32 @@ EXAMPLES:
       const sampleValues = schema.sampleValues || {}
 
       schemaPresentation = `\nDatabase Schema:\n`
-      if (schema.detailedSchema) {
-        Object.entries(schema.detailedSchema).forEach(([table, columns]) => {
+      const registry = schema.sourceRegistry || {}
+      const tablesBySource = {}
+      tables.forEach(t => {
+        const source = registry[t]?.origin || 'Default'
+        if (!tablesBySource[source]) tablesBySource[source] = []
+        tablesBySource[source].push(t)
+      })
+
+      Object.entries(tablesBySource).forEach(([source, sourceTables]) => {
+        schemaPresentation += `[SOURCE: ${source}]\n`
+        sourceTables.forEach(table => {
+          const columns = schema.detailedSchema?.[table]
           const desc = schema.tableDescriptions?.[table] ? ` (${schema.tableDescriptions[table]})` : ''
-          if (table === activeTable || tables.length <= 10) {
-            schemaPresentation += `Table: ${table}${desc}\nColumns:\n`
-            columns.forEach(col => {
-              schemaPresentation += `  - ${col.name} (${col.type})${col.pk ? ' [PK]' : ''}\n`
-            })
+          if (table === activeTable || tables.length <= 15) {
+            schemaPresentation += `Table: ${table}${desc}\n  Columns:\n`
+            if (columns) {
+              columns.forEach(col => {
+                schemaPresentation += `    - ${col.name} (${col.type})${col.pk ? ' [PK]' : ''}\n`
+              })
+            }
           } else {
-            schemaPresentation += `Table: ${table}${desc} (Details available via get_table_schema tool)\n`
+            schemaPresentation += `Table: ${table}${desc}\n`
           }
-          schemaPresentation += '\n'
         })
-      } else {
-        schemaPresentation += `Available Tables:\n${tables.map(t => {
-          const desc = schema.tableDescriptions?.[t] ? ` (${schema.tableDescriptions[t]})` : ''
-          return `- ${t}${desc}`
-        }).join('\n')}`
-      }
+        schemaPresentation += '\n'
+      })
 
       if (Object.keys(sampleValues).length > 0) {
         schemaPresentation += '\n\nSample Values (categorical fields):\n'
@@ -579,7 +633,19 @@ EXAMPLES:
     return { schemaPresentation, dialectInstructions: formatInstructions }
   }
 
-  static buildAnalysisPrompt(question, results, query, semanticContext = {}) {
+  static buildAnalysisPrompt(question, results, query, schema = {}) {
+    const semanticContext = schema.semanticContext || {}
+    const registry = schema.sourceRegistry || {}
+
+    let registryContent = ''
+    if (registry && Object.keys(registry).length > 0) {
+      registryContent = `\nDATA SOURCE MAPPING:\n`
+      Object.entries(registry).forEach(([name, meta]) => {
+        registryContent += `- ${name} -> Source: ${meta.origin} (${meta.type})\n`
+      })
+      registryContent += `\nGROUNDING RULE: If the user asks for a dataset like "US Sales", look at the mapping above. If a table (e.g. sales_west) maps to Source: US_Sales_2025, it IS the data for that dataset. USE IT to answer the question.\n`
+    }
+
     let kbContent = ''
     if (semanticContext.knowledgeBase?.length > 0) {
       kbContent = `\n[KNOWLEDGE BASE - PRIORITIZE OVER TRAINING DATA]\n`
@@ -592,6 +658,8 @@ EXAMPLES:
     return `
 You are a helpful data analyst assistant. 
 Analyze the following database results to answer the user's question with deep insights.
+
+${registryContent}
 
 ${kbContent}
 
@@ -610,12 +678,17 @@ CRITICAL: You MUST return a valid JSON object.
 Response Format:
 {
   "answer": "Your detailed response here...",
+  "needs_disclaimer": true, // Set to true ONLY if providing financial advice, performance projections, or specific investment recommendations
   "prediction": {
     "value": "The predicted value (if applicable)",
     "confidence": 0.85,
     "reasoning": "Step-by-step logic for this prediction"
   }
 }
+
+Rules for "needs_disclaimer":
+1. Set to true if your answer includes specific fund names, investment strategies, or return projections.
+2. If true, keep your "answer" focused on the data and logic. A standard disclaimer will be provided by the UI.
 
 Rules for "answer":
 1. Length: At least 1 paragraph, maximum 5 paragraphs.

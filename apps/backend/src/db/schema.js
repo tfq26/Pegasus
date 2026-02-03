@@ -104,7 +104,7 @@ export const knowledgeChunks = pgTable("knowledge_chunk", {
     fileId: uuid("file_id").references(() => files.id, { onDelete: 'cascade' }),
     noteId: uuid("note_id").references(() => spaceNotes.id, { onDelete: 'cascade' }),
     content: text("content"),
-    embedding: vector("embedding", { dimensions: 1536 }),
+    embedding: vector("embedding", { dimensions: 768 }),
     metadata: jsonb("metadata"),
     chunkHash: text("chunk_hash"),
     createdAt: timestamp("created_at").defaultNow(),
@@ -270,6 +270,7 @@ export const userFeatureFlags = pgTable("user_feature_flag", {
 export const chats = pgTable("chat", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
     title: text("title").default('New Chat'),
     messages: jsonb("messages").default([]),
     connectionId: uuid("connection_id"),
@@ -282,6 +283,7 @@ export const chats = pgTable("chat", {
 export const queryHistory = pgTable("query_history", {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
     query: text("query"),
     source: text("source"), // 'ai_generation', 'ai_analysis', etc.
     model: text("model"),

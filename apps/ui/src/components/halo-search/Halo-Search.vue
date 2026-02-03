@@ -327,7 +327,7 @@ defineExpose({ focus });
         @input="handleInput"
         @keydown="handleKeyDown"
         @paste="handlePaste"
-        class="search-field flex items-center overflow-x-auto whitespace-pre no-scrollbar"
+        class="search-field whitespace-pre-wrap break-words overflow-y-auto no-scrollbar"
         :data-placeholder="props.placeholder"
         spellcheck="false"
       ></div>
@@ -405,13 +405,17 @@ defineExpose({ focus });
   background-color: var(--background);
   border: 1px solid var(--border);
   width: 100%;
-  height: 52px;
-  border-radius: 9999px; /* Pill shape looks better with circular button, or stick to rounded-xl? User asked to refactor to look better. Let's stick to rounded-xl but cleaner. */
+  min-height: 52px;
+  height: auto;
+  max-height: 200px;
   border-radius: 12px;
   color: var(--foreground);
   padding-right: 50px;
   padding-left: 16px;
+  padding-top: 14px;
+  padding-bottom: 14px;
   font-size: 14px;
+  line-height: 1.5;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.05);
 }

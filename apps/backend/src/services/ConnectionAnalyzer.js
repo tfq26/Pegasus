@@ -68,12 +68,17 @@ export class ConnectionAnalyzer {
 
             // 2. Determine tables to fetch details for
             let tablesToFetch = [];
-            if (activeTable && allTables.includes(activeTable)) {
-                tablesToFetch = [activeTable];
+
+            // Find case-insensitive match for activeTable
+            const matchedActiveTable = activeTable
+                ? allTables.find(t => t.toLowerCase() === activeTable.toLowerCase())
+                : null;
+
+            if (activeTable && matchedActiveTable) {
+                tablesToFetch = [matchedActiveTable];
             } else if (!activeTable && allTables.length > 0) {
-                // If no active table, fetch first 10 tables to provide context
-                // (Increased from 5 since we filter hidden tables often)
-                tablesToFetch = allTables.slice(0, 10);
+                // If no active table, fetch first 50 tables to provide context
+                tablesToFetch = allTables.slice(0, 50);
             }
 
             // 3. Fetch Detailed Schema & Samples

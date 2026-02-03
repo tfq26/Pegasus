@@ -10,6 +10,32 @@ export class SpreadsheetToolService {
 
     initializeTools() {
         // ============================================
+        // SEARCH TOOLS
+        // ============================================
+        this.registerTool({
+            name: "search_web",
+            description: "Search the internet for real-time information, news, current events, competitors, or general knowledge NOT found in the database. Use this for questions about market trends, fashion brands, industry leaders, global rankings, or any 'outside' information that complements local data.",
+            category: "general",
+            parameters: {
+                type: "object",
+                properties: {
+                    query: { type: "string", description: "The search query. MANDATORY: Include the industry domain found in the local data (e.g. 'fashion', 'retail', 'automotive') to ensure relevant results. (Example: 'top fashion brands in Southeast Asia 2024')" }
+                },
+                required: ["query"]
+            },
+            handler: async ({ query }) => {
+                const { SearchService } = await import('./SearchService.js');
+                const results = await SearchService.search(query);
+                return {
+                    type: "search_results",
+                    query,
+                    results,
+                    note: `Found ${results.length} results from the web.`
+                };
+            }
+        });
+
+        // ============================================
         // DATABASE TOOLS (Query Mode)
         // ============================================
 

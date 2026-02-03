@@ -18,9 +18,15 @@
           @click="triggerFileInput"
         >
           <div v-if="!selectedFile" class="flex flex-col items-center justify-center pt-5 pb-6">
-            <UploadCloud class="w-8 h-8 mb-2 text-muted-foreground" />
-            <p class="mb-1 text-sm text-muted-foreground"><span class="font-semibold">Click to upload</span> or drag and drop</p>
-            <p class="text-xs text-muted-foreground">Any file type up to 200MB</p>
+            <template v-if="isZipping">
+              <RefreshCw class="w-8 h-8 mb-2 text-primary animate-spin" />
+              <p class="mb-1 text-sm text-muted-foreground">Compressing folder...</p>
+            </template>
+            <template v-else>
+              <UploadCloud class="w-8 h-8 mb-2 text-muted-foreground" />
+              <p class="mb-1 text-sm text-muted-foreground"><span class="font-semibold">Click to upload file</span></p>
+              <p class="text-xs text-muted-foreground mb-2">or drag and drop (files or folders)</p>
+            </template>
           </div>
           <div v-else class="flex flex-col items-center justify-center p-4">
             <File class="w-8 h-8 mb-2 text-primary" />
@@ -75,7 +81,9 @@ import { ref, watch } from 'vue'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog'
-import { UploadCloud, File } from 'lucide-vue-next'
+import { UploadCloud, File, RefreshCw } from 'lucide-vue-next'
+import JSZip from 'jszip'
+import { toast } from '@/composables/useNotifications'
 
 const props = defineProps<{
   open: boolean
@@ -90,6 +98,7 @@ const title = ref('')
 const selectedFile = ref<File | null>(null)
 const isDragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const isZipping = ref(false)
 
 const triggerFileInput = () => {
   fileInput.value?.click()
@@ -108,14 +117,71 @@ const handleFileSelect = (event: Event) => {
   }
 }
 
-const handleDrop = (event: DragEvent) => {
+// Recursive scanner helper
+const scanFiles = async (item: any, zip: JSZip, path = '') => {
+  if (item.isFile) {
+    const file: File = await new Promise((resolve, reject) => {
+      item.file(resolve, reject)
+    })
+    // Filter out .DS_Store and hidden files if desirable, but keeping generic for now
+    if (!file.name.startsWith('.')) {
+      zip.file(path + file.name, file)
+    }
+  } else if (item.isDirectory) {
+    const dirReader = item.createReader()
+    const entries: any[] = await new Promise((resolve, reject) => {
+      dirReader.readEntries(resolve, reject)
+    })
+    for (const entry of entries) {
+      await scanFiles(entry, zip, path + item.name + '/')
+    }
+  }
+}
+
+const handleDrop = async (event: DragEvent) => {
   isDragging.value = false
-  if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
-    const file = event.dataTransfer.files[0]
-    if (file) {
-      selectedFile.value = file
+  const items = event.dataTransfer?.items
+  
+  if (!items) return
+
+  // Check if any item is a directory or if multiple files (implies Zip needed for generic upload? 
+  // Requirement says "accept a folder". If simple file drop, keep normal behavior)
+  
+  // Note: webkitGetAsEntry is standard for DnD now
+  const entry = items[0]?.webkitGetAsEntry()
+  
+  if (entry && entry.isDirectory) {
+    // Folder Drop -> Zip
+    isZipping.value = true
+    try {
+      const zip = new JSZip()
+      toast.info(`Scanning folder "${entry.name}"...`)
+      
+      await scanFiles(entry, zip, '')
+      
+      const content = await zip.generateAsync({ type: 'blob' })
+      const zipFile = new window.File([content], `${entry.name}.zip`, { type: 'application/zip' })
+      
+      selectedFile.value = zipFile
       if (!title.value) {
-        title.value = file.name
+        title.value = entry.name
+      }
+      toast.success('Folder prepared for upload')
+    } catch (e: any) {
+      console.error('Folder zip failed', e)
+      toast.error('Failed to process folder', { description: e.message })
+    } finally {
+      isZipping.value = false
+    }
+  } else {
+    // Normal File Drop
+    if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
+      const file = event.dataTransfer.files[0]
+      if (file) {
+        selectedFile.value = file
+        if (!title.value) {
+          title.value = file.name
+        }
       }
     }
   }

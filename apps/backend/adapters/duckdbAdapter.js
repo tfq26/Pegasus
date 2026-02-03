@@ -151,7 +151,7 @@ export class DuckDBAdapter {
                     console.log(`[DuckDB] Attempting to register data file: ${this.dataFileSource} as table: ${tableName} (ZeroCopy: ${this.isZeroCopy})`);
 
                     if (ext === '.csv') {
-                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${this.dataFileSource}', header=True, all_varchar=True, sample_size=1000)`;
+                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${this.dataFileSource}', header=True, normalize_names=True, sample_size=20000)`;
                     } else if (ext === '.parquet') {
                         query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_parquet('${this.dataFileSource}')`;
                     } else if (ext === '.json') {
@@ -311,13 +311,21 @@ export class DuckDBAdapter {
 
                     if (query) {
                         console.log(`[DuckDB] Executing view creation query: ${query.substring(0, 100)}...`);
-                        this.connection.exec(query, (err) => {
+                        this.connection.exec(query, async (err) => {
                             if (err) {
                                 console.error(`[DuckDB] Failed to register data file table: ${err.message}`);
                                 console.error(`[DuckDB] Query was: ${query}`);
                                 reject(err);
                             } else {
                                 console.log(`[DuckDB] Successfully registered data file as table: ${tableName}`);
+
+                                // Auto-Correction: Fix formatted numbers (Currency/Commas) being detected as VARCHAR
+                                try {
+                                    await this._fixColumnTypes(tableName);
+                                } catch (fixErr) {
+                                    console.warn(`[DuckDB] Type auto-correction failed (non-fatal):`, fixErr);
+                                }
+
                                 resolve();
                             }
                         });
@@ -344,7 +352,7 @@ export class DuckDBAdapter {
         let query = "";
 
         if (ext === '.csv') {
-            query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${filePath}')`;
+            query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${filePath}', header=True, normalize_names=True)`;
         } else if (ext === '.parquet') {
             query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_parquet('${filePath}')`;
         } else if (ext === '.json') {
@@ -550,6 +558,73 @@ export class DuckDBAdapter {
             return result[0] || {};
         } catch (e) {
             console.error(`[DuckDB] Error in aggregation:`, e);
+            throw e;
+        }
+    }
+    // Helper: Detect VARCHAR columns that are actually numbers (Currency/Commas) and cast them
+    async _fixColumnTypes(tableName) {
+        try {
+            // 1. Get current schema to find VARCHAR columns
+            const schema = await this.getOneTableSchema(tableName);
+            const varcharCols = schema.filter(c => c.type === 'VARCHAR');
+
+            if (varcharCols.length === 0) return;
+
+            const fixes = [];
+
+            // 2. Check each VARCHAR column
+            for (const col of varcharCols) {
+                // Heuristic: Check first 50 non-null values
+                // Use TRY_CAST after stripping common symbols
+                const sql = `
+                    SELECT 
+                        count(*) as total,
+                        count(TRY_CAST(replace(replace(replace("${col.name}", '$', ''), ',', ''), '£', '') AS DOUBLE)) as successful_casts
+                    FROM "${tableName}" 
+                    WHERE "${col.name}" IS NOT NULL AND "${col.name}" != ''
+                    LIMIT 100
+                `;
+
+                const result = await this.query(sql);
+                const { total, successful_casts } = result[0] || { total: 0, successful_casts: 0 };
+
+                // If >90% of non-empty values can be cast to numbers after cleaning
+                if (total > 0 && (successful_casts / total) > 0.9) {
+                    console.log(`[DuckDB] Detected formatted number column: ${col.name} (${successful_casts}/${total} valid). converting...`);
+                    fixes.push({
+                        name: col.name,
+                        expression: `CAST(replace(replace(replace("${col.name}", '$', ''), ',', ''), '£', '') AS DOUBLE)`
+                    });
+                }
+            }
+
+            if (fixes.length === 0) return;
+
+            // 3. Recreate View with Casts
+            // We need to select ALL columns, replacing the fixed ones
+            const allCols = schema.map(col => {
+                const fix = fixes.find(f => f.name === col.name);
+                if (fix) return `${fix.expression} AS "${col.name}"`;
+                return `"${col.name}"`;
+            });
+
+            const rawTableName = `_raw_${tableName}`;
+
+            // Drop raw if exists (cleanup)
+            await this.execute(`DROP VIEW IF EXISTS "${rawTableName}"`);
+
+            // Rename current to raw
+            // DuckDB: ALTER TABLE/VIEW x RENAME TO y
+            await this.execute(`ALTER VIEW "${tableName}" RENAME TO "${rawTableName}"`);
+
+            // Create new corrected view
+            const createSql = `CREATE VIEW "${tableName}" AS SELECT ${allCols.join(', ')} FROM "${rawTableName}"`;
+            await this.execute(createSql);
+
+            console.log(`[DuckDB] Applied type corrections to ${tableName}. Columns fixed: ${fixes.map(f => f.name).join(', ')}`);
+
+        } catch (e) {
+            console.error(`[DuckDB] _fixColumnTypes error:`, e);
             throw e;
         }
     }

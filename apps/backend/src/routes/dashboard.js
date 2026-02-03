@@ -4,7 +4,7 @@ import { verify } from "hono/jwt"
 import { WorkOS } from "@workos-inc/node"
 import crypto from "crypto"
 import { db } from "../db/index.js"
-import { dashboards, dashboardPermissions, users, dashboardElements, notifications, recentAccess, files } from "../db/schema.js"
+import { dashboards, dashboardPermissions, users, dashboardElements, notifications, recentAccess, files, spaceFiles, dataSpaces } from "../db/schema.js"
 import { eq, and, or, sql, desc } from "drizzle-orm"
 import { SecretService } from "../services/SecretService.js"
 import { canCreateDashboard } from "../../lib/tierLimits.js"
@@ -962,14 +962,33 @@ dashboard.get("/files/:fileId", async (c) => {
         const fileId = c.req.param("fileId")
         const rawFileId = fileId.includes(':') ? fileId.split(':')[1] : fileId
 
-        const file = await db.query.files.findFirst({
+        let file = await db.query.files.findFirst({
             where: eq(files.id, rawFileId)
         });
 
-        if (!file) return c.json({ error: "File not found" }, 404)
+        if (file) {
+            const provider = await StorageManager.getProvider(file.userId, file.provider);
+            const url = await provider.getPresignedUrl(file.storageId, 3600);
+            return c.redirect(url);
+        }
 
-        const provider = await StorageManager.getProvider(file.userId, file.provider);
-        const url = await provider.getPresignedUrl(file.storageId, 3600);
+        // Fallback: Check space_files
+        const spaceFileRow = await db.select().from(spaceFiles)
+            .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+            .where(eq(spaceFiles.id, rawFileId))
+            .limit(1);
+
+        const spaceFile = spaceFileRow[0];
+
+        if (!spaceFile) return c.json({ error: "File not found" }, 404)
+
+        // Use space owner's provider
+        const ownerId = spaceFile.data_space.userId;
+        const provider = await StorageManager.getProvider(ownerId);
+
+        // spaceFiles schema uses 'storagePath' typically, but some logic might use storageId alias
+        const storageKey = spaceFile.space_file.storagePath || spaceFile.space_file.storageId;
+        const url = await provider.getPresignedUrl(storageKey, 3600);
 
         return c.redirect(url);
     } catch (e) {

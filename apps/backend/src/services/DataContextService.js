@@ -62,7 +62,8 @@ export class DataContextService {
             detailedSchema: {},
             mappings: { tables: {}, columns: {} },
             sourceRegistry: {}, // Unified registry for all sources
-            semanticContext: { knowledgeBase: [], sourceInsights: {} }
+            semanticContext: { knowledgeBase: [], sourceInsights: {} },
+            unloadedResources: options.unloadedResources || []
         };
         let adapter = null;
         const extraAdapters = [];
@@ -144,6 +145,14 @@ export class DataContextService {
                         resourceToProvider[realUnderscoreSlug] = targetProvider;
                     });
                 }
+
+                // DEBUG: Log registry entries for verification
+                const sampleTables = result.normalizedSchema.tables.slice(0, 3);
+                console.log(`[DataContext] Registry check for ${targetProvider}:`);
+                sampleTables.forEach(t => {
+                    console.log(` - Table: ${t} -> Origin: '${normalizedSchema.sourceRegistry[t]?.origin}', ID: ${normalizedSchema.sourceRegistry[t]?.id}`);
+                });
+
             } catch (e) {
                 console.warn(`[DataContext] Analysis failed for ${targetProvider}:`, e.message);
             }
@@ -194,14 +203,19 @@ export class DataContextService {
                 // 1. Register UNSTRUCTURED note in registry
                 const noteName = meta.title || meta.name || 'Untitled Note';
                 const normName = noteName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                const slug = noteName.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                normalizedSchema.sourceRegistry[normName] = {
+                const noteRegistryEntry = {
                     name: noteName,
                     origin: 'User Note',
                     type: 'UNSTRUCTURED',
                     provider: 'notes',
                     id: meta.id
                 };
+
+                normalizedSchema.sourceRegistry[normName] = noteRegistryEntry;
+                normalizedSchema.sourceRegistry[slug] = noteRegistryEntry;
+                normalizedSchema.sourceRegistry[noteName] = noteRegistryEntry;
 
                 // 2. Inject into Knowledge Base (System Prompt)
                 if (meta.content) {

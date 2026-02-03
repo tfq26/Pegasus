@@ -22,6 +22,7 @@ const {
   closeIcon,
   fileIcon,
   direction,
+  isDeleteMode,
 } = toRefs(props);
 
 const selectedId = ref<string | undefined>(initialSelectedId.value);
@@ -59,6 +60,7 @@ provide<TreeContextProps>(TREE_CONTEXT_SYMBOL, {
   closeIcon: closeIcon.value,
   fileIcon: fileIcon.value,
   direction: direction.value === "rtl" ? "rtl" : "ltr",
+  isDeleteMode: isDeleteMode as any, // Cast because it might be undefined in props but strict in type? Or just Ref<boolean> is matched.
   handleExpand,
   selectItem,
   setExpandedItems: setExpandedItemsFn,

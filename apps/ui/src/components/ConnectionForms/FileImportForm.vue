@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { Upload } from 'lucide-vue-next'
 import { uploadFile } from '@/lib/api'
+import JSZip from 'jszip'
 import { api } from '@/lib/apiClient'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
@@ -28,14 +29,63 @@ const isDragging = ref(false)
 const smartImportOpen = ref(false)
 const smartImportFiles = ref<any[]>([])
 
+// Folder Handling - Drag Drop Only
+const isZipping = ref(false)
+
+// Recursive scanner helper
+const scanDropFiles = async (item: any, zip: JSZip, path = '') => {
+  if (item.isFile) {
+    const file: File = await new Promise((resolve, reject) => {
+      item.file(resolve, reject)
+    })
+    if (!file.name.startsWith('.')) {
+      zip.file(path + file.name, file)
+    }
+  } else if (item.isDirectory) {
+    const dirReader = item.createReader()
+    const entries: any[] = await new Promise((resolve, reject) => {
+      dirReader.readEntries(resolve, reject)
+    })
+    for (const entry of entries) {
+      await scanDropFiles(entry, zip, path + item.name + '/')
+    }
+  }
+}
+
 const handleDrop = async (e: DragEvent) => {
     isDragging.value = false
-    const file = e.dataTransfer?.files[0]
-    if (file) {
-      if (file.name.toLowerCase().endsWith('.zip')) {
-        await handleZipUpload(file)
-      } else {
-        await processFile(file)
+    const items = e.dataTransfer?.items
+    if (!items) return
+
+    // Try to get as entry for folder support
+    const entry = items[0]?.webkitGetAsEntry()
+    
+    if (entry && entry.isDirectory) {
+      isZipping.value = true
+      try {
+        const zip = new JSZip()
+        toast.info(`Scanning folder "${entry.name}"...`)
+        
+        await scanDropFiles(entry, zip, '')
+        
+        const content = await zip.generateAsync({ type: 'blob' })
+        const zipFile = new window.File([content], `${entry.name}.zip`, { type: 'application/zip' })
+        
+        await handleZipUpload(zipFile)
+      } catch (err: any) {
+        toast.error('Failed to process folder', { description: err.message })
+      } finally {
+        isZipping.value = false
+      }
+    } else {
+      // Normal file
+      const file = e.dataTransfer?.files[0]
+      if (file) {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          await handleZipUpload(file)
+        } else {
+          await processFile(file)
+        }
       }
     }
 }
@@ -120,9 +170,12 @@ const processFile = async (file: File) => {
       
       // Auto-set connection name from filename
       if (!props.connectionForm.nickname && !props.connectionForm.alias) {
-        const fileName = file.name.split('.')[0] ?? 'Untitled'
-        props.connectionForm.nickname = fileName
-        props.connectionForm.alias = fileName
+        // Strip extension, replace separators with spaces, title case basic
+        const rawName = file.name.split('.')[0] ?? 'Untitled'
+        const cleanName = rawName.replace(/[_-]/g, ' ').trim()
+        
+        props.connectionForm.nickname = cleanName
+        props.connectionForm.alias = cleanName
       }
       emit('upload-success')
     } else {
@@ -134,6 +187,8 @@ const processFile = async (file: File) => {
     isUploading.value = false
   }
 }
+
+// Folder Handling - Drag Drop Only
 </script>
 
 <template>
@@ -147,8 +202,6 @@ const processFile = async (file: File) => {
           @change="handleFileUpload"
           class="hidden"
       />
-      
-      <!-- Enable Folder Upload via webkitdirectory hiddenly or just let user select zip -->
 
       <!-- Success State -->
       <div 
@@ -196,12 +249,17 @@ const processFile = async (file: File) => {
           </div>
           
           <div class="text-center space-y-1">
-             <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                 {{ isUploading ? 'Uploading & Analyzing...' : 'Select File or ZIP Folder' }}
-             </p>
-             <p class="text-xs text-muted-foreground">
-                 Connect data files or import an entire folder via ZIP
-             </p>
+             <template v-if="isZipping">
+                 <p class="text-sm font-medium text-foreground">Compressing folder...</p>
+             </template>
+             <template v-else>
+                 <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                     {{ isUploading ? 'Uploading & Analyzing...' : 'Select File or Drop Folder' }}
+                 </p>
+                 <p class="text-xs text-muted-foreground mt-2">
+                     Connect data files or drag & drop a folder
+                 </p>
+             </template>
           </div>
       </div>
 

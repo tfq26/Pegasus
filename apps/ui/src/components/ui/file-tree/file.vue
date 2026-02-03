@@ -3,6 +3,7 @@ import type { FileProps, TreeContextProps } from "./types";
 import { computed, inject, toRefs } from "vue";
 import { TREE_CONTEXT_SYMBOL } from "./types";
 import Icon from "./icon.vue";
+import { CheckSquare, Square } from "lucide-vue-next";
 import type { HTMLAttributes } from "vue";
 
 
@@ -17,13 +18,15 @@ if (!treeContext) {
   throw new Error("[File] must be used inside <Tree>");
 }
 
-const { selectedId, selectItem, direction, fileIcon: ctxFileIcon } = treeContext;
+const { selectedId, selectItem, direction, fileIcon: ctxFileIcon, isDeleteMode } = treeContext;
 
 const currentFileIcon = computed(() => propFileIcon?.value || ctxFileIcon);
 
 const isSelected = computed<boolean>(() => {
   return isSelect?.value || selectedId.value === id.value;
 });
+
+const showCheckbox = computed(() => isDeleteMode && isDeleteMode.value);
 
 function onClickHandler(event: MouseEvent) {
   if (!isSelectable.value) return;
@@ -46,6 +49,12 @@ function onClickHandler(event: MouseEvent) {
     :dir="direction"
     @click="onClickHandler"
   >
+    <component 
+      v-if="showCheckbox"
+      :is="isSelected ? CheckSquare : Square"
+      class="w-4 h-4 shrink-0 transition-colors"
+      :class="isSelected ? 'text-rose-500' : 'text-muted-foreground/70'"
+    />
     <Icon
       :name="currentFileIcon"
       :size="18"

@@ -4,7 +4,7 @@ import { computed, inject, toRefs } from "vue";
 import { TREE_CONTEXT_SYMBOL } from "./types";
 import Icon from "./icon.vue";
 import TreeIndicator from "./tree-indicator.vue";
-import { ChevronRight, ChevronDown } from "lucide-vue-next";
+import { ChevronRight, ChevronDown, CheckSquare, Square } from "lucide-vue-next";
 import type { HTMLAttributes } from "vue";
 
 
@@ -19,7 +19,7 @@ if (!treeContext) {
   throw new Error("[Folder] must be used inside <Tree>");
 }
 
-const { expandedItems, handleExpand, openIcon: ctxOpenIcon, closeIcon: ctxCloseIcon, direction, indicator } = treeContext;
+const { expandedItems, handleExpand, openIcon: ctxOpenIcon, closeIcon: ctxCloseIcon, direction, indicator, isDeleteMode } = treeContext;
 
 const isExpanded = computed<boolean>(() => {
   return !!expandedItems.value?.includes(id.value);
@@ -28,8 +28,15 @@ const isExpanded = computed<boolean>(() => {
 const currentOpenIcon = computed(() => propOpenIcon?.value || ctxOpenIcon);
 const currentCloseIcon = computed(() => propCloseIcon?.value || ctxCloseIcon);
 
+const showCheckbox = computed(() => isDeleteMode && isDeleteMode.value);
+
 function onTriggerClick(event: MouseEvent) {
   if (!isSelectable.value || !treeContext) return;
+  // In delete mode, folder click should strictly just select (toggle check) and NOT expand/collapse necessarily?
+  // User might want to expand to find items to delete.
+  // Standard tree behavior: Expand caret works always. Row click toggles selection.
+  // Here the whole row is click trigger.
+  // So we do BOTH: Handle Expand AND Select.
   handleExpand(id.value);
   treeContext.selectItem(id.value, event);
 }
@@ -49,6 +56,13 @@ function onTriggerClick(event: MouseEvent) {
       :dir="direction"
       @click="onTriggerClick"
     >
+      <component 
+        v-if="showCheckbox"
+        :is="isSelect ? CheckSquare : Square"
+        class="w-4 h-4 shrink-0 transition-colors mr-1"
+        :class="isSelect ? 'text-rose-500' : 'text-muted-foreground/70'"
+      />
+      
       <!-- Expand/Collapse Chevron -->
       <component 
         :is="isExpanded ? ChevronDown : ChevronRight" 

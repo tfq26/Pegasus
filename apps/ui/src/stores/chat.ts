@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, unref } from 'vue'
 import { api } from '@/lib/apiClient'
+import { useSpaceStore } from './space'
 
 export interface ChatMessage {
     role: 'user' | 'assistant' | 'ai'
@@ -22,6 +23,7 @@ export const useChatStore = defineStore('chat', () => {
     const chats = ref<Chat[]>([])
     const selectedChatId = ref<string | null>(null)
     const isLoading = ref(false)
+    const spaceStore = useSpaceStore()
 
     // Computed
     const selectedChat = computed(() =>
@@ -36,7 +38,17 @@ export const useChatStore = defineStore('chat', () => {
     async function loadChats() {
         isLoading.value = true
         try {
-            const response = await api.get<{ chats: Chat[] }>('/chats')
+            const currentSpaceId = unref(spaceStore.currentSpaceId)
+            const spaceId = currentSpaceId?.split(':').pop()
+
+            if (!spaceId) {
+                chats.value = []
+                isLoading.value = false
+                return
+            }
+
+            const url = `/chats?space_id=${spaceId}`
+            const response = await api.get<{ chats: Chat[] }>(url)
             chats.value = response.chats || []
             console.log('[ChatStore] Loaded chats:', chats.value.length)
         } catch (e) {
@@ -49,7 +61,9 @@ export const useChatStore = defineStore('chat', () => {
 
     async function createChat(title: string = 'New Chat') {
         try {
-            const newChat = await api.post<Chat>('/chats', { title })
+            const currentSpaceId = unref(spaceStore.currentSpaceId)
+            const spaceId = currentSpaceId?.split(':').pop()
+            const newChat = await api.post<Chat>('/chats', { title, space_id: spaceId })
             chats.value.unshift(newChat)
             selectedChatId.value = newChat.id
             console.log('[ChatStore] Created chat:', newChat.id)
@@ -108,6 +122,20 @@ export const useChatStore = defineStore('chat', () => {
                 if (response.title) {
                     chat.title = response.title
                     console.log('[ChatStore] Updated chat title:', response.title)
+
+                    // Sync with Workspace Tabs
+                    // We import here to avoid circular dependency issues if any, 
+                    // though workspace doesn't depend on chat currently.
+                    const { useWorkspaceStore } = await import('./workspace')
+                    const workspaceStore = useWorkspaceStore()
+
+                    // Find any tab displaying this chat
+                    const tab = (workspaceStore.tabs as any).find((t: any) => t.data?.chatId === chatId)
+                    if (tab) {
+                        workspaceStore.updateTabData(tab.id, { label: response.title })
+                        // Also update top-level label for immediate reactivity
+                        tab.label = response.title
+                    }
                 }
             }
 

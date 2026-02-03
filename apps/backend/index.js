@@ -12,7 +12,7 @@ import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import aiRoutes from "./src/routes/ai.js"
 import { sign, verify } from "hono/jwt"
 import { db } from "./src/db/index.js"
-import { users, connections, userPayments, transactionMaster, dataSources, cellBindings, queryHistory, spaceFiles, dataSpaces, files } from "./src/db/schema.js"
+import { users, connections, userPayments, transactionMaster, dataSources, cellBindings, queryHistory, spaceFiles, dataSpaces, files, spaceNotes } from "./src/db/schema.js"
 import { eq, and, or, sql, desc, asc, like, gte, lte, isNull } from "drizzle-orm"
 
 
@@ -1596,6 +1596,36 @@ app.post("/query", async (c) => {
     } catch (err) {
         status = 'error'
         error = err.message
+
+        // --- SMART FALLBACK: If query fails due to missing table, check if it's a Note ---
+        if (err.message.toLowerCase().includes('no such table') || err.message.toLowerCase().includes('does not exist')) {
+            try {
+                // Determine if any word in the query matches a note name
+                // Look for notes in user's spaces
+                const userNotes = await db.select().from(spaceNotes)
+                    .innerJoin(dataSpaces, eq(spaceNotes.spaceId, dataSpaces.id))
+                    .where(eq(dataSpaces.userId, userId));
+
+                const matchedNote = userNotes.find(n => {
+                    const note = n.space_note;
+                    const normTitle = note.title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                    const slug = note.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const original = note.title.toLowerCase();
+                    const lowQuery = query.toLowerCase();
+                    return lowQuery.includes(normTitle) || lowQuery.includes(slug) || lowQuery.includes(original);
+                });
+
+                if (matchedNote) {
+                    const note = matchedNote.space_note;
+                    console.log(`[Backend] Detected query targeting missing table that matches note: ${note.title}. Falling back to note content.`);
+                    result = [{ content: note.content, source: 'Note Fallback' }];
+                    error = null;
+                    status = 'success';
+                }
+            } catch (fallbackError) {
+                console.warn("[Backend] Note fallback check failed:", fallbackError.message);
+            }
+        }
     } finally {
         await adapter.disconnect()
     }
@@ -1920,16 +1950,28 @@ app.get("/queries", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
+        const spaceId = c.req.query("space_id")
 
         // Only fetch queries with 'user' source - these are actual SQL queries
         // AI usage logs (ai_generation, ai_spreadsheet, etc.) contain natural language prompts
         // and should not be shown in the Queries tab
+        const conditions = [
+            eq(queryHistory.userId, userId),
+            eq(queryHistory.source, 'user')
+        ]
+
+        if (spaceId) {
+            conditions.push(eq(queryHistory.spaceId, spaceId))
+        } else {
+            // If no spaceId provided (legacy), verify behavior. 
+            // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
+            // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
+            // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
+        }
+
         const results = await db.select()
             .from(queryHistory)
-            .where(and(
-                eq(queryHistory.userId, userId),
-                eq(queryHistory.source, 'user')
-            ))
+            .where(and(...conditions))
             .orderBy(desc(queryHistory.createdAt))
             .limit(50);
 
@@ -1940,7 +1982,8 @@ app.get("/queries", async (c) => {
             source: q.source,
             model: q.model,
             status: q.status,
-            connection_id: q.connectionId
+            connection_id: q.connectionId,
+            space_id: q.spaceId
         }))
 
         return c.json(mapped)
@@ -1958,7 +2001,7 @@ app.post("/queries", async (c) => {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
         await upsertUser(payload)
-        const { query, source, status, connection_id, model, tokens_used } = await c.req.json()
+        const { query, source, status, connection_id, model, tokens_used, space_id } = await c.req.json()
 
         // Create record
         const [created] = await db.insert(queryHistory).values({
@@ -1968,7 +2011,8 @@ app.post("/queries", async (c) => {
             model: model || null,
             status: status || 'success',
             connectionId: connection_id || null,
-            tokensUsed: tokens_used || 0
+            tokensUsed: tokens_used || 0,
+            spaceId: space_id || null
         }).returning();
 
         return c.json({ id: created.id })

@@ -232,13 +232,11 @@ export async function executeQuery({ connectionId, query, source = 'user' }: { c
 }
 
 export async function analyzeResults(question: string, results: any[], query: string) {
-  const body = await api.post<any>('/ai/analyze', {
+  return api.post<any>('/ai/analyze', {
     question,
     results,
     query
   })
-
-  return body.analysis
 }
 
 export async function searchData(term: string, connectionId: string) {
@@ -259,13 +257,14 @@ export async function fetchSettings() {
 }
 
 // Chat API
-export async function fetchChats() {
-  const body = await api.get<{ chats: any[] }>('/chats')
+export async function fetchChats(spaceId?: string) {
+  const url = spaceId ? `/chats?space_id=${spaceId}` : '/chats'
+  const body = await api.get<{ chats: any[] }>(url)
   return body.chats || []
 }
 
-export async function createChat(title?: string) {
-  return api.post('/chats', { title })
+export async function createChat(title?: string, spaceId?: string) {
+  return api.post('/chats', { title, space_id: spaceId })
 }
 
 export async function fetchChatHistory(chatId: string) {
@@ -316,12 +315,13 @@ export async function recommendVisualization(query: string, results: any[], prev
 }
 
 // Queries
-export async function fetchQueries() {
-  return api.get('/queries')
+export async function fetchQueries(spaceId?: string) {
+  const url = spaceId ? `/queries?space_id=${spaceId}` : '/queries'
+  return api.get(url)
 }
 
-export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string) {
-  return api.post('/queries', { query, source, status, connection_id: connectionId })
+export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string, spaceId?: string) {
+  return api.post('/queries', { query, source, status, connection_id: connectionId, space_id: spaceId })
 }
 
 export async function deleteQuery(queryId: string) {

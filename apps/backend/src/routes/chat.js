@@ -96,6 +96,37 @@ const checkAiQuota = async (userId) => {
     }
 }
 
+/**
+ * Robustly parse JSON from AI responses that might contain markdown or extra text.
+ * @param {string} text - The raw text from the AI
+ * @param {string} fallbackKey - The key to map raw text to if parsing fails (default: 'answer')
+ */
+const robustParseJson = (text, fallbackKey = 'answer') => {
+    if (!text) return { [fallbackKey]: "" };
+
+    const trimmed = text.trim();
+
+    // 1. Try direct parsing (common case)
+    try {
+        // Remove markdown tags if present
+        const cleaned = trimmed.replace(/^```(json)?\s*|\s*```$/gi, '');
+        return JSON.parse(cleaned);
+    } catch (e) {
+        // 2. Try extracting JSON block {...} if embedded in text
+        const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            try {
+                return JSON.parse(jsonMatch[0]);
+            } catch (innerE) {
+                // If nested parsing fails, continue to fallback
+            }
+        }
+    }
+
+    // 3. Fallback: Return as an object with the raw text in the intended key
+    return { [fallbackKey]: trimmed };
+}
+
 const colIndexToLabel = (index) => {
     let label = '';
     index++;
@@ -173,8 +204,21 @@ chat.get("/chats", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const userId = payload.sub
+        const spaceId = c.req.query("space_id")
+
+        const conditions = [eq(chats.userId, userId)]
+
+        if (spaceId) {
+            conditions.push(eq(chats.spaceId, spaceId))
+        } else {
+            // If no spaceId provided (legacy), verify behavior. 
+            // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
+            // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
+            // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
+        }
+
         const results = await db.query.chats.findMany({
-            where: eq(chats.userId, userId),
+            where: and(...conditions),
             orderBy: [desc(chats.updatedAt)]
         });
         return c.json({ chats: results })
@@ -190,11 +234,12 @@ chat.post("/chats", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const userId = await upsertUser(payload)
-        const { title } = await c.req.json()
+        const { title, space_id } = await c.req.json()
 
         const [created] = await db.insert(chats)
             .values({
                 userId,
+                spaceId: space_id || null,
                 title: title || "New Chat",
                 messages: [],
                 createdAt: new Date(),
@@ -696,67 +741,71 @@ chat.post("/ai/generate", async (c) => {
             // KEY: If OneContext found relevant files, we DON'T show "not loaded" list to avoid confusion
             const hasRelevantFiles = resolvedResources.some(r => r.type === 'file');
 
-            if (!hasRelevantFiles) {
-                try {
-                    const allConnections = await db.query.connections.findMany({
-                        where: eq(connections.userId, userId),
-                        columns: { id: true, name: true, type: true, config: true }
+            let unloadedResources = [];
+            try {
+                // 1. Resolve Space ID from current connection to scope "Unloaded" list
+                let currentSpaceId = null;
+                if (connectionId) {
+                    const activeConn = await db.query.connections.findFirst({
+                        where: eq(connections.id, connectionId),
+                        columns: { spaceId: true }
                     });
+                    if (activeConn) currentSpaceId = activeConn.spaceId;
+                }
 
-                    // Build a set of "known slugs" from resolved resources
-                    const makeSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const knownSlugs = new Set();
+                // 2. Fetch connections scoped to this space (or user if no space)
+                const connectionFilters = [eq(connections.userId, userId)];
+                if (currentSpaceId) {
+                    connectionFilters.push(eq(connections.spaceId, currentSpaceId));
+                }
 
-                    // Add resolved resource names/titles
-                    resolvedResources.forEach(r => {
-                        if (r.name) knownSlugs.add(makeSlug(r.name));
-                        if (r.title) knownSlugs.add(makeSlug(r.title));
-                        if (r.id) knownSlugs.add(makeSlug(r.id));
-                    });
+                const allConnections = await db.query.connections.findMany({
+                    where: and(...connectionFilters),
+                    columns: { id: true, name: true, type: true, config: true }
+                });
 
-                    console.log(`[Chat] Known slugs from resolved resources:`, [...knownSlugs].slice(0, 5));
+                // Build a set of "known slugs" from resolved resources
+                const makeSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const knownSlugs = new Set();
+                resolvedResources.forEach(r => {
+                    if (r.name) knownSlugs.add(makeSlug(r.name));
+                    if (r.title) knownSlugs.add(makeSlug(r.title));
+                    if (r.id) knownSlugs.add(makeSlug(r.id));
+                });
 
-                    // Filter out current active or already resolved connections
-                    const otherConnections = allConnections.filter(c => {
-                        if (c.id === connectionId) return false;
+                // Filter out current active or already resolved connections
+                const otherConnections = allConnections.filter(c => {
+                    if (c.id === connectionId) return false;
+                    const nameSlug = makeSlug(c.name);
 
-                        const nameSlug = makeSlug(c.name);
-                        const cfg = typeof c.config === 'string' ? JSON.parse(c.config) : c.config || {};
-                        const pathSlug = makeSlug(cfg.path || cfg.database || '');
+                    // A connection is "known" if it's already in the resolved list or its ID matches
+                    const isResolved = resolvedResources.some(r => r.id === c.id || makeSlug(r.name) === nameSlug);
 
-                        // Check if any slug variant is already known
-                        const isKnown = knownSlugs.has(nameSlug) || knownSlugs.has(pathSlug) ||
-                            [...knownSlugs].some(known => {
-                                return (nameSlug.includes(known) && known.length > 8) ||
-                                    (known.includes(nameSlug) && nameSlug.length > 8);
-                            });
+                    console.log(`[Chat] Connection Integrity Check: ${c.name} (ID: ${c.id}) | isResolved: ${isResolved}`);
+                    return !isResolved;
+                });
 
-                        if (isKnown) {
-                            console.log(`[Chat] Filtering out already-loaded connection: ${c.name}`);
-                        }
-
-                        return !isKnown;
-                    });
-
-                    if (otherConnections.length > 0) {
-                        const dbList = otherConnections.map(c => {
-                            const cfg = typeof c.config === 'string' ? JSON.parse(c.config) : c.config;
-                            const alias = cfg?.alias || cfg?.nickname || c.name;
-                            return `- ${alias} (Type: ${c.type})`;
-                        }).join('\n');
-
-                        const dbContext = `\n[System: Available Databases (Not Loaded)]\nThe following databases are available but not currently loaded. If the user's query refers to one of these, ask them to mention it explicitly using $Name:\n${dbList}`;
-
-                        contextBlock = contextBlock ? contextBlock + dbContext : dbContext;
-                    }
-                } catch (e) { console.warn("[Chat] Failed to list other connections:", e); }
-            } else {
-                console.log(`[Chat] OneContext found ${resolvedResources.filter(r => r.type === 'file').length} relevant files - skipping "Available Databases" to avoid confusion.`);
-            }
+                unloadedResources = otherConnections.map(c => {
+                    const cfg = typeof c.config === 'string' ? JSON.parse(c.config) : c.config;
+                    return { name: cfg?.alias || cfg?.nickname || c.name, type: c.type };
+                });
+                console.log(`[Chat] FINAL UNLOADED LIST:`, unloadedResources.map(u => u.name));
+            } catch (e) { console.warn("[Chat] Failed to list other connections:", e); }
 
             if (resolvedResources.length > 0) {
                 console.log(`[OneContext] Injected ${resolvedResources.length} resources.`);
                 await sendProgress(15, `Found ${resolvedResources.length} relevant resources...`);
+
+                // RE-ENABLE: Add context summary to the user's prompt to force more grounding
+                const summaryBlock = OneContext.buildContextBlock(resolvedResources);
+                if (summaryBlock) {
+                    contextBlock = contextBlock ? contextBlock + summaryBlock : summaryBlock;
+
+                    // Specific tip for directory mentions to prevent "I need more info"
+                    if (basePrompt.includes('@[')) {
+                        contextBlock += `\n[MANDATORY]: The user mentioned a directory (@[...]). YOU MUST look at the listed [FILES] or [NOTES] above. Do NOT ask "What funds are you in?" because that data is already provided in the context above. Hunt for it!`;
+                    }
+                }
             }
 
             // Auto-select DB if mentioned and no explicit connection selected
@@ -797,7 +846,8 @@ chat.post("/ai/generate", async (c) => {
                 contextData = await DataContextService.buildContext(userId, connectionId, {
                     activeTable,
                     adHocSchema,
-                    resolvedResources: allResolved
+                    resolvedResources: allResolved,
+                    unloadedResources
                 });
             } catch (e) {
                 console.error(`[AI Generate] DataContext build failed:`, e);
@@ -819,7 +869,7 @@ chat.post("/ai/generate", async (c) => {
             const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
             aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
 
-            const finalPrompt = contextBlock ? `${basePrompt}\n\n${contextBlock}` : basePrompt;
+            const finalPrompt = basePrompt;
             let currentPrompt = finalPrompt;
 
 
@@ -873,24 +923,54 @@ chat.post("/ai/generate", async (c) => {
                         return sendResult({ type: 'generated_table', ...finalData, usage: dataRes.usage })
                     }
 
-                    // 2. Check for get_table_schema or get_sample_data (Continue Loop)
+                    // 2. Check for search_web (Continue Loop)
+                    const searchTool = result.toolCalls.find(t => t.function.name === 'search_web')
+                    if (searchTool) {
+                        const args = JSON.parse(searchTool.function.arguments)
+                        const searchResults = await spreadsheetToolService.callTool('search_web', args);
+
+                        const searchContext = `[System Context - Web Search Results for "${args.query}"]: \n${JSON.stringify(searchResults.results, null, 2)}`;
+                        currentPrompt += `\n\n${searchContext}`;
+                        console.log(`[AI Generate] Web search results added for "${args.query}", retrying...`);
+                        continue;
+                    }
+
+                    // 3. Check for get_table_schema or get_sample_data (Continue Loop)
                     const schemaTool = result.toolCalls.find(t => t.function.name === 'get_table_schema' || t.function.name === 'get_sample_data')
                     if (schemaTool) {
                         const toolName = schemaTool.function.name;
                         const args = JSON.parse(schemaTool.function.arguments)
                         const tableName = args.tableName
                         const slug = tableName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const targetAdapter = resourceToAdapter[tableName] || resourceToAdapter[slug] || adapter;
-                        const targetProvider = resourceToProvider[tableName] || resourceToProvider[slug] || provider;
 
-                        const toolRes = await spreadsheetToolService.callTool(toolName, args, {
-                            adapter: targetAdapter,
-                            dialect: targetProvider,
-                            schema: normalizedSchema,
-                            connectionId,
-                            userId,
-                            activeTable
-                        })
+                        // Handle unstructured resources for schema/sample requests
+                        const sourceRegistry = normalizedSchema.sourceRegistry || {};
+                        const sourceInfo = sourceRegistry[tableName] || sourceRegistry[slug];
+
+                        let toolRes;
+                        if (sourceInfo && sourceInfo.type === 'UNSTRUCTURED') {
+                            const knowledgeBase = normalizedSchema.semanticContext?.knowledgeBase || [];
+                            const note = knowledgeBase.find(n => n.id === sourceInfo.id || n.source === tableName);
+                            if (note) {
+                                toolRes = toolName === 'get_table_schema'
+                                    ? { columns: [{ name: 'content', type: 'text' }] }
+                                    : { rows: [{ content: note.content.substring(0, 500) + '...' }] };
+                            }
+                        }
+
+                        if (!toolRes) {
+                            const targetAdapter = resourceToAdapter[tableName] || resourceToAdapter[slug] || adapter;
+                            const targetProvider = resourceToProvider[tableName] || resourceToProvider[slug] || provider;
+
+                            toolRes = await spreadsheetToolService.callTool(toolName, args, {
+                                adapter: targetAdapter,
+                                dialect: targetProvider,
+                                schema: normalizedSchema,
+                                connectionId,
+                                userId,
+                                activeTable
+                            });
+                        }
 
                         if (toolRes) {
                             if (toolName === 'get_table_schema' && toolRes.columns) {
@@ -907,76 +987,89 @@ chat.post("/ai/generate", async (c) => {
                     }
 
                     // 3. Check for query_data (Immediate Exit or Analyst Loop)
-                    const dataTool = result.toolCalls.find(t => t.function.name === 'query_data')
-                    if (dataTool) {
+                    const dataTools = result.toolCalls.filter(t => t.function.name === 'query_data')
+                    if (dataTools.length > 0) {
                         try {
-                            const args = JSON.parse(dataTool.function.arguments)
-                            console.log('[AI Generate] Query Intent:', args)
+                            const results = await Promise.all(dataTools.map(async (dt) => {
+                                const args = JSON.parse(dt.function.arguments);
+                                const slug = args.resource?.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                            const slug = args.resource?.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                // Fuzzy Lookup for Adapter
+                                let targetAdapter = resourceToAdapter[args.resource] || resourceToAdapter[slug];
+                                let targetProvider = resourceToProvider[args.resource] || resourceToProvider[slug];
 
-                            console.log(`[AI Generate] Adapter Routing Debug:`);
-                            console.log(`  - Requested resource: "${args.resource}"`);
-                            console.log(`  - Slug: "${slug}"`);
-                            console.log(`  - Available adapters:`, Object.keys(resourceToAdapter));
+                                // Intercept unstructured (note) queries to avoid SQL errors
+                                const sourceRegistry = normalizedSchema.sourceRegistry || {};
+                                const sourceInfo = sourceRegistry[args.resource] || sourceRegistry[slug];
 
-                            // Fuzzy Lookup for Adapter
-                            let targetAdapter = resourceToAdapter[args.resource] || resourceToAdapter[slug];
-                            let targetProvider = resourceToProvider[args.resource] || resourceToProvider[slug];
-
-                            // Prioritize underscore-slug for data files
-                            const underscoreSlug = args.resource?.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                            if (!targetAdapter && underscoreSlug) {
-                                targetAdapter = resourceToAdapter[underscoreSlug];
-                                targetProvider = resourceToProvider[underscoreSlug];
-                            }
-
-                            if (!targetAdapter && slug) {
-                                // Try partial match in resources
-                                const candidates = Object.keys(resourceToAdapter);
-                                const bestMatch = candidates.find(c => slug.includes(c) || c.includes(slug));
-                                if (bestMatch) {
-                                    targetAdapter = resourceToAdapter[bestMatch];
-                                    targetProvider = resourceToProvider[bestMatch];
-                                    console.log(`[AI Generate] Fuzzy matched adapter for '${args.resource}' to '${bestMatch}' (${targetProvider})`);
+                                if (sourceInfo && sourceInfo.type === 'UNSTRUCTURED') {
+                                    targetProvider = 'notes';
+                                    const knowledgeBase = normalizedSchema.semanticContext?.knowledgeBase || [];
+                                    const note = knowledgeBase.find(n => n.id === sourceInfo.id || n.source === args.resource);
+                                    if (note) {
+                                        return {
+                                            resource: args.resource,
+                                            data: [{ content: note.content }],
+                                            note: `Extracted content from unstructured source: ${note.source}`
+                                        };
+                                    }
                                 }
-                            }
 
-                            // Final Fallback
-                            targetAdapter = targetAdapter || adapter;
-                            targetProvider = targetProvider || provider;
+                                // Prioritize underscore-slug for data files
+                                const underscoreSlug = args.resource?.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                                if (!targetAdapter && underscoreSlug) {
+                                    targetAdapter = resourceToAdapter[underscoreSlug];
+                                    targetProvider = resourceToProvider[underscoreSlug];
+                                }
 
-                            const toolResult = await spreadsheetToolService.callTool('query_data', args, {
-                                adapter: targetAdapter,
-                                dialect: targetProvider,
-                                schema: normalizedSchema,
-                                connectionId,
-                                userId,
-                                activeTable
-                            })
+                                if (!targetAdapter && slug) {
+                                    const candidates = Object.keys(resourceToAdapter);
+                                    const bestMatch = candidates.find(c => slug.includes(c) || c.includes(slug));
+                                    if (bestMatch) {
+                                        targetAdapter = resourceToAdapter[bestMatch];
+                                        targetProvider = resourceToProvider[bestMatch];
+                                    }
+                                }
 
-                            console.log(`[AI Generate] Execution Debug:`);
-                            console.log(`  - Target Provider: ${targetProvider}`);
-                            console.log(`  - SQL: ${toolResult.query || 'N/A'}`);
-                            console.log(`  - Results Count: ${Array.isArray(toolResult.data) ? toolResult.data.length : 'N/A'}`);
-                            if (Array.isArray(toolResult.data) && toolResult.data.length > 0) {
-                                console.log(`  - First Result:`, toolResult.data[0]);
-                            }
+                                // Final Fallback
+                                targetAdapter = targetAdapter || adapter;
+                                targetProvider = targetProvider || provider;
 
-                            // Log the executed SQL to the Queries tab
-                            if (toolResult.query) {
-                                logExecutedQuery(userId, toolResult.query, connectionId, 'success');
-                            } else if (toolResult.isCompound && toolResult.results) {
-                                // Log each query in compound results
-                                toolResult.results.forEach(r => {
-                                    if (r.query) logExecutedQuery(userId, r.query, connectionId, 'success');
+                                const res = await spreadsheetToolService.callTool('query_data', args, {
+                                    adapter: targetAdapter,
+                                    dialect: targetProvider,
+                                    schema: normalizedSchema,
+                                    connectionId,
+                                    userId,
+                                    activeTable
                                 });
+
+                                return { ...res, resource: args.resource, intent: args };
+                            }));
+
+                            // Construct toolResult
+                            let toolResult;
+                            if (results.length === 1) {
+                                toolResult = results[0];
+                            } else {
+                                toolResult = {
+                                    type: "data_response",
+                                    isCompound: true,
+                                    results: results
+                                };
                             }
 
-                            const isVisual = !!toolResult.config;
+                            console.log(`[AI Generate] Executed ${results.length} query intents.`);
+                            results.forEach(r => {
+                                if (r.query) logExecutedQuery(userId, r.query, connectionId, 'success');
+                                else if (r.results) r.results.forEach(sr => { if (sr.query) logExecutedQuery(userId, sr.query, connectionId, 'success'); });
+                            });
+
+                            const isVisual = results.some(r => !!r.config);
                             const isSmallData = (forceText || !forceVisualization) && !isVisual && (
-                                (Array.isArray(toolResult.data) && toolResult.data.length <= 10) ||
-                                (toolResult.isCompound && toolResult.results.every(r => r.data.length <= 5))
+                                toolResult.isCompound
+                                    ? toolResult.results.every(r => Array.isArray(r.data) && r.data.length <= 10)
+                                    : (Array.isArray(toolResult.data) && toolResult.data.length <= 10)
                             );
 
                             if (isSmallData || forceText) {
@@ -986,16 +1079,13 @@ chat.post("/ai/generate", async (c) => {
                                 const analysis = await aiClient.analyzeResults(
                                     finalPrompt,
                                     toolResult.data || toolResult.results,
-                                    JSON.stringify(args),
+                                    JSON.stringify(results.map(r => r.intent)),
                                     activeModel,
-                                    normalizedSchema.semanticContext
+                                    normalizedSchema
                                 );
 
-                                let message = analysis.text;
-                                try {
-                                    const parsed = JSON.parse(analysis.text.replace(/```json | ```/g, '').trim());
-                                    message = parsed.answer || analysis.text;
-                                } catch (e) { /* Fallback to raw text */ }
+                                const parsed = robustParseJson(analysis.text);
+                                const message = parsed.answer || analysis.text;
 
                                 return sendResult({
                                     ...toolResult,
@@ -1005,7 +1095,7 @@ chat.post("/ai/generate", async (c) => {
                                 });
                             }
 
-                            // If forceQuery is true, we skip visualization entirely as the user just wants the SQL
+                            // If forceQuery is true, we skip visualization entirely
                             if (forceQuery) {
                                 return sendResult({
                                     ...toolResult,
@@ -1024,8 +1114,7 @@ chat.post("/ai/generate", async (c) => {
                                 contextUsed: resolvedResources
                             });
                         } catch (e) {
-                            console.error("[AI Generate] query_data failed:", e.message);
-                            // Error Recovery Loop: Feed error back to AI to fix (e.g. wrong column name)
+                            console.error("[AI Generate] Multi-query execution failed:", e.message);
                             currentPrompt += `\n\n[System Error - Query Execution Failed]:\n${e.message}\nPlease fix your query intent and try again.`;
                             continue;
                         }
@@ -1050,24 +1139,26 @@ chat.post("/ai/generate", async (c) => {
 
                 console.log(`[AI Generate] No tools called. Response text preview: ${generatedQuery.substring(0, 200)}...`);
 
-                if (generatedQuery) {
-                    generatedQuery = generatedQuery.replace(/```.*?```/gs, (m) => m.replace(/```/g, '')).trim()
-                }
+                if (generatedQuery.trim()) {
+                    const parsed = robustParseJson(generatedQuery);
 
-                // Handle multi_step JSON response - extract first query
-                if (generatedQuery.startsWith('{')) {
-                    try {
-                        const parsed = JSON.parse(generatedQuery)
-                        if (parsed.multi_step && parsed.steps?.length > 0) {
-                            console.log(`[AI Generate] Multi-step response detected, extracting first query`)
-                            generatedQuery = parsed.steps[0].query
-                        } else if (parsed.query) {
-                            generatedQuery = parsed.query
-                        } else if (parsed.ambiguous) {
-                            return sendResult({ ambiguous: true, message: parsed.message, choices: parsed.choices, usage: finalResult.usage })
-                        }
-                    } catch (e) {
-                        console.warn(`[AI Generate] Failed to parse JSON response:`, e.message)
+                    if (parsed.multi_step && parsed.steps?.length > 0) {
+                        console.log(`[AI Generate] Multi-step response detected, extracting first query`)
+                        generatedQuery = parsed.steps[0].query
+                    } else if (parsed.query) {
+                        generatedQuery = parsed.query
+                    } else if (parsed.ambiguous) {
+                        return sendResult({ ambiguous: true, text: parsed.message, message: parsed.message, choices: parsed.choices, usage: finalResult.usage, needs_disclaimer: parsed.needs_disclaimer })
+                    } else if (parsed.answer) {
+                        // Qualitative response from knowledge base
+                        return sendResult({
+                            text: parsed.answer,
+                            explanation: parsed.answer,
+                            message: parsed.answer,
+                            needs_disclaimer: parsed.needs_disclaimer || false,
+                            usage: finalResult.usage,
+                            contextUsed: resolvedResources
+                        })
                     }
                 }
 
@@ -1097,12 +1188,25 @@ chat.post("/ai/generate", async (c) => {
                     lowerQuery.startsWith("i'm sorry");
 
                 if (isPlainExplanation) {
-                    return sendResult({ message: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources });
+                    const lowerGen = generatedQuery.toLowerCase();
+                    const needsDisclaimerHeuristic = lowerGen.includes('invest') || lowerGen.includes('fund') || lowerGen.includes('return') || lowerGen.includes('allocation');
+
+                    return sendResult({
+                        text: generatedQuery,
+                        explanation: generatedQuery,
+                        message: generatedQuery,
+                        usage: finalResult.usage,
+                        contextUsed: resolvedResources,
+                        needs_disclaimer: needsDisclaimerHeuristic
+                    });
                 }
 
                 if (!generatedQuery) {
+                    const errorMsg = "I'm having trouble phrasing that as a query. Could you try being more specific, or mention the data source using symbols like !filename or #database?";
                     return sendResult({
-                        message: "I'm having trouble phrasing that as a query. Could you try being more specific, or mention the data source using symbols like !filename or #database?",
+                        text: errorMsg,
+                        explanation: errorMsg,
+                        message: errorMsg,
                         usage: finalResult.usage,
                         contextUsed: resolvedResources
                     });
@@ -1114,6 +1218,32 @@ chat.post("/ai/generate", async (c) => {
                         usage: finalResult.usage,
                         contextUsed: resolvedResources
                     });
+                }
+
+                // Safety check: If the AI generated a query for an unstructured resource (note),
+                // intercept and return content instead of a failing query.
+                const targetedUnstructuredName = Object.keys(normalizedSchema.sourceRegistry).find(name => {
+                    const info = normalizedSchema.sourceRegistry[name];
+                    return info.type === 'UNSTRUCTURED' && lowerQuery.includes(name.toLowerCase());
+                });
+
+                if (targetedUnstructuredName) {
+                    console.log(`[AI Generate] Intercepted SQL query targeting unstructured resource: ${targetedUnstructuredName}`);
+                    const sourceInfo = normalizedSchema.sourceRegistry[targetedUnstructuredName];
+                    const knowledgeBase = normalizedSchema.semanticContext?.knowledgeBase || [];
+                    const note = knowledgeBase.find(n => n.id === sourceInfo.id);
+                    if (note) {
+                        return sendResult({
+                            text: note.content,
+                            explanation: note.content,
+                            message: note.content,
+                            usage: finalResult.usage,
+                            contextUsed: resolvedResources,
+                            data: [{ content: note.content }],
+                            type: "data_response",
+                            needs_disclaimer: true
+                        });
+                    }
                 }
 
                 return sendResult({ query: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources })
@@ -1149,9 +1279,20 @@ chat.post("/ai/analyze", async (c) => {
         const { question, results, query } = await c.req.json()
         const payload = await verify(token, jwtSecret)
         const analysisResult = await aiClient.analyzeResults(question, results, query)
-        const analysis = analysisResult.text || analysisResult
+
+        let analysis = analysisResult.text
+        let needs_disclaimer = false
+
+        try {
+            const parsed = JSON.parse(analysisResult.text)
+            analysis = parsed.answer || analysis
+            needs_disclaimer = parsed.needs_disclaimer || false
+        } catch (e) {
+            console.warn("[Chat] Failed to parse analysis JSON:", e.message)
+        }
+
         if (analysisResult.usage) await logAiUsage(payload.sub, analysisResult.usage.totalTokens, null, 'ai_analyze', question)
-        return c.json({ analysis })
+        return c.json({ analysis, needs_disclaimer })
     } catch (e) { return c.json({ error: e.message }, 500) }
 })
 

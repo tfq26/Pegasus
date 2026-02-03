@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { knowledgeChunks } from '../db/schema.js';
+import { knowledgeChunks, connections } from '../db/schema.js';
 import { aiClient } from '../../ai/AIClient.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { StorageManager } from './storage/StorageManager.js';
@@ -73,11 +73,11 @@ export class RAGService {
                         indexed_at: new Date().toISOString()
                     },
                     userId: userId,
-                    fileId: metadata.fileId,
-                    noteId: metadata.noteId
+                    fileId: metadata.fileId || null,
+                    noteId: metadata.noteId || null
                 });
             } catch (e) {
-                console.error(`[RAG] Failed to index chunk:`, e.message);
+                console.error(`[RAG] Failed to index chunk:`, e);
             }
         }
     }
@@ -111,6 +111,39 @@ export class RAGService {
             return results || [];
         } catch (e) {
             console.error(`[RAG] Search failed: `, e.message);
+            return [];
+        }
+    }
+
+    /**
+     * Pure Vector Search (Semantic)
+     * Matches based on embedding similarity only.
+     */
+    static async vectorSearch(query, userId, spaceId, limit = 5, modelId = 'openai') {
+        if (!db) return [];
+
+        try {
+            // 1. Vectorize Query
+            const queryVector = await aiClient.generateEmbedding(query, modelId);
+
+            // 2. Perform Vector Search
+            const results = await db.select({
+                id: knowledgeChunks.id,
+                content: knowledgeChunks.content,
+                metadata: knowledgeChunks.metadata,
+                score: sql`1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector)`
+            })
+                .from(knowledgeChunks)
+                .where(and(
+                    eq(knowledgeChunks.userId, userId),
+                    spaceId ? sql`metadata->>'spaceId' = ${spaceId}` : undefined
+                ))
+                .orderBy(sql`${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector`)
+                .limit(limit);
+
+            return results || [];
+        } catch (e) {
+            console.error(`[RAG] Vector search failed: `, e);
             return [];
         }
     }
@@ -235,6 +268,67 @@ export class RAGService {
         } catch (e) {
             console.error("[RAG] Note Indexing Error:", e);
             throw e;
+        }
+    }
+
+    /**
+     * Specialized connection metadata indexing.
+     * Indexes connection name, description, and table names (if available in config).
+     */
+    static async indexConnectionMetadata(connection, userId, modelId = 'openai') {
+        try {
+            const config = typeof connection.config === 'string' ? JSON.parse(connection.config) : connection.config;
+            const sourceId = `conn_${connection.id}`;
+            const parts = [];
+
+            // 1. Connection Name/Alias
+            parts.push(`Connection Name: ${connection.name}`);
+            if (config?.alias) parts.push(`Alias: ${config.alias}`);
+
+            // 2. Connector Type
+            parts.push(`Type: ${connection.type}`);
+
+            // 3. Known Tables (Crucial for "Global Markets" -> "UK Sales" mapping)
+            if (config?.tables && Array.isArray(config.tables)) {
+                parts.push(`Tables: ${config.tables.join(', ')}`);
+            } else if (connection.name.toLowerCase().includes('sales')) {
+                parts.push(`Contains sales data and revenue metrics.`);
+            }
+
+            const content = parts.join('\n');
+            const chunks = [content];
+
+            await this.clearSource(sourceId, userId);
+
+            await this.indexChunks(chunks, {
+                source: `Database: ${connection.name}`,
+                source_id: sourceId,
+                type: 'connection_metadata',
+                connectionId: connection.id,
+                spaceId: connection.spaceId
+            }, userId, modelId);
+
+            return { success: true };
+        } catch (e) {
+            console.error(`[RAG] Failed to index connection ${connection.name}:`, e);
+            throw e;
+        }
+    }
+
+    /**
+     * Batch index all connections in a space.
+     */
+    static async indexSpaceConnections(spaceId, userId) {
+        if (!db) return;
+
+        const spaceConns = await db.query.connections.findMany({
+            where: and(eq(connections.userId, userId), eq(connections.spaceId, spaceId))
+        });
+
+        console.log(`[RAG] Indexing ${spaceConns.length} connections for space ${spaceId}...`);
+
+        for (const conn of spaceConns) {
+            await this.indexConnectionMetadata(conn, userId);
         }
     }
 }

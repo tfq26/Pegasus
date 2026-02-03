@@ -395,41 +395,24 @@ export function useChatExecution(
             if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
                 const response = aiResponse as any;
 
-                // Handle COMPOUND response (array of results)
+                // 1. Always push the user prompt first
+                chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
+
+                // 2. Handle COMPOUND response (array of results) for preview panel
                 if (response.isCompound && Array.isArray(response.results)) {
-                    // Iterate and display each result
                     // For UI simplicity, we'll set the LAST result as the "main" one for the preview panel
-                    // But we'll push multiple history items so the user sees all of them in the chat stream.
-
-                    response.results.forEach((res: any, index: number) => {
-                        const title = res.intent?.visualization?.title || (index === 0 ? "First Result" : "Next Result");
-
-                        // Push to history
-                        chatHistory.value.push({
-                            role: 'assistant',
-                            content: `**${title}**:`,
-                            timestamp: Date.now(),
-                            meta: { hasResults: true, query: res.query, resultPreview: Array.isArray(res.data) ? res.data.slice(0, 5) : res.data }
-                        });
-
-                        // If it's the last one, open the panel
-                        if (index === response.results.length - 1) {
-                            queryResult.value = res.data;
-                            lastQuery.value = res.query;
-                            resultsPanelVisible.value = true;
-                        }
-                    });
-
-                    isExecuting.value = false;
-                    return;
+                    const lastResult = response.results[response.results.length - 1];
+                    queryResult.value = lastResult.data;
+                    lastQuery.value = lastResult.query;
+                    resultsPanelVisible.value = true;
+                } else {
+                    lastQuery.value = response.query;
+                    queryResult.value = response.data;
                 }
 
-
-                // 1. Capture the query for display/history
-                lastQuery.value = response.query;
-
-                // 2. Capture the data directly (No extra roundtrip!)
-                queryResult.value = response.data;
+                // 3. Prepare the Assistant Response
+                const needsDisclaimer = response.needs_disclaimer || false;
+                const assistantContent = response.message || (response.isCompound ? `Here is the data for ${response.results.length} regions.` : `Here is the data you requested.`);
 
                 // 4. Handle Visualizations or Standard Data
                 if (response.type === 'visualization_request') {
@@ -456,20 +439,14 @@ export function useChatExecution(
                     dashboardPreviewConfig.value = finalConfig;
                     dashboardPreviewVisible.value = true;
 
-                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
                     chatHistory.value.push({
                         role: 'assistant',
-                        content: response.message || `I've generated a ${aiConfig.type} chart based on your request.`,
+                        content: assistantContent || `I've generated a ${aiConfig.type} chart based on your request.`,
                         timestamp: Date.now(),
-                        meta: { hasResults: true, query: response.query }
+                        meta: { hasResults: true, query: lastQuery.value }
                     });
                 } else {
                     // Standard Data Response
-                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
-
-                    // Use the AI's explanation if available (Analyst Loop), otherwise generic text
-                    const content = response.message || `Here is the data you requested.`;
-
                     // 2-Step Visualization: Check for blueprint from analysis
                     if (response.vizBlueprint) {
                         const aiConfig = response.vizBlueprint;
@@ -485,10 +462,10 @@ export function useChatExecution(
 
                             // Apply axis mapping suggestions if provided
                             if (aiConfig.xAxis && finalConfig.config) {
-                                finalConfig.config.xAxis = aiConfig.xAxis;
+                                (finalConfig.config as any).xAxis = aiConfig.xAxis;
                             }
                             if (aiConfig.yAxis && finalConfig.config) {
-                                finalConfig.config.yAxis = Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : [aiConfig.yAxis];
+                                (finalConfig.config as any).yAxis = Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : [aiConfig.yAxis];
                             }
                         }
 
@@ -501,12 +478,13 @@ export function useChatExecution(
 
                     chatHistory.value.push({
                         role: 'assistant',
-                        content: content,
+                        content: assistantContent,
                         timestamp: Date.now(),
                         meta: {
                             hasResults: true,
-                            query: response.query,
-                            vizBlueprint: response.vizBlueprint
+                            query: lastQuery.value,
+                            vizBlueprint: response.vizBlueprint,
+                            needsDisclaimer
                         }
                     });
                 }
@@ -620,25 +598,18 @@ export function useChatExecution(
                 update(90, 'Synthesizing...')
                 let aiSummary = singleAIResponse.explanation || "Query executed successfully."
                 let prediction = null
+                let needsDisclaimer = false
                 try {
                     const response = await analyzeResults(userPrompt, body.result, singleAIResponse.query)
                     if (response) {
-                        if (typeof response === 'object') {
+                        if (typeof response === 'object' && response.analysis) {
+                            aiSummary = response.analysis
+                            needsDisclaimer = response.needs_disclaimer || false
+                        } else if (typeof response === 'object' && response.answer) {
                             aiSummary = response.answer
                             prediction = response.prediction
                         } else {
-                            // Try parsing if it's a stringified JSON (from backend)
-                            try {
-                                const parsed = JSON.parse(response)
-                                if (parsed.answer) {
-                                    aiSummary = parsed.answer
-                                    prediction = parsed.prediction
-                                } else {
-                                    aiSummary = response
-                                }
-                            } catch (e) {
-                                aiSummary = response
-                            }
+                            aiSummary = response
                         }
                     }
                 } catch (err: any) {
@@ -657,7 +628,8 @@ export function useChatExecution(
                 const meta = {
                     ...(prediction ? { prediction } : {}),
                     contextUsed: (singleAIResponse as any).contextUsed,
-                    steps: currentExecutionSteps.value
+                    steps: currentExecutionSteps.value,
+                    needsDisclaimer
                 }
 
                 chatHistory.value.push({

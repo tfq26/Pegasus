@@ -1641,6 +1641,7 @@ defineExpose({
       :note-is-private="(activeTab as any)?.data?.isPrivate || false"
       :ai-mode="isAIMode"
       :zoom-level="zoomLevel"
+      :chat-name="(activeTab as any)?.label || 'New Chat'"
       @toggle-ai-mode="handleToggleAIMode"
       @run="handleToolbarRun"
       @clear="handleToolbarClear"
@@ -1791,7 +1792,8 @@ defineExpose({
               filename: tab.data?.filename || '',
               file_type: tab.data?.file_type || '',
               storage_path: tab.data?.storage_path,
-              content: tab.data?.content
+              content: tab.data?.content,
+              id: tab.data?.itemId || tab.data?.id
             }"
             @download="handleFileDownload(tab.data)"
           />

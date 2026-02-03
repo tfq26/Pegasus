@@ -8,6 +8,7 @@ import { canCreateConnection } from "../../lib/tierLimits.js"
 
 import { ConfigService } from "../services/ConfigService.js"
 import { SyncService } from "../services/SyncService.js"
+import { RAGService } from "../services/ragService.js"
 
 const router = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
@@ -152,6 +153,10 @@ router.post("/", async (c) => {
             }
         }
 
+        // [RAG] Index Connection Metadata
+        RAGService.indexConnectionMetadata(mappedSaved, userId)
+            .catch(e => console.error('[Connection] RAG Indexing failed:', e));
+
         return c.json(mappedSaved);
     } catch (e) {
         console.error('[Connection POST] Error:', e)
@@ -212,6 +217,10 @@ router.put("/:id", async (c) => {
                 SyncService.stopPolling(mappedUpdated.id);
             }
         }
+
+        // [RAG] Index Connection Metadata
+        RAGService.indexConnectionMetadata(mappedUpdated, payload.sub)
+            .catch(e => console.error('[Connection] RAG Indexing failed:', e));
 
         return c.json(mappedUpdated);
     } catch (e) {
