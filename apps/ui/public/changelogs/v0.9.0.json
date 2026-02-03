@@ -1,0 +1,126 @@
+{
+    "title": "v0.9.0 - The Cloud-Native Evolution & Drizzle Migration",
+    "date": "2026-02-03",
+    "version": "0.9.0",
+    "description": "A milestone release marking the transition to a robust, cloud-native architecture with Neon PostgreSQL, Drizzle ORM, and significant performance optimizations for the global deployment environment.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Neon & PostgreSQL Migration",
+                    "description": "Pegasus is now powered by Neon, providing a serverless, scalable PostgreSQL foundation.",
+                    "details": [
+                        "Drizzle ORM Integration: Fully type-safe database layer with Drizzle for improved developer velocity and reliability.",
+                        "PostgreSQL Standard: Transitioned from SurrealDB to standard PostgreSQL, enabling better tool support and SQL compliance.",
+                        "Serverless Scaling: Leveraging Neon's autoscaling and branching for high-performance data operations.",
+                        "Unified Schema: Consolidated architecture around a single, robust Drizzle schema definition."
+                    ]
+                },
+                {
+                    "title": "Universal AI Search Infrastructure",
+                    "description": "Real-time web intelligence integrated directly into the AI reasoning loop.",
+                    "details": [
+                        "Multi-Provider Support: Seamlessly switch between Tavily, You.com, and Serper.dev for high-quality web research.",
+                        "Direct Web Research: AI can now proactively search the internet for market trends, competitors, and general knowledge.",
+                        "Automatic Fallback: Intelligent search engine picks the best available provider based on your configuration.",
+                        "Real-time Grounding: Combine outside information with your local data for a complete 360-degree analysis."
+                    ]
+                },
+                {
+                    "title": "Experimental Features System",
+                    "description": "Fine-grained control over the next generation of Pegasus tools.",
+                    "details": [
+                        "RAG Pipeline: Early access to Retrieval-Augmented Generation for AI grounded in your private data.",
+                        "Real-time API Tools: Toggle AI's ability to call external APIs for live stock, weather, and custom data.",
+                        "Feature Gating: Enterprise-grade control over which beta features are available to users.",
+                        "Direct Request Flow: Request access to experimental features directly from the user settings."
+                    ]
+                },
+                {
+                    "title": "Favorites System",
+                    "description": "Keep your most important work within reach.",
+                    "details": [
+                        "Dashboard Bookmarks: Save dashboards to your personal favorites list for instant access from the sidebar.",
+                        "Data Space Pins: Mark frequently used data spaces as favorites to streamline your workflow.",
+                        "Persistent State: Favorites are synced across devices and sessions."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Context-Aware AI Reasoning",
+                    "description": "Smarter context discovery for better research results.",
+                    "details": [
+                        "Contextual Search Scoping: AI automatically identifies your industry domain (e.g., fashion, tech) to narrow web searches.",
+                        "Search Query Refinement: Sophisticated prompt rules ensure the AI uses high-quality market research keywords.",
+                        "Relevance Filtering: Automatically discards search results that don't match the industry context of your private data."
+                    ]
+                },
+                {
+                    "title": "Enhanced AI Response Rendering",
+                    "description": "Beautiful, structured chat interface for complex AI responses.",
+                    "details": [
+                        "Structured Data Parsing: Resolved issues with raw JSON blocks appearing in the chat; responses are now elegantly formatted.",
+                        "Clean Tool Iteration: Smoother UI transitions when the AI iterates through multiple data and search steps."
+                    ]
+                },
+                {
+                    "title": "Backend Startup Optimization",
+                    "description": "Significant reliability improvements for cloud deployments.",
+                    "details": [
+                        "Zero-Wait Port Binding: Resolved 502 Bad Gateway errors by prioritizing HTTP server startup.",
+                        "Async Initialization: Services and database checks now initialize in the background without blocking connectivity.",
+                        "Explicit 0.0.0.0 Binding: Guaranteed accessibility across global edge environments and container platforms.",
+                        "Boot Time Logging: Enhanced observability for the entire backend boot sequence."
+                    ]
+                },
+                {
+                    "title": "Explorer Bulk Actions",
+                    "description": "Streamlined file and dashboard management.",
+                    "details": [
+                        "Multi-select Selection: Shift/Ctrl click to select multiple items in the Data Explorer.",
+                        "Batch Deletion: Remove multiple files or dashboards in a single operation.",
+                        "Resource Cleanup: Improved background cleanup for deleted assets and temporary files."
+                    ]
+                },
+                {
+                    "title": "Local Storage Strategy",
+                    "description": "Standardized handling of local assets and development data.",
+                    "details": [
+                        "Dedicated local/ Directory: Unified folder for untracked files, scripts, and local data stores.",
+                        "Enhanced .gitignore: Robust rules to prevent sensitive local data from leaking into the repository.",
+                        "DuckDB Analytics: Strategic use of local DuckDB for high-speed analytical workloads before cloud sync."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Technical Improvements",
+            "items": [
+                {
+                    "title": "Hybrid Storage Manager",
+                    "description": "Enterprise-grade storage abstraction layer.",
+                    "details": [
+                        "S3 & GCP Compatibility: Seamlessly switch between AWS S3, Google Cloud Storage, and local disks.",
+                        "Provider Factory: Dynamic resolution of storage backends based on deployment environment and user configuration.",
+                        "Presigned URL Support: Secure, direct-to-cloud file access for improved performance and security."
+                    ]
+                },
+                {
+                    "title": "Token & Usage Tracking",
+                    "description": "Precise monitoring of AI resources and quotas.",
+                    "details": [
+                        "Token Audit Log: Detailed tracking of every AI interaction for accurate consumption metrics.",
+                        "Dynamic Quotas: Real-time enforcement of storage and token limits based on subscription tiers.",
+                        "Billing Integration: Foundation for usage-based billing and credit top-ups."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}
