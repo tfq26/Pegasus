@@ -2263,7 +2263,7 @@ const startServer = async () => {
 
             // Database connectivity check
             try {
-                await db.select({ val: sql`1` }).execute();
+                await db.select({ val: sql`1` });
                 console.log('[Main] Database (Neon) active');
             } catch (e) {
                 console.error('[Main] Warning: Database connectivity check failed:', e.message);
