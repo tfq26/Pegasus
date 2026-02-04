@@ -2371,7 +2371,7 @@ if (!isVercel) {
     const serverInstance = serve({
         fetch: app.fetch.bind(app),
         port: numericPort,
-        hostname: '::'
+        hostname: '0.0.0.0'
     }, (info) => {
         console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
 

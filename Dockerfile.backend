@@ -23,7 +23,7 @@ COPY . .
 # Skip UI build - it stays on Vercel
 RUN cd apps/backend && echo 'Backend build complete'
 
-# --- Stage 3: Release (The final image) ---
+# Release stage
 FROM base AS release
 WORKDIR /usr/src/app
 
@@ -31,12 +31,8 @@ COPY --from=install /temp/deps/node_modules node_modules
 COPY --from=prerelease /usr/src/app/apps/backend apps/backend
 COPY --from=prerelease /usr/src/app/package.json .
 
-# Set environment variables
+# Let Railway drive the environment and port
 ENV NODE_ENV=production
-ENV PORT=3000
-
-# Expose the port
-EXPOSE 3000
 
 # Run the backend
 WORKDIR /usr/src/app/apps/backend
