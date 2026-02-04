@@ -90,12 +90,10 @@ console.log(`[Backend] Environment: ${isVercel ? 'Vercel' : 'Standard'}`);
 console.log(`[Backend] Port: ${port}`);
 
 const allowedOrigins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
+
     "https://pegasus-ui-chi.vercel.app",
-    frontendUrl
+    frontendUrl,
+    ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
 ].filter(Boolean);
 
 const app = new Hono()
@@ -212,14 +210,12 @@ app.use('*', async (c, next) => {
     console.log(`[${c.req.method}] ${c.req.url} - ${c.res.status} (${ms}ms)`);
 });
 
-/* Compression disabled temporarily for 502 debugging
 if (typeof CompressionStream !== 'undefined') {
     app.use('*', async (c, next) => {
         if (c.req.path === '/ai/generate') return next()
         return compress()(c, next)
     })
 }
-*/
 app.use('*', async (c, next) => {
     if (c.req.path === '/ai/generate') return next()
     return etag()(c, next)
@@ -2420,21 +2416,6 @@ if (!isVercel) {
                 }
 
                 console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
-
-                // INTERNAL SELF-TEST
-                try {
-                    console.log(`[Self-Test] Pinging local health check: http://localhost:${numericPort}/health ...`);
-                    const res = await fetch(`http://localhost:${numericPort}/health`);
-                    const text = await res.text();
-                    console.log(`[Self-Test] Internal Response: "${text}" (Status: ${res.status})`);
-                    if (text === 'PEGASUS_OK') {
-                        console.log('✅ [Self-Test] Hono is responding correctly internally.');
-                    } else {
-                        console.warn('⚠️  [Self-Test] Unexpected response from Hono.');
-                    }
-                } catch (e) {
-                    console.error('❌ [Self-Test] Local health check FAILED:', e.message);
-                }
             } catch (err) {
                 console.error("❌ [Main] Initialization error:", err);
             }
