@@ -2251,26 +2251,13 @@ const isBun = typeof Bun !== 'undefined';
 const startServer = async () => {
     try {
         // 1. Start Server IMMEDIATELY to bind port and prevent 502 Bad Gateway
-        // 1. Start Server IMMEDIATELY to bind port and prevent 502 Bad Gateway
         if (!isVercel) {
             console.log(`[Main] Starting server on port ${port} (0.0.0.0)...`);
-
-            let server;
-            if (isBun) {
-                console.log('[Main] Using Bun native server adapter');
-                server = Bun.serve({
-                    fetch: app.fetch,
-                    port: Number(port),
-                    hostname: '0.0.0.0'
-                });
-            } else {
-                console.log('[Main] Using Node.js server adapter');
-                server = serve({
-                    fetch: app.fetch,
-                    port: Number(port),
-                    hostname: '0.0.0.0'
-                });
-            }
+            const server = serve({
+                fetch: app.fetch,
+                port: Number(port),
+                hostname: '0.0.0.0'
+            });
 
             if (server) {
                 initSocketServer(server, allowedOrigins);
