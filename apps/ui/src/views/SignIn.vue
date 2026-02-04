@@ -109,12 +109,14 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from '@/composables/useNotifications'
+import { useAuth } from '@/composables/useAuth'
 import { useInAppAuth } from '@/composables/useInAppAuth'
 import { useDesktopAuth } from '@/composables/useDesktopAuth'
 import { isOnline as platformIsOnline } from '@/composables/usePlatform'
 
 const router = useRouter()
-const { login: ssoLogin } = useInAppAuth()
+const { isAuthenticated, user: authUser, login: webLogin, isTauri } = useAuth()
+const { login: desktopSSOLogin } = useInAppAuth()
 const { createAccount, login: localLogin } = useDesktopAuth()
 
 // State
@@ -129,6 +131,13 @@ const error = ref('')
 const isSuccess = ref(false)
 
 onMounted(() => {
+  // If already authenticated, skip sign-in entirely
+  if (isAuthenticated.value) {
+    console.log('[SignIn] User already authenticated, redirecting to dashboard')
+    router.replace('/dashboard')
+    return
+  }
+
   if (!isOnline.value) {
     showLocalAuth.value = true
   }
@@ -138,20 +147,30 @@ const handleSSO = async (provider: string) => {
   error.value = ''
   loading.value = true
   
-  const result = await ssoLogin(provider)
+  if (!isTauri()) {
+    // WEB FLOW: Standard redirect
+    console.log('[SignIn] Using web-standard redirect login')
+    webLogin()
+    return // identityService.login() triggers location.href change
+  }
+
+  // DESKTOP FLOW: In-App WebView / Polling
+  console.log('[SignIn] Using desktop-standard in-app login')
+  const result = await desktopSSOLogin(provider)
   
   if (result.success) {
     isSuccess.value = true
     toast.success('Successfully authenticated!')
     setTimeout(() => {
       window.location.href = '/dashboard'
-    }, 1500)
+    }, 500) // Reduced from 1500 to 500ms
   } else if (result.error && result.error !== 'Login cancelled') {
     error.value = result.error
     toast.error(result.error)
+    loading.value = false
+  } else {
+    loading.value = false
   }
-  
-  loading.value = false
 }
 
 const handleLocalAuth = async () => {

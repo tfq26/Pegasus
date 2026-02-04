@@ -131,6 +131,9 @@ class IdentityService {
             console.log('[IdentityService] fetchUser() called')
             this._isLoading.value = true
 
+            // Proactively check for tokens in URL before fetching
+            this.checkUrlToken();
+
             if (this.isTauri() && !this._isOnline.value) {
                 console.log('[IdentityService] Tauri offline - skipping fetch')
                 this._isLoading.value = false

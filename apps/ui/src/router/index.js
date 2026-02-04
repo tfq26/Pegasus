@@ -73,6 +73,12 @@ router.beforeEach(async (to, from) => {
   const publicPaths = ['/login', '/signin', '/local-auth', '/auth/device', '/pricing', '/docs', '/releases', '/error', '/shared', '/auth/callback']
   const isPublicPath = publicPaths.some(path => to.path.startsWith(path))
 
+  // Redirect authenticated users away from login/signin
+  if ((to.path === '/login' || to.path === '/signin') && isAuthenticated.value) {
+    console.log('[Router] Already authenticated, redirecting to dashboard')
+    return { path: '/dashboard' }
+  }
+
   // Skip guard for public paths
   if (isPublicPath) return
 
@@ -106,8 +112,8 @@ router.beforeEach(async (to, from) => {
   }
 
   // Check if we're coming from a login flow
-  const isComingFromLogin = from.path === '/login' || from.path === '/local-auth'
-  const hasAuthParams = to.query.code || to.query.state || to.query.session_state
+  const isComingFromLogin = from.path === '/login' || from.path === '/local-auth' || from.path === '/signin'
+  const hasAuthParams = to.query.code || to.query.state || to.query.session_state || to.query.token
 
   if (isComingFromLogin || hasAuthParams) {
     console.log('[Router] Refreshing user state after login/OAuth redirect')
@@ -118,6 +124,7 @@ router.beforeEach(async (to, from) => {
       delete cleanQuery.code
       delete cleanQuery.state
       delete cleanQuery.session_state
+      delete cleanQuery.token
       router.replace({ path: to.path, query: cleanQuery })
     }
   }
