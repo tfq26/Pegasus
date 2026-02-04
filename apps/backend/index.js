@@ -2369,9 +2369,9 @@ if (!isVercel) {
     app.get('/health', (c) => c.text('PEGASUS_OK'));
 
     const serverInstance = serve({
-        fetch: app.fetch,
+        fetch: app.fetch.bind(app),
         port: numericPort,
-        hostname: '0.0.0.0'
+        hostname: '::'
     }, (info) => {
         console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
 
@@ -2420,6 +2420,21 @@ if (!isVercel) {
                 }
 
                 console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
+
+                // INTERNAL SELF-TEST
+                try {
+                    console.log(`[Self-Test] Pinging local health check: http://localhost:${numericPort}/health ...`);
+                    const res = await fetch(`http://localhost:${numericPort}/health`);
+                    const text = await res.text();
+                    console.log(`[Self-Test] Internal Response: "${text}" (Status: ${res.status})`);
+                    if (text === 'PEGASUS_OK') {
+                        console.log('✅ [Self-Test] Hono is responding correctly internally.');
+                    } else {
+                        console.warn('⚠️  [Self-Test] Unexpected response from Hono.');
+                    }
+                } catch (e) {
+                    console.error('❌ [Self-Test] Local health check FAILED:', e.message);
+                }
             } catch (err) {
                 console.error("❌ [Main] Initialization error:", err);
             }
