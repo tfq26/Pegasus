@@ -100,9 +100,25 @@ const allowedOrigins = [
 
 const app = new Hono()
 
-// Health Check (Immediate)
-app.get('/health', (c) => c.text('OK'))
-console.log("[Checkpoint] Health check route registered");
+// --- EMERGENCY DIAGNOSTIC LOGGER (Top Level) ---
+app.use('*', async (c, next) => {
+    console.log(`[Proxy] Incoming Request: ${c.req.method} ${c.req.url} (Origin: ${c.req.header('origin') || 'none'})`);
+    await next();
+});
+
+// Health Checks (Immediate)
+app.get('/health', (c) => c.text('PEGASUS_OK'))
+app.get('/debug/info', (c) => {
+    return c.json({
+        time: new Date().toISOString(),
+        port: process.env.PORT,
+        isVercel: isVercel,
+        node_env: process.env.NODE_ENV,
+        allowedOrigins: allowedOrigins,
+        frontendUrl: frontendUrl
+    })
+})
+console.log("[Checkpoint] Diagnostic routes and logger registered");
 
 // Refined CORS configuration
 const corsConfig = {
@@ -196,12 +212,14 @@ app.use('*', async (c, next) => {
     console.log(`[${c.req.method}] ${c.req.url} - ${c.res.status} (${ms}ms)`);
 });
 
+/* Compression disabled temporarily for 502 debugging
 if (typeof CompressionStream !== 'undefined') {
     app.use('*', async (c, next) => {
         if (c.req.path === '/ai/generate') return next()
         return compress()(c, next)
     })
 }
+*/
 app.use('*', async (c, next) => {
     if (c.req.path === '/ai/generate') return next()
     return etag()(c, next)
@@ -2355,7 +2373,12 @@ if (!isVercel) {
         port: numericPort,
         hostname: '0.0.0.0'
     }, (info) => {
-        console.log(`🚀 [Main] Server listening on http://${info.address}:${info.port}`);
+        console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
+
+        // Ensure app.fetch is indeed the one being used
+        if (typeof app.fetch !== 'function') {
+            console.error('❌ [Main] CRITICAL ERROR: app.fetch is not a function! Hono is misconfigured.');
+        }
 
         // 2. Load routes and backend services only AFTER the port is bound
         (async () => {
