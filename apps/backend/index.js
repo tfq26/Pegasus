@@ -70,9 +70,8 @@ import { analyzeAndPrintToTerminal } from "./src/lib/bugSageTerminal.js"
 
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 
-// Initialize Jobs
+// Initialize Jobs (moved to background)
 import { startAllJobs } from "./src/jobs/index.js";
-startAllJobs();
 
 const port = process.env.PORT || 3000;
 const jwtSecret = ConfigService.getJwtSecret();
@@ -80,6 +79,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_placeholder"
 
 const frontendUrl = ConfigService.getFrontendUrl();
 const isProd = ConfigService.isProduction();
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_URL?.includes('vercel.app');
+
+console.log(`[Backend] Mode: ${isProd ? 'Production' : 'Development'}`);
+console.log(`[Backend] Environment: ${isVercel ? 'Vercel' : 'Standard'}`);
+console.log(`[Backend] Port: ${port}`);
 
 const allowedOrigins = [
     "http://localhost:5173",
@@ -197,7 +201,8 @@ app.use('*', async (c, next) => {
 
 // Ensure database connection on Vercel (serverless environment)
 // On Vercel, startServer() is NOT called, so we need to connect on first request
-const isVercel = process.env.VERCEL === '1';
+// isVercel is defined at the top
+
 // No-op for SurrealDB connection check
 
 
@@ -2246,20 +2251,45 @@ const isBun = typeof Bun !== 'undefined';
 const startServer = async () => {
     try {
         // 1. Start Server IMMEDIATELY to bind port and prevent 502 Bad Gateway
+        // 1. Start Server IMMEDIATELY to bind port and prevent 502 Bad Gateway
         if (!isVercel) {
-            console.log(`[Main] Starting server on port ${port} (0.0.0.0, Runtime: ${isBun ? 'Bun (Node Compat)' : 'Node'})...`);
-            const server = serve({
-                fetch: app.fetch,
-                port: Number(port),
-                hostname: '0.0.0.0' // Explicitly bind to all interfaces for deployment
-            });
-            initSocketServer(server, allowedOrigins);
-            console.log(`[Main] HTTP Server listening on port ${port}`);
+            console.log(`[Main] Starting server on port ${port} (0.0.0.0)...`);
+
+            let server;
+            if (isBun) {
+                console.log('[Main] Using Bun native server adapter');
+                server = Bun.serve({
+                    fetch: app.fetch,
+                    port: Number(port),
+                    hostname: '0.0.0.0'
+                });
+            } else {
+                console.log('[Main] Using Node.js server adapter');
+                server = serve({
+                    fetch: app.fetch,
+                    port: Number(port),
+                    hostname: '0.0.0.0'
+                });
+            }
+
+            if (server) {
+                initSocketServer(server, allowedOrigins);
+                console.log(`[Main] Server is now listening on port ${port}`);
+            } else {
+                console.error('[Main] Failed to create server instance!');
+            }
         }
 
         // 2. Perform initialization in the background
         (async () => {
             console.log('[Main] Running background initializations...');
+
+            // Start Cron Jobs
+            try {
+                startAllJobs();
+            } catch (e) {
+                console.error('[Main] Warning: Failed to start background jobs:', e.message);
+            }
 
             // Database connectivity check
             try {
