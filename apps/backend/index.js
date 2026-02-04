@@ -158,18 +158,22 @@ app.use("*", cors(corsConfig))
 // --- Unhandled Error Capture (Jobs, Async, etc.) ---
 process.on('unhandledRejection', (reason, promise) => {
     console.error('😱 [Unhandled Rejection]', reason);
-    analyzeAndPrintToTerminal(reason instanceof Error ? reason : new Error(String(reason)), {
-        path: 'UNHANDLED_REJECTION',
-        context: 'Global Process'
-    });
+    if (process.env.PEGASUS_DEV_MODE === 'true') {
+        analyzeAndPrintToTerminal(reason instanceof Error ? reason : new Error(String(reason)), {
+            path: 'UNHANDLED_REJECTION',
+            context: 'Global Process'
+        });
+    }
 });
 
 process.on('uncaughtException', (err) => {
     console.error('💀 [Uncaught Exception]', err);
-    analyzeAndPrintToTerminal(err, {
-        path: 'UNCAUGHT_EXCEPTION',
-        context: 'Global Process'
-    });
+    if (process.env.PEGASUS_DEV_MODE === 'true') {
+        analyzeAndPrintToTerminal(err, {
+            path: 'UNCAUGHT_EXCEPTION',
+            context: 'Global Process'
+        });
+    }
     // Give some time for analysis to print before exiting if it's fatal
     setTimeout(() => process.exit(1), 2000);
 });
@@ -249,10 +253,12 @@ app.onError((err, c) => {
     }
 
     // Trigger BugSage terminal analysis in development
-    analyzeAndPrintToTerminal(err, {
-        path: c.req.path,
-        method: c.req.method
-    });
+    if (process.env.PEGASUS_DEV_MODE === 'true') {
+        analyzeAndPrintToTerminal(err, {
+            path: c.req.path,
+            method: c.req.method
+        });
+    }
 
     return c.json({
         error: 'Internal Server Error',

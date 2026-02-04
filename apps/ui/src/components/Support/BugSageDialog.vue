@@ -16,6 +16,7 @@ import {
 } from 'lucide-vue-next';
 import { toast } from 'vue-sonner';
 
+const isEnabled = import.meta.env.DEV;
 const { reportBug, isReporting, autoReportError, lastReport: globalLastReport } = useBugSage();
 const isOpen = ref(false);
 const userNotes = ref('');
@@ -53,7 +54,7 @@ const close = () => {
 </script>
 
 <template>
-  <div class="fixed bottom-6 right-6 z-50">
+  <div v-if="isEnabled" class="fixed bottom-6 right-6 z-50">
     <!-- Trigger Button -->
     <button 
       @click="isOpen = true"

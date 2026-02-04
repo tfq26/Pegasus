@@ -11,7 +11,9 @@ const autoReportError = ref<any>(null);
 
 export function useBugSage() {
 
-    if (!bugSage) {
+    const isEnabled = import.meta.env.DEV;
+
+    if (!bugSage && isEnabled) {
         const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
         bugSage = new BugSage({
             maxLogs: 500,
@@ -21,6 +23,10 @@ export function useBugSage() {
     }
 
     const reportBug = async (userNotes: string, error?: any) => {
+        if (!isEnabled || !bugSage) {
+            console.warn("[BugSage] Reporting is disabled in this environment.");
+            return { analysis: null };
+        }
         if (isReporting.value) return;
 
         isReporting.value = true;
@@ -54,6 +60,6 @@ export function useBugSage() {
         isReporting,
         lastReport,
         autoReportError,
-        collector: bugSage.getCollector()
+        collector: isEnabled && bugSage ? bugSage.getCollector() : null
     };
 }
