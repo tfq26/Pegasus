@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { db } from "../db/index.js"
 import { weatherCache } from "../db/schema.js"
-import { eq, gt } from "drizzle-orm"
+import { eq, gt, and } from "drizzle-orm"
 import { APIService, API_DEFAULTS } from "../services/APIService.js"
 import { getAuthToken } from "../../lib/auth.js"
 

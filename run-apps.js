@@ -206,6 +206,27 @@ async function checkServiceConnections() {
         console.log("⚠️   Storage: No AWS credentials found");
     }
 
+    // 4. WorkOS Check
+    const hasWorkOS = process.env.WORKOS_API_KEY && process.env.WORKOS_CLIENT_ID;
+    if (hasWorkOS) {
+        try {
+            const res = await fetch("https://api.workos.com/", { method: "HEAD" });
+            if (res.ok || res.status === 404) { // HEAD on root usually is fine as a reachability check
+                console.log("✅  WorkOS: API reachable and credentials found");
+            } else {
+                console.log(`⚠️   WorkOS: Reachable but returned status ${res.status}`);
+            }
+        } catch (e) {
+            console.log(`❌  WorkOS: Could not reach API - ${e.message}`);
+        }
+
+        if (!process.env.WORKOS_REDIRECT_URI) {
+            console.log("⚠️   WorkOS: WORKOS_REDIRECT_URI is missing from .env");
+        }
+    } else {
+        console.log("❌  WorkOS: API keys (WORKOS_API_KEY/CLIENT_ID) missing from .env");
+    }
+
     console.log(""); // Spacer
 }
 

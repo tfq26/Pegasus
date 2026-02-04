@@ -1,16 +1,20 @@
 import 'dotenv/config';
+console.log("[Checkpoint] dotenv loaded");
 import { Hono } from "hono"
 import { cors } from "hono/cors"
+console.log("[Checkpoint] Hono primitive modules loaded");
 import { adapters, createAdapter } from "./adapters/index.js"
 import { serve } from '@hono/node-server'
 import { handle } from '@hono/node-server/vercel'
 import { compress } from 'hono/compress'
 import { etag } from 'hono/etag'
+console.log("[Checkpoint] Hono server modules loaded");
 import { initSocketServer } from "./src/socket.js"
 import { ConfigService } from "./src/services/ConfigService.js"
 import { getCookie, setCookie, deleteCookie } from "hono/cookie"
 import aiRoutes from "./src/routes/ai.js"
 import { sign, verify } from "hono/jwt"
+console.log("[Checkpoint] App core services loaded");
 import { db } from "./src/db/index.js"
 import { users, connections, userPayments, transactionMaster, dataSources, cellBindings, queryHistory, spaceFiles, dataSpaces, files, spaceNotes } from "./src/db/schema.js"
 import { eq, and, or, sql, desc, asc, like, gte, lte, isNull } from "drizzle-orm"
@@ -95,6 +99,10 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 const app = new Hono()
+
+// Health Check (Immediate)
+app.get('/health', (c) => c.text('OK'))
+console.log("[Checkpoint] Health check route registered");
 
 // Refined CORS configuration
 const corsConfig = {
@@ -2244,220 +2252,9 @@ app.get("/usage", async (c) => {
     }
 })
 
-// Consolidated route mounting handled above
-
 // initialization block
 const isBun = typeof Bun !== 'undefined';
-const startServer = async () => {
-    try {
-        // 1. Start Server IMMEDIATELY to bind port and prevent 502 Bad Gateway
-        if (!isVercel) {
-            console.log(`[Main] Starting server on port ${port} (0.0.0.0)...`);
-            const server = serve({
-                fetch: app.fetch,
-                port: Number(port),
-                hostname: '0.0.0.0'
-            });
-
-            if (server) {
-                initSocketServer(server, allowedOrigins);
-                console.log(`[Main] Server is now listening on port ${port}`);
-            } else {
-                console.error('[Main] Failed to create server instance!');
-            }
-        }
-
-        // 2. Perform initialization in the background
-        (async () => {
-            console.log('[Main] Running background initializations...');
-
-            // Start Cron Jobs
-            try {
-                startAllJobs();
-            } catch (e) {
-                console.error('[Main] Warning: Failed to start background jobs:', e.message);
-            }
-
-            // Database connectivity check
-            try {
-                await db.select({ val: sql`1` });
-                console.log('[Main] Database (Neon) active');
-            } catch (e) {
-                console.error('[Main] Warning: Database connectivity check failed:', e.message);
-            }
-
-            // DEV MODE: Setup test user and data
-            if (process.env.PEGASUS_DEV_MODE === 'true') {
-                console.log('🛠️  [DEV_MODE] Setting up development workspace...');
-                try {
-                    // Upsert dev user
-                    await db.insert(users).values({
-                        id: 'dev_user',
-                        email: 'dev@pegasus.ai',
-                        firstName: 'Developer',
-                        lastName: 'User',
-                        subscriptionTier: 'pro_plus',
-                        stripeCustomerId: '',
-                        purchasedTokens: 0,
-                        purchasedStorage: 0,
-                        updatedAt: new Date()
-                    }).onConflictDoUpdate({
-                        target: users.id,
-                        set: {
-                            email: 'dev@pegasus.ai',
-                            firstName: 'Developer',
-                            lastName: 'User',
-                            subscriptionTier: 'pro_plus'
-                        }
-                    });
-
-                    // Create a test connection if none exists
-                    const existingConn = await db.select({ id: connections.id })
-                        .from(connections)
-                        .where(eq(connections.userId, 'dev_user'))
-                        .limit(1);
-
-                    if (existingConn.length === 0) {
-                        await db.insert(connections).values({
-                            userId: 'dev_user',
-                            type: 'sqlite',
-                            name: 'Sample Data',
-                            config: { sqlite: { path: "pegasus.db" } },
-                            isLocked: false,
-                        });
-                    }
-                    console.log('✅ [DEV_MODE] Development workspace ready');
-
-
-                    // 1. Auto-import files from command line
-                    const autoFiles = process.env.PEGASUS_AUTO_IMPORT_FILES;
-                    if (autoFiles) {
-                        const files = autoFiles.split(',');
-                        for (const filePath of files) {
-                            try {
-                                const fullPath = path.resolve(filePath);
-                                const fileName = path.basename(fullPath);
-                                const fileType = fileName.split('.').pop().toLowerCase();
-                                const content = await fs.readFile(fullPath);
-
-                                console.log(`🛠️  [DEV_MODE] Auto-importing file: ${fileName}`);
-
-                                let rows = [];
-                                if (fileType === 'xlsx') {
-                                    try {
-                                        const { interpretExcelFromXML } = await import('./ai/xmlExcelInterpreter.js');
-                                        const result = await interpretExcelFromXML(fullPath);
-                                        if (result && result.data && result.data.length > 0) {
-                                            rows = result.data;
-                                        } else {
-                                            console.log(`🛠️  [DEV_MODE] XML interpreter failed or found no data, falling back to regular parser`);
-                                            const { parseExcel } = await import('./lib/excelParser.js');
-                                            const excelResult = await parseExcel(fullPath);
-                                            const firstSheet = Object.keys(excelResult.sheets)[0];
-                                            rows = excelResult.sheets[firstSheet] || [];
-                                        }
-                                    } catch (err) {
-                                        console.error(`❌ [DEV_MODE] XML interpreter failed:`, err.message);
-                                        const { parseExcel } = await import('./lib/excelParser.js');
-                                        const excelResult = await parseExcel(fullPath);
-                                        const firstSheet = Object.keys(excelResult.sheets)[0];
-                                        rows = excelResult.sheets[firstSheet] || [];
-                                    }
-                                } else if (fileType === 'json') {
-                                    rows = JSON.parse(content.toString());
-                                    if (!Array.isArray(rows)) rows = [rows];
-                                } else if (fileType === 'xml') {
-                                    const parsed = parseXML(content.toString());
-                                    rows = flattenXML(parsed);
-                                }
-
-                                if (rows.length > 0) {
-                                    const uploadUuid = crypto.createHash('md5').update(fileName + Date.now()).digest('hex');
-                                    const tableName = fileName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-                                    const tableId = `data_${uploadUuid}_${tableName}`;
-                                    const uploadId = `uploads:${uploadUuid}`;
-
-                                    // Create metadata
-                                    await db.insert(spaceFiles).values({
-                                        id: uploadUuid,
-                                        userId: 'dev_user',
-                                        filename: fileName,
-                                        fileType,
-                                        createdAt: new Date()
-                                    });
-
-                                    // Create table
-                                    await createTableAndInsertData(tableId, rows);
-                                    console.log(`✅ [DEV_MODE] Imported ${rows.length} rows into ${tableId}`);
-                                }
-                            } catch (err) {
-                                console.error(`❌ [DEV_MODE] Failed to import file ${filePath}:`, err.message);
-                            }
-                        }
-                    }
-
-                    // 2. Auto-import connections from command line (Format: name:type:config)
-                    const autoConns = process.env.PEGASUS_AUTO_IMPORT_CONNS;
-                    if (autoConns) {
-                        const conns = autoConns.split('|');
-                        for (const connStr of conns) {
-                            try {
-                                const [name, type, configStr] = connStr.split(':');
-                                if (!name || !type) continue;
-
-                                console.log(`🛠️  [DEV_MODE] Auto-importing connection: ${name} (${type})`);
-
-                                await db.insert(connections).values({
-                                    userId: 'dev_user',
-                                    name: name,
-                                    type: type,
-                                    config: JSON.parse(configStr || '{}'),
-                                    createdAt: new Date(),
-                                    updatedAt: new Date()
-                                });
-                                console.log(`✅ [DEV_MODE] Connection ${name} added`);
-                            } catch (err) {
-                                console.error(`❌ [DEV_MODE] Failed to add connection ${connStr}:`, err.message);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.error('❌ [DEV_MODE] Failed to setup dev data:', e.message);
-                }
-            }
-
-            // 2. Schema initialization
-            try {
-                await initExperimentalTables(db)
-                console.log('✅ Experimental features tables initialized')
-            } catch (e) {
-                console.warn('[Schema] Exp tables warning:', e.message)
-            }
-
-            try {
-                // dashboard_message table is assumed to exist in Neon schema
-                console.log('[Schema] dashboard_message table verified');
-            } catch (e) {
-                if (!e.message.includes('already exists')) {
-                    console.error('[Schema] Failed to define dashboard_message:', e.message);
-                }
-            }
-
-            // 3. Background services
-            weatherService.start();
-            startPollingService();
-            console.log('[Main] Data source polling service active');
-            console.log('[Main] Background services initialized.');
-
-            if (isVercel) {
-                console.log('[Main] Vercel mode skip serve()');
-            }
-        })();
-    } catch (err) {
-        console.error('[Fatal Startup Error]', err);
-        process.exit(1);
-    }
-};
+// startServer logic moved to the bottom of the file to ensure instant port binding on Railway.
 
 // Helper to create table and insert data (refactored to avoid duplication)
 async function createTableAndInsertData(tableName, rows) {
@@ -2545,9 +2342,66 @@ async function createTableAndInsertData(tableName, rows) {
     }
 }
 
-// Start the app
+// 1. Core Server Start
 if (!isVercel) {
-    startServer();
+    const numericPort = Number(port);
+    console.log(`[Railway] Booting instantly on 0.0.0.0:${numericPort}...`);
+
+    // Basic health check registered BEFORE imports to be safe
+    app.get('/health', (c) => c.text('PEGASUS_OK'));
+
+    const serverInstance = serve({
+        fetch: app.fetch,
+        port: numericPort,
+        hostname: '0.0.0.0'
+    }, (info) => {
+        console.log(`🚀 [Main] Server listening on http://${info.address}:${info.port}`);
+
+        // 2. Load routes and backend services only AFTER the port is bound
+        (async () => {
+            const startInit = Date.now();
+            console.log("[Main] Starting full initialization...");
+            try {
+                // Initialize Socket.io
+                initSocketServer(serverInstance, allowedOrigins);
+                console.log("[Main] Socket.io initialized");
+
+                // Background Jobs
+                startAllJobs();
+                console.log("[Main] Background jobs scheduled");
+
+                // Start Server-dependent services
+                try {
+                    startPollingService();
+                    console.log("[Main] Polling service started");
+                } catch (e) { console.error("[Main] Polling error:", e.message); }
+
+                // Database connectivity check
+                try {
+                    await db.select({ val: sql`1` });
+                    console.log('[Main] Database (Neon) active');
+                } catch (e) {
+                    console.error('[Main] Warning: Database connectivity check failed:', e.message);
+                }
+
+                // DEV MODE: Setup test user
+                if (process.env.PEGASUS_DEV_MODE === 'true') {
+                    console.log('🛠️  [DEV_MODE] Setting up dev user...');
+                    try {
+                        await db.insert(users).values({
+                            id: 'dev_user',
+                            email: 'dev@pegasus.ai',
+                            firstName: 'Developer', subscriptionTier: 'pro_plus', updatedAt: new Date()
+                        }).onConflictDoUpdate({ target: users.id, set: { updatedAt: new Date() } });
+                    } catch (e) { console.error('🛠️  [DEV_MODE] Setup failed:', e.message); }
+                }
+
+                console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
+            } catch (err) {
+                console.error("❌ [Main] Initialization error:", err);
+            }
+        })();
+    });
 }
 
 // Export for platforms
