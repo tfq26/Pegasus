@@ -16,6 +16,8 @@ import {
     api
 } from '@/lib/api'
 import { identityService } from '@/services/identityService'
+import { toast } from '@/composables/useNotifications'
+import { useCollaboration } from '@/composables/useCollaboration'
 
 export interface DashboardElement {
     id: string
@@ -55,6 +57,18 @@ export interface Dashboard {
     share_token: string | null
     updated_at: number
     access_level?: 'owner' | 'editor' | 'viewer' | null
+}
+
+export interface DashboardActivity {
+    id: string
+    type: 'add' | 'update' | 'remove' | 'refresh'
+    elementId: string
+    elementTitle: string
+    userId: string
+    userName: string
+    userProfilePicture?: string
+    timestamp: number
+    changes?: any
 }
 
 export const useDashboardStore = defineStore('dashboard', () => {
@@ -99,6 +113,55 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const isSaving = ref(false)
     const isAnalyzing = ref(false)
     const analysisResult = ref<string | null>(null)
+    const activityLogs = ref<DashboardActivity[]>([])
+
+    const addActivityLog = (activity: Omit<DashboardActivity, 'id' | 'timestamp'>) => {
+        const newActivity: DashboardActivity = {
+            ...activity,
+            id: crypto.randomUUID(),
+            timestamp: Date.now()
+        }
+        activityLogs.value.unshift(newActivity)
+        // Keep only last 50 activities
+        if (activityLogs.value.length > 50) {
+            activityLogs.value = activityLogs.value.slice(0, 50)
+        }
+    }
+
+    // Move actions higher up for robust initialization
+    const removeDashboard = async (id: string) => {
+        try {
+            await deleteDashboard(id)
+            dashboards.value = dashboards.value.filter(d => d.id !== id)
+            recentDashboards.value = recentDashboards.value.filter(d => d.id !== id)
+            if (currentDashboard.value?.id === id) {
+                currentDashboard.value = null
+            }
+        } catch (e: any) {
+            error.value = e.message
+            throw e
+        }
+    }
+
+    const removeDashboards = async (ids: string[]) => {
+        try {
+            const items = ids.map(id => ({ type: 'dashboard', id }))
+            const res = await api.post<any>('/spaces/bulk-delete', { items })
+
+            const deletedIds = res.success || []
+            dashboards.value = dashboards.value.filter(d => !deletedIds.includes(d.id))
+            recentDashboards.value = recentDashboards.value.filter(d => !deletedIds.includes(d.id))
+
+            if (currentDashboard.value && deletedIds.includes(currentDashboard.value.id)) {
+                currentDashboard.value = null
+            }
+
+            return res
+        } catch (e: any) {
+            error.value = e.message
+            throw e
+        }
+    }
 
     // Helper: Identify if a connection is likely a static file upload
     const isStaticSource = (conn: any): boolean => {
@@ -147,7 +210,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
 
         // If no pages exist but we have root layout/elements, move them to Page 1
-        if ((!dashboard.data.pages || dashboard.data.pages.length === 0) &&
+        if (dashboard.data && (!dashboard.data.pages || dashboard.data.pages.length === 0) &&
             (dashboard.data.layout?.length || dashboard.data.elements?.length)) {
 
             const pageId = crypto.randomUUID()
@@ -159,18 +222,20 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 elements: dashboard.data.elements || []
             }]
 
-            // Clear root fields to avoid confusion/duplication effectively
-            // But we might want to keep them 'in sync' for a while if older clients use them
-            // For now, the source of truth becomes 'pages'
-            dashboard.data.layout = []
-            dashboard.data.elements = []
+            if (dashboard.data) {
+                dashboard.data.layout = []
+                dashboard.data.elements = []
+            }
 
             return pageId
-        } else if (dashboard.data.pages && dashboard.data.pages.length > 0) {
+        } else if (dashboard.data?.pages && dashboard.data.pages.length > 0) {
             // Already has pages
-            // Ensure they are sorted
-            dashboard.data.pages!.sort((a, b) => a.order - b.order)
-            return dashboard.data.pages![0].id
+            if (dashboard.data?.pages && dashboard.data.pages.length > 0) {
+                const pages = dashboard.data.pages
+                pages.sort((a, b) => a.order - b.order)
+                return pages[0]?.id || null
+            }
+            return null
         } else {
             // Empty dashboard, create first page
             const pageId = crypto.randomUUID()
@@ -254,7 +319,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
         error.value = null
         try {
-            const dashboard = await fetchDashboard(id)
+            const dashboard = await fetchDashboard(id) // Changed from getDashboard to fetchDashboard to match original
             currentDashboard.value = dashboard
             parameters.value = dashboard.data?.parameters || {}
 
@@ -263,6 +328,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
             // Reset active page to first page on fresh load
             activePageId.value = pageId
 
+            // Setup Orion Live Sync if needed
+            setupOrionSync()
+
             // Update list item if needed
             const index = dashboards.value.findIndex(d => d.id === id)
             if (index !== -1) {
@@ -270,7 +338,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
             } else {
                 dashboards.value.push(dashboard)
             }
-        } catch (e: any) {
+            return dashboard // Added return dashboard
+        } catch (e: any) { // Corrected catch block
             error.value = e.message
         } finally {
             isLoading.value = false
@@ -337,7 +406,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
             elements: []
         }
 
-        currentDashboard.value.data.pages.push(newPage)
+        if (currentDashboard.value?.data?.pages) {
+            currentDashboard.value.data.pages.push(newPage)
+        }
         activePageId.value = newPage.id
         await saveCurrentDashboard()
     }
@@ -354,8 +425,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         currentDashboard.value.data.pages.splice(index, 1)
 
         // If we deleted the active page, switch to the first available
-        if (activePageId.value === pageId && currentDashboard.value.data.pages.length > 0) {
-            activePageId.value = currentDashboard.value.data.pages[0].id
+        if (activePageId.value === pageId && currentDashboard.value?.data?.pages && currentDashboard.value.data.pages.length > 0) {
+            activePageId.value = currentDashboard.value.data.pages[0]?.id || null
         }
 
         await saveCurrentDashboard()
@@ -400,19 +471,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
-    const removeDashboard = async (id: string) => {
-        try {
-            await deleteDashboard(id)
-            dashboards.value = dashboards.value.filter(d => d.id !== id)
-            recentDashboards.value = recentDashboards.value.filter(d => d.id !== id)
-            if (currentDashboard.value?.id === id) {
-                currentDashboard.value = null
-            }
-        } catch (e: any) {
-            error.value = e.message
-            throw e
-        }
-    }
+    // Moved up
+
 
     const generateShareLink = async (id: string) => {
         try {
@@ -450,11 +510,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
             if (!dashboard.data) dashboard.data = { layout: [], elements: [], pages: [], parameters: {} } as any
 
             // Ensure we target the ACTIVE PAGE (or the first page if not active)
-            let targetPage = dashboard.data.pages?.find(p => p.id === activePageId.value)
+            let targetPage = dashboard.data?.pages?.find(p => p.id === activePageId.value)
             if (!targetPage) {
                 // Fallback to migration logic if pages missing
                 const pid = migrateDashboard(dashboard)
-                targetPage = dashboard.data.pages!.find(p => p.id === pid)!
+                targetPage = dashboard.data?.pages?.find(p => p.id === pid)!
                 activePageId.value = pid
             }
 
@@ -496,6 +556,24 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 data: dashboard.data
             })
             console.log('[DashboardStore] Backend sync completed')
+
+            // --- Live Update: Emit Element Add ---
+            const { emitElementAdd } = useCollaboration()
+            emitElementAdd(dashboardId, targetPage.id, {
+                ...element,
+                id: newId,
+                created_by_name: userName
+            }, newLayoutItem)
+
+            // Log locally
+            addActivityLog({
+                type: 'add',
+                elementId: newId,
+                elementTitle: element.title,
+                userId: identityService.user?.id || 'me',
+                userName: userName || 'Me',
+                userProfilePicture: identityService.user?.profilePictureUrl
+            })
 
         } catch (e: any) {
             error.value = e.message
@@ -612,6 +690,22 @@ export const useDashboardStore = defineStore('dashboard', () => {
                     }
 
                     foundPage.elements[elementIndex] = updatedElement
+
+                    // --- Live Update: Emit Data Refresh ---
+                    const { emitElementDataRefresh } = useCollaboration()
+                    if (currentDashboard.value) {
+                        emitElementDataRefresh(currentDashboard.value.id, elementId, body.result)
+
+                        // Log locally
+                        addActivityLog({
+                            type: 'refresh',
+                            elementId,
+                            elementTitle: updatedElement.title,
+                            userId: identityService.user?.id || 'me',
+                            userName: identityService.user?.firstName || 'Me',
+                            userProfilePicture: identityService.user?.profilePictureUrl
+                        })
+                    }
                 }
             }
 
@@ -725,10 +819,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
         console.log(`[DashboardStore] Refreshing all elements (force=${forceRefresh})`)
         const elements = [] as DashboardElement[]
 
-        // Collect all elements from all pages
-        currentDashboard.value.data.pages?.forEach(p => {
-            elements.push(...p.elements)
-        })
+        if (currentDashboard.value?.data?.pages) {
+            currentDashboard.value.data.pages.forEach(p => {
+                elements.push(...p.elements)
+            })
+        }
 
         // Execute all queries in parallel
         const connectionStore = useConnectionStore()
@@ -755,6 +850,46 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
+    const { onOrionUpdate, joinOrion } = useCollaboration()
+    let orionUnsubscribe: (() => void) | null = null
+
+    function setupOrionSync() {
+        if (orionUnsubscribe) orionUnsubscribe()
+
+        // Check if any element in the current dashboard is "live" (refreshFrequency = 0)
+        const hasLiveElements = currentDashboard.value?.data?.pages?.some(p =>
+            p.elements?.some(e => e.refreshFrequency === 0)
+        )
+
+        if (hasLiveElements) {
+            console.log("[DashboardStore] Live elements detected, joining Orion room...")
+            joinOrion()
+
+            orionUnsubscribe = onOrionUpdate((metrics: any[]) => {
+                if (!currentDashboard.value) return
+
+                // Updates are an array of resources from Change Feed
+                metrics.forEach(metric => {
+                    currentDashboard.value!.data.pages.forEach(page => {
+                        page.elements.forEach(element => {
+                            if (element.refreshFrequency === 0) {
+                                // If the element's query is roughly "SELECT * FROM c" or similar,
+                                // we can filter/update its result set.
+                                // For simplicity/robustness in a demo, we'll re-trigger the query
+                                // if it's affected, OR just update the matching server if we can identify it.
+
+                                // Simple approach: If it's a live element, just refresh it when we get ANY metric update
+                                // to ensure visualization stays current.
+                                // We'll throttle this if needed, but for now 1s updates are fine.
+                                executeElementQuery(element.id, true)
+                            }
+                        })
+                    })
+                })
+            })
+        }
+    }
+
     return {
         dashboards,
         recentDashboards,
@@ -774,6 +909,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         createNewDashboard,
         saveCurrentDashboard,
         removeDashboard,
+        removeDashboards,
         generateShareLink,
         addElementToDashboard,
         executeElementQuery,
@@ -783,6 +919,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         removePage,
         renamePage,
         authorizedUsers,
-        loadPermissions
+        loadPermissions,
+        activityLogs,
+        addActivityLog
     }
 })

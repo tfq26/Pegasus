@@ -27,10 +27,37 @@ export class GeminiProvider extends AIProvider {
 
             // Previous messages form the history
             const previousMessages = chatMessages.slice(0, -1)
-            history = previousMessages.map(m => ({
+            let rawHistory = previousMessages.map(m => ({
                 role: m.role === 'user' ? 'user' : 'model',
                 parts: [{ text: m.content }]
             }))
+
+            // Gemini requirement: History MUST start with 'user'
+            let firstUserIndex = rawHistory.findIndex(m => m.role === 'user');
+            if (firstUserIndex === -1) {
+                history = [];
+            } else {
+                // Slice from first user message
+                let filtered = rawHistory.slice(firstUserIndex);
+
+                // Gemini requirement: Roles MUST alternate
+                const alternating = [];
+                let lastRole = null;
+                for (const msg of filtered) {
+                    if (msg.role !== lastRole) {
+                        alternating.push(msg);
+                        lastRole = msg.role;
+                    }
+                }
+
+                // Gemini requirement: If using sendMessage(), history should end with 'model'
+                // so that the new message can be 'user'.
+                if (alternating.length > 0 && alternating[alternating.length - 1].role === 'user') {
+                    alternating.pop();
+                }
+
+                history = alternating;
+            }
         }
 
         const generationConfig = {
@@ -52,12 +79,27 @@ export class GeminiProvider extends AIProvider {
             }]
         }
 
+        let toolConfig = undefined
+        if (options.toolChoice && tools) {
+            // Find the tool to verify it exists (optional but good for safety)
+            const targetTool = tools[0].functionDeclarations.find(t => t.name === options.toolChoice)
+            if (targetTool) {
+                toolConfig = {
+                    functionCallingConfig: {
+                        mode: "ANY",
+                        allowedFunctionNames: [options.toolChoice]
+                    }
+                }
+            }
+        }
+
         // Initialize model with specific system instruction for this request
-        const modelId = options.model || this.config.model || "gemini-3-pro"
+        const modelId = options.model || this.config.model || "gemini-3-flash-preview"
         const model = this.genAI.getGenerativeModel({
             model: modelId,
             systemInstruction: systemInstruction,
-            tools: tools
+            tools: tools,
+            toolConfig: toolConfig
         })
 
         try {
@@ -157,10 +199,15 @@ export class GeminiProvider extends AIProvider {
     async listModels() {
         // The specific models we want to support
         const supportedModels = [
-            'gemini-2.5-flash-lite',
+            'gemini-3-pro-preview',
             'gemini-3-flash-preview',
-            'gemini-3-pro-preview'
+            'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'deep-research-pro-preview-12-2025',
+            'gemini-exp-1206'
         ];
+
+        let apiModelsMap = new Map();
 
         try {
             // Try to fetch dynamic list to get up-to-date metadata
@@ -173,26 +220,15 @@ export class GeminiProvider extends AIProvider {
                 if (response.ok) {
                     const data = await response.json();
                     if (data.models) {
-                        const mapped = data.models
-                            .map(m => {
-                                const id = m.name.replace('models/', '');
-                                return {
-                                    id: id,
-                                    name: m.displayName,
-                                    provider: 'gemini',
-                                    description: m.description,
-                                    contextWindow: m.inputTokenLimit
-                                }
-                            })
-                            // STRICTLY filter for only the models we want
-                            .filter(m => supportedModels.includes(m.id))
-                            .sort((a, b) => {
-                                // Sort order: 2.5 Pro, 2.5 Flash, 3 Pro, 3 Flash
-                                return supportedModels.indexOf(a.id) - supportedModels.indexOf(b.id);
+                        data.models.forEach(m => {
+                            const id = m.name.replace('models/', '');
+                            apiModelsMap.set(id, {
+                                id: id,
+                                name: m.displayName,
+                                description: m.description,
+                                contextWindow: m.inputTokenLimit
                             });
-
-                        // Only return if we found matches
-                        if (mapped.length > 0) return mapped;
+                        });
                     }
                 }
             }
@@ -200,17 +236,23 @@ export class GeminiProvider extends AIProvider {
             console.warn("[Gemini] Failed to fetch dynamic model list, using fallback:", e.message);
         }
 
-        // Fallback hardcoded list matching exactly what was requested
-        return supportedModels.map(id => ({
-            id: id,
-            name: id === 'gemini-2.5-flash-lite' ? 'Gemini 2.5 Flash Lite' :
-                id === 'gemini-3-flash-preview' ? 'Gemini 3.0 Flash Preview' :
-                    id === 'gemini-3-pro-preview' ? 'Gemini 3.0 Pro Preview' : id,
-            provider: 'gemini',
-            description: 'Google Generative AI model',
-            // Default context windows if API fetch fails
-            contextWindow: id.includes('3') ? 1048576 : 1048576
-        }))
+        // Return ALL supported models, using API data if available, otherwise defaults
+        return supportedModels.map(id => {
+            const apiData = apiModelsMap.get(id);
+
+            // Default Display Names
+            let name = id;
+            if (id === 'gemini-3-flash-preview') name = 'Gemini 3.0 Flash Preview';
+            else if (id === 'gemini-3-pro-preview') name = 'Gemini 3.0 Pro Preview';
+
+            return {
+                id: id,
+                name: apiData?.name || name,
+                provider: 'gemini',
+                description: apiData?.description || 'Google Generative AI model',
+                contextWindow: apiData?.contextWindow || (id.includes('3') ? 1048576 : 1048576)
+            };
+        });
     }
 
     async embed(text, options = {}) {
@@ -221,6 +263,10 @@ export class GeminiProvider extends AIProvider {
             const result = await model.embedContent(text)
             return result.embedding.values
         } catch (e) {
+            if (e.message.includes('404') || e.message.includes('not found')) {
+                console.warn(`[Gemini] Embedding model '${modelId}' not found or not accessible. RAG will be disabled for this request.`)
+                return null
+            }
             console.error("[Gemini] Embedding failed:", e)
             throw e
         }

@@ -465,6 +465,17 @@ table.post("/table/:tableName/query", async (c) => {
             console.log('[Table Query] Provider was undefined, defaulting to duckdb')
         }
 
+        // System Injection for OrionMetrics (Cosmos DB)
+        // Since frontend doesn't store/send secrets for system connections, we inject them here.
+        if (provider === 'cosmosdb' && (tableName === 'OrionMetrics' || tableName === 'orionmetrics') && process.env.COSMOS_ENDPOINT) {
+            if (!connection) connection = {};
+            if (!connection.endpoint) connection.endpoint = process.env.COSMOS_ENDPOINT;
+            if (!connection.key) connection.key = process.env.COSMOS_KEY;
+            if (!connection.database) connection.database = 'PegasusLive';
+            if (!connection.container) connection.container = 'OrionMetrics';
+            console.log('[Table Query] Injected system credentials for OrionMetrics');
+        }
+
         if (provider === 'surrealdb') provider = 'postgres';
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
@@ -524,6 +535,13 @@ table.post("/table/:tableName/query", async (c) => {
                 // Note: We add offset to the row_number to keep IDs consistent across pages
                 // We use a subquery to ensure correct ordering if needed, but for now simple is better.
                 query = `SELECT (row_number() OVER ()) + ${Number(offset)} as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+            } else if (provider === 'cosmosdb') {
+                if (Number(offset) > 0) {
+                    // OFFSET requires ORDER BY in Cosmos DB
+                    query = `SELECT * FROM c ORDER BY c._ts DESC OFFSET ${Number(offset)} LIMIT ${Number(limit)}`
+                } else {
+                    query = `SELECT TOP ${Number(limit)} * FROM c`
+                }
             } else {
                 // Use row_number() for SQLite to support Views which lack rowid
                 query = `SELECT (row_number() OVER ()) + ${Number(offset)} as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
@@ -815,6 +833,17 @@ table.post("/table/:tableName/load", async (c) => {
         if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
             provider = 'postgres';
         }
+
+        // System Injection for OrionMetrics (Cosmos DB) - Load Endpoint
+        if (provider === 'cosmosdb' && (tableName === 'OrionMetrics' || tableName === 'orionmetrics') && process.env.COSMOS_ENDPOINT) {
+            if (!connection) connection = {};
+            if (!connection.endpoint) connection.endpoint = process.env.COSMOS_ENDPOINT;
+            if (!connection.key) connection.key = process.env.COSMOS_KEY;
+            if (!connection.database) connection.database = 'PegasusLive';
+            if (!connection.container) connection.container = 'OrionMetrics';
+            console.log('[Table Load] Injected system credentials for OrionMetrics');
+        }
+
         const token = getAuthToken(c)
         if (!token) return c.json({ error: "Unauthorized" }, 401)
         try { await verify(token, jwtSecret) } catch (e) { return c.json({ error: "Unauthorized" }, 401) }

@@ -36,7 +36,7 @@ watch(() => props.open, async (isOpen) => {
   if (isOpen) {
     form.value = getFreshForm()
     // Set the current space ID
-    form.value.spaceId = spaceStore.currentSpaceId
+    form.value.spaceId = spaceStore.currentSpaceId as any // Using currentSpaceId directly as it's a getter in spaceStore usually
   }
 })
 
@@ -53,6 +53,9 @@ const canAddConnection = computed(() => {
   if (f.provider === 'postgres') return !!(f.postgres.host && f.postgres.user && f.postgres.database)
   if (f.provider === 'mongodb') return !!f.mongodb.url
   if (f.provider === 'kusto') return !!(f.kusto.cluster && f.kusto.database)
+  if (f.provider === 'cosmosdb') return !!(f.cosmosdb.endpoint && f.cosmosdb.key && f.cosmosdb.database)
+  if (f.provider === 'dynamodb') return !!(f.dynamodb.region && f.dynamodb.accessKeyId)
+  if (f.provider === 'bigquery') return !!f.bigquery.projectId
   if (f.provider === 'sqlite') return !!f.sqlite.path
   if (f.provider === 'file') return !!(f.sqlite.path || f.surrealdb?.uploadId) // File uploads can store in either sqlite.path or surrealdb.uploadId
   if (f.provider === 'surrealdb') return !!f.surrealdb?.uploadId // SurrealDB file uploads

@@ -728,9 +728,43 @@ chat.post("/ai/generate", async (c) => {
 
             await sendProgress(10, 'Resolving context...');
 
-            // --- OneContext Integration ---
-            console.log(`[OneContext] Resolving context for prompt: "${basePrompt.substring(0, 50)}..."`);
-            const resolvedResources = await OneContext.resolveContext(basePrompt, userId, connectionId);
+            // TIMEOUT SAFETY: Wrap both context resolution and generation in a timeout
+            // This prevents "malformed stream" errors on the frontend when the backend silently dies (e.g. Vercel 10s limit)
+            const TIMEOUT_MS = 25000; // 25s safety limit (assuming 30s-60s platform timeout, adjust if on free tier 10s)
+
+            const processAI = async () => {
+                // ... Context Resolution ... (kept inline for simplicity, or refactor)
+                // --- OneContext Integration ---
+                console.log(`[OneContext] Resolving context for prompt: "${basePrompt.substring(0, 50)}..."`);
+                const resolvedResources = await OneContext.resolveContext(basePrompt, userId, connectionId);
+
+                // Start AI Stream via Client
+                // AIClient.generateContent is NOT a stream itself, it returns a full response object. 
+                // Wait, the current implementation calls aiClient.generateContent at the end? 
+                // Let's look at the original code.
+
+                // Original code calls aiClient.generateContent further down (lines 828 in original).
+                // I need to wrap the *entire* logic block.
+            };
+
+            // To properly fix this without massive indentation changes, I'll insert a timeout check inside the stream logic.
+
+            // 1. Send Progress
+            await sendProgress(10, 'Resolving context...');
+
+            // Context Resolution
+            const contextPromise = OneContext.resolveContext(basePrompt, userId, connectionId);
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Backend Timeout')), 9500)); // 9.5s timeout for Vercel Free
+
+            let resolvedResources = [];
+            try {
+                resolvedResources = await Promise.race([contextPromise, timeoutPromise]);
+            } catch (e) {
+                if (e.message === 'Backend Timeout') {
+                    throw new Error('Analysis timed out (10s limit). Please simplify your request or upgrade to Pro.');
+                }
+                throw e;
+            }
 
             // Note: We no longer build a contextBlock for the user prompt text.
             // DataContextService now injects these into the Knowledge Base (System Prompt).
@@ -862,20 +896,23 @@ chat.post("/ai/generate", async (c) => {
                 modelId: activeModel,
                 temperature: Number(temperature || 0.7),
                 maxTokens: Number(maxTokens || 1000),
-                activeTable
+                activeTable,
+                // If slash command explicitly requested visualization, FORCE it here
+                toolChoice: forceVisualization ? 'generate_visualization' : undefined
             }
             console.log('[AI Generate] Settings:', { modelId: activeModel, tablesCount: normalizedSchema?.tables?.length });
             // Lazy import to avoid circular dep issues at top level if any
             const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
             aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
 
-            const finalPrompt = basePrompt;
-            let currentPrompt = finalPrompt;
+            const now = new Date();
+            const timeContext = `\nCURRENT TEMPORAL CONTEXT:\n- Local Time: ${now.toString()}\n- UTC Time: ${now.toISOString()}\n`;
 
-
+            let currentPrompt = `${basePrompt}\n${timeContext}`;
             let lastResult = null;
+            let lastToolResult = null;
             let iterations = 0;
-            const maxIterations = 3;
+            const maxIterations = 4; // Increased for complex many-turn tasks
 
             try {
                 while (iterations < maxIterations) {
@@ -890,11 +927,14 @@ chat.post("/ai/generate", async (c) => {
 
                     let result;
                     try {
-                        result = await aiClient.generateQuery(currentPrompt, {
-                            dialect: provider,
-                            schema: normalizedSchema,
-                            previousContext: context
-                        }, aiSettings);
+                        result = await Promise.race([
+                            aiClient.generateQuery(currentPrompt, {
+                                dialect: provider,
+                                schema: normalizedSchema,
+                                previousContext: context
+                            }, aiSettings),
+                            new Promise((_, reject) => setTimeout(() => reject(new Error('AI Generation Timeout')), 25000))
+                        ]);
                         console.log(`[AI Generate] Result received:`, { hasText: !!result.text, hasToolCalls: !!result.toolCalls?.length });
                     } catch (aiError) {
                         console.error(`[AI Generate] AI call failed:`, aiError.message);
@@ -1068,34 +1108,28 @@ chat.post("/ai/generate", async (c) => {
                             const isVisual = results.some(r => !!r.config);
                             const isSmallData = (forceText || !forceVisualization) && !isVisual && (
                                 toolResult.isCompound
-                                    ? toolResult.results.every(r => Array.isArray(r.data) && r.data.length <= 10)
-                                    : (Array.isArray(toolResult.data) && toolResult.data.length <= 10)
+                                    ? toolResult.results.every(r => Array.isArray(r.data) && r.data.length <= 100)
+                                    : (Array.isArray(toolResult.data) && toolResult.data.length <= 100)
                             );
 
-                            if (isSmallData || forceText) {
-                                console.log(`[AI Generate] Data is small or forceText is true. Explaining...`);
-                                await sendProgress(95, 'Analyzing results...');
+                            lastToolResult = toolResult;
 
-                                const analysis = await aiClient.analyzeResults(
-                                    finalPrompt,
-                                    toolResult.data || toolResult.results,
-                                    JSON.stringify(results.map(r => r.intent)),
-                                    activeModel,
-                                    normalizedSchema
-                                );
+                            // 4. Decide if we exit or continue (Analyst Loop)
+                            if ((isSmallData || forceText) && iterations < maxIterations) {
+                                console.log(`[AI Generate] Data is small. Adding to context and continuing turnover...`);
+                                let resSummary = JSON.stringify(toolResult.data || toolResult.results, null, 2);
 
-                                const parsed = robustParseJson(analysis.text);
-                                const message = parsed.answer || analysis.text;
+                                // SAFETY: Truncate massive data even if row count is low (prevent 429/Token explosion)
+                                const MAX_SUMMARY_LENGTH = 10000; // 10kb limit for intermediate results
+                                if (resSummary.length > MAX_SUMMARY_LENGTH) {
+                                    console.warn(`[AI Generate] Intermediate result too large (${resSummary.length} chars). Truncating...`);
+                                    resSummary = resSummary.substring(0, MAX_SUMMARY_LENGTH) + "\n... (truncated)";
+                                }
 
-                                return sendResult({
-                                    ...toolResult,
-                                    message,
-                                    usage: result.usage,
-                                    contextUsed: resolvedResources
-                                });
+                                currentPrompt += `\n\n[System Context - Intermediate Query Result]:\n${resSummary}\n\n`;
+                                continue;
                             }
 
-                            // If forceQuery is true, we skip visualization entirely
                             if (forceQuery) {
                                 return sendResult({
                                     ...toolResult,
@@ -1105,11 +1139,16 @@ chat.post("/ai/generate", async (c) => {
                             }
 
                             // 2-Step Visualization Analysis
-                            const vizResult = await VisualizationAnalyzer.analyze(finalPrompt, toolResult.data || toolResult.results, activeModel, userId, forceVisualization);
+                            const vizResult = await VisualizationAnalyzer.analyze(currentPrompt, toolResult.data || toolResult.results, activeModel, userId, forceVisualization);
+
+                            // Maintain compatibility with both 'config' (new) and 'vizBlueprint' (legacy/standard UI)
+                            const blueprint = vizResult.shouldVisualize ? vizResult.blueprint : null;
 
                             return sendResult({
                                 ...toolResult,
-                                vizBlueprint: vizResult.shouldVisualize ? vizResult.blueprint : null,
+                                type: forceVisualization ? "visualization_request" : (toolResult.type || "data_response"),
+                                vizBlueprint: blueprint,
+                                config: blueprint,
                                 usage: result.usage,
                                 contextUsed: resolvedResources
                             });
@@ -1120,7 +1159,63 @@ chat.post("/ai/generate", async (c) => {
                         }
                     }
 
-                    // 4. Check for execute_query (Immediate Exit)
+                    // 4. Check for generate_visualization (Immediate Exit with Blueprint)
+                    const vizTool = result.toolCalls.find(t => t.function.name === 'generate_visualization')
+                    if (vizTool) {
+                        const args = JSON.parse(vizTool.function.arguments)
+                        console.log(`[AI Generate] Visualization requested:`, args.title)
+
+                        // Denormalize the AI-generated query (snake_case -> original camelCase)
+                        const translator = new SchemaTranslator();
+                        translator.tableMapping = new Map(Object.entries(normalizedSchema.mappings?.tables || {}));
+                        translator.columnMapping = new Map(Object.entries(normalizedSchema.mappings?.columns || {}));
+
+                        let vizQuery = args.query;
+                        if (translator.hasNormalizations()) {
+                            const originalQuery = vizQuery;
+                            vizQuery = translator.denormalizeQuery(vizQuery, provider);
+                            console.log(`[AI Generate] Denormalized viz query:`);
+                            console.log(`  Before: ${originalQuery}`);
+                            console.log(`  After:  ${vizQuery}`);
+                        }
+
+                        let data = [];
+                        let error = null;
+                        try {
+                            data = await adapter.query(vizQuery);
+                        } catch (e) {
+                            console.error(`[AI Generate] Visualization Query Failed:`, e.message);
+                            error = e.message;
+                        }
+
+                        if (error) {
+                            return sendResult({
+                                type: "data_response",
+                                text: `I tried to generate a visualization for you, but the database query failed: ${error}`,
+                                error: error,
+                                query: vizQuery,
+                                usage: result.usage,
+                                contextUsed: resolvedResources
+                            });
+                        }
+
+                        return sendResult({
+                            type: "data_response",
+                            text: result.text || undefined, // Include AI explanation if present
+                            query: args.query,
+                            data: Array.isArray(data) ? data : [data],
+                            vizBlueprint: {
+                                type: args.chartType,
+                                title: args.title,
+                                xAxis: args.xAxis,
+                                yAxis: args.yAxis
+                            },
+                            usage: result.usage,
+                            contextUsed: resolvedResources
+                        })
+                    }
+
+                    // 5. Check for execute_query (Immediate Exit)
                     const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
                     if (queryTool) {
                         const args = JSON.parse(queryTool.function.arguments)
@@ -1135,9 +1230,9 @@ chat.post("/ai/generate", async (c) => {
 
                 const finalResult = lastResult;
                 let generatedQuery = typeof finalResult === 'string' ? finalResult : (finalResult.text || '');
-                if (finalResult.usage) await logAiUsage(userId, finalResult.usage.totalTokens, activeModel, 'ai_generation', prompt, connectionId)
+                if (finalResult.usage) await logAiUsage(userId, finalResult.usage.totalTokens, activeModel, 'ai_generation', basePrompt, connectionId)
 
-                console.log(`[AI Generate] No tools called. Response text preview: ${generatedQuery.substring(0, 200)}...`);
+                console.log(`[AI Generate] Final response generated. Preview: ${generatedQuery.substring(0, 200)}...`);
 
                 if (generatedQuery.trim()) {
                     const parsed = robustParseJson(generatedQuery);
@@ -1148,10 +1243,11 @@ chat.post("/ai/generate", async (c) => {
                     } else if (parsed.query) {
                         generatedQuery = parsed.query
                     } else if (parsed.ambiguous) {
-                        return sendResult({ ambiguous: true, text: parsed.message, message: parsed.message, choices: parsed.choices, usage: finalResult.usage, needs_disclaimer: parsed.needs_disclaimer })
+                        return sendResult({ ...lastToolResult, ambiguous: true, text: parsed.message, message: parsed.message, choices: parsed.choices, usage: finalResult.usage, needs_disclaimer: parsed.needs_disclaimer })
                     } else if (parsed.answer) {
                         // Qualitative response from knowledge base
                         return sendResult({
+                            ...lastToolResult,
                             text: parsed.answer,
                             explanation: parsed.answer,
                             message: parsed.answer,
@@ -1246,7 +1342,7 @@ chat.post("/ai/generate", async (c) => {
                     }
                 }
 
-                return sendResult({ query: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources })
+                return sendResult({ ...lastToolResult, query: generatedQuery, usage: finalResult.usage, contextUsed: resolvedResources })
 
             } finally {
                 if (adapter) await adapter.disconnect().catch(() => { })

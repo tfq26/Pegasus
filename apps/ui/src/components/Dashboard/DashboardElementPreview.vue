@@ -165,7 +165,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -248,6 +248,11 @@ watch(() => props.initialConfig, (newConfig) => {
 // Initialize selected dashboard and config when dialog opens
 watch(() => props.open, async (isOpen) => {
     if (isOpen) {
+        console.log('[DashboardElementPreview] Dialog Opened');
+        console.log('[DashboardElementPreview] Results:', JSON.parse(JSON.stringify(props.results)));
+        console.log('[DashboardElementPreview] Initial Config:', JSON.parse(JSON.stringify(props.initialConfig)));
+        console.log('[DashboardElementPreview] Data Columns:', dataColumns.value);
+
         // Load dashboards
         if (dashboardsList.value.length === 0) {
             await store.loadDashboards()
@@ -262,7 +267,12 @@ watch(() => props.open, async (isOpen) => {
         // Reset original data and view state when dialog opens
         originalChartData.value = null
         showData.value = false
+
+        nextTick(() => {
+             console.log('[DashboardElementPreview] Active Config (after load):', JSON.parse(JSON.stringify(config.value)));
+        });
     }
+    // Log on close as well? No need.
 })
 
 watch(selectedDashboardId, (val) => {

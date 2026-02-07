@@ -22,7 +22,7 @@ export class DataContextService {
 
         // 1. Resolve Connection
         let connRow = null;
-        if (connectionId && connectionId !== 'undefined' && connectionId !== 'null' && connectionId !== 'local') {
+        if (connectionId && connectionId !== 'undefined' && connectionId !== 'null' && connectionId !== 'local' && connectionId !== 'connection:local') {
             connRow = await db.query.connections.findFirst({
                 where: eq(connections.id, connectionId)
             });
@@ -261,7 +261,42 @@ export class DataContextService {
             }
         }
 
-        // 5. Populate Descriptions (Semantic Registry)
+        // 5. System Injection: OrionMetrics (Cosmos DB)
+        // If system checks are healthy, we auto-inject the metrics table for AI visibility
+        if (process.env.COSMOS_ENDPOINT && process.env.COSMOS_KEY) {
+            try {
+                const { CosmosAdapter } = await import('../../adapters/cosmosAdapter.js');
+                const metricsAdapter = new CosmosAdapter({
+                    endpoint: process.env.COSMOS_ENDPOINT,
+                    key: process.env.COSMOS_KEY,
+                    database: 'PegasusLive',
+                    container: 'OrionMetrics'
+                });
+
+                // Analyze this system connection
+                await analyzeConnection(metricsAdapter, 'cosmosdb', false, {
+                    name: 'System Metrics',
+                    id: 'system:orion_metrics',
+                    type: 'database',
+                    aiInsights: ['Contains CPU usage, memory stats, and health metrics for app servers like "Orion"']
+                });
+
+                // Specifically register 'OrionMetrics' as a resource
+                extraAdapters.push(metricsAdapter);
+
+                // Ensure it's reachable by simple name
+                resourceToAdapter['OrionMetrics'] = metricsAdapter;
+                resourceToAdapter['orionmetrics'] = metricsAdapter;
+                resourceToProvider['OrionMetrics'] = 'cosmosdb';
+                resourceToProvider['orionmetrics'] = 'cosmosdb';
+
+                console.log('[DataContext] Injected System: OrionMetrics (Cosmos DB)');
+            } catch (e) {
+                console.warn('[DataContext] Failed to inject OrionMetrics:', e.message);
+            }
+        }
+
+        // 6. Populate Descriptions (Semantic Registry)
         try {
             const userFiles = await db.select({ filename: files.filename, description: files.description })
                 .from(files)

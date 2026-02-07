@@ -8,110 +8,178 @@
     />
 
     <template v-else>
-      <!-- Top Bar -->
-    <header class="flex items-center justify-between px-6 py-3 border-b border-border bg-background z-10 transition-colors duration-300" :class="{ 'pt-6 bg-transparent border-transparent': isTauri }">
-      <div class="flex items-center gap-4">
-        <div v-if="!isTauri" class="p-2 bg-primary/10 rounded-lg">
-          <LayoutDashboard class="w-6 h-6 text-primary" />
-        </div>
-        
-        <h1 v-if="!isTauri" class="text-xl font-semibold">Dashboards</h1>
-      </div>
-      
-      <div class="flex-1 max-w-2xl mx-8">
-        <div class="relative">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input 
-            v-model="searchQuery"
-            placeholder="Search dashboards..." 
-            class="w-full pl-10 pr-4 py-2 bg-muted/50 border-none rounded-lg focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-          />
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <!-- Import Button -->
-        <button 
-          @click="showImportModal = true"
-          class="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition"
-          title="Import Dashboard"
-        >
-          <Download class="w-5 h-5" />
-        </button>
-      </div>
+      <!-- Top Bar (Simplified) -->
+    <header class="flex items-center justify-between px-6 py-3 bg-background z-10 transition-colors duration-300" :class="{ 'pt-6 bg-transparent': isTauri }">
+      <!-- Removed Title and Search from here -->
+      <div v-if="!isTauri" class="h-6"></div>
     </header>
 
     <div class="flex-1 overflow-auto">
       <!-- Start New Section -->
       <div class="bg-muted/30 py-8 px-6 border-b border-border">
-        <div class="max-w-6xl mx-auto">
-          <h2 class="text-sm font-medium text-muted-foreground mb-4">Start a new dashboard</h2>
-          <div class="flex gap-4">
+        <div class="max-w-7xl mx-auto">
+          <div class="flex gap-6 overflow-x-auto pb-4 no-scrollbar">
             <!-- Blank Dashboard -->
             <button 
               @click="handleCreateDashboard"
-              class="group flex flex-col gap-2 text-left"
+              class="group flex flex-col gap-2 text-left shrink-0"
             >
-              <div class="w-48 h-32 bg-background border border-border rounded-lg flex items-center justify-center hover:border-primary hover:ring-1 hover:ring-primary transition-all shadow-sm group-hover:shadow-md relative overflow-hidden">
-                <div class="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <Plus class="w-12 h-12 text-primary/50 group-hover:text-primary group-hover:scale-110 transition-all duration-300" />
+              <div class="w-72 h-44 bg-background border border-border rounded-lg flex flex-col items-center justify-center hover:border-primary hover:ring-1 hover:ring-primary transition-all shadow-sm group-hover:shadow-md relative overflow-hidden">
+                <div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <Plus class="w-10 h-10 text-primary/50 group-hover:text-primary group-hover:scale-110 transition-all duration-300" />
               </div>
-              <span class="text-sm font-medium pl-1">Blank dashboard</span>
+              <span class="text-sm font-semibold pl-1">Blank Dashboard</span>
+            </button>
+
+            <!-- Templates -->
+            <button 
+              v-for="template in DASHBOARD_TEMPLATES"
+              :key="template.id"
+              @click="createFromTemplate(template)"
+              class="group flex flex-col gap-2 text-left shrink-0"
+            >
+              <div 
+                class="w-72 h-44 rounded-lg border border-border overflow-hidden relative transition-all group-hover:border-primary group-hover:shadow-md"
+                :style="getCoverImageStyle(template.coverImage)"
+              >
+                <!-- Overlay gradient -->
+                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                
+                <!-- Tag -->
+                <div class="absolute top-3 left-3 bg-white/10 backdrop-blur-md border border-white/20 text-[9px] text-white px-2 py-1 rounded-md font-black uppercase tracking-widest shadow-lg">
+                  {{ template.workflow }}
+                </div>
+
+                <!-- Hover Icon -->
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div class="bg-white/20 backdrop-blur-md rounded-full p-3 border border-white/30 shadow-2xl">
+                    <Plus class="w-8 h-8 text-white" />
+                  </div>
+                </div>
+              </div>
+              <div class="px-1 mt-1">
+                <span class="block text-base font-bold truncate">{{ template.name }}</span>
+                <span class="block text-xs font-medium text-muted-foreground">{{ template.colorTheme }}</span>
+              </div>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Tabs & Filters -->
       <div class="py-8 px-6">
-        <div class="max-w-6xl mx-auto">
-          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+        <div class="max-w-7xl mx-auto">
+          <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between mb-6 gap-6">
             
-            <!-- Tabs -->
-            <div class="flex items-center gap-1 bg-muted/50 p-1 rounded-lg">
-              <button 
-                @click="activeTab = 'recent'"
-                :class="[
-                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-                  activeTab === 'recent' 
-                    ? 'bg-background text-foreground shadow-sm' 
-                    : 'text-muted-foreground hover:text-foreground'
-                ]"
-              >
-                Recents
-              </button>
-              <button 
-                @click="activeTab = 'my'"
-                :class="[
-                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-                  activeTab === 'my' 
-                    ? 'bg-background text-foreground shadow-sm' 
-                    : 'text-muted-foreground hover:text-foreground'
-                ]"
-              >
-                My Dashboards
-              </button>
-              <button 
-                @click="activeTab = 'shared'"
-                :class="[
-                  'px-4 py-1.5 text-sm font-medium rounded-md transition-all',
-                  activeTab === 'shared' 
-                    ? 'bg-background text-foreground shadow-sm' 
-                    : 'text-muted-foreground hover:text-foreground'
-                ]"
-              >
-                Shared with me
-              </button>
+            <div class="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto">
+              <!-- Tabs -->
+              <div class="flex items-center gap-1 bg-muted/50 p-1 rounded-lg w-full sm:w-auto">
+                <button 
+                  @click="activeTab = 'recent'"
+                  :class="[
+                    'flex-1 sm:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                    activeTab === 'recent' 
+                      ? 'bg-background text-foreground shadow-sm' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  ]"
+                >
+                  Recents
+                </button>
+                <button 
+                  @click="activeTab = 'my'"
+                  :class="[
+                    'flex-1 sm:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                    activeTab === 'my' 
+                      ? 'bg-background text-foreground shadow-sm' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  ]"
+                >
+                  My Dashboards
+                </button>
+                <button 
+                  @click="activeTab = 'shared'"
+                  :class="[
+                    'flex-1 sm:flex-none px-4 py-1.5 text-sm font-medium rounded-md transition-all',
+                    activeTab === 'shared' 
+                      ? 'bg-background text-foreground shadow-sm' 
+                      : 'text-muted-foreground hover:text-foreground'
+                  ]"
+                >
+                  Shared
+                </button>
+              </div>
+
+              <!-- Search -->
+              <div class="relative w-full sm:w-[480px]">
+                <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input 
+                  v-model="searchQuery"
+                  placeholder="Search dashboards..." 
+                  class="w-full pl-11 pr-4 py-2.5 text-sm bg-muted/30 border border-border/50 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-muted-foreground/50 shadow-inner"
+                />
+              </div>
             </div>
 
-            <!-- Sort -->
-            <div class="flex items-center gap-2">
-              <select v-model="sortBy" class="bg-transparent text-sm font-medium text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground">
-                <option value="updated">Last modified</option>
-                <option value="name">Name</option>
-              </select>
+            <div class="flex items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
+              <!-- Sort -->
+              <div class="flex items-center gap-2">
+                <select v-model="sortBy" class="bg-transparent text-xs font-bold uppercase tracking-wider text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors">
+                  <option value="updated">Last modified</option>
+                  <option value="name">Name</option>
+                </select>
+              </div>
+
+              <div class="h-4 w-px bg-border/50 hidden lg:block"></div>
+
+              <!-- Action Buttons -->
+              <div class="flex items-center gap-2">
+                <button 
+                  @click="showImportModal = true"
+                  class="flex items-center gap-2 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted/80 border border-transparent hover:border-border/50 rounded-lg transition-all"
+                  title="Import Dashboard"
+                >
+                  <Download class="w-4 h-4" />
+                  <span>Import</span>
+                </button>
+              </div>
             </div>
           </div>
+
+          <!-- Bulk Delete Bar -->
+          <transition 
+            enter-active-class="transition duration-300 ease-out"
+            enter-from-class="transform -translate-y-4 opacity-0"
+            enter-to-class="transform translate-y-0 opacity-100"
+            leave-active-class="transition duration-200 ease-in"
+            leave-from-class="transform translate-y-0 opacity-100"
+            leave-to-class="transform -translate-y-4 opacity-0"
+          >
+            <div v-if="isBulkDeleteMode" class="mb-6 px-4 py-3 bg-destructive/10 border border-destructive/20 rounded-xl flex items-center justify-between shadow-sm">
+              <div class="flex items-center gap-3">
+                <div class="bg-destructive/20 p-2 rounded-lg">
+                  <Trash class="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-destructive">Delete Mode</h3>
+                  <p class="text-xs text-destructive/70">{{ selectedDashboardIds.length }} dashboards selected for deletion</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-3">
+                <button 
+                  @click="exitDeleteMode"
+                  class="px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  @click="confirmBulkDelete"
+                  :disabled="selectedDashboardIds.length === 0"
+                  class="px-5 py-1.5 bg-destructive text-white text-xs font-bold uppercase tracking-widest rounded-lg shadow-lg shadow-destructive/20 hover:bg-destructive/90 transition-all disabled:opacity-50 disabled:shadow-none"
+                >
+                  Delete Selected ({{ selectedDashboardIds.length }})
+                </button>
+              </div>
+            </div>
+          </transition>
 
           <div v-if="isLoading || isLoadingShared" class="flex items-center justify-center py-12">
             <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -125,11 +193,29 @@
             <div 
               v-for="dashboard in filteredDashboards" 
               :key="dashboard.id"
-              @click="openDashboard(dashboard.id)"
-              class="group cursor-pointer flex flex-col gap-2"
+              @click="isBulkDeleteMode ? toggleSelection(dashboard.id, $event) : openDashboard(dashboard.id)"
+              class="group cursor-pointer flex flex-col gap-2 relative"
             >
               <!-- Card Preview -->
-              <div class="aspect-[3/2] bg-muted/30 border border-border rounded-lg overflow-hidden relative transition-all hover:border-primary hover:shadow-md">
+              <div 
+                class="aspect-[3/2] bg-muted/30 border rounded-lg overflow-hidden relative transition-all group-hover:shadow-md"
+                :class="[
+                  isBulkDeleteMode && selectedDashboardIds.includes(dashboard.id) 
+                    ? 'border-destructive ring-2 ring-destructive/20' 
+                    : 'border-border group-hover:border-primary'
+                ]"
+              >
+                <!-- Selection Overlay (Bulk Delete Mode) -->
+                <div 
+                  v-if="isBulkDeleteMode"
+                  class="absolute inset-0 z-20 flex items-start justify-end p-2 transition-all"
+                  :class="selectedDashboardIds.includes(dashboard.id) ? 'bg-destructive/5' : 'bg-transparent hover:bg-black/5'"
+                >
+                  <Checkbox 
+                    :checked="selectedDashboardIds.includes(dashboard.id)" 
+                    class="h-5 w-5 rounded border-white/40 bg-white/10 backdrop-blur-md data-[state=checked]:bg-destructive data-[state=checked]:border-destructive focus-visible:ring-0 focus-visible:ring-offset-0 transition-all pointer-events-none shadow-none"
+                  />
+                </div>
                 <!-- Cover Image -->
                 <div 
                   v-if="dashboard.cover_image"
@@ -194,9 +280,13 @@
                         Share
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
+                      <DropdownMenuItem @click="isBulkDeleteMode = true; toggleSelection(dashboard.id)">
+                        <Trash class="w-4 h-4 mr-2" />
+                        Delete Items
+                      </DropdownMenuItem>
                       <DropdownMenuItem @click="handleDelete(dashboard)" class="text-destructive focus:text-destructive">
                         <Trash2 class="w-4 h-4 mr-2" />
-                        Delete
+                        Delete Dashboard
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -365,31 +455,15 @@
       </DialogContent>
     </Dialog>
 
-    <!-- Delete Confirmation Modal -->
-    <Dialog v-model:open="showDeleteModal">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Delete Dashboard</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete "{{ dashboardToDelete?.title }}"? This action cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <div class="flex justify-end gap-2 pt-4">
-          <button 
-            @click="showDeleteModal = false"
-            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
-          >
-            Cancel
-          </button>
-          <button 
-            @click="confirmDelete"
-            class="px-3 py-2 text-sm font-medium bg-destructive text-white hover:bg-destructive/90 rounded-md"
-          >
-            Delete
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <!-- Confirm Dialog -->
+    <ConfirmDialog
+      v-model:open="confirmDialogState.open"
+      :title="confirmDialogState.title"
+      :description="confirmDialogState.description"
+      :confirm-text="confirmDialogState.confirmText"
+      is-destructive
+      @confirm="onConfirmDelete"
+    />
 
     <!-- Create Dashboard Modal -->
     <Dialog v-model:open="showCreateModal">
@@ -526,6 +600,7 @@ import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
+import { Checkbox } from '@/components/ui/checkbox'
 import { 
   fetchSharedDashboards,
   fetchSharedDashboard 
@@ -545,7 +620,8 @@ import {
   Upload,
   Users,
   ExternalLink,
-  Bell
+  Bell,
+  Trash
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -563,11 +639,14 @@ import {
 } from '@/components/ui/dialog'
 import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 import UpgradeModal from '@/components/UpgradeModal.vue'
+import ConfirmDialog from '@/components/Common/ConfirmDialog.vue'
 import { toast } from '@/composables/useNotifications'
 import { useEntitlements } from '@/composables/useEntitlements'
 import { useAuth } from '@/composables/useAuth'
 import { usePlatform } from '@/composables/usePlatform'
 import { stockImages, getStockImageGradient } from '@/lib/stock-images'
+
+import { DASHBOARD_TEMPLATES, type DashboardTemplate } from '@/lib/dashboard-templates'
 
 const { isTauri } = usePlatform()
 const { user } = useAuth()
@@ -583,6 +662,11 @@ const sharedDashboards = ref<any[]>([])
 const isLoadingShared = ref(false)
 const isLoadingRecent = ref(false)
 const isInitializing = ref(true)
+
+// Bulk Delete State
+const isBulkDeleteMode = ref(false)
+const selectedDashboardIds = ref<string[]>([])
+const lastSelectedId = ref<string | null>(null)
 
 // Fetch data when tab changes
 watch(activeTab, async (val) => {
@@ -612,36 +696,7 @@ watch(activeTab, async (val) => {
 import { useCollaboration } from '@/composables/useCollaboration'
 const { connect, socket } = useCollaboration()
 
-onMounted(() => {
-  connect()
-  
-  // Wait for socket to be initialized
-  if (socket.value) {
-    socket.value.on('notification_new', (data: any) => {
-      // data: { type: 'mention', dashboardId: '...' }
-      if (data.type === 'mention') {
-        const id = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId
-        
-        // Update counts in all lists
-        const updateList = (list: any[]) => {
-          const idx = list.findIndex(d => d.id === id)
-          if (idx !== -1) {
-            list[idx].unread_count = (list[idx].unread_count || 0) + 1
-          }
-        }
-        
-        updateList(dashboards.value)
-        updateList(recentDashboards.value)
-        updateList(sharedDashboards.value)
-      }
-    })
-
-    socket.value.on('user_mentioned', (data: any) => {
-      // Show toast notification
-      toast.info(`New mention in "${data.dashboardTitle || 'Dashboard'}": ${data.senderName} says: "${data.preview}"`)
-    })
-  }
-})
+// Lifecycle logic moved to consolidated onMounted at bottom
 
 onBeforeUnmount(() => {
   if (socket.value) {
@@ -691,6 +746,11 @@ const getCoverImageStyle = (coverImage: string) => {
   if (coverImage.startsWith('gradient-')) {
     const gradient = getStockImageGradient(coverImage)
     return { background: gradient }
+  }
+
+  // Check if it's a raw CSS gradient
+  if (coverImage.includes('gradient(')) {
+    return { background: coverImage }
   }
   
   // Otherwise treat as custom image URL
@@ -764,8 +824,16 @@ const handleRenameCoverImageUpload = async (event: Event) => {
   }
 }
 
+// Confirm Dialog State
+const confirmDialogState = ref({
+  open: false,
+  title: '',
+  description: '',
+  confirmText: '',
+  onConfirm: () => {}
+})
+
 // Delete Modal State
-const showDeleteModal = ref(false)
 const dashboardToDelete = ref<any>(null)
 
 // Create Dashboard Modal State
@@ -776,9 +844,20 @@ const inviteEmail = ref('')
 const invitedUsers = ref<string[]>([])
 const isCreating = ref(false)
 const showUpgradeModal = ref(false)
+const pendingTemplate = ref<DashboardTemplate | null>(null)
+
+const createFromTemplate = (template: DashboardTemplate) => {
+  pendingTemplate.value = template
+  newDashboardName.value = template.name
+  newDashboardIsPublic.value = false
+  invitedUsers.value = []
+  inviteEmail.value = ''
+  showCreateModal.value = true
+}
 
 const handleCreateDashboard = () => {
   // Open the create modal instead of directly creating
+  pendingTemplate.value = null
   newDashboardName.value = ''
   newDashboardIsPublic.value = false
   invitedUsers.value = []
@@ -803,15 +882,26 @@ const confirmCreateDashboard = async () => {
   
   isCreating.value = true
   try {
-    const id = await store.createNewDashboard(newDashboardName.value.trim())
+    const name = newDashboardName.value.trim()
+    const id = await store.createNewDashboard(name)
     
-    // Update dashboard privacy settings
-    if (newDashboardIsPublic.value) {
-      await store.selectDashboard(id)
-      if (store.currentDashboard) {
-        (store.currentDashboard as any).is_public = true
-        await store.saveCurrentDashboard()
+    // Select it and update its properties
+    await store.selectDashboard(id)
+    
+    if (store.currentDashboard) {
+      const dashboard = store.currentDashboard as any
+      
+      // Update privacy
+      if (newDashboardIsPublic.value) {
+        dashboard.is_public = true
       }
+      
+      // Apply template data if needed
+      if (pendingTemplate.value) {
+        dashboard.data = JSON.parse(JSON.stringify(pendingTemplate.value.initialData))
+      }
+      
+      await store.saveCurrentDashboard()
     }
     
     // TODO: Handle invited users - send invitations via backend
@@ -820,8 +910,9 @@ const confirmCreateDashboard = async () => {
       // This would require a backend endpoint to send invitation emails
     }
     
-    toast.success('Dashboard created successfully')
+    toast.success(pendingTemplate.value ? `${pendingTemplate.value.name} created successfully` : 'Dashboard created successfully')
     showCreateModal.value = false
+    pendingTemplate.value = null
     router.push(`/dashboard/${id}`)
   } catch (e: any) {
     // Check if this is a tier limit error
@@ -905,25 +996,124 @@ const confirmRename = async () => {
 
 const handleDelete = (dashboard: any) => {
   dashboardToDelete.value = dashboard
-  showDeleteModal.value = true
-}
-
-const confirmDelete = async () => {
-  if (!dashboardToDelete.value) return
-  
-  try {
-    const id = dashboardToDelete.value.id
-    await store.removeDashboard(id)
-    
-    // Also remove from local shared dashboards if present
-    sharedDashboards.value = sharedDashboards.value.filter(d => d.id !== id)
-    
-    toast.success('Dashboard deleted successfully')
-    showDeleteModal.value = false
-  } catch (e) {
-    toast.error('Failed to delete dashboard')
+  confirmDialogState.value = {
+    open: true,
+    title: 'Delete Dashboard',
+    description: `Are you sure you want to delete "${dashboard.title}"? This action cannot be undone.`,
+    confirmText: 'Delete Dashboard',
+    onConfirm: async () => {
+      try {
+        await store.removeDashboard(dashboard.id)
+        sharedDashboards.value = sharedDashboards.value.filter(d => d.id !== dashboard.id)
+        toast.success('Dashboard deleted successfully')
+      } catch (e) {
+        toast.error('Failed to delete dashboard')
+      }
+    }
   }
 }
+
+const onConfirmDelete = async () => {
+  await confirmDialogState.value.onConfirm()
+  confirmDialogState.value.open = false
+}
+
+// Bulk Delete Handlers
+const toggleSelection = (id: string, event?: MouseEvent) => {
+  if (event?.shiftKey && lastSelectedId.value) {
+    const list = filteredDashboards.value
+    const startIdx = list.findIndex(d => d.id === lastSelectedId.value)
+    const endIdx = list.findIndex(d => d.id === id)
+    
+    if (startIdx !== -1 && endIdx !== -1) {
+      const min = Math.min(startIdx, endIdx)
+      const max = Math.max(startIdx, endIdx)
+      const rangeIds = list.slice(min, max + 1).map(d => d.id)
+      
+      // If the current item is being selected, select the range.
+      // If it's being deselected, we don't usually unselect a range in standard UI, but let's toggle.
+      const isSelecting = !selectedDashboardIds.value.includes(id)
+      
+      if (isSelecting) {
+        rangeIds.forEach(rid => {
+          if (!selectedDashboardIds.value.includes(rid)) {
+            selectedDashboardIds.value.push(rid)
+          }
+        })
+      } else {
+        rangeIds.forEach(rid => {
+          const idx = selectedDashboardIds.value.indexOf(rid)
+          if (idx !== -1) selectedDashboardIds.value.splice(idx, 1)
+        })
+      }
+    }
+  } else {
+    const index = selectedDashboardIds.value.indexOf(id)
+    if (index === -1) {
+      selectedDashboardIds.value.push(id)
+    } else {
+      selectedDashboardIds.value.splice(index, 1)
+    }
+  }
+  lastSelectedId.value = id
+}
+
+const exitDeleteMode = () => {
+  isBulkDeleteMode.value = false
+  selectedDashboardIds.value = []
+}
+
+const confirmBulkDelete = async () => {
+  if (selectedDashboardIds.value.length === 0) return
+  
+  if (typeof store.removeDashboards !== 'function') {
+    toast.error('Internal Error: removeDashboards is missing on store')
+    return
+  }
+
+  confirmDialogState.value = {
+    open: true,
+    title: 'Delete Dashboards',
+    description: `Are you sure you want to delete ${selectedDashboardIds.value.length} dashboards? This action cannot be undone.`,
+    confirmText: `Delete ${selectedDashboardIds.value.length} items`,
+    onConfirm: async () => {
+      try {
+        const res = await store.removeDashboards(selectedDashboardIds.value)
+        
+        const count = res.success?.length || 0
+        if (count > 0) {
+          toast.success(`Deleted ${count} dashboards successfully`)
+        }
+        
+        if (res.failed?.length > 0) {
+          toast.error(`Failed to delete ${res.failed.length} dashboards`)
+        }
+        
+        exitDeleteMode()
+      } catch (e: any) {
+        toast.error('Bulk delete failed', { description: e.message })
+      }
+    }
+  }
+}
+
+// Keyboard listener for Delete key
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (isBulkDeleteMode.value && (e.key === 'Delete' || e.key === 'Backspace')) {
+    // Only trigger if not typing in an input
+    if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      confirmBulkDelete()
+    }
+  } else if (isBulkDeleteMode.value && e.key === 'Escape') {
+    exitDeleteMode()
+  }
+}
+
+// Consolidated to bottom
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 const handleShare = async (dashboard: any) => {
   dashboardToShare.value = dashboard
@@ -978,21 +1168,45 @@ const handleLinkImport = async () => {
 }
 
 onMounted(async () => {
-    isInitializing.value = true
-    try {
-        const { fetchEntitlements } = useEntitlements()
-        
-        // Parallelize all initial data fetching for maximum performance
-        await Promise.all([
-          store.loadDashboards(),
-          store.loadRecentDashboards(),
-          fetchEntitlements(true).catch(() => {})
-        ])
-    } catch (err) {
-        console.error('[DashboardHome] Initialization error:', err)
-    } finally {
-        isInitializing.value = false
-    }
+  // 1. App initialization
+  isInitializing.value = true
+  try {
+      const { fetchEntitlements } = useEntitlements()
+      await Promise.all([
+        store.loadDashboards(),
+        store.loadRecentDashboards(),
+        fetchEntitlements(true).catch(() => {})
+      ])
+  } catch (err) {
+      console.error('[DashboardHome] Initialization error:', err)
+  } finally {
+      isInitializing.value = false
+  }
+
+  // 2. Event listeners
+  window.addEventListener('keydown', handleKeyDown)
+
+  // 3. Socket / Collaboration
+  connect()
+  if (socket.value) {
+    socket.value.on('notification_new', (data: any) => {
+      if (data.type === 'mention') {
+        const id = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId
+        const updateList = (list: any[]) => {
+          const idx = list.findIndex(d => d.id === id)
+          if (idx !== -1) {
+            list[idx].unread_count = (list[idx].unread_count || 0) + 1
+          }
+        }
+        updateList(store.dashboards as any)
+        updateList(store.recentDashboards as any)
+        updateList(sharedDashboards.value as any)
+      }
+    })
+    socket.value.on('user_mentioned', (data: any) => {
+      toast.info(`New mention in "${data.dashboardTitle || 'Dashboard'}": ${data.senderName} says: "${data.preview}"`)
+    })
+  }
 })
 
 </script>

@@ -20,6 +20,11 @@ export class KustoAdapter extends DatabaseAdapter {
         clientSecret,
         tenantId
       )
+    } else if (this.connection.accessToken) {
+      kcsb = KustoConnectionStringBuilder.withTokenProvider(
+        cluster,
+        () => this.connection.accessToken
+      )
     } else {
       // If no explicit credentials, try Azure CLI authentication (requires 'az login')
       if (typeof KustoConnectionStringBuilder.withAzCliAuthentication === 'function') {

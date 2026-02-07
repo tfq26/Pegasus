@@ -58,6 +58,9 @@ const router = createRouter({
     // { path: '/wrangler', component: () => import('../views/WranglerView.vue') },
     { path: '/pricing', component: () => import('../views/Pricing.vue') },
     { path: '/auth/callback', component: () => import('../views/AuthCallback.vue') },
+
+    // Prototypes (temporary experimental views)
+    { path: '/prototype/data-tab', component: () => import('../views/prototypes/DataTabPrototype.vue') },
   ],
 })
 

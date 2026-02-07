@@ -13,15 +13,15 @@ import { useDesktopMenu } from '@/composables/useDesktopMenu'
 import { usePlatform } from '@/composables/usePlatform'
 import { useColorMode } from '@vueuse/core'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
-import { useBugSage } from '@/composables/useBugSage'
+import { usePisces } from '@/composables/usePisces'
 import ErrorPage from '@/views/ErrorPage.vue'
 import AILoadingIsland from '@/components/AILoadingIsland.vue'
-import BugSageDialog from '@/components/Support/BugSageDialog.vue'
+import PiscesDialog from '@/components/Support/PiscesDialog.vue'
 import 'vue-sonner/style.css'
 
 const { isTauri } = usePlatform()
 const { setUser } = useFeatureFlags()
-const { triggerAutoReport } = useBugSage()
+const { triggerAutoReport } = usePisces()
 const isDesktop = ref(false)
 const route = useRoute()
 
@@ -202,7 +202,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Smart BugSage Reporting -->
-    <BugSageDialog />
+    <PiscesDialog />
   </div>
 </template>
 

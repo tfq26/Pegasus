@@ -800,6 +800,30 @@ export class SpreadsheetToolService {
         });
 
         this.registerTool({
+            name: "generate_visualization",
+            description: "Generate a chart/visualization. Use this when the user explicitly asks for a visual or when /visualization command is used. You MUST provide the SQL query to fetch the data AND the chart configuration.",
+            category: "visualization",
+            parameters: {
+                type: "object",
+                properties: {
+                    query: { type: "string", description: "SQL query to fetch data" },
+                    chartType: { type: "string", enum: ["bar", "line", "pie", "stat", "table"] },
+                    title: { type: "string" },
+                    xAxis: { type: "string" },
+                    yAxis: { type: "array", items: { type: "string" } }
+                },
+                required: ["query", "chartType", "xAxis", "yAxis"]
+            },
+            handler: async ({ query, chartType, title, xAxis, yAxis }, context) => {
+                return {
+                    type: "visualization_request",
+                    query,
+                    config: { type: chartType, title, xAxis, yAxis }
+                };
+            }
+        });
+
+        this.registerTool({
             name: "save_as_view",
             description: "Create a database view from the current query",
             parameters: {
@@ -908,6 +932,61 @@ export class SpreadsheetToolService {
             }
         });
 
+        this.registerTool({
+            name: "monitor_data_source",
+            description: "Start a background monitor on a data source (table/container) to watch for new records. The backend will emit live updates to the dashboard.",
+            category: "query",
+            parameters: {
+                type: "object",
+                properties: {
+                    connectionId: { type: "string", description: "The ID of the connection" },
+                    tableName: { type: "string", description: "The table or container to monitor" },
+                    dateColumn: { type: "string", description: "For SQL: The column to check for new records (e.g., 'created_at', 'timestamp'). Optional." }
+                },
+                required: ["connectionId", "tableName"]
+            },
+            handler: async (args, context) => {
+                const { liveDataService } = await import('./LiveDataService.js');
+
+                // Resolve adapter from context
+                let adapter = context.resourceToAdapter?.[args.tableName];
+                if (!adapter) {
+                    // Try normalized lookup
+                    const slug = args.tableName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    adapter = context.resourceToAdapter?.[slug];
+                }
+
+                let provider = context.resourceToProvider?.[args.tableName];
+                if (!provider) {
+                    const slug = args.tableName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    provider = context.resourceToProvider?.[slug];
+                }
+
+                if (!adapter) {
+                    return {
+                        error: `Could not find a valid database connection for table '${args.tableName}'. Ensure it is in the current context.`
+                    };
+                }
+
+                const monitorId = `monitor:${args.connectionId}:${args.tableName}`;
+
+                try {
+                    await liveDataService.startMonitor(adapter, provider, args.tableName, monitorId, {
+                        dateColumn: args.dateColumn
+                    });
+
+                    return {
+                        type: "monitor_started",
+                        monitorId,
+                        message: `Started monitoring ${args.tableName} for live updates.`,
+                        socketRoom: `monitor:${monitorId}`
+                    };
+                } catch (e) {
+                    return { error: `Failed to start monitor: ${e.message}` };
+                }
+            }
+        });
+
         // ============================================
         // MODIFICATION & FORMATTING TOOLS
         // ============================================
@@ -958,7 +1037,11 @@ export class SpreadsheetToolService {
                             type: "object",
                             properties: {
                                 header: { type: "string", description: "Header name for the new column" },
-                                values: { type: "array", description: "Optional initial values for the column rows" }
+                                values: {
+                                    type: "array",
+                                    items: { type: "string" },
+                                    description: "Optional initial values for the column rows"
+                                }
                             },
                             required: ["header"]
                         }
@@ -1120,5 +1203,7 @@ export class SpreadsheetToolService {
         return await tool.handler(args, context);
     }
 }
+
+
 
 export const spreadsheetToolService = new SpreadsheetToolService();

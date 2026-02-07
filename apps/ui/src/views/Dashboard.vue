@@ -121,7 +121,7 @@
             <TooltipTrigger as-child>
               <button
                 v-if="currentDashboard && showFullToolbar"
-                @click="handleSave"
+                @click="(e) => e.ctrlKey ? showActivityFeed = !showActivityFeed : handleSave()"
                 class="p-2 text-sm font-medium rounded-md transition flex items-center justify-center shrink-0 shadow-sm border backdrop-blur-md"
                 :class="store.isSaving 
                   ? 'bg-muted text-muted-foreground border-border' 
@@ -358,6 +358,21 @@
             @typing-start="handleTypingStart"
             @typing-stop="handleTypingStop"
             @toggle-detach="isChatDetached = !isChatDetached"
+          />
+        </div>
+      </Transition>
+
+      <Transition name="slide-fade">
+        <div 
+          v-if="showActivityFeed"
+          class="fixed z-[30] shadow-2xl transition-all duration-300 pointer-events-auto"
+          :class="[
+            'top-[65px] bottom-0 right-0 border-t-0 border-b-0 border-r-0 rounded-l-xl'
+          ]"
+        >
+          <ActivityFeed 
+            :activities="(store.activityLogs as any)"
+            @close="showActivityFeed = false"
           />
         </div>
       </Transition>
@@ -702,10 +717,12 @@ import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 import DashboardChat from '@/components/Dashboard/DashboardChat.vue'
 import LiveCursors from '@/components/Dashboard/LiveCursors.vue'
 import CollaboratorAvatars from '@/components/Dashboard/CollaboratorAvatars.vue'
+import ActivityFeed from '@/components/Dashboard/ActivityFeed.vue'
 import DashboardInsights from '@/components/Dashboard/DashboardInsights.vue'
 import DashboardFilters from '@/components/Dashboard/DashboardFilters.vue'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
+import { identityService } from '@/services/identityService'
 import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy, trackDashboardAccess, api } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 import {
@@ -867,6 +884,7 @@ const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
 
 const hasUnreadMessages = ref(false)
 const showChat = ref(false)
+const showActivityFeed = ref(false)
 const chatSidebarRef = ref<HTMLElement | null>(null)
 const chatToggleRef = ref<HTMLElement | null>(null)
 const dashboardContainer = ref<HTMLElement | null>(null)
@@ -900,6 +918,103 @@ watch(() => socket.value, (s) => {
           await store.selectDashboard(currentDashboard.value.id)
         }
       }
+    })
+
+    s.on('element_updated', (data: any) => {
+      if (data.dashboardId !== currentDashboard.value?.id) return
+      // Find and update ONLY the specific element
+      currentDashboard.value.data.pages?.forEach((page: any) => {
+        const el = page.elements.find((e: any) => e.id === data.elementId)
+        if (el) {
+          console.log('[Dashboard] Live update for element:', data.elementId, data.changes)
+          Object.assign(el, data.changes)
+
+          // Log to activity feed
+          store.addActivityLog({
+            type: 'update',
+            elementId: data.elementId,
+            elementTitle: el.title,
+            userId: data.userId || 'unknown',
+            userName: data.userName || 'Collaborator',
+            userProfilePicture: data.userProfilePicture,
+            changes: data.changes
+          })
+        }
+      })
+    })
+
+    s.on('element_added', (data: any) => {
+      if (data.dashboardId !== currentDashboard.value?.id) return
+      const page = currentDashboard.value.data.pages?.find((p: any) => p.id === data.pageId)
+      if (page) {
+        console.log('[Dashboard] Live add element:', data.elementId)
+        page.elements.push(data.element)
+        page.layout.push(data.layoutItem)
+
+        // Log to activity feed
+        store.addActivityLog({
+          type: 'add',
+          elementId: data.elementId,
+          elementTitle: data.element.title,
+          userId: data.userId || 'unknown',
+          userName: data.userName || 'Collaborator',
+          userProfilePicture: data.userProfilePicture
+        })
+      }
+    })
+
+    s.on('element_removed', (data: any) => {
+      if (data.dashboardId !== currentDashboard.value?.id) return
+      currentDashboard.value.data.pages?.forEach((page: any) => {
+        const el = page.elements.find((e: any) => e.id === data.elementId)
+        if (el) {
+          console.log('[Dashboard] Live remove element:', data.elementId)
+          page.elements = page.elements.filter((e: any) => e.id !== data.elementId)
+          page.layout = page.layout.filter((l: any) => l.i !== data.elementId)
+
+          // Log to activity feed
+          store.addActivityLog({
+            type: 'remove',
+            elementId: data.elementId,
+            elementTitle: el.title,
+            userId: data.userId || 'unknown',
+            userName: data.userName || 'Collaborator',
+            userProfilePicture: data.userProfilePicture
+          })
+        }
+      })
+    })
+
+    s.on('element_data_refreshed', (data: any) => {
+      if (data.dashboardId !== currentDashboard.value?.id) return
+      currentDashboard.value.data.pages?.forEach((page: any) => {
+        const el = page.elements.find((e: any) => e.id === data.elementId)
+        if (el) {
+          console.log('[Dashboard] Live data refresh for element:', data.elementId)
+          if (el.config) el.config.data = data.data
+          
+          // Log to activity feed
+          store.addActivityLog({
+            type: 'refresh',
+            elementId: data.elementId,
+            elementTitle: el.title,
+            userId: data.userId || 'unknown',
+            userName: data.userName || 'Collaborator',
+            userProfilePicture: data.userProfilePicture
+          })
+        }
+      })
+    })
+
+    s.on('element_data_refreshed', (data: any) => {
+      if (data.dashboardId !== currentDashboard.value?.id) return
+      currentDashboard.value.data.pages?.forEach((page: any) => {
+        const el = page.elements.find((e: any) => e.id === data.elementId)
+        if (el) {
+          console.log('[Dashboard] Live data refresh for element:', data.elementId)
+          el.lastResult = data.newData
+        }
+      })
     })
 
     s.on('cell_binding_updated', async (data: any) => {
@@ -1372,9 +1487,29 @@ const copyShareLink = () => {
 
 // Element Actions
 const removeElement = async (id: string) => {
-  if (!activePage.value) return
+  if (!activePage.value || !currentDashboard.value) return
+  const dashboardId = currentDashboard.value.id
+  
+  const el = activePage.value.elements.find((e: any) => e.id === id)
+  const elTitle = el?.title || 'Unknown Element'
+  
   activePage.value.elements = activePage.value.elements.filter((el: any) => el.id !== id)
   activePage.value.layout = activePage.value.layout.filter((item: any) => item.i !== id)
+  
+  // Emit removal to collaborators
+  const { emitElementRemove } = useCollaboration()
+  emitElementRemove(dashboardId, id)
+  
+  // Log locally
+  store.addActivityLog({
+    type: 'remove',
+    elementId: id,
+    elementTitle: elTitle,
+    userId: identityService.user?.id || 'me',
+    userName: identityService.user?.firstName || 'Me',
+    userProfilePicture: identityService.user?.profilePictureUrl
+  })
+  
   await handleSave()
 }
 
@@ -1402,6 +1537,24 @@ const saveQueryChanges = async () => {
   const el = activePage.value.elements.find((e: any) => e.id === editingElement.value.id)
   if (el) {
     el.query = editingQuery.value
+    
+    // Emit update to collaborators
+    const { emitElementUpdate } = useCollaboration()
+    if (currentDashboard.value) {
+      emitElementUpdate(currentDashboard.value.id, el.id, { query: el.query })
+      
+      // Log locally
+      store.addActivityLog({
+        type: 'update',
+        elementId: el.id,
+        elementTitle: el.title,
+        userId: identityService.user?.id || 'me',
+        userName: identityService.user?.firstName || 'Me',
+        userProfilePicture: identityService.user?.profilePictureUrl,
+        changes: { query: el.query }
+      })
+    }
+    
     showQueryModal.value = false
     await handleSave()
     toast.success('Query updated and saved.')
@@ -1518,6 +1671,29 @@ const handleSaveElement = async (updatedElement: any) => {
   
   if (elementIndex !== -1) {
     activePage.value.elements[elementIndex] = updatedElement
+    
+    // Emit update to collaborators
+    const { emitElementUpdate } = useCollaboration()
+    if (currentDashboard.value) {
+      // Calculate changes - for simplicity send the whole updated element object 
+      // but filtered to what's likely to change (title, type, config, customization)
+      const { id, title, type, config, customization } = updatedElement
+      emitElementUpdate(currentDashboard.value.id, updatedElement.id, { 
+        title, type, config, customization 
+      })
+
+      // Log locally
+      store.addActivityLog({
+        type: 'update',
+        elementId: updatedElement.id,
+        elementTitle: updatedElement.title,
+        userId: identityService.user?.id || 'me',
+        userName: identityService.user?.firstName || 'Me',
+        userProfilePicture: identityService.user?.profilePictureUrl,
+        changes: { title, type }
+      })
+    }
+    
     await handleSave()
     toast.success('Element updated and saved.')
   }

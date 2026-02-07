@@ -181,6 +181,14 @@ export function useChatExecution(
         lastQuery.value = payload
         currentExecutionSteps.value = []
 
+        // Update Chat History (UI Sync) - IMMEDIATE
+        chatHistory.value.push({ role: 'user', content: payload, timestamp })
+        if (selectedChatId.value) {
+            try {
+                chatStore.saveMessage(selectedChatId.value, 'user', payload)
+            } catch (e) { console.warn(e) }
+        }
+
         if (abortController.value) abortController.value.abort()
         abortController.value = new AbortController()
 
@@ -206,13 +214,7 @@ export function useChatExecution(
             finishOperation(opId)
             toast.success('Query executed')
 
-            // Update Chat History (UI Sync)
-            chatHistory.value.push({ role: 'user', content: payload, timestamp })
-            if (selectedChatId.value) {
-                try {
-                    await chatStore.saveMessage(selectedChatId.value, 'user', payload)
-                } catch (e) { console.warn(e) }
-            }
+
 
             // Show results immediately without blocking on analysis
             // Analysis is now on-demand via "Generate Insights" button
@@ -276,6 +278,15 @@ export function useChatExecution(
         chatInput.value = ''
         isExecuting.value = true
 
+        // Push immediate UI update
+        const timestamp = Date.now()
+        chatHistory.value.push({ role: 'user', content: userPrompt, timestamp })
+
+        // Persist user message immediately
+        if (selectedChatId.value) {
+            chatStore.saveMessage(selectedChatId.value, 'user', userPrompt).catch(e => console.warn(e))
+        }
+
         const gid = `chat-${Date.now()}`
 
         // Follow-up Explanation Check - Route directly to analysis when user asks about previous results
@@ -284,7 +295,7 @@ export function useChatExecution(
 
         if (isExplanationRequest && isReference && queryResult.value && lastQuery.value) {
             console.log('[Chat] Detected follow-up explanation request, using previous results')
-            chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+
 
             try {
                 const explanation = await analyzeResults(userPrompt, queryResult.value, lastQuery.value)
@@ -298,7 +309,6 @@ export function useChatExecution(
 
                 if (selectedChatId.value) {
                     try {
-                        await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
                         await chatStore.saveMessage(selectedChatId.value, 'ai', explanationText)
                     } catch (e) { console.warn('Failed to persist messages', e) }
                 }
@@ -318,7 +328,7 @@ export function useChatExecution(
         // Visualization Check
         const wantsVisualization = /visualize|chart|graph|dashboard/i.test(userPrompt)
         if (wantsVisualization && isReference && queryResult.value && lastQuery.value) {
-            chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
+
             chatHistory.value.push({ role: 'assistant', content: 'Generating visualization...', timestamp: Date.now() })
             await handleCreateDashboardElement(gid)
             isExecuting.value = false
@@ -326,130 +336,103 @@ export function useChatExecution(
         }
 
         // Standard AI Flow
-        await withProgress('AI Query', async (update: any) => {
-            update(10, 'Thinking...')
+        try {
+            await withProgress('AI Query', async (update: any) => {
+                update(10, 'Thinking...')
 
-            const history = chatHistory.value || []
-            let activeTable = undefined
-            const activeTab = workspaceStore.activeTab as any
-            const tabValue = activeTab && (activeTab.value || activeTab)
-            if (tabValue?.type === 'table') activeTable = tabValue.data?.tableName
-            else if (tabValue?.type === 'spreadsheet') activeTable = tabValue.data?.tableName
+                const history = chatHistory.value || []
+                let activeTable = undefined
+                const activeTab = workspaceStore.activeTab as any
+                const tabValue = activeTab && (activeTab.value || activeTab)
+                if (tabValue?.type === 'table') activeTable = tabValue.data?.tableName
+                else if (tabValue?.type === 'spreadsheet') activeTable = tabValue.data?.tableName
 
-            // Validate connection ID before making request
-            const connectionId = selectedConnection.value?.id
-            console.log('[Chat] AI Request:', {
-                connectionId,
-                provider: selectedConnection.value?.provider,
-                name: selectedConnection.value?.name || selectedConnection.value?.label,
-                activeTable,
-                activeTabType: tabValue?.type,
-                activeTabData: tabValue?.data
-            })
-
-            if (!connectionId) {
-                console.error('[Chat] No valid connection ID found:', selectedConnection.value)
-                toast.error('Connection error', {
-                    description: 'Please select a valid database connection before using AI.'
+                // Validate connection ID before making request
+                const connectionId = selectedConnection.value?.id
+                console.log('[Chat] AI Request:', {
+                    connectionId,
+                    provider: selectedConnection.value?.provider,
+                    name: selectedConnection.value?.name || selectedConnection.value?.label,
+                    activeTable,
+                    activeTabType: tabValue?.type,
+                    activeTabData: tabValue?.data
                 })
-                isExecuting.value = false
-                return
-            }
 
-            let aiResponse: any = null;
-
-            const requestBody: any = {
-                prompt: userPrompt,
-                connectionId,
-                context: history,
-                activeTable,
-                ...options.aiOptions.value
-            };
-
-            currentExecutionSteps.value = [];
-
-            await api.stream<any>('/ai/generate', requestBody, (chunk) => {
-                if (chunk.type === 'progress') {
-                    update(chunk.progress, chunk.message)
-                    currentExecutionSteps.value.push({ message: chunk.message, timestamp: Date.now(), progress: chunk.progress })
-                } else if (chunk.error) {
-                    throw new Error(chunk.error)
-                } else {
-                    // This is the final result (or part of it)
-                    aiResponse = chunk
-                }
-            }, {
-                signal: abortController.value?.signal
-            })
-
-            if (!aiResponse) throw new Error("No response from AI")
-
-            // Handle generated table tool response
-            if ((aiResponse as any).type === 'generated_table' && options.onAIResponse) {
-                options.onAIResponse(aiResponse)
-                isExecuting.value = false
-                return
-            }
-
-            // Handle INTENT-BASED architecture responses
-            if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
-                const response = aiResponse as any;
-
-                // 1. Always push the user prompt first
-                chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() });
-
-                // 2. Handle COMPOUND response (array of results) for preview panel
-                if (response.isCompound && Array.isArray(response.results)) {
-                    // For UI simplicity, we'll set the LAST result as the "main" one for the preview panel
-                    const lastResult = response.results[response.results.length - 1];
-                    queryResult.value = lastResult.data;
-                    lastQuery.value = lastResult.query;
-                    resultsPanelVisible.value = true;
-                } else {
-                    lastQuery.value = response.query;
-                    queryResult.value = response.data;
+                if (!connectionId) {
+                    console.error('[Chat] No valid connection ID found:', selectedConnection.value)
+                    toast.error('Connection error', {
+                        description: 'Please select a valid database connection before using AI.'
+                    })
+                    isExecuting.value = false
+                    return
                 }
 
-                // 3. Prepare the Assistant Response
-                const needsDisclaimer = response.needs_disclaimer || false;
-                const assistantContent = response.message || (response.isCompound ? `Here is the data for ${response.results.length} regions.` : `Here is the data you requested.`);
+                let aiResponse: any = null;
 
-                // 4. Handle Visualizations or Standard Data
-                if (response.type === 'visualization_request') {
-                    // ... existing visualization logic ...
-                    const aiConfig = response.config;
-                    suggestedChartType.value = aiConfig.type;
+                const requestBody: any = {
+                    prompt: userPrompt,
+                    connectionId,
+                    context: history,
+                    activeTable,
+                    ...options.aiOptions.value
+                };
 
-                    const { generateChartConfig } = await import('@/lib/chartGenerator');
-                    const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+                currentExecutionSteps.value = [];
 
-                    let finalConfig = generateChartConfig(dataArray, lastQuery.value);
-                    if (finalConfig) {
-                        if (aiConfig.type) finalConfig.type = aiConfig.type as any;
-                        if (aiConfig.title) finalConfig.title = aiConfig.title;
-                    }
-                    if (!finalConfig) {
-                        finalConfig = {
-                            type: aiConfig.type || 'bar',
-                            title: aiConfig.title || 'Visualization',
-                            config: { data: { labels: [], datasets: [] } }
-                        }
+                await api.stream<any>('/ai/generate', requestBody, (chunk) => {
+                    if (!chunk || (typeof chunk === 'object' && Object.keys(chunk).length === 0)) {
+                        console.warn('[Chat] Received empty stream chunk');
+                        return;
                     }
 
-                    dashboardPreviewConfig.value = finalConfig;
-                    dashboardPreviewVisible.value = true;
+                    if (chunk.type === 'progress') {
+                        update(chunk.progress, chunk.message)
+                        currentExecutionSteps.value.push({ message: chunk.message, timestamp: Date.now(), progress: chunk.progress })
+                    } else if (chunk.error) {
+                        throw new Error(chunk.error)
+                    } else {
+                        // This is the final result (or part of it)
+                        aiResponse = chunk
+                    }
+                }, {
+                    signal: abortController.value?.signal
+                })
 
-                    chatHistory.value.push({
-                        role: 'assistant',
-                        content: assistantContent || `I've generated a ${aiConfig.type} chart based on your request.`,
-                        timestamp: Date.now(),
-                        meta: { hasResults: true, query: lastQuery.value }
-                    });
-                } else {
-                    // Standard Data Response
-                    // 2-Step Visualization: Check for blueprint from analysis
-                    if (response.vizBlueprint) {
-                        const aiConfig = response.vizBlueprint;
+                if (!aiResponse || (typeof aiResponse === 'object' && Object.keys(aiResponse).length === 0)) {
+                    throw new Error("No response from AI. The system was unable to generate a valid data output for this request.")
+                }
+
+                // Handle generated table tool response
+                if ((aiResponse as any).type === 'generated_table' && options.onAIResponse) {
+                    options.onAIResponse(aiResponse)
+                    isExecuting.value = false
+                    return
+                }
+
+                // Handle INTENT-BASED architecture responses
+                if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
+                    const response = aiResponse as any;
+
+                    // 2. Handle COMPOUND response (array of results) for preview panel
+                    if (response.isCompound && Array.isArray(response.results)) {
+                        // For UI simplicity, we'll set the LAST result as the "main" one for the preview panel
+                        const lastResult = response.results[response.results.length - 1];
+                        queryResult.value = lastResult.data;
+                        lastQuery.value = lastResult.query;
+                        resultsPanelVisible.value = true;
+                    } else {
+                        lastQuery.value = response.query;
+                        queryResult.value = response.data;
+                    }
+
+                    // 3. Prepare the Assistant Response
+                    const needsDisclaimer = response.needs_disclaimer || false;
+                    const assistantContent = response.message || (response.isCompound ? `Here is the data for ${response.results.length} regions.` : `Here is the data you requested.`);
+
+                    // 4. Handle Visualizations or Standard Data
+                    if (response.type === 'visualization_request') {
+                        // ... existing visualization logic ...
+                        const aiConfig = response.config;
                         suggestedChartType.value = aiConfig.type;
 
                         const { generateChartConfig } = await import('@/lib/chartGenerator');
@@ -459,195 +442,223 @@ export function useChatExecution(
                         if (finalConfig) {
                             if (aiConfig.type) finalConfig.type = aiConfig.type as any;
                             if (aiConfig.title) finalConfig.title = aiConfig.title;
-
-                            // Apply axis mapping suggestions if provided
-                            if (aiConfig.xAxis && finalConfig.config) {
-                                (finalConfig.config as any).xAxis = aiConfig.xAxis;
-                            }
-                            if (aiConfig.yAxis && finalConfig.config) {
-                                (finalConfig.config as any).yAxis = Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : [aiConfig.yAxis];
+                        }
+                        if (!finalConfig) {
+                            finalConfig = {
+                                type: aiConfig.type || 'bar',
+                                title: aiConfig.title || 'Visualization',
+                                config: { data: { labels: [], datasets: [] } }
                             }
                         }
 
-                        if (finalConfig) {
-                            dashboardPreviewConfig.value = finalConfig;
-                            dashboardPreviewVisible.value = true;
-                            console.log('[useChatExecution] Auto-visualizing via blueprint:', finalConfig);
+                        dashboardPreviewConfig.value = finalConfig;
+                        dashboardPreviewVisible.value = true;
+
+                        chatHistory.value.push({
+                            role: 'assistant',
+                            content: assistantContent || `I've generated a ${aiConfig.type} chart based on your request.`,
+                            timestamp: Date.now(),
+                            meta: { hasResults: true, query: lastQuery.value }
+                        });
+                    } else {
+                        // Standard Data Response
+                        // 2-Step Visualization: Check for blueprint from analysis
+                        if (response.vizBlueprint) {
+                            const aiConfig = response.vizBlueprint;
+                            suggestedChartType.value = aiConfig.type;
+
+                            const { generateChartConfig } = await import('@/lib/chartGenerator');
+                            const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+
+                            let finalConfig = generateChartConfig(dataArray, lastQuery.value);
+                            if (finalConfig) {
+                                if (aiConfig.type) finalConfig.type = aiConfig.type as any;
+                                if (aiConfig.title) finalConfig.title = aiConfig.title;
+
+                                // Apply axis mapping suggestions if provided
+                                if (aiConfig.xAxis && finalConfig.config) {
+                                    (finalConfig.config as any).xAxis = aiConfig.xAxis;
+                                }
+                                if (aiConfig.yAxis && finalConfig.config) {
+                                    (finalConfig.config as any).yAxis = Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : [aiConfig.yAxis];
+                                }
+                            }
+
+                            if (finalConfig) {
+                                dashboardPreviewConfig.value = finalConfig;
+                                dashboardPreviewVisible.value = true;
+                                console.log('[useChatExecution] Auto-visualizing via blueprint:', finalConfig);
+                            }
                         }
+
+                        chatHistory.value.push({
+                            role: 'assistant',
+                            content: assistantContent,
+                            timestamp: Date.now(),
+                            meta: {
+                                hasResults: true,
+                                query: lastQuery.value,
+                                vizBlueprint: response.vizBlueprint,
+                                needsDisclaimer
+                            }
+                        });
+                    }
+
+                    isExecuting.value = false;
+                    return;
+                }
+
+                // Legacy/Fallback for text-only responses
+                update(40, 'Executing...')
+
+                // Multi-step logic from Chat.vue
+                if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
+                    // ... implementation mirrors Chat.vue ...
+                    const combinedResults: any[] = []
+                    let combinedQuery = ''
+                    let visualizableResults: any[] = []
+                    let localSuggestedChartType: string | null = null
+
+                    for (const step of aiResponse.steps) {
+                        const normalizedStepQuery = normalizeQuery(step.query, selectedConnection.value.provider)
+                        combinedQuery += normalizedStepQuery + (normalizedStepQuery.endsWith(';') ? '\n' : ';\n')
+                        if (step.result) {
+                            combinedResults.push({ explanation: step.explanation, result: step.result })
+                            if (step.visualizable) {
+                                if (Array.isArray(step.result)) visualizableResults.push(...step.result)
+                                else visualizableResults.push(step.result)
+                                if (step.chart_type) localSuggestedChartType = step.chart_type
+                            }
+                        } else if (step.error) {
+                            combinedResults.push({ explanation: step.explanation, error: step.error })
+                        }
+                    }
+
+                    queryResult.value = combinedResults
+                    lastQuery.value = combinedQuery
+
+                    if (visualizableResults.length > 0) {
+                        visualizableResult.value = visualizableResults
+                        suggestedChartType.value = localSuggestedChartType
+                    }
+
+                    // Quick summary without blocking on AI analysis
+                    update(80, 'Done')
+                    const stepCount = aiResponse.steps.length
+                    const aiSummary = `Executed ${stepCount} step${stepCount !== 1 ? 's' : ''}. Here are the results.`
+
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: aiSummary,
+                        timestamp: Date.now(),
+                        meta: { is_multi_step: true, steps: combinedResults }
+                    })
+                    if (selectedChatId.value) {
+                        try {
+                            await chatStore.saveMessage(selectedChatId.value, 'ai', aiSummary)
+                        } catch (e) { console.warn(e) }
+                    }
+
+                } else {
+                    // Single step standard
+                    const singleAIResponse = aiResponse as any
+
+                    // If this is a mutation (edit/insert/delete)
+                    if (singleAIResponse.action === 'edit') {
+                        openMutation(singleAIResponse)
+                        isExecuting.value = false
+                        // We don't push to history yet - wait for user to apply
+                        return
+                    }
+
+                    // Executing the query in aiResponse
+                    if (!singleAIResponse.query || !singleAIResponse.query.trim()) {
+                        console.warn('[Chat] No query generated by AI')
+
+                        const fallbackContent = singleAIResponse.text || singleAIResponse.explanation || "I'm sorry, I couldn't generate a valid query for that request."
+                        chatHistory.value.push({
+                            role: 'assistant',
+                            content: fallbackContent,
+                            timestamp: Date.now()
+                        })
+                        if (selectedChatId.value) {
+                            try {
+                                await chatStore.saveMessage(selectedChatId.value, 'ai', fallbackContent)
+                            } catch (e) { console.warn(e) }
+                        }
+                        isExecuting.value = false
+                        return
+                    }
+
+                    const body = await api.post<any>('/query', {
+                        provider: selectedConnection.value.provider,
+                        connection: buildConnectionPayload(selectedConnection.value),
+                        query: normalizeQuery(singleAIResponse.query, selectedConnection.value.provider),
+                        source: 'ai',
+                        model: singleAIResponse.model
+                    })
+
+                    queryResult.value = body.result
+                    lastQuery.value = singleAIResponse.query
+                    // Generate Natural Summary
+                    update(90, 'Synthesizing...')
+                    let aiSummary = singleAIResponse.explanation || "Query executed successfully."
+                    let prediction = null
+                    let needsDisclaimer = false
+                    try {
+                        const response = await analyzeResults(userPrompt, body.result, singleAIResponse.query)
+                        if (response) {
+                            if (typeof response === 'object' && response.analysis) {
+                                aiSummary = response.analysis
+                                needsDisclaimer = response.needs_disclaimer || false
+                            } else if (typeof response === 'object' && response.answer) {
+                                aiSummary = response.answer
+                                prediction = response.prediction
+                            } else {
+                                aiSummary = response
+                            }
+                        }
+                    } catch (err: any) {
+                        console.error('[Chat] Failed to generate single-step summary:', err)
+                    }
+
+                    const assistantContent = typeof aiSummary === 'object' ? JSON.stringify(aiSummary) : aiSummary
+
+                    const meta = {
+                        ...(prediction ? { prediction } : {}),
+                        contextUsed: (singleAIResponse as any).contextUsed,
+                        steps: currentExecutionSteps.value,
+                        needsDisclaimer
                     }
 
                     chatHistory.value.push({
                         role: 'assistant',
                         content: assistantContent,
                         timestamp: Date.now(),
-                        meta: {
-                            hasResults: true,
-                            query: lastQuery.value,
-                            vizBlueprint: response.vizBlueprint,
-                            needsDisclaimer
-                        }
-                    });
-                }
-
-                isExecuting.value = false;
-                return;
-            }
-
-            // Legacy/Fallback for text-only responses
-            update(40, 'Executing...')
-
-            // Multi-step logic from Chat.vue
-            if (aiResponse.multi_step && Array.isArray(aiResponse.steps)) {
-                // ... implementation mirrors Chat.vue ...
-                const combinedResults: any[] = []
-                let combinedQuery = ''
-                let visualizableResults: any[] = []
-                let localSuggestedChartType: string | null = null
-
-                for (const step of aiResponse.steps) {
-                    const normalizedStepQuery = normalizeQuery(step.query, selectedConnection.value.provider)
-                    combinedQuery += normalizedStepQuery + (normalizedStepQuery.endsWith(';') ? '\n' : ';\n')
-                    if (step.result) {
-                        combinedResults.push({ explanation: step.explanation, result: step.result })
-                        if (step.visualizable) {
-                            if (Array.isArray(step.result)) visualizableResults.push(...step.result)
-                            else visualizableResults.push(step.result)
-                            if (step.chart_type) localSuggestedChartType = step.chart_type
-                        }
-                    } else if (step.error) {
-                        combinedResults.push({ explanation: step.explanation, error: step.error })
-                    }
-                }
-
-                queryResult.value = combinedResults
-                lastQuery.value = combinedQuery
-
-                if (visualizableResults.length > 0) {
-                    visualizableResult.value = visualizableResults
-                    suggestedChartType.value = localSuggestedChartType
-                }
-
-                // Quick summary without blocking on AI analysis
-                update(80, 'Done')
-                const stepCount = aiResponse.steps.length
-                const aiSummary = `Executed ${stepCount} step${stepCount !== 1 ? 's' : ''}. Here are the results.`
-
-                // Update history
-                chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
-                if (selectedChatId.value) {
-                    try {
-                        await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
-                    } catch (e) { console.warn(e) }
-                }
-
-                chatHistory.value.push({
-                    role: 'assistant',
-                    content: aiSummary,
-                    timestamp: Date.now(),
-                    meta: { is_multi_step: true, steps: combinedResults }
-                })
-                if (selectedChatId.value) {
-                    try {
-                        await chatStore.saveMessage(selectedChatId.value, 'ai', aiSummary)
-                    } catch (e) { console.warn(e) }
-                }
-
-            } else {
-                // Single step standard
-                const singleAIResponse = aiResponse as any
-
-                // If this is a mutation (edit/insert/delete)
-                if (singleAIResponse.action === 'edit') {
-                    openMutation(singleAIResponse)
-                    isExecuting.value = false
-                    // We don't push to history yet - wait for user to apply
-                    return
-                }
-
-                // Executing the query in aiResponse
-                if (!singleAIResponse.query || !singleAIResponse.query.trim()) {
-                    console.warn('[Chat] No query generated by AI')
-                    chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
-                    const fallbackContent = singleAIResponse.text || singleAIResponse.explanation || "I'm sorry, I couldn't generate a valid query for that request."
-                    chatHistory.value.push({
-                        role: 'assistant',
-                        content: fallbackContent,
-                        timestamp: Date.now()
+                        meta
                     })
                     if (selectedChatId.value) {
                         try {
-                            await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
-                            await chatStore.saveMessage(selectedChatId.value, 'ai', fallbackContent)
+                            await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, meta)
                         } catch (e) { console.warn(e) }
                     }
-                    isExecuting.value = false
-                    return
                 }
 
-                const body = await api.post<any>('/query', {
-                    provider: selectedConnection.value.provider,
-                    connection: buildConnectionPayload(selectedConnection.value),
-                    query: normalizeQuery(singleAIResponse.query, selectedConnection.value.provider),
-                    source: 'ai',
-                    model: singleAIResponse.model
-                })
+            }, { category: 'ai', groupId: gid })
+        } catch (e: any) {
+            console.error('[Chat] AI Flow failed:', e)
+            toast.error('AI Request failed', {
+                description: e.message || 'An error occurred during AI generation'
+            })
+            chatHistory.value.push({
+                role: 'assistant',
+                content: `I encountered an error while processing your request: ${e.message}. Please try again or rephrase your question.`,
+                timestamp: Date.now()
+            })
+        } finally {
+            isExecuting.value = false
+        }
 
-                queryResult.value = body.result
-                lastQuery.value = singleAIResponse.query
-                // Generate Natural Summary
-                update(90, 'Synthesizing...')
-                let aiSummary = singleAIResponse.explanation || "Query executed successfully."
-                let prediction = null
-                let needsDisclaimer = false
-                try {
-                    const response = await analyzeResults(userPrompt, body.result, singleAIResponse.query)
-                    if (response) {
-                        if (typeof response === 'object' && response.analysis) {
-                            aiSummary = response.analysis
-                            needsDisclaimer = response.needs_disclaimer || false
-                        } else if (typeof response === 'object' && response.answer) {
-                            aiSummary = response.answer
-                            prediction = response.prediction
-                        } else {
-                            aiSummary = response
-                        }
-                    }
-                } catch (err: any) {
-                    console.error('[Chat] Failed to generate single-step summary:', err)
-                }
-
-                chatHistory.value.push({ role: 'user', content: userPrompt, timestamp: Date.now() })
-                if (selectedChatId.value) {
-                    try {
-                        await chatStore.saveMessage(selectedChatId.value, 'user', userPrompt)
-                    } catch (e) { console.warn(e) }
-                }
-
-                const assistantContent = typeof aiSummary === 'object' ? JSON.stringify(aiSummary) : aiSummary
-
-                const meta = {
-                    ...(prediction ? { prediction } : {}),
-                    contextUsed: (singleAIResponse as any).contextUsed,
-                    steps: currentExecutionSteps.value,
-                    needsDisclaimer
-                }
-
-                chatHistory.value.push({
-                    role: 'assistant',
-                    content: assistantContent,
-                    timestamp: Date.now(),
-                    meta
-                })
-                if (selectedChatId.value) {
-                    try {
-                        await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, meta)
-                    } catch (e) { console.warn(e) }
-                }
-            }
-
-        }, { category: 'ai', groupId: gid })
-
-        isExecuting.value = false
     }
 
     return {

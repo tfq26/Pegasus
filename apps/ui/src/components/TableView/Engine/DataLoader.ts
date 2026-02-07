@@ -74,7 +74,7 @@ export class DataLoader {
         provider: string,
         options: { limit?: number; offset?: number } = {}
     ): Promise<{ rows: Record<string, any>[] }> {
-        const { limit = 2000, offset = 0 } = options;
+        const { limit = 500, offset = 0 } = options;
 
         const response = await fetch(`${this.baseUrl}/api/table/${tableName}/query`, {
             method: 'POST',

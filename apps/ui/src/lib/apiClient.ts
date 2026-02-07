@@ -220,6 +220,11 @@ export class ApiClient {
             throw new Error(errorMessage)
         }
 
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+            throw new Error(`Stream request returned HTML content (Status ${response.status}). Expected JSON/Stream.`);
+        }
+
         const reader = response.body?.getReader()
         if (!reader) return
 
@@ -240,10 +245,25 @@ export class ApiClient {
                 for (const line of lines) {
                     if (line.trim()) {
                         try {
+                            if (line.trim() === '{}') {
+                                // console.warn('[ApiClient] Skipping empty object chunk'); 
+                                continue;
+                            }
                             const chunk = JSON.parse(line)
                             onChunk(chunk)
                         } catch (e) {
-                            console.error('Failed to parse stream chunk', e)
+                            console.error('[ApiClient] Stream Parse Error:', e)
+                            console.error('[ApiClient] Raw Invalid Chunk Content:', line)
+
+                            // If we receive HTML (e.g. from Vercel timeout), strictly throw
+                            const trimmed = line.trim();
+                            if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+                                throw new Error('Received HTML error page (likely 500/504) instead of JSON stream.')
+                            }
+                            // If plain text error
+                            if (!line.startsWith('{') && !line.startsWith('[')) {
+                                console.warn('[ApiClient] Received plain text chunk:', line);
+                            }
                         }
                     }
                 }

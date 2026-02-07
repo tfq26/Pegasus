@@ -144,6 +144,9 @@ const computedData = computed(() => {
   if (!props.data) return { labels: [], datasets: [] }
   const data = JSON.parse(JSON.stringify(props.data))
   
+  // Guard against missing datasets which causes vue-chartjs to crash
+  if (!data.datasets) data.datasets = []
+  
   // Apply custom labels (overrides axis/category labels)
   if (props.customization?.labels && data.labels) {
     data.labels = data.labels.map((label: string, index: number) => {

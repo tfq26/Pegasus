@@ -1,4 +1,13 @@
-export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage' | 'duckdb' | 'dynamodb' | 'bigquery'
+export type Provider = 'mysql' | 'mongodb' | 'kusto' | 'sqlite' | 'postgres' | 'file' | 'surrealdb' | 'ai_provider' | 'cloud_storage' | 'duckdb' | 'dynamodb' | 'bigquery' | 'cosmosdb'
+
+export type CosmosConfig = {
+  endpoint: string
+  key: string
+  database: string
+  container?: string
+  enableLiveCache?: boolean
+  pollingInterval?: number
+}
 
 export type MySQLConfig = {
   host: string
@@ -130,6 +139,7 @@ export type ConnectionEntry = {
   bigquery?: BigQueryConfig
   ai_provider?: AIProviderConfig
   cloud_storage?: CloudStorageConfig
+  cosmosdb?: CosmosConfig
   isLocked?: boolean
 }
 
@@ -171,7 +181,7 @@ export const buildConnectionPayload = (
   entry: ConnectionEntry,
   overrides: ConnectionOverrides = {},
 ) => {
-  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.duckdb || entry.surrealdb || entry.kusto || entry.ai_provider || entry.cloud_storage;
+  const isRawEntry = entry.mongodb || entry.mysql || entry.postgres || entry.sqlite || entry.duckdb || entry.surrealdb || entry.kusto || entry.ai_provider || entry.cloud_storage || entry.cosmosdb;
   if (!isRawEntry) return { ...entry, ...overrides };
 
   let basePayload: any = {}
@@ -215,6 +225,9 @@ export const buildConnectionPayload = (
       break
     case 'bigquery':
       basePayload = { provider: 'bigquery', ...entry.bigquery }
+      break
+    case 'cosmosdb':
+      basePayload = { provider: 'cosmosdb', ...entry.cosmosdb }
       break
     default:
       basePayload = { provider: entry.provider }

@@ -29,6 +29,10 @@ export class OpenAIProvider extends AIProvider {
             }))
         }
 
+        if (options.toolChoice) {
+            requestBody.tool_choice = { type: 'function', function: { name: options.toolChoice } }
+        }
+
         if (options.json) {
             requestBody.response_format = { type: 'json_object' }
         }

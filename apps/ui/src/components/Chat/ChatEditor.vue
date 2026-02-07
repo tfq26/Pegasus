@@ -97,7 +97,7 @@
                   class="mt-2 text-violet-400 hover:text-violet-300 text-[11px] font-bold flex items-center gap-1 transition-all"
                 >
                   <Sparkles class="w-3 h-3" />
-                  <span>Read Full Report</span>
+                  <span class="cursor-pointer">Read Full Report</span>
                 </button>
             </div>
 
@@ -150,11 +150,11 @@
         </div>
       </TransitionGroup>
 
-      <!-- Minimal Thinking State -->
+       <!-- Minimal Thinking State -->
       <div v-if="props.isThinking" class="pl-9 animate-in fade-in duration-500">
          <div class="flex items-center gap-3 text-violet-400">
             <!-- Handled by Halo Search ring now, but we can keep a small subtle indicator if desired -->
-            <span class="text-[11px] font-bold uppercase tracking-[0.2em] animate-pulse">Pegasus is analyzing...</span>
+            <span class="text-xs font-medium animate-pulse">Analyzing...</span>
          </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, DuckDBConfig, PostgresConfig, SurrealConfig, AIProviderConfig, CloudStorageConfig, DynamoDBConfig, BigQueryConfig } from '@/lib/db-connections'
+import type { ConnectionEntry, Provider, MySQLConfig, MongoConfig, KustoConfig, SQLiteConfig, DuckDBConfig, PostgresConfig, SurrealConfig, AIProviderConfig, CloudStorageConfig, DynamoDBConfig, BigQueryConfig, CosmosConfig } from '@/lib/db-connections'
 import type { SchemaPreview } from '@/lib/api'
 
 export type ConnectionFormState = {
@@ -18,6 +18,7 @@ export type ConnectionFormState = {
   bigquery: BigQueryConfig
   ai_provider: AIProviderConfig
   cloud_storage: CloudStorageConfig
+  cosmosdb: CosmosConfig
   isLocked: boolean
 }
 
@@ -37,6 +38,7 @@ export const defaultConnectionForm: ConnectionFormState = {
   bigquery: { projectId: '', enableLiveCache: false, pollingInterval: 300 },
   ai_provider: { service: 'openai', apiKey: '', allowedModels: [], defaultModel: '' },
   cloud_storage: { service: 'azure_blob', connectionString: '', allowedBuckets: [], bucket: '' },
+  cosmosdb: { endpoint: '', key: '', database: '' },
   isLocked: false
 }
 
@@ -67,7 +69,6 @@ export type SettingsModel = {
   slackConnected: boolean
   azureConnected: boolean
   enabledModels?: string[]
-  activeModel?: string
   localModel?: string
   temperature?: number
   maxTokens?: number

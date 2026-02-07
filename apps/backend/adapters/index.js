@@ -4,7 +4,9 @@ import { KustoAdapter } from "./kustoAdapter.js"
 import { SQLiteAdapter } from "./sqliteAdapter.js"
 import { PostgresAdapter } from "./postgresAdapter.js"
 import { DuckDBAdapter } from "./duckdbAdapter.js"
+import { CosmosAdapter } from "./cosmosAdapter.js"
 import { StorageManager } from "../src/services/storage/StorageManager.js"
+import { AzureAuthService } from "../src/services/AzureAuthService.js"
 
 export const adapters = {
   mongodb: MongoAdapter,
@@ -15,7 +17,8 @@ export const adapters = {
   duckdb: DuckDBAdapter,
   local: DuckDBAdapter,
   file: DuckDBAdapter,
-  surrealdb: PostgresAdapter
+  surrealdb: PostgresAdapter,
+  cosmosdb: CosmosAdapter
 }
 
 /**
@@ -36,6 +39,19 @@ export async function createAdapter(provider, connection, userId) {
         config.database = resolvedPath;
       } catch (e) {
         console.error(`[createAdapter] Failed to resolve path for ${provider}:`, e);
+      }
+    }
+  }
+
+  // Handle OAuth for Kusto BYOC
+  if (userId && adapterKey === 'kusto') {
+    if (!config.clientId || !config.clientSecret) {
+      try {
+        const token = await AzureAuthService.getAccessTokenForScope(userId, 'https://kusto.kusto.windows.net/.default');
+        config.accessToken = token;
+        console.log(`[createAdapter] Injected OAuth token for Kusto connection`);
+      } catch (e) {
+        console.error(`[createAdapter] Failed to fetch Azure token for Kusto:`, e);
       }
     }
   }

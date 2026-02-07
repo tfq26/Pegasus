@@ -1,9 +1,9 @@
 
 <script setup>
 import { ref, watch } from 'vue';
-import { useBugSage } from '@/composables/useBugSage';
+import { usePisces } from '@/composables/usePisces';
 import { 
-  Bug, 
+
   Send, 
   Loader2, 
   ChevronRight, 
@@ -12,12 +12,13 @@ import {
   X,
   FileText,
   Terminal,
-  Cpu
+  Cpu,
+  Copy
 } from 'lucide-vue-next';
 import { toast } from 'vue-sonner';
 
 const isEnabled = import.meta.env.DEV;
-const { reportBug, isReporting, autoReportError, lastReport: globalLastReport } = useBugSage();
+const { reportBug, isReporting, autoReportError, lastReport: globalLastReport } = usePisces();
 const isOpen = ref(false);
 const userNotes = ref('');
 const result = ref(null);
@@ -39,9 +40,34 @@ const handleSubmit = async () => {
     const data = await reportBug(userNotes.value);
     result.value = data.analysis;
     activeTab.value = 'analysis';
-    toast.success('BugSage analysis complete!');
+    toast.success('Pisces analysis complete!');
   } catch (e) {
     toast.error('Failed to analyze bug: ' + e.message);
+  }
+};
+
+const copyAnalysis = async () => {
+  if (!result.value) return;
+
+  const text = `### Pisces Analysis
+**Severity**: ${result.value.severity}
+**Category**: ${result.value.category}
+
+**Diagnosis**:
+${result.value.diagnosis}
+
+**Root Cause**:
+${result.value.root_cause}
+
+**Suggested Fix**:
+${result.value.suggested_fix}
+  `.trim();
+
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success('Analysis copied to clipboard');
+  } catch (e) {
+    toast.error('Failed to copy');
   }
 };
 
@@ -60,7 +86,7 @@ const close = () => {
       @click="isOpen = true"
       class="group relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-indigo-600 text-white shadow-lg transition-all hover:scale-110 hover:bg-indigo-700 active:scale-95"
     >
-      <Bug class="h-6 w-6" />
+      <img src="/icons/pisces/pisces-svgrepo-com.svg" class="h-6 w-6" alt="Pisces" />
       <div class="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
     </button>
 
@@ -73,10 +99,10 @@ const close = () => {
         <div class="flex items-center justify-between border-b border-white/5 p-6">
           <div class="flex items-center gap-3">
             <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
-              <Bug class="h-5 w-5" />
+              <img src="/icons/pisces/pisces-svgrepo-com.svg" class="h-5 w-5" alt="Pisces" />
             </div>
             <div>
-              <h2 class="text-xl font-semibold text-white">BugSage Analysis</h2>
+              <h2 class="text-xl font-semibold text-white">Pisces Analysis</h2>
               <p class="text-xs text-zinc-400">AI-powered diagnostic assistant</p>
             </div>
           </div>
@@ -122,7 +148,7 @@ const close = () => {
                   <CheckCircle2 class="h-3 w-3" />
                 </div>
                 <p class="text-xs leading-relaxed text-zinc-400">
-                  BugSage will automatically include your recent console logs, system specifications, 
+                  Pisces will automatically include your recent console logs, system specifications, 
                   and error traces to provide a deep analysis.
                 </p>
               </div>
@@ -141,6 +167,17 @@ const close = () => {
 
           <!-- Analysis Tab -->
           <div v-if="activeTab === 'analysis' && result" class="space-y-6 animate-in slide-in-from-right-4 duration-300">
+            
+            <div class="flex justify-end mb-2">
+                <button 
+                  @click="copyAnalysis"
+                  class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-zinc-300 transition-colors border border-white/5"
+                >
+                  <Copy class="h-3 w-3" />
+                  Copy Analysis
+                </button>
+            </div>
+
             <!-- Severity & Category -->
             <div class="flex gap-4">
               <div class="flex-1 rounded-2xl bg-white/5 p-4 border border-white/5">

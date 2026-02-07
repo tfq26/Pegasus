@@ -680,7 +680,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         // Use API client to ensure correct headers and auth
         const [schemaBody, queryBody] = await Promise.all([
              fetchTableSchema(connection, tableName) as Promise<any>,
-             fetchTableQuery(connection, tableName, 2000) as Promise<any>
+             fetchTableQuery(connection, tableName, 500) as Promise<any>
         ])
 
         // Helpers will throw if error, or return body

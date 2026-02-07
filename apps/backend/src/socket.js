@@ -4,6 +4,7 @@ import { db } from "./db/index.js";
 import { dashboards, notifications } from "./db/schema.js";
 import { eq, sql, and } from "drizzle-orm";
 import { createHmac } from "crypto";
+import { orionMetricsSync } from "./services/orion-metrics-sync.js";
 
 const jwtSecret = process.env.JWT_SECRET || "fallback_secret_do_not_use_in_production";
 
@@ -46,6 +47,9 @@ export function initSocketServer(server, allowedOrigins) {
     });
 
     ioInstance = io;
+
+    // Start Orion Metrics Sync (Change Feed listener)
+    orionMetricsSync.start().catch(err => console.error("[Socket.js] Failed to start Orion sync:", err));
 
     io.use(async (socket, next) => {
         let token = socket.handshake.auth.token || socket.handshake.query.token;
@@ -303,14 +307,39 @@ export function initSocketServer(server, allowedOrigins) {
             if (!room) return;
 
             try {
+                const dashId = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId;
+
+                // 1. Immediate UI Feedback: Emit thinking
                 io.to(room).emit("pegasus_thinking", { thinking: true });
 
-                const dashId = data.dashboardId.includes(':') ? data.dashboardId.split(':').pop() : data.dashboardId;
-                const dash = await db.query.dashboards.findFirst({
+                // 2. Fetch Dashboard
+                let dash = await db.query.dashboards.findFirst({
                     where: eq(dashboards.id, dashId),
                     columns: { title: true, messages: true }
                 });
 
+                // 3. Construct & Save User Message (Fix for latency)
+                const userMessage = {
+                    id: crypto.randomUUID(),
+                    user: socket.user,
+                    content: data.query,
+                    mentions: [], // Direct queries usually imply mentioning Pegasus
+                    images: [],
+                    timestamp: new Date().toISOString(),
+                    parentId: data.parentId || null,
+                };
+
+                if (dash) {
+                    const updatedMessages = [...(dash.messages || []), userMessage];
+                    await db.update(dashboards)
+                        .set({ messages: updatedMessages, updatedAt: new Date() })
+                        .where(eq(dashboards.id, dashId));
+
+                    // Emit immediately so user sees their message
+                    io.to(room).emit("new_message", userMessage);
+                }
+
+                // 4. Perform AI Analysis (Slow Operation)
                 const response = await fetch(`http://localhost:${process.env.PORT || 3000}/ai/dashboard-query`, {
                     method: 'POST',
                     headers: {
@@ -339,8 +368,14 @@ export function initSocketServer(server, allowedOrigins) {
                     parentId: data.parentId || null,
                 };
 
-                if (dash) {
-                    const updatedMessages = [...(dash.messages || []), aiMessage];
+                // 5. Save AI Response (Refetch to ensure latest state)
+                const freshDash = await db.query.dashboards.findFirst({
+                    where: eq(dashboards.id, dashId),
+                    columns: { messages: true }
+                });
+
+                if (freshDash) {
+                    const updatedMessages = [...(freshDash.messages || []), aiMessage];
                     await db.update(dashboards)
                         .set({ messages: updatedMessages, updatedAt: new Date() })
                         .where(eq(dashboards.id, dashId));
@@ -358,6 +393,42 @@ export function initSocketServer(server, allowedOrigins) {
         socket.on("dashboard_update", (data) => {
             const room = getRoom(data.dashboardId);
             if (room) socket.to(room).emit("dashboard_updated", data);
+        });
+
+        // Element-level events
+        socket.on("element_update", (data) => {
+            // data: { dashboardId, elementId, changes }
+            const room = getRoom(data.dashboardId);
+            if (room) socket.to(room).emit("element_updated", data);
+        });
+
+        socket.on("element_add", (data) => {
+            // data: { dashboardId, pageId, element, layoutItem }
+            const room = getRoom(data.dashboardId);
+            if (room) socket.to(room).emit("element_added", data);
+        });
+
+        socket.on("element_remove", (data) => {
+            // data: { dashboardId, elementId }
+            const room = getRoom(data.dashboardId);
+            if (room) socket.to(room).emit("element_removed", data);
+        });
+
+        socket.on("element_data_refresh", (data) => {
+            // data: { dashboardId, elementId, newData }
+            const room = getRoom(data.dashboardId);
+            if (room) socket.to(room).emit("element_data_refreshed", data);
+        });
+
+        // Orion Live Metrics
+        socket.on("join_orion", () => {
+            socket.join("orion:live");
+            console.log(`[Socket.io] User ${socket.user.email} joined Orion live room`);
+        });
+
+        socket.on("leave_orion", () => {
+            socket.leave("orion:live");
+            console.log(`[Socket.io] User ${socket.user.email} left Orion live room`);
         });
 
         socket.on("disconnecting", () => {

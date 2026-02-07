@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Upload } from 'lucide-vue-next'
-import { uploadFile } from '@/lib/api'
+import { ref, computed } from 'vue'
+import { Upload, Database, Globe } from 'lucide-vue-next'
+import { uploadFile, uploadFileToKusto } from '@/lib/api'
 import JSZip from 'jszip'
 import { api } from '@/lib/apiClient'
 import { useSpaceStore } from '@/stores/space'
@@ -23,11 +23,16 @@ const connectionStore = useConnectionStore()
 
 const isUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const folderInput = ref<HTMLInputElement | null>(null)
 const tempError = ref<string | null>(null)
 const isDragging = ref(false)
 
 const smartImportOpen = ref(false)
 const smartImportFiles = ref<any[]>([])
+const destination = ref<'pegasus' | string>('pegasus')
+const kustoConnections = computed(() => 
+  ((connectionStore as any).connections || []).filter((c: any) => c.provider === 'kusto')
+)
 
 // Folder Handling - Drag Drop Only
 const isZipping = ref(false)
@@ -142,47 +147,110 @@ const onSmartImportComplete = async () => {
     emit('upload-success')
 }
 
+const handleNativeFolderUpload = async (event: Event) => {
+    const target = event.target as HTMLInputElement
+    if (!target.files || target.files.length === 0) return
+
+    const files = Array.from(target.files)
+    isZipping.value = true
+    try {
+        const zip = new JSZip()
+        toast.info(`Compressing folder...`)
+        
+        for (const file of files) {
+            // Use webkitRelativePath to maintain folder structure
+            const path = (file as any).webkitRelativePath || file.name
+            // Skip hidden files
+            if (!file.name.startsWith('.')) {
+                zip.file(path, file)
+            }
+        }
+        
+        const content = await zip.generateAsync({ type: 'blob' })
+        // Use the first part of the relative path as the zip name
+        const folderName = files[0] ? (files[0] as any).webkitRelativePath.split('/')[0] : 'folder'
+        const zipFile = new window.File([content], `${folderName}.zip`, { type: 'application/zip' })
+        
+        await handleZipUpload(zipFile)
+    } catch (err: any) {
+        toast.error('Failed to process folder', { description: err.message })
+    } finally {
+        isZipping.value = false
+        target.value = ''
+    }
+}
+
 const processFile = async (file: File) => {
   isUploading.value = true
   tempError.value = null
 
   try {
-    // Pass current spaceId, but don't auto-create connection (let user edit details first)
-    const result = await uploadFile(file, (spaceStore.currentSpaceId as unknown) as string, false)
-    if (result.success) {
-      if (result.provider === 'duckdb') {
-        // DuckDB upload (new system)
-        props.connectionForm.provider = 'file' // Frontend uses 'file', converts to 'duckdb' in api.ts
-        if (!props.connectionForm.sqlite) props.connectionForm.sqlite = { path: '' }
-        props.connectionForm.sqlite.path = result.duckdbPath
-        props.connectionForm.sqlite.tables = result.tables
-      } else if (result.provider === 'surrealdb') {
-        // Legacy SurrealDB upload
-        props.connectionForm.provider = 'surrealdb'
-        if (!props.connectionForm.surrealdb) props.connectionForm.surrealdb = {}
-        props.connectionForm.surrealdb.uploadId = result.uploadId
+    if (destination.value === 'pegasus') {
+      // Pass current spaceId, but don't auto-create connection (let user edit details first)
+      const result = await uploadFile(file, (spaceStore.currentSpaceId as unknown) as string, false)
+      if (result.success) {
+        if (result.provider === 'duckdb') {
+          // DuckDB upload (new system)
+          props.connectionForm.provider = 'file' // Frontend uses 'file', converts to 'duckdb' in api.ts
+          if (!props.connectionForm.sqlite) props.connectionForm.sqlite = { path: '' }
+          props.connectionForm.sqlite.path = result.duckdbPath
+          props.connectionForm.sqlite.tables = result.tables
+        } else if (result.provider === 'surrealdb') {
+          // Legacy SurrealDB upload
+          props.connectionForm.provider = 'surrealdb'
+          if (!props.connectionForm.surrealdb) props.connectionForm.surrealdb = {}
+          props.connectionForm.surrealdb.uploadId = result.uploadId
+        } else {
+          // Legacy SQLite/Turso upload
+          props.connectionForm.sqlite.path = result.dbPath || ''
+          props.connectionForm.sqlite.authToken = result.authToken
+          props.connectionForm.sqlite.tables = result.tables
+        }
       } else {
-        // Legacy SQLite/Turso upload
-        props.connectionForm.sqlite.path = result.dbPath || ''
-        props.connectionForm.sqlite.authToken = result.authToken
-        props.connectionForm.sqlite.tables = result.tables
+        tempError.value = (result.error as string) || 'Upload failed'
+        return
       }
-      
-      // Auto-set connection name from filename
-      if (!props.connectionForm.nickname && !props.connectionForm.alias) {
-        // Strip extension, replace separators with spaces, title case basic
-        const rawName = file.name.split('.')[0] ?? 'Untitled'
-        const cleanName = rawName.replace(/[_-]/g, ' ').trim()
-        
-        props.connectionForm.nickname = cleanName
-        props.connectionForm.alias = cleanName
-      }
-      emit('upload-success')
     } else {
-      tempError.value = (result.error as string) || 'Upload failed'
+      // Kusto Ingestion Flow
+      const kustoConn = kustoConnections.value.find((c: any) => c.id === destination.value)
+      if (!kustoConn || !kustoConn.kusto) {
+        throw new Error('Selected Kusto cluster not found or misconfigured')
+      }
+
+      const clusterUrl = kustoConn.kusto.cluster
+      const database = kustoConn.kusto.database
+      // Simple table name from filename
+      const table = (file as any).name.split('.')[0].replace(/[^a-zA-Z0-9]/g, '_')
+      
+      toast.info(`Ingesting into Kusto: ${table}...`)
+      const result = await uploadFileToKusto(file, clusterUrl, database, table)
+      
+      if (result.success) {
+        toast.success(`Successfully ingested into Kusto. Table: ${table}`)
+        // We could also auto-configure the form to point to this new table
+        props.connectionForm.provider = 'kusto'
+        props.connectionForm.kusto = {
+          ...kustoConn.kusto,
+          table: table
+        }
+      } else {
+        throw new Error(result.error || 'Kusto ingestion failed')
+      }
     }
-  } catch (e) {
-    tempError.value = e instanceof Error ? e.message : 'Upload failed'
+    
+    // Auto-set connection name from filename
+    if (!props.connectionForm.nickname && !props.connectionForm.alias) {
+      // Strip extension, replace separators with spaces, title case basic
+      const rawName = file.name.split('.')[0] ?? 'Untitled'
+      const cleanName = rawName.replace(/[_-]/g, ' ').trim()
+      
+      props.connectionForm.nickname = cleanName
+      props.connectionForm.alias = cleanName
+    }
+    emit('upload-success')
+  } catch (e: any) {
+    tempError.value = e.message || 'Upload failed'
+    toast.error('Upload failed', { description: e.message })
   } finally {
     isUploading.value = false
   }
@@ -193,13 +261,38 @@ const processFile = async (file: File) => {
 
 <template>
   <div class="space-y-4">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Upload File</label>
+      <div class="flex items-center justify-between">
+          <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Upload File</label>
+          <div v-if="kustoConnections.length > 0" class="flex items-center gap-2">
+              <span class="text-[10px] text-muted-foreground">Destination:</span>
+              <select 
+                  v-model="destination"
+                  class="text-[10px] bg-transparent border-none focus:ring-0 p-0 pr-6 h-auto font-medium text-primary cursor-pointer"
+              >
+                  <option value="pegasus">Pegasus Cloud (Default)</option>
+                  <optgroup label="Your Kusto Clusters">
+                      <option v-for="conn in kustoConnections" :key="conn.id" :value="conn.id">
+                          {{ conn.name || conn.alias || 'Kusto Cluster' }}
+                      </option>
+                  </optgroup>
+              </select>
+          </div>
+      </div>
       
       <input 
           type="file" 
           ref="fileInput"
           accept=".xlsx,.xml,.json,.sqlite,.db,.zip"
           @change="handleFileUpload"
+          class="hidden"
+      />
+
+      <input 
+          type="file" 
+          ref="folderInput"
+          webkitdirectory 
+          directory
+          @change="handleNativeFolderUpload"
           class="hidden"
       />
 
@@ -229,12 +322,11 @@ const processFile = async (file: File) => {
       <!-- Upload Zone -->
       <div 
           v-else
-          @click="fileInput?.click()"
           @dragenter.prevent="isDragging = true"
           @dragleave.prevent="isDragging = false"
           @dragover.prevent
           @drop.prevent="handleDrop"
-          class="group relative w-full h-32 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed transition-all duration-300 cursor-pointer"
+          class="group relative w-full h-36 flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed transition-all duration-300"
           :class="[
             isDragging 
               ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg ring-2 ring-primary/20' 
@@ -249,15 +341,31 @@ const processFile = async (file: File) => {
           </div>
           
           <div class="text-center space-y-1">
-             <template v-if="isZipping">
-                 <p class="text-sm font-medium text-foreground">Compressing folder...</p>
+             <template v-if="isZipping || isUploading">
+                 <p class="text-sm font-medium text-foreground">
+                    {{ isZipping ? 'Compressing folder...' : 'Uploading & Analyzing...' }}
+                 </p>
              </template>
              <template v-else>
-                 <p class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                     {{ isUploading ? 'Uploading & Analyzing...' : 'Select File or Drop Folder' }}
-                 </p>
+                 <div class="flex items-center gap-2 text-sm font-medium">
+                    <button 
+                        type="button"
+                        @click="fileInput?.click()"
+                        class="text-foreground hover:text-primary transition-colors border-b border-dashed border-foreground/30 hover:border-primary"
+                    >
+                        Select File
+                    </button>
+                    <span class="text-muted-foreground">or</span>
+                    <button 
+                        type="button"
+                        @click="folderInput?.click()"
+                        class="text-foreground hover:text-primary transition-colors border-b border-dashed border-foreground/30 hover:border-primary"
+                    >
+                        Select Folder
+                    </button>
+                 </div>
                  <p class="text-xs text-muted-foreground mt-2">
-                     Connect data files or drag & drop a folder
+                     ... or drag & drop a folder here
                  </p>
              </template>
           </div>

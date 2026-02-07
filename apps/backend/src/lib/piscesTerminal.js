@@ -5,10 +5,10 @@ export async function analyzeAndPrintToTerminal(error, context = {}) {
     if (process.env.NODE_ENV !== 'development' && process.env.PEGASUS_DEV_MODE !== 'true') return;
 
     try {
-        console.log('\n\x1b[35m[BugSage] Analyzing backend error for immediate fix...\x1b[0m');
+        console.log('\n\x1b[35m[Pisces] Analyzing backend error for immediate fix...\x1b[0m');
 
         const prompt = `
-            You are BugSage, an expert SRE. A backend error just occurred. 
+            You are Pisces, an expert SRE. A backend error just occurred. 
             Analyze it and provide a concise terminal report.
 
             ERROR: ${error.name}: ${error.message}
@@ -28,7 +28,7 @@ export async function analyzeAndPrintToTerminal(error, context = {}) {
         ]);
 
         console.log('\x1b[32m' + '─'.repeat(50));
-        console.log('\x1b[1m\x1b[32m🧙 BugSage Fix Recommendation:\x1b[0m');
+        console.log('\x1b[1m\x1b[32m🧙 Pisces Fix Recommendation:\x1b[0m');
         console.log(response.text);
         console.log('\x1b[32m' + '─'.repeat(50) + '\x1b[0m\n');
 

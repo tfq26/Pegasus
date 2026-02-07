@@ -165,7 +165,7 @@ cloudAuth.get('/azure/status', async (c) => {
         const userId = c.req.header('x-user-id');
 
         if (!userId) {
-            return c.json({ error: 'User not authenticated' }, 401);
+            return c.json({ connected: false, error: 'User ID missing in request' });
         }
 
         const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;

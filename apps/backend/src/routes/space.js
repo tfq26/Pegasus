@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../db/index.js"
-import { dataSpaces, spacePermissions, users, connections, spaceSources, spaceFiles, spaceNotes, chats, queryHistory } from "../db/schema.js"
+import { dataSpaces, spacePermissions, users, connections, spaceSources, spaceFiles, spaceNotes, chats, queryHistory, dashboards, dashboardElements, dashboardPermissions, notifications } from "../db/schema.js"
 import { eq, and, or, sql } from "drizzle-orm"
 import { ConfigService } from "../services/ConfigService.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
@@ -853,6 +853,33 @@ spaces.post("/bulk-delete", async (c) => {
                 } else if (type === 'query') {
                     // Query History Deletion
                     await db.delete(queryHistory).where(and(eq(queryHistory.id, rawId), eq(queryHistory.userId, userId)));
+                } else if (type === 'dashboard') {
+                    // Dashboard Deletion (mirroring dashboard.js logic)
+                    const dash = await db.query.dashboards.findFirst({
+                        where: and(eq(dashboards.id, rawId), eq(dashboards.ownerId, userId))
+                    });
+
+                    if (dash) {
+                        await db.delete(dashboards).where(eq(dashboards.id, rawId));
+
+                        // Cleanup related records
+                        await db.delete(dashboardElements).where(eq(dashboardElements.dashboardId, rawId));
+                        await db.delete(dashboardPermissions).where(eq(dashboardPermissions.dashboardId, rawId));
+                        await db.delete(notifications).where(eq(notifications.dashboardId, rawId));
+
+                        // Notify via socket if available
+                        try {
+                            const { getIO, getRoom } = await import("../socket.js");
+                            const io = getIO();
+                            if (io) {
+                                const room = getRoom(rawId);
+                                io.to(room).emit('dashboard_deleted', { dashboardId: rawId });
+                                io.in(room).socketsLeave(room);
+                            }
+                        } catch (e) {
+                            console.warn("Socket notification failed for bulk dashboard delete:", e);
+                        }
+                    }
                 }
 
                 results.success.push(id);

@@ -38,7 +38,7 @@ import MySQLForm from './ConnectionForms/MySQLForm.vue'
 import PostgresForm from './ConnectionForms/PostgresForm.vue'
 import MongoDBForm from './ConnectionForms/MongoDBForm.vue'
 import KustoForm from './ConnectionForms/KustoForm.vue'
-import KustoOAuthForm from './ConnectionForms/KustoOAuthForm.vue'
+import AzureOAuthForm from './ConnectionForms/AzureOAuthForm.vue'
 import SQLiteForm from './ConnectionForms/SQLiteForm.vue'
 import DynamoDBForm from './ConnectionForms/DynamoDBForm.vue'
 import DynamoDBOAuthForm from './ConnectionForms/DynamoDBOAuthForm.vue'
@@ -87,7 +87,7 @@ const providers = [
   { value: 'mongodb' as const, label: 'MongoDB', icon: MongoIcon },
   { value: 'sqlite' as const, label: 'SQLite', icon: SQLiteIcon },
   { value: 'file' as const, label: 'File Import', icon: Upload },
-  { value: 'kusto' as const, label: 'Azure Kusto', icon: AzureIcon },
+  { value: 'kusto' as const, label: 'Azure', icon: AzureIcon },
   { value: 'dynamodb' as const, label: 'AWS DynamoDB', icon: AWSIcon },
   { value: 'bigquery' as const, label: 'GCP BigQuery', icon: GCPIcon },
 ]
@@ -194,8 +194,8 @@ const currentProviderLabel = computed(() => {
                   <PostgresForm v-else-if="props.connectionForm.provider === 'postgres'" :connection-form="props.connectionForm" />
                   <MongoDBForm v-else-if="props.connectionForm.provider === 'mongodb'" :connection-form="props.connectionForm" />
                   
-                  <!-- Kusto with OAuth toggle -->
-                  <div v-else-if="props.connectionForm.provider === 'kusto'" class="space-y-4">
+                  <!-- Azure (Kusto or CosmosDB) with OAuth toggle -->
+                  <div v-else-if="props.connectionForm.provider === 'kusto' || props.connectionForm.provider === 'cosmosdb'" class="space-y-4">
                     <div class="flex items-center justify-between pb-2 border-b border-border">
                       <span class="text-xs text-muted-foreground">Connection Method</span>
                       <button
@@ -206,8 +206,14 @@ const currentProviderLabel = computed(() => {
                         {{ useOAuth ? 'Use manual credentials' : 'Use Azure OAuth' }}
                       </button>
                     </div>
-                    <KustoOAuthForm v-if="useOAuth" :connection-form="props.connectionForm" />
-                    <KustoForm v-else :connection-form="props.connectionForm" />
+                    <AzureOAuthForm v-if="useOAuth" :connection-form="props.connectionForm" />
+                    <template v-else>
+                      <KustoForm v-if="props.connectionForm.provider === 'kusto'" :connection-form="props.connectionForm" />
+                      <!-- We don't have a manual CosmosForm yet, but could add one -->
+                      <div v-else class="text-sm text-muted-foreground p-4 text-center">
+                        Manual Cosmos DB configuration coming soon. Please use Azure OAuth.
+                      </div>
+                    </template>
                   </div>
                   
                   <SQLiteForm v-else-if="props.connectionForm.provider === 'sqlite'" :connection-form="props.connectionForm" />

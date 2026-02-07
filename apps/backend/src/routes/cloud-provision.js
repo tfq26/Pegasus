@@ -21,14 +21,14 @@ cloudProvision.get('/azure/subscriptions', async (c) => {
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 
         if (!tokenData) {
-            return c.json({ error: 'Azure account not connected' }, 401);
+            return c.json({ error: 'Azure account not connected' }, 403);
         }
 
         const tokens = JSON.parse(tokenData);
 
         // Check if token is expired
         if (Date.now() - tokens.created_at > (tokens.expires_in * 1000)) {
-            return c.json({ error: 'Token expired, please reconnect' }, 401);
+            return c.json({ error: 'Token expired, please reconnect' }, 403);
         }
 
         // Call Azure Management API to list subscriptions
@@ -82,7 +82,7 @@ cloudProvision.get('/azure/locations', async (c) => {
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 
         if (!tokenData) {
-            return c.json({ error: 'Azure account not connected' }, 401);
+            return c.json({ error: 'Azure account not connected' }, 403);
         }
 
         const tokens = JSON.parse(tokenData);
@@ -137,7 +137,7 @@ cloudProvision.get('/azure/resource-groups', async (c) => {
 
         const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
-        if (!tokenData) return c.json({ error: 'Azure account not connected' }, 401);
+        if (!tokenData) return c.json({ error: 'Azure account not connected' }, 403);
         const tokens = JSON.parse(tokenData);
 
         const response = await fetch(
@@ -184,7 +184,7 @@ cloudProvision.get('/azure/resources', async (c) => {
 
         const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
-        if (!tokenData) return c.json({ error: 'Azure account not connected' }, 401);
+        if (!tokenData) return c.json({ error: 'Azure account not connected' }, 403);
         const tokens = JSON.parse(tokenData);
 
         let url = `https://management.azure.com/subscriptions/${subscriptionId}/resources?api-version=2021-04-01`;
@@ -213,7 +213,54 @@ cloudProvision.get('/azure/resources', async (c) => {
         })));
     } catch (error) {
         console.error('[Azure Resources] Error:', error);
-        return c.json({ error: 'Failed to list resources' }, 500);
+        return c.json({ error: 'Internal server error' }, 500);
+    }
+});
+
+/**
+ * Get Cosmos DB Keys
+ * GET /api/cloud-provision/azure/cosmos/keys
+ */
+cloudProvision.get('/azure/cosmos/keys', async (c) => {
+    try {
+        const userId = c.req.query('user_id');
+        const subscriptionId = c.req.query('subscription_id');
+        const resourceGroupName = c.req.query('resource_group_name');
+        const accountName = c.req.query('account_name');
+
+        if (!userId || !subscriptionId || !resourceGroupName || !accountName) {
+            return c.json({ error: 'Missing required parameters' }, 400);
+        }
+
+        const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
+        const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
+        if (!tokenData) return c.json({ error: 'Azure account not connected' }, 403);
+        const tokens = JSON.parse(tokenData);
+
+        const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.DocumentDB/databaseAccounts/${accountName}/listKeys?api-version=2021-04-15`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${tokens.access_token}`,
+                'Content-Length': '0'
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            console.error('[Cosmos Keys] API error:', error);
+            return c.json({ error: 'Failed to fetch Cosmos keys' }, 500);
+        }
+
+        const data = await response.json();
+        return c.json({
+            primaryMasterKey: data.primaryMasterKey,
+            secondaryMasterKey: data.secondaryMasterKey
+        });
+    } catch (error) {
+        console.error('[Cosmos Keys] Error:', error);
+        return c.json({ error: 'Internal server error' }, 500);
     }
 });
 
@@ -231,7 +278,7 @@ cloudProvision.delete('/azure/resource', async (c) => {
 
         const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
-        if (!tokenData) return c.json({ error: 'Not connected' }, 401);
+        if (!tokenData) return c.json({ error: 'Not connected' }, 403);
         const tokens = JSON.parse(tokenData);
 
         const response = await fetch(`https://management.azure.com${resourceId}?api-version=${apiVersion}`, {
@@ -263,7 +310,7 @@ cloudProvision.post('/azure/resource/action', async (c) => {
 
         const vaultKey = `secret/pegasus/users/${user_id}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
-        if (!tokenData) return c.json({ error: 'Not connected' }, 401);
+        if (!tokenData) return c.json({ error: 'Not connected' }, 403);
         const tokens = JSON.parse(tokenData);
 
         // Action is appended to resource ID, e.g. /stop, /start
@@ -299,7 +346,7 @@ cloudProvision.post('/azure/provision-kusto', async (c) => {
 
         const vaultKey = `secret/pegasus/users/${user_id}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
-        if (!tokenData) return c.json({ error: 'Not connected' }, 401);
+        if (!tokenData) return c.json({ error: 'Not connected' }, 403);
         const tokens = JSON.parse(tokenData);
 
         // 1. Create Cluster (Dev Tier for lowest cost)
@@ -336,7 +383,60 @@ cloudProvision.post('/azure/provision-kusto', async (c) => {
         return c.json(data);
     } catch (error) {
         console.error('[Azure Provision Kusto] Error:', error);
-        return c.json({ error: 'Failed to provision Kusto' }, 500);
+        return c.json({ error: 'Failed to provision Kusto', details: error.message }, 500);
+    }
+});
+
+/**
+ * Check Kusto Cluster Name Availability
+ * GET /api/cloud-provision/azure/kusto/check-available
+ */
+cloudProvision.get('/azure/kusto/check-available', async (c) => {
+    try {
+        const userId = c.req.query('user_id');
+        const subscriptionId = c.req.query('subscription_id');
+        const name = c.req.query('name');
+        const location = c.req.query('location') || 'eastus';
+
+        if (!userId || !subscriptionId || !name) {
+            return c.json({ error: 'Missing parameters' }, 400);
+        }
+
+        const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
+        const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
+        if (!tokenData) return c.json({ error: 'Not connected' }, 403);
+        const tokens = JSON.parse(tokenData);
+
+        const response = await fetch(
+            `https://management.azure.com/subscriptions/${subscriptionId}/providers/Microsoft.Kusto/locations/${location}/checkNameAvailability?api-version=2023-08-15`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${tokens.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    type: 'Microsoft.Kusto/clusters'
+                })
+            }
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[Azure Kusto Name Check] Azure API error:', errorText);
+            throw new Error(`Azure API error: ${errorText}`);
+        }
+
+        const data = await response.json();
+
+        return c.json({
+            available: data.nameAvailable,
+            message: data.message
+        });
+    } catch (error) {
+        console.error('[Azure Kusto Name Check] Error:', error);
+        return c.json({ error: 'Failed to check name availability', details: error.message }, 500);
     }
 });
 
@@ -360,7 +460,7 @@ cloudProvision.post('/azure/provision', async (c) => {
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 
         if (!tokenData) {
-            return c.json({ error: 'Azure account not connected' }, 401);
+            return c.json({ error: 'Azure account not connected' }, 403);
         }
 
         const tokens = JSON.parse(tokenData);
@@ -522,7 +622,7 @@ cloudProvision.get('/azure/resource-group/check', async (c) => {
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 
         if (!tokenData) {
-            return c.json({ error: 'Azure account not connected' }, 401);
+            return c.json({ error: 'Azure account not connected' }, 403);
         }
 
         const tokens = JSON.parse(tokenData);

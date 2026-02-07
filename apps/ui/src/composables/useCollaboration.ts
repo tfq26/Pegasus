@@ -10,6 +10,7 @@ const collaborators = ref<any[]>([]);
 const cursors = ref<Record<string, { x: number, y: number, user: any, lastUpdated: number }>>({});
 const chatMessages = ref<any[]>([]);
 const isAIThinking = ref(false);
+const orionListeners = ref<((data: any) => void)[]>([]);
 
 export function useCollaboration() {
     const { user } = useAuth();
@@ -137,6 +138,10 @@ export function useCollaboration() {
                 window.location.href = '/';
             }
         });
+
+        socket.value.on('metric_update', (data) => {
+            orionListeners.value.forEach(cb => cb(data));
+        });
     };
 
     const disconnect = () => {
@@ -220,6 +225,42 @@ export function useCollaboration() {
         socket.value.emit('dashboard_update', { dashboardId, ...updateData });
     };
 
+    const emitElementUpdate = (dashboardId: string, elementId: string, changes: any) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('element_update', { dashboardId, elementId, changes });
+    };
+
+    const emitElementAdd = (dashboardId: string, pageId: string, element: any, layoutItem: any) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('element_add', { dashboardId, pageId, element, layoutItem });
+    };
+
+    const emitElementRemove = (dashboardId: string, elementId: string) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('element_remove', { dashboardId, elementId });
+    };
+
+    const emitElementDataRefresh = (dashboardId: string, elementId: string, newData: any) => {
+        if (!socket.value?.connected) return;
+        socket.value.emit('element_data_refresh', { dashboardId, elementId, newData });
+    };
+
+    const joinOrion = () => {
+        if (!socket.value) connect();
+        if (socket.value?.connected) {
+            socket.value.emit('join_orion');
+        } else {
+            socket.value?.once('connect', () => socket.value?.emit('join_orion'));
+        }
+    };
+
+    const onOrionUpdate = (cb: (data: any) => void) => {
+        orionListeners.value.push(cb);
+        return () => {
+            orionListeners.value = orionListeners.value.filter(l => l !== cb);
+        };
+    };
+
     return {
         isConnected,
         isAIThinking,
@@ -239,6 +280,12 @@ export function useCollaboration() {
         emitTypingStart,
         emitTypingEnd,
         emitDashboardUpdate,
+        emitElementUpdate,
+        emitElementAdd,
+        emitElementRemove,
+        emitElementDataRefresh,
+        joinOrion,
+        onOrionUpdate,
         socket
     };
 }

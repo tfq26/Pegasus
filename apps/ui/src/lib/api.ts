@@ -434,6 +434,15 @@ export async function uploadFileToConnection(file: File, connectionId: string, s
   return api.upload<any>('/upload', formData)
 }
 
+export async function uploadFileToKusto(file: File, clusterUrl: string, database: string, table: string) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('cluster_url', clusterUrl)
+  formData.append('database', database)
+  formData.append('table', table)
+  return api.upload<any>('/api/kusto-ingest/upload', formData)
+}
+
 export async function createCheckoutSession(priceId: string, tier?: string) {
   return api.post('/create-checkout-session', { priceId, tier })
 }

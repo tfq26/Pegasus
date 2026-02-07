@@ -63,6 +63,10 @@ export class RAGService {
             try {
                 // 1. Generate Embedding
                 const embedding = await aiClient.generateEmbedding(content, modelId);
+                if (!embedding || embedding.length === 0) {
+                    console.warn(`[RAG] Skipping chunk indexing: No embedding generated`);
+                    continue;
+                }
 
                 // 2. Store in Neon
                 await db.insert(knowledgeChunks).values({
@@ -91,22 +95,28 @@ export class RAGService {
         try {
             // 1. Vectorize Query
             const queryVector = await aiClient.generateEmbedding(query, modelId);
+            const hasVector = queryVector && queryVector.length > 0;
 
             // 2. Perform Hybrid Search in Neon
-            // Using pgvector's cosine distance operator <=> (or cosine similarity 1 - (embedding <=> $1))
-            const results = await db.select({
+            const queryBuilder = db.select({
                 id: knowledgeChunks.id,
                 content: knowledgeChunks.content,
                 metadata: knowledgeChunks.metadata,
-                score: sql`1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector)`
+                score: hasVector
+                    ? sql`1 - (${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector)`
+                    : sql`1.0`
             })
                 .from(knowledgeChunks)
                 .where(and(
                     eq(knowledgeChunks.userId, userId),
                     sql`${knowledgeChunks.content} ILIKE ${'%' + query + '%'}` // Keyword fallback
-                ))
-                .orderBy(sql`${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector`)
-                .limit(limit);
+                ));
+
+            if (hasVector) {
+                queryBuilder.orderBy(sql`${knowledgeChunks.embedding} <=> ${JSON.stringify(queryVector)}::vector`);
+            }
+
+            const results = await queryBuilder.limit(limit);
 
             return results || [];
         } catch (e) {
@@ -125,6 +135,10 @@ export class RAGService {
         try {
             // 1. Vectorize Query
             const queryVector = await aiClient.generateEmbedding(query, modelId);
+            if (!queryVector || queryVector.length === 0) {
+                console.warn(`[RAG] Vector search failed: No embedding generated for query`);
+                return [];
+            }
 
             // 2. Perform Vector Search
             const results = await db.select({
@@ -152,8 +166,6 @@ export class RAGService {
      * Deletes existing chunks for a specific source to allow re-indexing.
      */
     static async clearSource(sourceId, userId) {
-        // Drizzle doesn't support deep JSON filtering easily in all abstraction levels, 
-        // so we use a raw where condition for depth or exact match if structure allows.
         await db.delete(knowledgeChunks)
             .where(and(
                 eq(knowledgeChunks.userId, userId),
@@ -171,10 +183,10 @@ export class RAGService {
         for (const slug of guides) {
             const guide = await getGuide(slug);
             const chunks = this.chunkMarkdown(guide.content);
-            await this.clearSource(`doc_${slug} `, userId);
+            await this.clearSource(`doc_${slug}`, userId);
             await this.indexChunks(chunks, {
-                source: `Documentation: ${guide.title} `,
-                source_id: `doc_${slug} `,
+                source: `Documentation: ${guide.title}`,
+                source_id: `doc_${slug}`,
                 type: 'documentation'
             }, userId, modelId);
         }
@@ -182,16 +194,13 @@ export class RAGService {
 
     /**
      * Specialized table data indexing.
-     * Transforms rows into descriptive sentences for better semantic search.
      */
     static async indexTableData(rows, tableName, sourceId, userId, modelId = 'openai') {
         const rowToSentence = (row) => {
             const parts = [];
-            // Try to identify a name or primary identifier first
             const name = row.Name || row.name || row.Title || row.title || row.ID || row.id;
             if (name) parts.push(`${name}`);
 
-            // Add all other properties as descriptors
             for (const [key, value] of Object.entries(row)) {
                 if (['name', 'Name', 'title', 'Title', 'id', 'ID'].includes(key)) continue;
                 if (value === null || value === undefined) continue;
@@ -212,22 +221,17 @@ export class RAGService {
 
     /**
      * Index a file directly from Object Storage.
-     * Fetches content -> Chunks -> Indexes.
      */
     static async indexFileFromStorage(storageId, filename, userId, modelId = 'openai') {
         try {
             const provider = await StorageManager.getProvider(userId);
             const url = await provider.getPresignedUrl(storageId);
 
-            // Fetch content
             const response = await fetch(url);
             if (!response.ok) throw new Error(`Failed to fetch file content from storage: ${response.statusText}`);
 
-            // Determine parsing strategy based on extension
             const text = await response.text();
-            // TODO: Add PDF/Doc parsing here if needed. For now assuming text/markdown/json/csv.
-
-            const chunks = this.chunkMarkdown(text); // Basic text chunking
+            const chunks = this.chunkMarkdown(text);
 
             const sourceId = `file_${storageId}`;
             await this.clearSource(sourceId, userId);
@@ -240,7 +244,6 @@ export class RAGService {
             }, userId, modelId);
 
             return { success: true, chunks: chunks.length };
-
         } catch (e) {
             console.error("[RAG] File Indexing Error:", e);
             throw e;
@@ -273,7 +276,6 @@ export class RAGService {
 
     /**
      * Specialized connection metadata indexing.
-     * Indexes connection name, description, and table names (if available in config).
      */
     static async indexConnectionMetadata(connection, userId, modelId = 'openai') {
         try {
@@ -281,14 +283,10 @@ export class RAGService {
             const sourceId = `conn_${connection.id}`;
             const parts = [];
 
-            // 1. Connection Name/Alias
             parts.push(`Connection Name: ${connection.name}`);
             if (config?.alias) parts.push(`Alias: ${config.alias}`);
-
-            // 2. Connector Type
             parts.push(`Type: ${connection.type}`);
 
-            // 3. Known Tables (Crucial for "Global Markets" -> "UK Sales" mapping)
             if (config?.tables && Array.isArray(config.tables)) {
                 parts.push(`Tables: ${config.tables.join(', ')}`);
             } else if (connection.name.toLowerCase().includes('sales')) {

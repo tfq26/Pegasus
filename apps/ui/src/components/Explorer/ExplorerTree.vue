@@ -108,7 +108,7 @@ const favoriteItems = computed(() => {
   const items = favorites.value.map(id => {
     // Connection
     const conn = props.connections.find(c => c.id === id)
-    if (conn) return { type: 'connection', id, name: conn.nickname || (conn as any).alias, icon: 'lucide:database' }
+    if (conn) return { type: 'connection', id, name: conn.nickname || (conn as any).alias, icon: getProviderIcon(conn) }
     
     // Table (format: connId::tableName)
     if (id.includes('::')) {
@@ -275,7 +275,22 @@ function getProviderIcon(conn: ConnectionEntry): string {
   if (p === 'mysql') return '/icons/mysql/mysql.svg'
   if (p === 'postgres' || p === 'surrealdb') return '/icons/postgres/postgres.svg'
   if (p === 'sqlite') return '/icons/sqlite/sqlite.svg'
-  if (p === 'mongodb') return '/icons/mongo/mongo-svgrepo-com.svg'
+  if (p === 'mongodb') {
+    const url = conn.mongodb?.url?.toLowerCase() || ''
+    if (url.includes('documents.azure.com') || url.includes('cosmos.azure.com')) {
+      return '/icons/microsoft/Azure/azure-2.svg'
+    }
+    return '/icons/mongo/mongo-svgrepo-com.svg'
+  }
+  if (p === 'kusto' || p === 'cosmosdb') return '/icons/microsoft/Azure/azure-2.svg'
+  if (p === 'bigquery') return '/icons/google/GCP/icons8-google-cloud.svg'
+  if (p === 'dynamodb') return '/icons/aws/aws-colored-black-text.svg'
+  
+  // Fallback for names
+  const name = (conn.nickname || conn.alias || '').toLowerCase()
+  if (name.includes('azure') || name.includes('cosmos') || name.includes('kusto')) {
+    return '/icons/microsoft/Azure/azure-2.svg'
+  }
   
   return 'lucide:database'
 }

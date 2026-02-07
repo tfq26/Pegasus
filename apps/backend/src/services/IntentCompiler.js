@@ -21,8 +21,18 @@ export class IntentCompiler {
     }
 
     compileSingle(intent, context) {
-        const { resource, filters, groupBy, aggregations, limit, orderBy } = intent;
+        const { resource, filters, groupBy, aggregations, limit, orderBy, query } = intent;
         const dialect = context.dialect || 'postgres';
+
+        // 0. Priority: Raw Query Support
+        // If the AI provides a raw query string, use it as the base, but we may still add LIMIT/ORDER if missing
+        if (query) {
+            console.log(`[IntentCompiler] Using raw query: ${query}`);
+            let finalSql = query;
+            // Basic check for trailing semicolon
+            if (finalSql.trim().endsWith(';')) finalSql = finalSql.trim().slice(0, -1);
+            return finalSql;
+        }
 
         // Helper to resolve normalized names -> Raw DB names
         const resolveCol = (col) => this.resolveIdentifier(col, context.schema, 'column');
@@ -108,6 +118,13 @@ export class IntentCompiler {
     resolveIdentifier(id, context, type = 'table') {
         if (!id) return id;
 
+        // If it looks like a function call, don't attempt to resolve/normalize it as a whole
+        // We might want to resolve column names INSIDE the function later, 
+        // but for now, we prevent the "fuzzy match" from reducing a function to a column name.
+        if (typeof id === 'string' && /^[a-zA-Z_]+\(.*\)$/.test(id)) {
+            return id;
+        }
+
         // Handle both full context or just schema object
         const schema = context?.schema || context;
         if (!schema || !schema.mappings) {
@@ -158,9 +175,15 @@ export class IntentCompiler {
             return 'NULL';
         }
 
-        // Basic double quote for Postgres/Standard SQL.
-        // Could be customized by dialect if needed (e.g. backticks for MySQL)
         const idStr = String(id);
+
+        // If it looks like a function call (contains parentheses and start with alpha), don't quote it
+        // e.g. DateTimePart('day', timestamp), date_trunc('day', col)
+        if (/^[a-zA-Z_]+\(.*\)$/.test(idStr)) {
+            return idStr;
+        }
+
+        // Basic double quote for Postgres/Standard SQL.
         return `"${idStr.replace(/"/g, '""')}"`;
     }
 

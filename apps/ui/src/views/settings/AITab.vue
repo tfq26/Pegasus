@@ -60,7 +60,7 @@ onMounted(async () => {
   loading.value = true
   try {
     // Ensure settings are loaded
-    if (!settings.value.activeModel) {
+    if (settings.value.enabledModels === undefined) {
        await settingsStore.loadSettings()
     }
     
@@ -168,35 +168,7 @@ const toggleModelEnabled = (id: string, checked: boolean) => {
       settings.value.enabledModels.push(id)
     }
   } else {
-    // Prevent disabling the active model
-    if (isModelActive(id)) return
-    
     settings.value.enabledModels = settings.value.enabledModels.filter(m => m !== id)
-  }
-}
-
-const selectModel = (model: any) => {
-  // Check if model is locked
-  if (model.isLocked) {
-    upgradeModalState.value = {
-      open: true,
-      title: '', // Use limit type default
-      description: '', 
-      benefits: [],
-      targetTier: 'pro',
-      limitType: 'models'
-    }
-    return
-  }
-  
-  const id = model.id
-  settings.value.activeModel = id
-  // Auto-enable if selected
-  if (settings.value.enabledModels === undefined) {
-     settings.value.enabledModels = models.value.filter(m => !m.isLocked).map(m => m.id)
-  }
-  if (!settings.value.enabledModels.includes(id)) {
-    settings.value.enabledModels.push(id)
   }
 }
 
@@ -218,9 +190,6 @@ const lockedModels = computed(() => {
   return filteredModels.value.filter(m => m.isLocked)
 })
 
-const isModelActive = (id: string) => {
-  return settings.value.activeModel === id
-}
 
 const handleUpgrade = () => {
   upgradeModalState.value = {
@@ -548,13 +517,11 @@ onMounted(async () => {
               v-for="model in availableModels" 
               :key="model.id"
               class="p-4 rounded-lg border border-border bg-card hover:bg-accent/50 transition-all"
-              :class="isModelActive(model.id) ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/20' : ''"
             >
               <div class="flex items-start justify-between gap-4">
                 <!-- Left: Model Info -->
                 <div 
-                  class="flex-1 cursor-pointer"
-                  @click="selectModel(model)"
+                  class="flex-1"
                 >
                   <div class="flex items-center gap-2 flex-wrap mb-1">
                     <span class="font-medium text-foreground">{{ model.name }}</span>
@@ -582,9 +549,6 @@ onMounted(async () => {
                     >
                       Local
                     </span>
-                    <span v-if="isModelActive(model.id)" class="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary border border-primary/30 font-medium">
-                      Active
-                    </span>
                   </div>
                   <div class="text-xs text-muted-foreground mb-2">{{ model.description }}</div>
                   <div class="text-[10px] text-muted-foreground font-mono">
@@ -600,14 +564,9 @@ onMounted(async () => {
                       type="checkbox"
                       :checked="isModelEnabled(model.id)"
                       @change="(e: any) => toggleModelEnabled(model.id, e.target.checked)"
-                      :disabled="isModelActive(model.id)"
-                      class="w-10 h-5 appearance-none bg-muted rounded-full relative cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed checked:bg-primary"
-                      :class="isModelActive(model.id) ? 'cursor-not-allowed' : ''"
+                      class="w-10 h-5 appearance-none bg-muted rounded-full relative cursor-pointer transition-colors checked:bg-primary"
                     />
                   </label>
-                  <span v-if="isModelActive(model.id)" class="text-[10px] text-muted-foreground italic">
-                    Can't disable active model
-                  </span>
                 </div>
               </div>
             </div>
