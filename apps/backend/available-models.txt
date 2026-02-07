@@ -1,7 +1,7 @@
 
 === Available Gemini Models ===
 
-Found 34 models that support generateContent:
+Found 30 models that support generateContent:
 
 Model: models/gemini-2.5-flash
   Display Name: Gemini 2.5 Flash
@@ -14,12 +14,6 @@ Model: models/gemini-2.5-pro
   Description: Stable release (June 17th, 2025) of Gemini 2.5 Pro
   Input Token Limit: 1048576
   Output Token Limit: 65536
----
-Model: models/gemini-2.0-flash-exp
-  Display Name: Gemini 2.0 Flash Experimental
-  Description: Gemini 2.0 Flash Experimental
-  Input Token Limit: 1048576
-  Output Token Limit: 8192
 ---
 Model: models/gemini-2.0-flash
   Display Name: Gemini 2.0 Flash
@@ -48,18 +42,6 @@ Model: models/gemini-2.0-flash-lite-001
 Model: models/gemini-2.0-flash-lite
   Display Name: Gemini 2.0 Flash-Lite
   Description: Gemini 2.0 Flash-Lite
-  Input Token Limit: 1048576
-  Output Token Limit: 8192
----
-Model: models/gemini-2.0-flash-lite-preview-02-05
-  Display Name: Gemini 2.0 Flash-Lite Preview 02-05
-  Description: Preview release (February 5th, 2025) of Gemini 2.0 Flash-Lite
-  Input Token Limit: 1048576
-  Output Token Limit: 8192
----
-Model: models/gemini-2.0-flash-lite-preview
-  Display Name: Gemini 2.0 Flash-Lite Preview
-  Description: Preview release (February 5th, 2025) of Gemini 2.0 Flash-Lite
   Input Token Limit: 1048576
   Output Token Limit: 8192
 ---
@@ -140,12 +122,6 @@ Model: models/gemini-2.5-flash-lite
   Description: Stable version of Gemini 2.5 Flash-Lite, released in July of 2025
   Input Token Limit: 1048576
   Output Token Limit: 65536
----
-Model: models/gemini-2.5-flash-image-preview
-  Display Name: Nano Banana
-  Description: Gemini 2.5 Flash Preview Image
-  Input Token Limit: 32768
-  Output Token Limit: 32768
 ---
 Model: models/gemini-2.5-flash-image
   Display Name: Nano Banana

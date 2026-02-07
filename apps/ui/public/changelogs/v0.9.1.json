@@ -1,0 +1,95 @@
+{
+    "title": "v0.9.1 - AI Intelligence & Real-time Collaboration",
+    "date": "2026-02-07",
+    "version": "0.9.1",
+    "description": "This release introduces a modular AI prompt architecture, live dashboard updates via WebSockets, and a session-based activity feed for enhanced team collaboration and query reliability.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Live Dashboard Updates",
+                    "description": "Real-time, element-level collaborative updates using WebSockets.",
+                    "details": [
+                        "Granular Broadcasts: Targeted updates for element additions, removals, and configuration changes.",
+                        "Seamless Integration: No more full page refreshes when teammates edit dashboards.",
+                        "Bandwidth Efficient: Only specific changes are transmitted over the wire."
+                    ]
+                },
+                {
+                    "title": "Dashboard Activity Feed",
+                    "description": "A session-based history of dashboard changes.",
+                    "details": [
+                        "Interactive Timeline: View a rolling log of the last 50 actions in the dashboard.",
+                        "Hidden Shortcut: Toggle the feed via Ctrl + Click on the Save button.",
+                        "Collaborative Visibility: See real-time activity from teammates alongside your own."
+                    ]
+                },
+                {
+                    "title": "High-Density Visualizations",
+                    "description": "Intelligent handling of large datasets for better readability.",
+                    "details": [
+                        "Temporal Aggregation: Automatic binning/bucketing for datasets over 500 rows.",
+                        "Dynamic Density Rules: AI-driven detection of high-density data requiring bucketing.",
+                        "Improved Time-Series: Refined SQL generation for temporal groupings."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Modular Prompt Architecture",
+                    "description": "A refactored AI engine with specialized domains.",
+                    "details": [
+                        "Specialized Modules: Intent, Fetching, Processing, and Visualization are now separate logic units.",
+                        "Prompt Scratchpad: Mandatory reasoning step to reduce hallucinations and improve logical flow.",
+                        "Flexible Design: Easier integration for future specialized prompts (e.g., Financial Modeling)."
+                    ]
+                },
+                {
+                    "title": "Dialect Dictionary & Query Accuracy",
+                    "description": "Centralized SQL rules for superior cross-dialect performance.",
+                    "details": [
+                        "7+ Supported Dialects: Specialized rules for Postgres, Cosmos, Kusto, MongoDB, and more.",
+                        "Query Stability: Dramatic reduction in syntax errors across different database providers.",
+                        "Snake-to-Camel Translation: Automatic resolution of column naming mismatches in Cosmos DB."
+                    ]
+                },
+                {
+                    "title": "Robust Intent Classifier",
+                    "description": "Smarter detection of user goals.",
+                    "details": [
+                        "Multi-Goal Detection: Explicitly identifies Query vs Visualization vs Analysis paths.",
+                        "Contextual Routing: Directs the AI to the specific module needed for the user's request."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Technical Improvements",
+            "items": [
+                {
+                    "title": "Cosmos DB SQL Stability",
+                    "description": "Critical fixes for Azure-based analytical queries.",
+                    "details": [
+                        "Aggregation Fixes: Corrected aliasing issues in GROUP BY and aggregate functions.",
+                        "Sorting Stability: Prevented invalid input errors when ordering by expressions.",
+                        "System Credentials: Injected necessary secrets for seamless dashboard-to-adapter connectivity."
+                    ]
+                },
+                {
+                    "title": "API & Prompt Security",
+                    "description": "Enhanced performance and reliability for long sessions.",
+                    "details": [
+                        "Data Truncation: Implemented a 10kb limit on intermediate results to prevent API quota hits.",
+                        "Gemini History Management: Improved role-cleaning to ensure user-first, alternating chat histories.",
+                        "RAG Pipeline Safety: Guaranteed skip of vector operations when embedding models are unavailable."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

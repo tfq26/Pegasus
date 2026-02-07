@@ -9,7 +9,7 @@ export const TIER_LIMITS = {
         connections: 4,
         tables: 20,
         dashboards: 1,
-        models: ['gemini-2.5-flash-lite', 'gpt-5.1-mini'],
+        models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gpt-5.1-mini'],
         storage: 100 * 1024 * 1024, // 100 MB
         tokens: 60000
     },

@@ -11,7 +11,7 @@ export interface BugReportOptions {
     endpoint?: string;
 }
 
-export class BugSage {
+export class Pisces {
     private collector: LogCollector;
     private endpoint: string;
 
@@ -45,7 +45,7 @@ export class BugSage {
             timestamp: new Date().toISOString()
         };
 
-        console.info("[BugSage] Analyzing bug report...");
+        console.info("[Pisces] Analyzing bug report...");
 
         try {
             const response = await fetch(this.endpoint, {
@@ -60,7 +60,7 @@ export class BugSage {
 
             return await response.json();
         } catch (e) {
-            console.error("[BugSage] Error reporting failed:", e);
+            console.error("[Pisces] Error reporting failed:", e);
             throw e;
         }
     }

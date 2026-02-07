@@ -37,6 +37,7 @@ import { weatherRoutes } from "./src/routes/weather.js"
 import cloudAuth from "./src/routes/cloud-auth.js"
 import cloudProvision from "./src/routes/cloud-provision.js"
 import { dataSourceRoutes } from "./src/routes/data-sources.js"
+import kustoIngest from "./src/routes/kusto-ingest.js"
 import { spaceRoutes } from "./src/routes/space.js"
 import { startPollingService } from "./src/services/polling-service.js"
 import { aiClient } from "./ai/AIClient.js"
@@ -50,7 +51,7 @@ import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
 import { storageRoutes } from "./src/routes/storage.js"
 import importRoutes from "./src/routes/import.js"
 import supportRoutes from "./src/routes/support.js"
-import bugSageRoutes from "./src/routes/bugSage.js"
+import piscesRoutes from "./src/routes/pisces.js"
 import {
     EXPERIMENTAL_FEATURES,
     initExperimentalTables,
@@ -70,7 +71,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
 import crypto from "node:crypto"
-import { analyzeAndPrintToTerminal } from "./src/lib/bugSageTerminal.js"
+import { analyzeAndPrintToTerminal } from "./src/lib/piscesTerminal.js"
 
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
 
@@ -252,7 +253,7 @@ app.onError((err, c) => {
         c.header('Access-Control-Allow-Credentials', 'true')
     }
 
-    // Trigger BugSage terminal analysis in development
+    // Trigger Pisces terminal analysis in development
     if (process.env.PEGASUS_DEV_MODE === 'true') {
         analyzeAndPrintToTerminal(err, {
             path: c.req.path,
@@ -358,9 +359,10 @@ app.route('/api/cloud-auth', cloudAuth)
 app.route('/api/cloud-provision', cloudProvision)
 app.route('/spaces', spaceRoutes)
 app.route('/storage', storageRoutes) // Modular Storage (Upload/Download/Config)
+app.route('/api/kusto-ingest', kustoIngest)
 app.route('/import', importRoutes) // Smart Batch Import
 app.route('/support', supportRoutes) // Automated Support Reporting
-app.route('/support', bugSageRoutes) // Smart BugSage Analysis
+app.route('/support', piscesRoutes) // Smart Pisces Analysis
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -1758,6 +1760,18 @@ app.post("/api/query-by-id", async (c) => {
         if (isStaticSource) {
             console.log(`[query-by-id] Skipping query for static source: ${connId}`)
             return c.json({ ok: true, result: [], message: 'Static source - no live query' })
+        }
+
+
+        // Fix: Inject system credentials for Cosmos DB if missing (OrionMetrics case)
+        if (provider === 'cosmosdb' && (!config.endpoint || !config.key)) {
+            if (process.env.COSMOS_ENDPOINT && process.env.COSMOS_KEY) {
+                console.log(`[query-by-id] Injecting system Cosmos DB credentials`);
+                config.endpoint = process.env.COSMOS_ENDPOINT;
+                config.key = process.env.COSMOS_KEY;
+                if (!config.database) config.database = process.env.COSMOS_DATABASE || 'PegasusLive';
+                if (!config.container) config.container = process.env.COSMOS_CONTAINER || 'OrionMetrics';
+            }
         }
 
         const adapter = await createAdapter(provider, config, userId)
