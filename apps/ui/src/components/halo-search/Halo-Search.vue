@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, watch, onMounted, computed, nextTick, unref } from 'vue';
-import { Zap, Loader2, FileText, Table, StickyNote, Database, LineChart } from 'lucide-vue-next';
+import { Zap, Loader2, FileText, Table, StickyNote, Database, LineChart, Sparkles, Activity, Layers, Code } from 'lucide-vue-next';
 import MentionsPopup, { type MentionItem } from './MentionsPopup.vue';
 import { useSpaceStore } from '@/stores/space';
 import { useConnectionStore } from '@/stores/connection';
@@ -41,9 +41,19 @@ const activeAIOp = computed(() => activeOperations.value.find(op => op.category 
 const editorRef = ref<HTMLElement | null>(null);
 const mentionsVisible = ref(false);
 const mentionQuery = ref('');
-const mentionType = ref<'file' | 'table' | 'note' | 'database' | 'command' | null>(null); 
+const mentionType = ref<'file' | 'table' | 'note' | 'database' | 'command' | 'wildcard' | null>(null); 
 const triggerRange = ref<Range | null>(null); 
 const mentionsPopupRef = ref<InstanceType<typeof MentionsPopup> | null>(null);
+
+const wildcardItems = [
+  { id: 'v-viz', label: 'visualization', type: 'wildcard' as const, icon: LineChart, value: '*visualization' },
+  { id: 'v-sum', label: 'summary', type: 'wildcard' as const, icon: Zap, value: '*summary' },
+  { id: 'v-ana', label: 'analysis', type: 'wildcard' as const, icon: Sparkles, value: '*analysis' },
+  { id: 'v-qry', label: 'query', type: 'wildcard' as const, icon: Database, value: '*query' },
+  { id: 'v-met', label: 'metrics', type: 'wildcard' as const, icon: Activity, value: '*metrics' },
+  { id: 'v-all', label: 'all', type: 'wildcard' as const, icon: Layers, value: '*all' },
+  { id: 'v-sch', label: 'schema', type: 'wildcard' as const, icon: Code, value: '*schema' }
+];
 
 const mentionItems = computed<MentionItem[]>(() => {
   if (!mentionType.value) return [];
@@ -86,10 +96,12 @@ const mentionItems = computed<MentionItem[]>(() => {
       }))
   } else if (mentionType.value === 'command') {
     return [
-      { id: 'visualization', label: 'visualization', type: 'command', icon: LineChart, value: '/visualization ' },
-      { id: 'query', label: 'query', type: 'command', icon: Database, value: '/query ' },
-      { id: 'text', label: 'text', type: 'command', icon: FileText, value: '/text ' }
+      { id: 'visualization', label: '/visualization', type: 'command', icon: LineChart, value: '/visualization ' },
+      { id: 'query', label: '/query', type: 'command', icon: Database, value: '/query ' },
+      { id: 'text', label: '/text', type: 'command', icon: FileText, value: '/text ' }
     ];
+  } else if (mentionType.value === 'wildcard') {
+    return wildcardItems;
   }
   return [];
 });
@@ -140,8 +152,9 @@ const checkSelectionForMention = () => {
     const lastAt = text.lastIndexOf('@', cursor - 1);
     const lastDollar = text.lastIndexOf('$', cursor - 1);
     const lastSlash = text.lastIndexOf('/', cursor - 1);
+    const lastStar = text.lastIndexOf('*', cursor - 1);
   
-    const triggerIdx = Math.max(lastExcl, lastHash, lastAt, lastDollar, lastSlash);
+    const triggerIdx = Math.max(lastExcl, lastHash, lastAt, lastDollar, lastSlash, lastStar);
     
     if (triggerIdx === -1) {
         mentionsVisible.value = false;
@@ -173,6 +186,7 @@ const checkSelectionForMention = () => {
     else if (triggerChar === '@') mentionType.value = 'note';
     else if (triggerChar === '$') mentionType.value = 'database';
     else if (triggerChar === '/') mentionType.value = 'command';
+    else if (triggerChar === '*') mentionType.value = 'wildcard';
 
     mentionsVisible.value = true;
 }
@@ -188,20 +202,13 @@ const handleSelectMention = (item: MentionItem) => {
   const range = triggerRange.value;
   range.deleteContents();
 
-  if (item.type === 'command') {
-    // For commands, just insert the text directly without a chip
-    const textNode = document.createTextNode(item.value as string);
-    range.insertNode(textNode);
-    range.collapse(false);
-  } else {
-    const chip = document.createElement('span');
-    chip.className = 'mention-chip';
-    chip.contentEditable = 'false';
-    chip.dataset.value = item.value;
-    chip.dataset.type = item.type;
-    chip.textContent = truncateLabel(item.label);
-    range.insertNode(chip);
-  }
+  const chip = document.createElement('span');
+  chip.className = 'mention-chip';
+  chip.contentEditable = 'false';
+  chip.dataset.value = item.value;
+  chip.dataset.type = item.type;
+  chip.textContent = truncateLabel(item.label);
+  range.insertNode(chip);
   
   const space = document.createTextNode('\u00A0'); 
   range.collapse(false);
@@ -490,6 +497,16 @@ defineExpose({ focus });
     color: #a855f7;
     background-color: rgba(168, 85, 247, 0.1);
     border-color: rgba(168, 85, 247, 0.2);
+}
+:deep(.mention-chip[data-type="wildcard"]) {
+    color: #f97316;
+    background-color: rgba(249, 115, 22, 0.1);
+    border-color: rgba(249, 115, 22, 0.2);
+}
+:deep(.mention-chip[data-type="command"]) {
+    color: #8b5cf6;
+    background-color: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.2);
 }
 
 /* Hover States - Only keeping basic interaction if needed, but removing halo related ones */

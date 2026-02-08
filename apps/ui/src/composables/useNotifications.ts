@@ -1,6 +1,8 @@
 import { ref, computed, unref } from 'vue'
 import { useStorage } from '@vueuse/core'
 import { toast as sonnerToast } from 'vue-sonner'
+import { markRaw } from 'vue'
+import ProgressToast from '@/components/ui/ProgressToast.vue'
 import { isTauri } from './usePlatform'
 import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification'
 
@@ -54,38 +56,59 @@ const shouldShowToast = () => {
     return settings.value?.notifications !== false
 }
 
+const showCustomToast = (message: string, status: string, options?: any) => {
+    const description = typeof options === 'string' ? options : options?.description
+    const id = sonnerToast.custom(markRaw(ProgressToast), {
+        componentProps: {
+            message,
+            description,
+            status
+        },
+        ...options
+    })
+    // Re-call to pass ID for internal dismissal
+    sonnerToast.custom(markRaw(ProgressToast), {
+        id,
+        componentProps: {
+            id,
+            message,
+            description,
+            status
+        }
+    })
+    return id
+}
+
 export const toast = {
     success: (message: string, options?: any) => {
         addNotification(message, 'success', options)
-        if (shouldShowToast()) return sonnerToast.success(message, options)
+        if (shouldShowToast()) return showCustomToast(message, 'success', options)
         return null
     },
     error: (message: string, options?: any) => {
         addNotification(message, 'error', options)
-        if (shouldShowToast()) return sonnerToast.error(message, options)
+        if (shouldShowToast()) return showCustomToast(message, 'error', options)
         return null
     },
     info: (message: string, options?: any) => {
         addNotification(message, 'info', options)
-        if (shouldShowToast()) return sonnerToast.info(message, options)
+        if (shouldShowToast()) return showCustomToast(message, 'info', options)
         return null
     },
     warning: (message: string, options?: any) => {
         addNotification(message, 'warning', options)
-        if (shouldShowToast()) return sonnerToast.warning(message, options)
+        if (shouldShowToast()) return showCustomToast(message, 'warning', options)
         return null
     },
     message: (message: string, options?: any) => {
         addNotification(message, 'default', options)
-        if (shouldShowToast()) return sonnerToast.message(message, options)
+        if (shouldShowToast()) return showCustomToast(message, 'default', options)
         return null
     },
-    // Proxy other methods if needed
     dismiss: sonnerToast.dismiss,
     promise: sonnerToast.promise,
     loading: (message: string, options?: any) => {
-        // Don't add loading to persistent notifications (they're transient)
-        return sonnerToast.loading(message, options)
+        return showCustomToast(message, 'loading', { duration: Infinity, ...options })
     }
 }
 

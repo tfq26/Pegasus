@@ -770,6 +770,32 @@ chat.post("/ai/generate", async (c) => {
             // DataContextService now injects these into the Knowledge Base (System Prompt).
             let contextBlock = "";
 
+            // 1.5. Check for Instruction Mentions (e.g. *visualization)
+            resolvedResources.forEach(r => {
+                if (r.type === 'instruction') {
+                    if (r.instruction === 'FORCE_INTENT_VISUALIZATION') {
+                        forceVisualization = true;
+                        forceText = false;
+                        isExplicitAction = true;
+                        console.log(`[AI Generate] Forcing visualization via instruction tag.`);
+                    } else if (r.instruction === 'FORCE_INTENT_QUERY') {
+                        forceQuery = true;
+                        forceText = false;
+                        isExplicitAction = true;
+                        console.log(`[AI Generate] Forcing query via instruction tag.`);
+                    } else if (r.instruction === 'FORCE_INTENT_ANALYSIS') {
+                        forceAnalysis = true;
+                        forceText = false;
+                        isExplicitAction = true;
+                        console.log(`[AI Generate] Forcing analysis via instruction tag.`);
+                    } else if (r.instruction === 'FORCE_INTENT_SUMMARY') {
+                        forceText = true;
+                        isExplicitAction = true;
+                        console.log(`[AI Generate] Forcing summary via instruction tag.`);
+                    }
+                }
+            });
+
             // Fetch all user connections to provide "Available Databases" context
             // BUT we need to filter out anything that's already loaded via OneContext
             // KEY: If OneContext found relevant files, we DON'T show "not loaded" list to avoid confusion
@@ -897,6 +923,7 @@ chat.post("/ai/generate", async (c) => {
                 temperature: Number(temperature || 0.7),
                 maxTokens: Number(maxTokens || 1000),
                 activeTable,
+                intent: forceVisualization ? 'visualization' : (forceQuery ? 'query' : (forceAnalysis ? 'analysis' : undefined)),
                 // If slash command explicitly requested visualization, FORCE it here
                 toolChoice: forceVisualization ? 'generate_visualization' : undefined
             }
@@ -1139,7 +1166,10 @@ chat.post("/ai/generate", async (c) => {
                             }
 
                             // 2-Step Visualization Analysis
-                            const vizResult = await VisualizationAnalyzer.analyze(currentPrompt, toolResult.data || toolResult.results, activeModel, userId, forceVisualization);
+                            // STRICT OPT-IN: Only visualize if explicitly requested via slash command or not in forceText mode
+                            const vizResult = (forceText && !forceVisualization)
+                                ? { shouldVisualize: false, blueprint: null }
+                                : await VisualizationAnalyzer.analyze(currentPrompt, toolResult.data || toolResult.results, activeModel, userId, forceVisualization);
 
                             // Maintain compatibility with both 'config' (new) and 'vizBlueprint' (legacy/standard UI)
                             const blueprint = vizResult.shouldVisualize ? vizResult.blueprint : null;

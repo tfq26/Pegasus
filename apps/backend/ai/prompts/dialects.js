@@ -70,7 +70,8 @@ export const DIALECTS = {
             "RULE: If using GROUP BY on an expression, OMIT the ORDER BY clause entirely. The UI will handle sorting."
         ],
         examples: [
-            "SELECT SUBSTRING(c.timestamp, 0, 10) as day, AVG(c.cpuPercent) as avg_cpu FROM c GROUP BY SUBSTRING(c.timestamp, 0, 10)"
+            "SELECT SUBSTRING(c.timestamp, 0, 10) as day, AVG(c.cpuPercent) as avg_cpu FROM c GROUP BY SUBSTRING(c.timestamp, 0, 10)",
+            "SELECT c.serverName, c.cpuPercent, c.errorMessage FROM c WHERE c.status = 'online' AND (c.cpuPercent > 80 OR c.errorMessage != null)"
         ]
     },
     kusto: {
@@ -84,7 +85,7 @@ export const DIALECTS = {
             hour: "bin(Timestamp, 1h)"
         },
         examples: [
-            "OrionMetrics | summarize avg(cpuPercent) by bin(timestamp, 1d) | order by timestamp asc"
+            "StormEvents | summarize count() by State | order by count_ desc"
         ]
     },
     mongodb: {

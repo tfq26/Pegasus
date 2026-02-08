@@ -372,7 +372,11 @@
               @keyup.enter="confirmRename"
               placeholder="Enter dashboard name"
               class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              :class="{ 'border-destructive focus-visible:ring-destructive': isRenameDuplicate }"
             />
+            <p v-if="isRenameDuplicate" class="text-[11px] text-destructive font-medium mt-1">
+                A dashboard with this name already exists.
+            </p>
           </div>
           
           <!-- Cover Image Picker -->
@@ -446,7 +450,7 @@
           </button>
           <button 
             @click="confirmRename"
-            :disabled="!renameTitle.trim()"
+            :disabled="!renameTitle.trim() || isRenameDuplicate"
             class="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md disabled:opacity-50"
           >
             Rename
@@ -485,7 +489,11 @@
               @keyup.enter="confirmCreateDashboard"
               placeholder="Enter dashboard name"
               class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              :class="{ 'border-destructive focus-visible:ring-destructive': isNewNameDuplicate }"
             />
+            <p v-if="isNewNameDuplicate" class="text-[11px] text-destructive font-medium mt-1">
+                A dashboard with this name already exists.
+            </p>
           </div>
 
           <!-- Privacy Settings -->
@@ -574,7 +582,7 @@
           </button>
           <button 
             @click="confirmCreateDashboard"
-            :disabled="!newDashboardName.trim() || isCreating"
+            :disabled="!newDashboardName.trim() || isCreating || isNewNameDuplicate"
             class="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md disabled:opacity-50"
           >
             {{ isCreating ? 'Creating...' : 'Create Dashboard' }}
@@ -595,11 +603,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount, unref } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useDashboardStore } from '@/stores/dashboard'
+import { useNotificationStore } from '@/stores/notification'
 import { Checkbox } from '@/components/ui/checkbox'
 import { 
   fetchSharedDashboards,
@@ -652,6 +661,7 @@ const { isTauri } = usePlatform()
 const { user } = useAuth()
 const router = useRouter()
 const store = useDashboardStore()
+const notificationStore = useNotificationStore()
 const { dashboards, recentDashboards, isLoading } = storeToRefs(store)
 const { dashboardUsage, handleLimitError } = useEntitlements()
 
@@ -824,6 +834,47 @@ const handleRenameCoverImageUpload = async (event: Event) => {
   }
 }
 
+// Duplicate checks for creators/renamers
+const isNewNameDuplicate = computed(() => {
+    const val = newDashboardName.value.trim()
+    if (!val) return false
+    
+    // Use unref and cast to any to avoid Ref<Ref<...>> type confusion in some environments
+    const myDashboards = (unref(dashboards) as any) || []
+    const shared = (unref(sharedDashboards) as any) || []
+    const recent = (unref(recentDashboards) as any) || []
+
+    const all = [
+        ...(Array.isArray(myDashboards) ? myDashboards : []),
+        ...(Array.isArray(shared) ? shared : []),
+        ...(Array.isArray(recent) ? recent : [])
+    ]
+    
+    return all.some((d: any) => 
+        d.title?.toLowerCase() === val.toLowerCase()
+    )
+})
+
+const isRenameDuplicate = computed(() => {
+    const val = renameTitle.value.trim()
+    if (!val || !dashboardToRename.value) return false
+    
+    const myDashboards = (unref(dashboards) as any) || []
+    const shared = (unref(sharedDashboards) as any) || []
+    const recent = (unref(recentDashboards) as any) || []
+
+    const all = [
+        ...(Array.isArray(myDashboards) ? myDashboards : []),
+        ...(Array.isArray(shared) ? shared : []),
+        ...(Array.isArray(recent) ? recent : [])
+    ]
+    
+    return all.some((d: any) => 
+        d.id !== dashboardToRename.value.id && 
+        d.title?.toLowerCase() === val.toLowerCase()
+    )
+})
+
 // Confirm Dialog State
 const confirmDialogState = ref({
   open: false,
@@ -922,7 +973,7 @@ const confirmCreateDashboard = async () => {
       showUpgradeModal.value = true
       showCreateModal.value = false
     } else {
-      toast.error('Failed to create dashboard')
+      toast.error(e.message || 'Failed to create dashboard')
     }
   } finally {
     isCreating.value = false
@@ -969,13 +1020,25 @@ const handleRename = (dashboard: any) => {
 }
 
 const confirmRename = async () => {
-    if (!renameTitle.value.trim() || !dashboardToRename.value) return
-    
     try {
+        const newTitle = renameTitle.value.trim()
+        
+        // Validation: Check for duplicate names (excluding current dashboard)
+        const allDashboards = unref(dashboards)
+        const isDuplicate = Array.isArray(allDashboards) && (allDashboards as any[]).some((d: any) => 
+            d.id !== dashboardToRename.value.id && 
+            d.title.toLowerCase() === newTitle.toLowerCase()
+        )
+        
+        if (isDuplicate) {
+            toast.error(`A dashboard with the name "${newTitle}" already exists.`)
+            return
+        }
+
         await store.selectDashboard(dashboardToRename.value.id)
         
         if (store.currentDashboard) {
-            (store.currentDashboard as any).title = renameTitle.value.trim()
+            (store.currentDashboard as any).title = newTitle
             
             // Update cover image if changed
             if (renameCoverImage.value !== (dashboardToRename.value as any).cover_image) {
@@ -988,9 +1051,9 @@ const confirmRename = async () => {
             showRenameModal.value = false
             renameCoverImage.value = ''
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error('[DashboardHome] Failed to update dashboard:', e)
-        toast.error('Failed to update dashboard')
+        toast.error(e.message || 'Failed to update dashboard')
     }
 }
 
@@ -1203,7 +1266,15 @@ onMounted(async () => {
         updateList(sharedDashboards.value as any)
       }
     })
-    socket.value.on('user_mentioned', (data: any) => {
+    socket.value.on('user_mentioned', (data) => {
+      notificationStore.addNotification({
+        type: 'mention',
+        dashboardId: data.dashboardId,
+        dashboardTitle: data.dashboardTitle,
+        senderName: data.senderName,
+        preview: data.preview,
+        timestamp: data.timestamp
+      })
       toast.info(`New mention in "${data.dashboardTitle || 'Dashboard'}": ${data.senderName} says: "${data.preview}"`)
     })
   }

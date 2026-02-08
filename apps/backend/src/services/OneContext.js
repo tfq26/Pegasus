@@ -75,11 +75,16 @@ export class OneContext {
             else if (typeChar === '#') type = 'table';
             else if (typeChar === '$') type = 'database';
             else if (typeChar === '@') type = 'note';
+            else if (typeChar === '*') type = 'wildcard';
 
             mentions.push({ type, name, token });
         }
 
-        return mentions;
+        return mentions.filter(m => {
+            // Ignore technical metadata mentions that aren't real resources
+            const isTechnical = m.name.includes('TerminalName') || m.name.includes('ProcessId');
+            return !isTechnical;
+        });
     }
 
     /**
@@ -178,6 +183,8 @@ export class OneContext {
             case 'table':
                 // Tables are resolved via database connections
                 return await this._resolveTable(mention, userId, spaceId);
+            case 'wildcard':
+                return await this._resolveWildcard(mention, userId, spaceId);
             default:
                 return null;
         }
@@ -201,6 +208,15 @@ export class OneContext {
             };
         }
 
+        // Global Wildcard: !*
+        if (mention.name === '*') {
+            const allFiles = await db.select()
+                .from(files)
+                .where(eq(files.userId, userId))
+                .limit(20); // Safety limit
+            return allFiles.map(f => ({ ...f, type: 'file', source: 'files', method: 'explicit' }));
+        }
+
         // Search database for file
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mention.name);
         const whereClause = isUUID
@@ -214,6 +230,56 @@ export class OneContext {
 
         if (fileResults.length) {
             return { ...fileResults[0], type: 'file', source: 'files', method: 'explicit' };
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve wildcard mention (*any, *visualization, *latest, *schema)
+     * @private
+     */
+    static async _resolveWildcard(mention, userId, spaceId) {
+        const name = mention.name?.toLowerCase();
+
+        // 1. System Metrics Shortcut
+        if (name === 'metrics' || name === 'orion') {
+            return {
+                id: 'system:orion_metrics',
+                name: 'Orion System Metrics',
+                provider: 'cosmosdb',
+                type: 'database',
+                method: 'explicit',
+                aiInsights: ['Contains real-time CPU and memory metrics for Orion servers.']
+            };
+        }
+
+        // 2. Schema Explorer Shortcut
+        if (name === 'schema') {
+            return {
+                id: 'system:schema_explorer',
+                name: 'Data Schema Explorer',
+                type: 'note',
+                content: 'This resource provides metadata about all available connections and tables for the user.',
+                method: 'explicit'
+            };
+        }
+
+        // 3. Command Modifiers (Handled by IntentClassifier, but we can tag them for clarity)
+        if (['visualization', 'query', 'analysis', 'summary'].includes(name)) {
+            return {
+                id: `cmd:${name}`,
+                name: `Mode: ${name.toUpperCase()}`,
+                type: 'instruction',
+                instruction: `FORCE_INTENT_${name.toUpperCase()}`,
+                method: 'explicit'
+            };
+        }
+
+        // 4. Grouping Wildcards
+        if (name === 'all') {
+            // Resolve to all tables in current space? Or just a hint
+            return { id: 'group:all', name: 'All Resources', type: 'collection', method: 'explicit' };
         }
 
         return null;
@@ -243,6 +309,19 @@ export class OneContext {
             };
         }
 
+        // Global Wildcard: $*
+        if (mention.name === '*') {
+            const allConns = await db.select()
+                .from(connections)
+                .where(eq(connections.userId, userId));
+            return allConns.map(c => ({
+                ...c,
+                provider: c.type,
+                type: 'database',
+                method: 'explicit'
+            }));
+        }
+
         return null;
     }
 
@@ -263,16 +342,46 @@ export class OneContext {
 
         const allConnections = await query;
 
+        // Global Wildcard: #* (All tables across all connections)
+        if (mention.name === '*') {
+            const results = [];
+            for (const conn of allConnections) {
+                const config = typeof conn.config === 'string' ? JSON.parse(conn.config) : conn.config;
+                const schema = config?.schema || config?.tables || [];
+                schema.forEach(table => {
+                    results.push({
+                        ...conn,
+                        provider: conn.type,
+                        type: 'database',
+                        targetTable: table.name || table,
+                        method: 'explicit'
+                    });
+                });
+            }
+            return results.slice(0, 30); // Safety limit
+        }
+
         // Search for table in connection metadata
         for (const conn of allConnections) {
             const config = typeof conn.config === 'string' ? JSON.parse(conn.config) : conn.config;
             const schema = config?.schema || config?.tables || [];
 
             // Check if this connection contains the table
-            if (schema.some(table =>
-                table.name?.toLowerCase() === mention.name.toLowerCase() ||
-                table.toLowerCase() === mention.name.toLowerCase()
-            )) {
+            if (schema.some(table => {
+                const tableName = (table.name || table).toLowerCase();
+                const mentionName = mention.name.toLowerCase();
+                const tableSlug = tableName.replace(/[^a-z0-9]/g, '');
+                const mentionSlug = mentionName.replace(/[^a-z0-9]/g, '');
+
+                // Direct match or slug match
+                if (tableName === mentionName || tableSlug === mentionSlug) return true;
+
+                // Fuzzy match: if mention contains the table name slug (handles extensions/temp suffixes)
+                if (mentionSlug.includes(tableSlug) && tableSlug.length > 5) return true;
+                if (tableSlug.includes(mentionSlug) && mentionSlug.length > 5) return true;
+
+                return false;
+            })) {
                 return {
                     ...conn,
                     provider: conn.type,
@@ -645,6 +754,9 @@ export class OneContext {
             // Match files against query
             const queryWords = this._extractQueryWords(text);
             for (const f of filesData) {
+                // Skip temporary conversion files
+                if (f.filename && f.filename.endsWith('.temp.csv')) continue;
+
                 if (this._matchesFile(f, text, queryWords) && !resolvedIds.has(f.id)) {
                     resolved.push({ ...f, type: 'file', method: 'implicit' });
                     resolvedIds.add(f.id);

@@ -7,13 +7,13 @@ export function buildVisualizationPrompt(originalPrompt, data, forceVisualizatio
    const columnNames = data && data.length > 0 ? Object.keys(data[0]) : [];
    const sampleRows = data ? data.slice(0, 10) : [];
 
-   const forceDirective = forceVisualization
+   const directive = forceVisualization
       ? "\nDETECTION OVERRIDE: The user has explicitly requested a visualization. You MUST return shouldVisualize: true unless technically impossible.\n"
-      : "";
+      : "\nSTRICT TEXT MODE: The user has NOT requested a visualization. return shouldVisualize: false UNLESS the USER REQUEST explicitly uses words like 'chart', 'graph', 'plot', 'visualize', or 'trend'. If the request is for a 'summary', 'explanation', or 'analysis', do NOT visualize.\n";
 
    return `
 You are a data visualization expert.
-${forceDirective}
+${directive}
 Given the user's original request and the query result, determine if and how to visualize the data.
 
 USER REQUEST: "${originalPrompt}"

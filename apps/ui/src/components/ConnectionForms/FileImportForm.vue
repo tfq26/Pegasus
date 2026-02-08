@@ -7,6 +7,7 @@ import { api } from '@/lib/apiClient'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
 import { toast } from '@/composables/useNotifications'
+import { showProgressToast } from '@/lib/toastProgress'
 import type { ConnectionFormState } from '@/views/settings/types'
 import SmartImportDialog from '@/components/Import/SmartImportDialog.vue'
 
@@ -67,17 +68,24 @@ const handleDrop = async (e: DragEvent) => {
     
     if (entry && entry.isDirectory) {
       isZipping.value = true
+      const progress = showProgressToast(`Scanning folder "${entry.name}"...`, 10);
       try {
         const zip = new JSZip()
-        toast.info(`Scanning folder "${entry.name}"...`)
         
         await scanDropFiles(entry, zip, '')
         
-        const content = await zip.generateAsync({ type: 'blob' })
+        progress.update(30, `Compressing folder...`, entry.name);
+        
+        const content = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+            progress.update(30 + (metadata.percent * 0.4), `Compressing: ${Math.round(metadata.percent)}%`, metadata.currentFile || entry.name);
+        })
+        
         const zipFile = new window.File([content], `${entry.name}.zip`, { type: 'application/zip' })
         
-        await handleZipUpload(zipFile)
+        progress.update(80, `Uploading ZIP...`, zipFile.name);
+        await handleZipUpload(zipFile, progress)
       } catch (err: any) {
+        // Error handled by handleZipUpload or here
         toast.error('Failed to process folder', { description: err.message })
       } finally {
         isZipping.value = false
@@ -112,12 +120,15 @@ const handleFileUpload = async (event: Event) => {
   await processFile(file)
 }
 
-const handleZipUpload = async (file: File) => {
+const handleZipUpload = async (file: File, existingProgress?: any) => {
     if (!spaceStore.currentSpaceId) return
     isUploading.value = true
     
+    const progress = existingProgress || showProgressToast(`Analyzing ZIP: ${file.name}...`, 10);
+    
     try {
-        toast.info(`Analyzing ZIP: ${file.name}...`)
+        if (!existingProgress) progress.update(20, `Uploading ZIP...`);
+        
         const formData = new FormData()
         formData.append('file', file)
         formData.append('spaceId', (spaceStore.currentSpaceId as unknown) as string)
@@ -125,13 +136,15 @@ const handleZipUpload = async (file: File) => {
         const res = await api.upload<any>('/import/upload-zip', formData)
         
         if (res.suggestions && res.suggestions.length > 0) {
+            progress.success('ZIP analyzed');
             smartImportFiles.value = res.suggestions
             smartImportOpen.value = true
         } else {
+            progress.dismiss();
             toast.warning('No processable files found in ZIP')
         }
     } catch (e: any) {
-        toast.error('ZIP upload failed', { description: e.message })
+        progress.error('ZIP upload failed', e.message);
     } finally {
         isUploading.value = false
     }
@@ -153,9 +166,9 @@ const handleNativeFolderUpload = async (event: Event) => {
 
     const files = Array.from(target.files)
     isZipping.value = true
+    const progress = showProgressToast(`Compressing folder...`, 10);
     try {
         const zip = new JSZip()
-        toast.info(`Compressing folder...`)
         
         for (const file of files) {
             // Use webkitRelativePath to maintain folder structure
@@ -166,12 +179,15 @@ const handleNativeFolderUpload = async (event: Event) => {
             }
         }
         
-        const content = await zip.generateAsync({ type: 'blob' })
+        const content = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+            progress.update(10 + (metadata.percent * 0.7), `Compressing: ${Math.round(metadata.percent)}%`);
+        })
+        
         // Use the first part of the relative path as the zip name
         const folderName = files[0] ? (files[0] as any).webkitRelativePath.split('/')[0] : 'folder'
         const zipFile = new window.File([content], `${folderName}.zip`, { type: 'application/zip' })
         
-        await handleZipUpload(zipFile)
+        await handleZipUpload(zipFile, progress)
     } catch (err: any) {
         toast.error('Failed to process folder', { description: err.message })
     } finally {
@@ -222,11 +238,11 @@ const processFile = async (file: File) => {
       // Simple table name from filename
       const table = (file as any).name.split('.')[0].replace(/[^a-zA-Z0-9]/g, '_')
       
-      toast.info(`Ingesting into Kusto: ${table}...`)
+      const progress = showProgressToast(`Ingesting into Kusto...`, 20, table);
       const result = await uploadFileToKusto(file, clusterUrl, database, table)
       
       if (result.success) {
-        toast.success(`Successfully ingested into Kusto. Table: ${table}`)
+        progress.success(`Successfully ingested into Kusto`, `Table: ${table}`);
         // We could also auto-configure the form to point to this new table
         props.connectionForm.provider = 'kusto'
         props.connectionForm.kusto = {
@@ -234,6 +250,7 @@ const processFile = async (file: File) => {
           table: table
         }
       } else {
+        progress.error('Kusto ingestion failed', result.error);
         throw new Error(result.error || 'Kusto ingestion failed')
       }
     }

@@ -360,6 +360,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
     }
 
     const createNewDashboard = async (title: string) => {
+        // Validation: Check for duplicate names (case-insensitive)
+        const name = title.trim()
+        const isDuplicate = dashboards.value.some(d => d.title.toLowerCase() === name.toLowerCase())
+        if (isDuplicate) {
+            throw new Error(`A dashboard with the name "${name}" already exists.`)
+        }
+
         isLoading.value = true
         error.value = null
         try {
@@ -870,7 +877,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
                 // Updates are an array of resources from Change Feed
                 metrics.forEach(metric => {
-                    currentDashboard.value!.data.pages.forEach(page => {
+                    currentDashboard.value?.data?.pages?.forEach(page => {
                         page.elements.forEach(element => {
                             if (element.refreshFrequency === 0) {
                                 // If the element's query is roughly "SELECT * FROM c" or similar,
