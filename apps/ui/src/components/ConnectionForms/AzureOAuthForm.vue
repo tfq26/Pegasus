@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { Loader2, CheckCircle2, AlertCircle, ExternalLink, Database, Server } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { api } from '@/lib/apiClient'
+import { api, QUERY_API_URL } from '@/lib/apiClient'
 import type { ConnectionFormState } from '@/views/settings/types'
 import { useAuth } from '@/composables/useAuth'
 
@@ -142,7 +142,7 @@ const handleConnect = () => {
   const top = window.screenY + (window.outerHeight - height) / 2
   
   const popup = window.open(
-    `http://localhost:3000/api/cloud-auth/azure/init?user_id=${userId.value}`,
+    `${QUERY_API_URL}/api/cloud-auth/azure/init?user_id=${userId.value}`,
     'oauth-popup',
     `width=${width},height=${height},left=${left},top=${top}`
   )
