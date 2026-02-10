@@ -12,10 +12,16 @@
         <!-- Chart Preview -->
         <div :class="showData ? 'h-[280px]' : 'h-[400px]'" class="w-full bg-muted/30 rounded-lg p-4 border border-border transition-all duration-200">
           <ChartRenderer 
-            v-if="config" 
+            v-if="config && config.type !== 'table'" 
             :type="config.type" 
             :data="config.type === 'stat' ? config.config : config.config.data" 
             :options="config.type === 'stat' ? config.config : config.config.options"
+            class="w-full h-full"
+          />
+          <TableElement
+            v-else-if="config && config.type === 'table'"
+            :config="config.config"
+            :title="config.title"
             class="w-full h-full"
           />
           <div v-else class="flex items-center justify-center h-full text-muted-foreground">Loading preview...</div>
@@ -74,6 +80,7 @@
               <SelectItem value="pie">Pie Chart</SelectItem>
               <SelectItem value="doughnut">Doughnut</SelectItem>
               <SelectItem value="stat">Statistic</SelectItem>
+              <SelectItem value="table">Table</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -170,6 +177,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import ChartRenderer from './ChartRenderer.vue'
+import TableElement from './Elements/TableElement.vue'
 import { recommendVisualization } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 
@@ -379,16 +387,60 @@ const refineChart = async () => {
   }
 }
 
-const applyChartType = (newType: string) => {
+const applyChartType = async (newType: string) => {
   if (!config.value) return
 
-  // In preview mode, allow all conversions for experimentation
-  // The restriction only applies to saved dashboard elements (in GeneralSettings.vue)
-  
-  if (newType === 'stat' && config.value.type !== 'stat') {
-      // Converting Chart to Stat - store original data for restoration
+  // Store original chart data when converting to stat or table (for restoration)
+  if ((newType === 'stat' || newType === 'table') && config.value.type !== 'stat' && config.value.type !== 'table') {
       originalChartData.value = JSON.parse(JSON.stringify(config.value.config))
+  }
+
+  if (newType === 'table' && config.value.type !== 'table') {
+      config.value = {
+          type: 'table',
+          title: config.value.title,
+          query: config.value.query || props.query,
+          connectionId: props.connectionId,
+          config: {
+              data: props.results
+          }
+      }
+      return
+  }
+
+  // Auto-visualize when moving from table to chart
+  if (config.value.type === 'table' && newType !== 'table') {
+      isRefining.value = true
+      try {
+          // Use AI to recommend a visualization for this specific chart type
+          const refinedQuery = `${props.query} (Format as ${newType})`
+          const recommended = await recommendVisualization(refinedQuery, props.results, { type: newType })
+          
+          if (recommended) {
+              config.value = recommended
+              return
+          }
+      } catch (e) {
+          console.error('[DashboardElementPreview] Auto-viz failed:', e)
+      } finally {
+          isRefining.value = false
+      }
       
+      // Fallback: Use simple updateChartColumns if AI fails
+      const numericCols = dataColumns.value.filter(col => {
+          const val = props.results[0]?.[col]
+          return typeof val === 'number'
+      })
+      
+      const heuristic = updateChartColumns(numericCols.slice(0, 2))
+      if (heuristic) {
+          heuristic.type = newType
+          config.value = heuristic
+          return
+      }
+  }
+
+  if (newType === 'stat' && config.value.type !== 'stat') {
       const firstDataset = config.value.config.data?.datasets?.[0]
       if (firstDataset && firstDataset.data?.length > 0) {
           const val = firstDataset.data[0]
@@ -474,6 +526,11 @@ const convertToChartType = (newType: string) => {
       }
   }
 
+  // Reset indexAxis to 'x' by default (prevents persistent 'y' from horizontal bars)
+  if (newConfig.config.options && newConfig.config.options.indexAxis) {
+      newConfig.config.options.indexAxis = 'x'
+  }
+
   // Adjust config based on chart type
   if (newType === 'area') {
       // Area is just line with fill: true
@@ -520,8 +577,9 @@ const convertToChartType = (newType: string) => {
   } else if (newType === 'line') {
        if (newConfig.config.data?.datasets) {
           newConfig.config.data.datasets.forEach((ds: any, i: number) => {
-              ds.borderColor = MUTED_COLORS[i % MUTED_COLORS.length]
-              ds.backgroundColor = MUTED_COLORS[i % MUTED_COLORS.length].replace('%)', '%, 0.1)') // Transparent fill
+              const color = MUTED_COLORS[i % MUTED_COLORS.length] || '#888'
+              ds.borderColor = color
+              ds.backgroundColor = color.replace('%)', '%, 0.1)') // Transparent fill
               ds.tension = 0.4
               delete ds.fill
           })

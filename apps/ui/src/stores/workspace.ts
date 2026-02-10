@@ -17,6 +17,8 @@ export interface Tab {
         provider?: string
         headers?: string[]
         schemaMode?: string
+        sessionId?: string // UUID for the query session document
+        localQueries?: any[] // Cached queries for this session
         versions?: Array<{ version: number; table: string; created_at: string; reason?: string }>
         currentVersion?: number
         originalTable?: string
@@ -201,7 +203,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             label: data?.label || labelMap[type] || `New ${type}`,
             type,
             isDirty: false,
-            data: data || (type === 'chat' ? { chatHistory: [] } : {})
+            data: {
+                ...(data || {}),
+                ...(type === 'chat' ? { chatHistory: [] } : {}),
+                ...(type === 'query' && !data?.sessionId ? { localQueries: [] } : {})
+            }
         }
 
         workspace.tabs.push(newTab)

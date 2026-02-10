@@ -114,10 +114,12 @@ export class CosmosAdapter extends DatabaseAdapter {
                 }
             }
 
-
             let translated = queryString;
 
-            // 0. Translate snake_case column names to camelCase (OrionMetrics uses camelCase)
+            // 0. Strip trailing semicolon (invalid in Cosmos DB)
+            translated = translated.trim().replace(/;$/, '');
+
+            // 0.1. Translate snake_case column names to camelCase (OrionMetrics uses camelCase)
             const snakeToCamelMap = {
                 'cpu_usage': 'cpuPercent',
                 'cpu_percent': 'cpuPercent',
@@ -135,12 +137,11 @@ export class CosmosAdapter extends DatabaseAdapter {
             };
 
             Object.entries(snakeToCamelMap).forEach(([snake, camel]) => {
-                // Match the snake_case column name as a whole word (not part of another word)
                 const regex = new RegExp(`\\b${snake}\\b`, 'gi');
                 translated = translated.replace(regex, camel);
             });
 
-            // 1. Map rowid and __id to id if they appear in SELECT (Pegasus Grid convention)
+            // 1. Map rowid and __id to id if they appear in SELECT
             translated = translated.replace(/rowid\s+as\s+__id/gi, 'c.id as __id');
             translated = translated.replace(/"rowid"/gi, 'c.id');
 
@@ -148,20 +149,26 @@ export class CosmosAdapter extends DatabaseAdapter {
             translated = translated.replace(/FROM\s+["']?\w+["']?/i, 'FROM c');
 
             // 3. Handle identifier quoting: replace "ColumnName" or plain ColumnName with c.ColumnName
-            // We handle "AS alias" specially to avoid prefixing aliases with c.
             translated = translated.replace(/\bAS\s+"?([^"\s]+)"?/gi, 'AS $1');
 
-            // Replace quoted identifiers "Col" -> c.Col
             translated = translated.replace(/"([^"]+)"/g, (match, p1) => {
                 if (p1 === '*' || p1 === 'c') return p1;
+                if (p1.includes(' ') || p1.includes(':') || p1.includes('-') || !isNaN(p1)) {
+                    return `'${p1}'`;
+                }
                 return `c.${p1}`;
             });
 
-            // Replace unquoted identifiers in SELECT/GROUP BY/WHERE that aren't keywords
-            // This is a naive heuristic but works for standard generated queries
-            const keywords = ['SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'LIMIT', 'OFFSET', 'ASC', 'DESC', 'AND', 'OR', 'NOT', 'AS', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'TOP', 'DISTINCT', 'STARTSWITH', 'ENDSWITH', 'CONTAINS', 'LOWER', 'UPPER', 'VALUE', 'SUBSTRING', 'DATETIMEPART', 'DATETIMEDIFF', 'DATETIMEADD'];
+            // Expanded keywords list to avoid incorrect prefixing
+            const keywords = [
+                'SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'ORDER', 'LIMIT', 'OFFSET',
+                'ASC', 'DESC', 'AND', 'OR', 'NOT', 'AS', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+                'TOP', 'DISTINCT', 'STARTSWITH', 'ENDSWITH', 'CONTAINS', 'LOWER', 'UPPER',
+                'VALUE', 'SUBSTRING', 'CONCAT', 'STRLEN', 'DATETIMEPART', 'DATETIMEDIFF',
+                'DATETIMEADD', 'IS_DEFINED', 'IS_NULL', 'IS_NUMBER', 'IS_STRING', 'IS_BOOL',
+                'IN', 'IS', 'NULL', 'TRUE', 'FALSE', 'EXISTS', 'JOIN', 'ON', 'LIKE'
+            ];
 
-            // Helper for paren-aware splitting
             const splitByComma = (str) => {
                 const parts = [];
                 let current = "";
@@ -181,25 +188,22 @@ export class CosmosAdapter extends DatabaseAdapter {
                 return parts;
             }
 
-            // Helper to prefix with c. if not keyword/number/function/literal/alias
             const prefixIfCol = (str, knownAliases = new Set()) => {
                 const trimmed = str.trim();
                 if (!trimmed || trimmed === '*') return trimmed;
                 if (keywords.includes(trimmed.toUpperCase())) return trimmed;
-                if (knownAliases.has(trimmed)) return trimmed; // Use alias as-is
-                if (!isNaN(trimmed)) return trimmed; // Pure Number
-                if (trimmed.startsWith('c.')) return trimmed; // Already has prefix
-                if (trimmed.includes('.')) return trimmed; // Has some prefix
-                if (trimmed.includes('(')) return trimmed; // Function call or part of one
-                if (trimmed.startsWith("'") || trimmed.startsWith('"')) return trimmed; // String literal
-
+                if (knownAliases.has(trimmed)) return trimmed;
+                if (!isNaN(trimmed)) return trimmed;
+                if (trimmed.startsWith('c.')) return trimmed;
+                if (trimmed.includes('.')) return trimmed;
+                if (trimmed.includes('(')) return trimmed;
+                if (trimmed.startsWith("'") || trimmed.startsWith('"')) return trimmed;
                 if (/[0-9\)]/.test(trimmed[0]) || trimmed.endsWith(')')) return trimmed;
 
                 return `c.${trimmed}`;
             }
 
             const knownAliases = new Set();
-            // Pre-scan SELECT for aliases
             const aliasMatch = translated.match(/SELECT\s+(?:TOP\s+\d+\s+)?(.+?)\s+FROM/i);
             if (aliasMatch) {
                 splitByComma(aliasMatch[1]).forEach(col => {
@@ -207,7 +211,6 @@ export class CosmosAdapter extends DatabaseAdapter {
                     if (parts.length > 1) {
                         knownAliases.add(parts[1].trim());
                     } else {
-                        // Handle implicit "col alias"
                         const spaceParts = col.trim().split(/\s+/);
                         if (spaceParts.length === 2 && !keywords.includes(spaceParts[1].toUpperCase())) {
                             knownAliases.add(spaceParts[1].trim());
@@ -216,25 +219,27 @@ export class CosmosAdapter extends DatabaseAdapter {
                 });
             }
 
-            // Fix GROUP BY specifically (e.g., GROUP BY status -> GROUP BY c.status)
-            translated = translated.replace(/GROUP\s+BY\s+([a-zA-Z0-9_, \(\)'"c\.]+)/gi, (match, groupCols) => {
-                const newCols = splitByComma(groupCols).map(col => {
-                    const trimmed = col.trim();
-                    return prefixIfCol(trimmed, knownAliases);
-                }).join(', ');
-                return `GROUP BY ${newCols}`;
+            // Fix clauses: WHERE, GROUP BY, ORDER BY
+            const clauseRegex = /(WHERE|GROUP\s+BY|ORDER\s+BY)\s+([\s\S]+?)(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/gi;
+            translated = translated.replace(clauseRegex, (match, clause, content) => {
+                const fixedContent = content.replace(/'[^']*'|"[^"]*"|\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (m, identifier) => {
+                    if (identifier) {
+                        return prefixIfCol(identifier, knownAliases);
+                    }
+                    return m; // Preserve string literals
+                });
+                return `${clause} ${fixedContent} `;
             });
 
-            // Fix SELECT list atoms - scan from SELECT to FROM
+            // Fix SELECT list atoms (special handling to exclude aliases from prefixing)
             translated = translated.replace(/SELECT\s+(?:(TOP\s+\d+)\s+)?(.+?)\s+FROM/i, (match, topClause, selectList) => {
                 const newSelectList = splitByComma(selectList).map(col => {
                     const trimmed = col.trim();
-                    // Handle "col AS alias"
                     const parts = trimmed.split(/\s+AS\s+/i);
                     if (parts.length > 1) {
+                        // col AS alias -> prefix col but NOT alias
                         return `${prefixIfCol(parts[0], knownAliases)} AS ${parts[1]}`;
                     }
-                    // Handle "col alias" (implicit AS)
                     const spaceParts = trimmed.split(/\s+/);
                     if (spaceParts.length === 2 && !keywords.includes(spaceParts[1].toUpperCase())) {
                         return `${prefixIfCol(spaceParts[0], knownAliases)} ${spaceParts[1]}`;

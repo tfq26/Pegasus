@@ -86,6 +86,7 @@ const props = defineProps<{
   chats?: any[]
   selectedChatId?: string
   queryHistory?: any[]
+  querySessions?: any[]
   isPinned?: boolean
 }>()
 
@@ -101,6 +102,8 @@ const emit = defineEmits<{
   'select-note': [note: any]
   'select-file': [file: any]
   'select-sheet': [sheet: any]
+  'select-session': [session: any]
+  'delete-session': [session: any]
 }>()
 
 // --- Data Spaces ---
@@ -816,6 +819,7 @@ const handleSelectSheet = (sheet: any) => {
               :sheets="(currentSheets as any)"
               :chats="chats"
               :query-history="queryHistory"
+              :query-sessions="querySessions"
               
               :selected-table="selectedTable"
               :search-filter="searchFilter"

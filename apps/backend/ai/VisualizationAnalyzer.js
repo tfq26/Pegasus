@@ -9,9 +9,11 @@ export class VisualizationAnalyzer {
      * @param {Array<object>} data - The query results (rows).
      * @param {string} modelId - AI model to use for analysis.
      * @param {string} userId - User ID for credential resolution.
+     * @param {boolean} forceVisualization - Whether to force visualization mode.
+     * @param {object} dataProfile - Optional column statistics for smarter decisions.
      * @returns {Promise<object>} { shouldVisualize: boolean, blueprint: object | null }
      */
-    static async analyze(originalPrompt, data, modelId = 'gemini-3-flash-preview', userId = null, forceVisualization = false) {
+    static async analyze(originalPrompt, data, modelId = 'gemini-3-flash-preview', userId = null, forceVisualization = false, dataProfile = null) {
         if (!data || data.length < 1) {
             return { shouldVisualize: false, blueprint: null };
         }
@@ -19,7 +21,8 @@ export class VisualizationAnalyzer {
         const columnNames = Object.keys(data[0]);
         const sampleRows = data.slice(0, 10); // More samples for better mapping
 
-        const prompt = PromptBuilder.buildVisualizationPrompt(originalPrompt, data, forceVisualization);
+        // Pass data profile for smarter chart decisions
+        const prompt = PromptBuilder.buildVisualizationPrompt(originalPrompt, data, forceVisualization, dataProfile);
 
 
         try {
@@ -41,8 +44,10 @@ export class VisualizationAnalyzer {
                     type: result.type,
                     title: result.title,
                     xAxis: result.xAxis,
-                    yAxis: Array.isArray(result.yAxis) ? result.yAxis : [result.yAxis]
-                } : null
+                    yAxis: Array.isArray(result.yAxis) ? result.yAxis : [result.yAxis],
+                    reasoning: result.reasoning
+                } : null,
+                reasoning: result.reasoning
             };
         } catch (error) {
             console.error('[VisualizationAnalyzer] Error:', error);

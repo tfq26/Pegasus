@@ -320,8 +320,8 @@ export async function fetchQueries(spaceId?: string) {
   return api.get(url)
 }
 
-export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string, spaceId?: string) {
-  return api.post('/queries', { query, source, status, connection_id: connectionId, space_id: spaceId })
+export async function saveQuery(query: string, source: 'user' | 'ai', status: 'success' | 'error', connectionId?: string, spaceId?: string, sessionId?: string, alias?: string) {
+  return api.post('/queries', { query, source, status, connection_id: connectionId, space_id: spaceId, sessionId, alias })
 }
 
 export async function deleteQuery(queryId: string) {
@@ -330,6 +330,24 @@ export async function deleteQuery(queryId: string) {
 
 export async function clearAllQueries() {
   return api.delete('/queries')
+}
+
+// Query Sessions
+export async function fetchQuerySessions(spaceId: string) {
+  const body = await api.get<{ sessions: any[] }>(`/query-sessions/space/${spaceId}`)
+  return body.sessions || []
+}
+
+export async function createQuerySession(spaceId: string, name?: string, queries: any[] = []) {
+  return api.post<any>('/query-sessions', { spaceId, name, queries })
+}
+
+export async function updateQuerySession(sessionId: string, updates: any) {
+  return api.put<any>(`/query-sessions/${sessionId}`, updates)
+}
+
+export async function deleteQuerySession(sessionId: string) {
+  return api.delete(`/query-sessions/${sessionId}`)
 }
 
 // Dashboard V2 API (Multi-dashboard)

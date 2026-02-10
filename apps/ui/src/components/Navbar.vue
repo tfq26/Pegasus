@@ -327,7 +327,8 @@ import {
   Sun,
   Moon,
   Monitor,
-  BookOpen
+  BookOpen,
+  Terminal
 } from 'lucide-vue-next'
 
 defineOptions({ name: 'AppNavbar' })

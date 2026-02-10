@@ -314,14 +314,11 @@ const copyCellValue = async (value: any) => {
     </ContextMenu>
 
     <!-- Analytical Footer -->
-    <div v-if="settings?.showRowCount" class="flex items-center justify-between px-6 py-3 border-t border-stone-800/50 text-[10px] bg-stone-900/20 mt-auto shrink-0">
-      <div class="flex items-center gap-6">
-        <div v-if="selectedRows.size > 0" class="flex items-center gap-2 px-3 py-1 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 font-bold uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
+    <div v-if="settings?.showRowCount" class="flex items-center justify-between px-4 py-2 border-t border-stone-800/50 text-[9px] bg-stone-900/20 mt-auto shrink-0">
+      <div class="flex items-center gap-4">
+        <div v-if="selectedRows.size > 0" class="flex items-center gap-2 px-2 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 font-bold uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
            <div class="w-1 h-1 rounded-full bg-violet-400 shadow-[0_0_8px_theme(colors.violet.400)]"></div>
            {{ selectedRows.size }} selected
-        </div>
-        <div class="flex items-center gap-2 text-stone-500 font-bold uppercase tracking-[0.2em]">
-           <span>Total Records: {{ data.length.toLocaleString() }}</span>
         </div>
       </div>
 
@@ -376,7 +373,7 @@ const copyCellValue = async (value: any) => {
                 <button 
                   @click="decreaseZoom" 
                   class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-stone-100 disabled:opacity-20 transition-all"
-                  :disabled="zoomLevel === 0"
+                  :disabled="zoomLevel.value === 0"
                 >
                   <Minus class="w-4 h-4" />
                 </button>
@@ -384,7 +381,7 @@ const copyCellValue = async (value: any) => {
                 <button 
                   @click="increaseZoom" 
                   class="p-2 rounded-lg hover:bg-stone-800 text-stone-500 hover:text-stone-100 disabled:opacity-20 transition-all"
-                  :disabled="zoomLevel === zoomClasses.length - 1"
+                  :disabled="zoomLevel.value === zoomClasses.length - 1"
                 >
                   <Plus class="w-4 h-4" />
                 </button>

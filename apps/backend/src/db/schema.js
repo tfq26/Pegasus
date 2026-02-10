@@ -21,7 +21,7 @@ export const users = pgTable("pegasus_user", {
 // --- Data Spaces ---
 export const dataSpaces = pgTable("data_space", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     name: text("name").notNull(),
     description: text("description"),
     icon: text("icon").default("database"),
@@ -35,7 +35,7 @@ export const dataSpaces = pgTable("data_space", {
 
 // --- Space Permissions ---
 export const spacePermissions = pgTable("space_permission", {
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }).notNull(),
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }).notNull(),
     role: text("role").notNull(), // 'owner', 'editor', 'viewer'
     alias: text("alias"),
@@ -47,7 +47,7 @@ export const spacePermissions = pgTable("space_permission", {
 export const dashboards = pgTable("dashboard", {
     id: uuid("id").primaryKey().defaultRandom(),
     title: text("title").notNull(),
-    ownerId: text("owner_id").references(() => users.id, { onDelete: 'cascade' }),
+    ownerId: text("owner_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     isPublic: boolean("is_public").default(false),
     coverImage: text("cover_image"),
     config: jsonb("config"),
@@ -75,7 +75,7 @@ export const dashboardElements = pgTable("dashboard_element", {
 
 // --- Dashboard Permissions ---
 export const dashboardPermissions = pgTable("dashboard_permission", {
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }).notNull(),
     dashboardId: uuid("dashboard_id").references(() => dashboards.id, { onDelete: 'cascade' }).notNull(),
     role: text("role").notNull(),
     alias: text("alias"),
@@ -114,7 +114,7 @@ export const knowledgeChunks = pgTable("knowledge_chunk", {
 export const connections = pgTable("connection", {
     id: uuid("id").primaryKey().defaultRandom(),
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     name: text("name").notNull(),
     type: text("type").notNull(), // 'postgres', 'mongodb', etc.
     config: jsonb("config").notNull(),
@@ -217,7 +217,7 @@ export const spacePermissionRelations = relations(spacePermissions, ({ one }) =>
 
 // --- Recent Access ---
 export const recentAccess = pgTable("recent_access", {
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }).notNull(),
     dashboardId: uuid("dashboard_id").references(() => dashboards.id, { onDelete: 'cascade' }).notNull(),
     accessedAt: timestamp("accessed_at").defaultNow(),
 }, (t) => ({
@@ -227,7 +227,7 @@ export const recentAccess = pgTable("recent_access", {
 // --- Notifications ---
 export const notifications = pgTable("notification", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     dashboardId: uuid("dashboard_id").references(() => dashboards.id, { onDelete: 'cascade' }),
     dashboardTitle: text("dashboard_title"),
     type: text("type"), // 'permission_change', 'mention', etc.
@@ -240,7 +240,7 @@ export const notifications = pgTable("notification", {
 // --- Experimental Features ---
 export const experimentalRequests = pgTable("experimental_request", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     reason: text("reason"),
     email: text("email"),
     status: text("status").default('pending'), // 'pending', 'approved', 'rejected'
@@ -258,7 +258,7 @@ export const experimentalAccess = pgTable("experimental_access", {
 
 export const userFeatureFlags = pgTable("user_feature_flag", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     featureId: text("feature_id").notNull(),
     enabled: boolean("enabled").default(false),
     enabledAt: timestamp("enabled_at").defaultNow(),
@@ -269,7 +269,7 @@ export const userFeatureFlags = pgTable("user_feature_flag", {
 // --- Chat ---
 export const chats = pgTable("chat", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
     title: text("title").default('New Chat'),
     messages: jsonb("messages").default([]),
@@ -282,9 +282,11 @@ export const chats = pgTable("chat", {
 // --- Query History (AI Usage) ---
 export const queryHistory = pgTable("query_history", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
+    sessionId: uuid("session_id"), // Reference to querySessions.id
     query: text("query"),
+    alias: text("alias"),
     source: text("source"), // 'ai_generation', 'ai_analysis', etc.
     model: text("model"),
     status: text("status"), // 'success', 'error'
@@ -293,10 +295,21 @@ export const queryHistory = pgTable("query_history", {
     createdAt: timestamp("created_at").defaultNow(),
 });
 
+// --- Query Sessions (Document-based) ---
+export const querySessions = pgTable("query_session", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
+    name: text("name"),
+    queries: jsonb("queries").default([]), // Array of { query, alias, status, timestamp }
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // --- Data Sources (Live Sync) ---
 export const dataSources = pgTable("data_source", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     name: text("name").notNull(),
     type: text("type").notNull(),
     config: jsonb("config").notNull(),
@@ -312,7 +325,7 @@ export const dataSources = pgTable("data_source", {
 // --- Cell Bindings ---
 export const cellBindings = pgTable("cell_binding", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     spreadsheetId: text("spreadsheet_id").notNull(),
     cellId: text("cell_id").notNull(),
     dataSourceId: uuid("data_source_id").references(() => dataSources.id, { onDelete: 'cascade' }),
@@ -326,7 +339,7 @@ export const cellBindings = pgTable("cell_binding", {
 // --- Payments ---
 export const userPayments = pgTable("user_payment", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     amount: integer("amount"), // in cents
     currency: text("currency").default('usd'),
     tokens: integer("tokens").default(0),
@@ -341,7 +354,7 @@ export const userPayments = pgTable("user_payment", {
 // --- Workspace ---
 export const connectionWorkspaces = pgTable("connection_workspace", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     connectionId: text("connection_id").notNull(), // Can be 'temp' or a UUID string
     workspaceData: jsonb("workspace_data").notNull(),
     updatedAt: timestamp("updated_at").defaultNow(),
@@ -355,7 +368,7 @@ export const transactionMaster = pgTable("transaction_master", {
     stripeSessionId: text("stripe_session_id").unique(),
     status: text("status"), // 'pending', 'completed', 'failed'
     type: text("type"),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     customerId: text("customer_id"),
     payload: jsonb("payload"),
     error: text("error"),
@@ -385,7 +398,7 @@ export const stockHistory = pgTable("stock_history", {
 
 export const stockTransactions = pgTable("stock_transaction", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     symbol: text("symbol").notNull(),
     name: text("name"),
     quantity: doublePrecision("quantity").notNull(),
@@ -412,7 +425,7 @@ export const weatherCache = pgTable("weather_cache", {
 // --- Custom Tools ---
 export const customTools = pgTable("custom_tool", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     name: text("name").notNull(),
     description: text("description"),
     url: text("url").notNull(),
@@ -425,7 +438,7 @@ export const customTools = pgTable("custom_tool", {
 // --- User Secrets ---
 export const userSecrets = pgTable("user_secret", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     name: text("name").notNull(),
     value: text("value").notNull(),
     createdAt: timestamp("created_at").defaultNow(),
@@ -461,7 +474,7 @@ export const spreadsheetPermissions = pgTable("spreadsheet_permission", {
 // --- Storage ---
 export const files = pgTable("file", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     storageId: text("storage_id").notNull(),
     filename: text("filename").notNull(),
     description: text("description"),
@@ -473,7 +486,7 @@ export const files = pgTable("file", {
 
 export const storageCredentials = pgTable("storage_credential", {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id").references(() => users.id, { onDelete: 'cascade' }),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     providerType: text("provider_type").notNull(), // 's3', 'azure', 'gcp'
     name: text("name").notNull(),
     config: jsonb("config").notNull(),

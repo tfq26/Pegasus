@@ -142,7 +142,12 @@ const formatTime = (timestamp: string) => {
 
 const computedData = computed(() => {
   if (!props.data) return { labels: [], datasets: [] }
-  const data = JSON.parse(JSON.stringify(props.data))
+  let data;
+  try {
+    data = JSON.parse(JSON.stringify(props.data))
+  } catch (e) {
+    return { labels: [], datasets: [] }
+  }
   
   // Guard against missing datasets which causes vue-chartjs to crash
   if (!data.datasets) data.datasets = []
@@ -153,11 +158,74 @@ const computedData = computed(() => {
       return props.customization.labels?.[index] || label
     })
   }
+
+  // Auto-format Date labels for cleaner visualization (e.g. 2026-01-12 -> 1/12/26)
+  if (data.labels && data.labels.length > 0) {
+    const firstLabel = data.labels[0]
+    // Detect YYYY-MM-DD or MM/DD/YY at start
+    const looksLikeDate = typeof firstLabel === 'string' && (/^\d{4}[-/]\d{2}[-/]\d{2}/.test(firstLabel) || /^\d{2}[-/]\d{2}[-/]\d{2,4}/.test(firstLabel))
+    
+    if (looksLikeDate) {
+      data.labels = data.labels.map((l: any) => {
+        if (typeof l !== 'string') return l
+        
+        // Clean up common time period markers that break Date constructor
+        // e.g. "2026-02-05 12:00-23:59" -> "2026-02-05"
+        const parts = l.split(' ')
+        const cleanDateStr = parts[0] || ''
+        const date = new Date(cleanDateStr)
+        
+        if (isNaN(date.getTime())) return l
+        
+        const formattedDate = date.toLocaleDateString('en-US', { 
+          month: 'numeric', 
+          day: 'numeric', 
+          year: '2-digit' 
+        })
+
+        // Preserve AM/PM if it was there (e.g. for 12h periods)
+        const suffix = parts.find(p => p.includes('AM') || p.includes('PM') || p.includes('h') || p.includes('-')) || ''
+        return suffix ? `${formattedDate} ${suffix}` : formattedDate
+      })
+    }
+  }
   
   if (props.customization?.colorPalette?.shades && data.datasets?.[0]) {
     const shades = props.customization.colorPalette.shades
-    data.datasets[0].backgroundColor = shades
-    data.datasets[0].borderColor = shades
+    // For bar/pie/doughnut, we use an array of colors. 
+    // For line/area, we use a single color for the line.
+    const isLineChart = props.type === 'line' || props.type === 'area'
+    
+    data.datasets[0].backgroundColor = isLineChart ? shades[0] : shades
+    data.datasets[0].borderColor = isLineChart ? shades[0] : shades
+    
+    if (isLineChart) {
+      data.datasets[0].borderWidth = 2
+      data.datasets[0].pointRadius = 4
+      data.datasets[0].pointBackgroundColor = shades[0]
+      data.datasets[0].fill = props.type === 'area'
+      data.datasets[0].showLine = true
+      data.datasets[0].spanGaps = true // Ensure lines connect even with missing data
+      
+      // Ensure all data points are numeric to prevent Chart.js line breaks
+      if (Array.isArray(data.datasets[0].data)) {
+        data.datasets[0].data = data.datasets[0].data.map((v: any) => 
+          (typeof v === 'number' ? v : parseFloat(v))
+        )
+      }
+    }
+  } else if (props.type === 'line' && data.datasets?.[0]) {
+    // Ensure line visibility even without customization
+    data.datasets[0].showLine = true
+    data.datasets[0].spanGaps = true
+    if (data.datasets[0].fill === undefined) data.datasets[0].fill = false
+    
+    // Numeric data check
+    if (Array.isArray(data.datasets[0].data)) {
+      data.datasets[0].data = data.datasets[0].data.map((v: any) => 
+        (typeof v === 'number' ? v : parseFloat(v))
+      )
+    }
   }
   
   return data

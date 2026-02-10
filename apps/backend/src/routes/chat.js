@@ -19,6 +19,10 @@ import { ConnectionAnalyzer } from "../services/ConnectionAnalyzer.js"
 import { OneContext } from "../services/OneContext.js"
 import { DataContextService } from "../services/DataContextService.js"
 import { VisualizationAnalyzer } from "../../ai/VisualizationAnalyzer.js"
+import { ConversationState } from "../services/ConversationState.js"
+import { DataProfiler } from "../services/DataProfiler.js"
+import { QueryRepair } from "../services/QueryRepair.js"
+import { SemanticIntentClassifier } from "../services/SemanticIntentClassifier.js"
 
 // Fix BigInt serialization for JSON.stringify
 BigInt.prototype.toJSON = function () { return this.toString() }
@@ -688,13 +692,36 @@ chat.post("/ai/generate", async (c) => {
         }
 
         try {
-            const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema } = body
+            const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema, chatId } = body
 
             let basePrompt = prompt;
             let forceVisualization = false;
             let forceQuery = false;
             let forceText = false;
+            let forceAnalysis = false;
             let isExplicitAction = false;
+
+            // NEW: Build conversation context for follow-up handling
+            let conversationContext = null;
+            try {
+                if (chatId) {
+                    conversationContext = await ConversationState.buildContext(chatId, prompt);
+                    if (conversationContext?.isFollowUp) {
+                        console.log(`[AI Generate] Detected follow-up question. Previous table: ${conversationContext.entities?.lastTable}`);
+                    }
+                }
+            } catch (convErr) {
+                console.warn('[AI Generate] Conversation state build failed:', convErr.message);
+            }
+
+            // NEW: Semantic intent classification
+            let semanticIntent = null;
+            try {
+                semanticIntent = SemanticIntentClassifier.classifyQuick(prompt);
+                console.log(`[AI Generate] Intent classified: ${semanticIntent.type} (confidence: ${semanticIntent.confidence})`);
+            } catch (intentErr) {
+                console.warn('[AI Generate] Intent classification failed:', intentErr.message);
+            }
 
             // Handle Slash Commands
             if (prompt.trim().startsWith('/visualization') || prompt.trim().startsWith('/chart') || prompt.trim().startsWith('/plot')) {
@@ -918,16 +945,37 @@ chat.post("/ai/generate", async (c) => {
 
             console.log(`[AI Generate] Context built. Provider: ${provider}, Tables: ${normalizedSchema.tables.length}`);
 
+            // NEW: Data Profiling for smarter chart/query decisions
+            let dataProfile = null;
+            try {
+                if (adapter && activeTable && normalizedSchema.detailedSchema?.[activeTable]) {
+                    await sendProgress(25, 'Profiling data structure...');
+                    const columns = normalizedSchema.detailedSchema[activeTable];
+                    dataProfile = await DataProfiler.profile(adapter, activeTable, columns, provider);
+                    console.log(`[AI Generate] Data profiled for ${activeTable}:`, Object.keys(dataProfile).length, 'columns');
+                }
+            } catch (profileErr) {
+                console.warn('[AI Generate] Data profiling failed:', profileErr.message);
+            }
+
+            // Enhance intent with semantic classification if available
+            let resolvedIntent = forceVisualization ? { type: 'visualization', force: true } :
+                forceQuery ? { type: 'query', force: true } :
+                    forceAnalysis ? { type: 'analysis', force: true } :
+                        semanticIntent || { type: 'chat' };
+
             const aiSettings = {
                 modelId: activeModel,
                 temperature: Number(temperature || 0.7),
-                maxTokens: Number(maxTokens || 1000),
+                maxTokens: Number(maxTokens || 2500),
                 activeTable,
-                intent: forceVisualization ? 'visualization' : (forceQuery ? 'query' : (forceAnalysis ? 'analysis' : undefined)),
+                intent: resolvedIntent,
+                conversationContext, // Pass for prompt building
+                dataProfile, // Pass for visualization decisions
                 // If slash command explicitly requested visualization, FORCE it here
                 toolChoice: forceVisualization ? 'generate_visualization' : undefined
             }
-            console.log('[AI Generate] Settings:', { modelId: activeModel, tablesCount: normalizedSchema?.tables?.length });
+            console.log('[AI Generate] Settings:', { modelId: activeModel, tablesCount: normalizedSchema?.tables?.length, intent: resolvedIntent.type, isFollowUp: conversationContext?.isFollowUp });
             // Lazy import to avoid circular dep issues at top level if any
             const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js')
             aiSettings.tools = spreadsheetToolService.getReadOnlyTools()
@@ -954,12 +1002,21 @@ chat.post("/ai/generate", async (c) => {
 
                     let result;
                     try {
+                        // Build options with enhanced schema and extra context
+                        const generationOptions = {
+                            dialect: provider,
+                            schema: {
+                                ...normalizedSchema,
+                                dataProfile: aiSettings.dataProfile,
+                                conversationContext: aiSettings.conversationContext
+                            },
+                            previousContext: context, // Keep as array for .filter()
+                            conversationContext: aiSettings.conversationContext,
+                            dataProfile: aiSettings.dataProfile
+                        };
+
                         result = await Promise.race([
-                            aiClient.generateQuery(currentPrompt, {
-                                dialect: provider,
-                                schema: normalizedSchema,
-                                previousContext: context
-                            }, aiSettings),
+                            aiClient.generateQuery(currentPrompt, generationOptions, aiSettings),
                             new Promise((_, reject) => setTimeout(() => reject(new Error('AI Generation Timeout')), 25000))
                         ]);
                         console.log(`[AI Generate] Result received:`, { hasText: !!result.text, hasToolCalls: !!result.toolCalls?.length });
@@ -1245,11 +1302,54 @@ chat.post("/ai/generate", async (c) => {
                         })
                     }
 
-                    // 5. Check for execute_query (Immediate Exit)
+                    // 5. Check for execute_query (Optional turnover for analysis)
                     const queryTool = result.toolCalls.find(t => t.function.name === 'execute_query')
                     if (queryTool) {
-                        const args = JSON.parse(queryTool.function.arguments)
-                        return sendResult({ query: args.query, usage: result.usage, contextUsed: resolvedResources })
+                        try {
+                            const args = JSON.parse(queryTool.function.arguments);
+                            const targetAdapter = adapter; // execute_query usually uses the local context adapter
+                            const targetProvider = provider;
+
+                            const data = await spreadsheetToolService.callTool('execute_query', args, {
+                                adapter: targetAdapter,
+                                dialect: targetProvider,
+                                connectionId,
+                                userId
+                            });
+
+                            if (data.rows) logExecutedQuery(userId, args.query, connectionId, 'success');
+
+                            const toolResult = {
+                                type: "data_response",
+                                query: args.query,
+                                data: data.rows || [],
+                                error: data.error
+                            };
+
+                            lastToolResult = toolResult;
+
+                            // Turnover loop for chat summary (Allows AI to generate a JSON table in chat)
+                            // We increase this limit so more results stay in-chat as requested.
+                            const isSmallData = (Array.isArray(toolResult.data) && toolResult.data.length <= 500);
+
+                            if (isSmallData && iterations < maxIterations) {
+                                console.log(`[AI Generate] Raw query data is small. Continuing turnover for chat summary...`);
+                                let resSummary = JSON.stringify(toolResult.data.slice(0, 50), null, 2);
+                                currentPrompt += `\n\n[System Context - Intermediate Query Result]:\n${resSummary}\n\n`;
+                                continue;
+                            }
+
+                            // Otherwise exit normally
+                            return sendResult({
+                                ...toolResult,
+                                usage: result.usage,
+                                contextUsed: resolvedResources
+                            });
+                        } catch (e) {
+                            console.error("[AI Generate] execute_query failed:", e.message);
+                            currentPrompt += `\n\n[System Error - Raw Query Failed]:\n${e.message}\nPlease fix your SQL and try again.`;
+                            continue;
+                        }
                     }
 
                     // If none of the specific tools matched but we have tool calls, just break

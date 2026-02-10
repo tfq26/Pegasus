@@ -40,6 +40,7 @@ const props = defineProps<{
   autoExecute: boolean;
   privateMode?: boolean;
   isThinking?: boolean;
+  alias?: string;
 }>();
 
 const emit = defineEmits<{
@@ -56,6 +57,7 @@ const emit = defineEmits<{
   (e: 'share'): void;
   (e: 'ai-respond', response: any): void;
   (e: 'generate-insights', payload: { query: string; results: any; messageIndex: number }): void;
+  (e: 'update:alias', alias: string): void;
 }>();
 
 // --- Pinia Store ---
@@ -1791,7 +1793,9 @@ defineExpose({
             :model-value="tab.data?.content || ''"
             :is-thinking="props.isThinking"
             :label="tab.label"
+            :alias="props.alias"
             @update:model-value="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
+            @update:alias="(val: string) => emit('update:alias', val)"
             @submit="emit('submit')"
             @save="() => { /* handled by auto-save */ }"
             @explain-query="(q) => emit('explain-query', q)"

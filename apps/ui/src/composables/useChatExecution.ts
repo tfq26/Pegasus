@@ -1,12 +1,13 @@
 import { ref, type Ref, nextTick } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
+import { useSpaceStore } from '@/stores/space'
 // useChat removed to avoid circular dependency
 // Chat.vue provides createChat
 
 import { toast } from '@/composables/useNotifications'
 import { useProgress } from '@/lib/progress'
-import { generateAIQuery, recommendVisualization, analyzeResults } from '@/lib/api'
+import { generateAIQuery, recommendVisualization, analyzeResults, createQuerySession } from '@/lib/api'
 import { api, getAuthHeaders } from '@/lib/apiClient'
 import { buildConnectionPayload } from '@/lib/db-connections'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
@@ -32,6 +33,7 @@ export function useChatExecution(
 ) {
     const workspaceStore = useWorkspaceStore()
     const chatStore = useChatStore()
+    const spaceStore = useSpaceStore()
     const { startOperation, finishOperation, failOperation, withProgress } = useProgress()
     const { openMutation } = useChatDialogs()
 
@@ -45,6 +47,7 @@ export function useChatExecution(
     const visualizableResult = ref<any>(null)
     const suggestedChartType = ref<string | null>(null)
     const currentExecutionSteps = ref<{ message: string, timestamp: number, progress: number }[]>([])
+    const alias = ref('')
 
     // --- Helpers ---
     const normalizeQuery = (query: string, provider: string) => {
@@ -197,15 +200,48 @@ export function useChatExecution(
         startOperation(opId, `Executing Query`, { cancellable: true, onCancel: handleCancelQuery })
 
         try {
+            // Push Real-time Thinking Steps
+            currentExecutionSteps.value.push({ message: 'Connecting to data source...', timestamp: Date.now(), progress: 10 })
+
+            // Allow small delay for UI to show step
+            await new Promise(r => setTimeout(r, 400))
+
+            currentExecutionSteps.value.push({ message: 'Translating SQL to native dialect...', timestamp: Date.now(), progress: 30 })
+            await new Promise(r => setTimeout(r, 300))
+
+            currentExecutionSteps.value.push({ message: 'Executing query on target container...', timestamp: Date.now(), progress: 60 })
+
+            const activeTab = workspaceStore.activeTab as any
+            let sessionId = activeTab?.data?.sessionId
+            const spaceId = spaceStore.currentSpaceId.value
+
+            // Auto-create session if missing in a query tab
+            if (activeTab?.type === 'query' && !sessionId && spaceId) {
+                try {
+                    const session = await createQuerySession(spaceId, activeTab.label)
+                    sessionId = session.id
+                    activeTab.data.sessionId = sessionId
+                    workspaceStore.saveWorkspace(workspaceStore.activeConnectionId.value)
+                } catch (e) {
+                    console.error("[useChatExecution] Failed to auto-create session:", e)
+                }
+            }
+
             const response = await api.post<any>('/query', {
                 provider: selectedConnection.value.provider,
                 connection: buildConnectionPayload(selectedConnection.value),
                 query: normalizeQuery(payload, selectedConnection.value.provider),
                 source: 'user',
-                model: null
+                model: null,
+                sessionId,
+                alias: alias.value || '',
+                space_id: spaceId
             }, {
                 signal: abortController.value.signal
             })
+
+            currentExecutionSteps.value.push({ message: 'Retrieving and formatting results...', timestamp: Date.now(), progress: 90 })
+            await new Promise(r => setTimeout(r, 200))
 
             const body = response
             if (body.error) throw new Error(body.error ?? 'Execution failed')
@@ -229,7 +265,8 @@ export function useChatExecution(
                     hasResults: true,
                     query: payload,
                     resultPreview: Array.isArray(body.result) ? body.result.slice(0, 20) : body.result,
-                    canGenerateInsights: true
+                    canGenerateInsights: true,
+                    steps: [...currentExecutionSteps.value]
                 }
             })
 
@@ -419,7 +456,7 @@ export function useChatExecution(
                         const lastResult = response.results[response.results.length - 1];
                         queryResult.value = lastResult.data;
                         lastQuery.value = lastResult.query;
-                        resultsPanelVisible.value = true;
+                        // resultsPanelVisible.value = true; // Disabled as per user request to favor chat table
                     } else {
                         lastQuery.value = response.query;
                         queryResult.value = response.data;
@@ -671,6 +708,7 @@ export function useChatExecution(
         stopExecution,
         handleAIGenerate,
         handleCreateDashboardElement,
-        currentExecutionSteps
+        currentExecutionSteps,
+        alias
     }
 }

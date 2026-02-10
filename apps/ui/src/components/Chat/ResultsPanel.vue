@@ -49,7 +49,7 @@ const emit = defineEmits<{
 const size = ref(400) // Slightly wider default
 const isResizing = ref(false)
 const isMaximized = ref(false)
-const activeTab = ref<'output' | 'reasoning' | 'insights' | 'problems' | 'versioning'>('output')
+const activeTab = ref<'output' | 'thinking' | 'insights' | 'problems' | 'versioning'>('output')
 
 const hiddenItems = useLocalStorage<string[]>('results-panel-hidden-items', [])
 const viewMode = ref<'table' | 'json' | 'excel'>('table')
@@ -65,8 +65,8 @@ watch(() => props.initialViewMode, (val) => {
 
 // Auto-switch to reasoning if loading, or output if done
 watch(() => props.loading, (isLoading) => {
-    if (isLoading) activeTab.value = 'reasoning'
-    else if (props.result) activeTab.value = 'output'
+    if (isLoading) activeTab.value = 'thinking'
+    else if (props.result && activeTab.value !== 'thinking') activeTab.value = 'output'
 })
 
 const startResize = (e: MouseEvent) => {
@@ -174,7 +174,7 @@ const copyToClipboard = async (text: string) => {
 
     <!-- Header / Tab Bar -->
     <div 
-      class="flex items-center justify-between px-6 py-4 shrink-0 z-10"
+      class="flex items-center justify-between px-4 py-2 shrink-0 z-10"
       :class="{ 'flex-col items-start gap-4': position === 'right' && !isMaximized }"
     >
         <div class="flex items-center gap-6">
@@ -182,22 +182,25 @@ const copyToClipboard = async (text: string) => {
             <div class="flex items-center p-1 rounded-full bg-muted/40 border border-border/40">
                  <button 
                     @click="activeTab = 'output'"
-                    class="px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
+                    class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
                     :class="activeTab === 'output' ? 'bg-background shadow-md text-foreground scale-105' : 'text-muted-foreground hover:text-foreground'"
                  >
                     <Table class="w-3.5 h-3.5" />
                     <span>Data</span>
+                    <span v-if="Array.isArray(props.result) && props.result.length > 0" class="ml-1.5 px-1.5 py-0.5 rounded-md bg-foreground/5 text-[9px] font-mono text-muted-foreground border border-border/50">
+                      {{ props.result.length.toLocaleString() }}
+                    </span>
                  </button>
                  <button 
-                    @click="activeTab = 'reasoning'"
-                    class="px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
-                    :class="activeTab === 'reasoning' ? 'bg-background shadow-md text-violet-500 scale-105' : 'text-muted-foreground hover:text-foreground'"
+                    @click="activeTab = 'thinking'"
+                    class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
+                    :class="activeTab === 'thinking' ? 'bg-background shadow-md text-violet-500 scale-105' : 'text-muted-foreground hover:text-foreground'"
                  >
                     <div class="relative">
                         <Brain class="w-3.5 h-3.5" />
                         <span v-if="props.loading" class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-violet-500 rounded-full animate-ping"></span>
                     </div>
-                    <span>Reasoning</span>
+                    <span>Thinking</span>
                  </button>
                  <button 
                     v-if="props.analysis?.prediction"
@@ -215,27 +218,36 @@ const copyToClipboard = async (text: string) => {
         <div class="flex items-center gap-4">
              <div class="flex items-center gap-2">
                <button
+                 v-if="Array.isArray(props.result) && props.result.length > 0"
+                 @click="emit('create-dashboard-element')"
+                 class="w-7 h-7 flex items-center justify-center rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-all shadow-sm"
+                 title="Visualize Data"
+               >
+                 <LayoutDashboard class="w-3.5 h-3.5" />
+               </button>
+
+               <button
                  v-if="!lockedPosition"
                  @click="togglePosition"
-                 class="w-8 h-8 flex items-center justify-center rounded-full bg-muted/30 text-muted-foreground hover:text-violet-500 hover:bg-violet-500/10 transition-all"
+                 class="w-7 h-7 flex items-center justify-center rounded-full bg-muted/30 text-muted-foreground hover:text-violet-500 hover:bg-violet-500/10 transition-all"
                >
-                 <PanelBottom v-if="position === 'right'" class="w-4 h-4" />
-                 <PanelRight v-else class="w-4 h-4" />
+                 <PanelBottom v-if="position === 'right'" class="w-3.5 h-3.5" />
+                 <PanelRight v-else class="w-3.5 h-3.5" />
                </button>
 
                <button
                  @click="toggleMaximize"
-                 class="w-8 h-8 flex items-center justify-center rounded-full bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+                 class="w-7 h-7 flex items-center justify-center rounded-full bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
                >
-                 <Minimize2 v-if="isMaximized" class="w-4 h-4" />
-                 <Maximize2 v-else class="w-4 h-4" />
+                 <Minimize2 v-if="isMaximized" class="w-3.5 h-3.5" />
+                 <Maximize2 v-else class="w-3.5 h-3.5" />
                </button>
                
                <button
                  @click="emit('close')"
-                 class="w-8 h-8 flex items-center justify-center rounded-full bg-muted/30 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                 class="w-7 h-7 flex items-center justify-center rounded-full bg-muted/30 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-all"
                >
-                 <X class="w-4 h-4" />
+                 <X class="w-3.5 h-3.5" />
                </button>
              </div>
         </div>
@@ -243,12 +255,12 @@ const copyToClipboard = async (text: string) => {
 
     <!-- Panel Content -->
     <div class="flex-1 overflow-hidden relative z-10 flex flex-col">
-      <div class="flex-1 overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
+      <div class="flex-1 overflow-y-auto overflow-x-hidden p-4 custom-scrollbar">
         
         <!-- Output Tab -->
         <Transition name="fade" mode="out-in">
-        <div v-if="activeTab === 'output'" class="h-full flex flex-col space-y-4">
-          <div v-if="error" class="p-6 rounded-[24px] border border-rose-500/20 bg-rose-500/5 flex items-start gap-4">
+        <div v-if="activeTab === 'output'" class="h-full flex flex-col space-y-3">
+          <div v-if="error" class="p-6 rounded-[36px] border border-rose-500/20 bg-rose-500/5 flex items-start gap-4">
              <div class="w-10 h-10 shrink-0 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-500">
                 <AlertCircle class="w-5 h-5" />
              </div>
@@ -260,15 +272,8 @@ const copyToClipboard = async (text: string) => {
           </div>
 
           <div v-else-if="result" class="h-full flex flex-col space-y-4">
-             <div v-if="Array.isArray(result) && result.length > 0" class="flex items-center justify-end">
-               <button @click="emit('create-dashboard-element')" class="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground hover:opacity-90 text-[10px] font-bold uppercase tracking-widest transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5">
-                  <LayoutDashboard class="w-3.5 h-3.5" />
-                  <span>Visualize</span>
-               </button>
-               <!-- Spreadsheet button removed as requested -->
-            </div>
 
-            <div class="flex-1 min-h-0 rounded-[24px] border border-border/50 bg-muted/20 overflow-hidden shadow-inner">
+            <div class="flex-1 min-h-0 rounded-xl border border-border/50 bg-muted/20 overflow-hidden shadow-inner">
                <ResultsTable 
                   v-if="viewMode === 'table' && Array.isArray(result)" 
                   :data="result" 
@@ -293,28 +298,9 @@ const copyToClipboard = async (text: string) => {
           </div>
         </div>
 
-        <!-- Reasoning Tab (NEW) -->
-        <div v-else-if="activeTab === 'reasoning'" class="h-full max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <!-- Thinking Tab -->
+        <div v-else-if="activeTab === 'thinking'" class="h-full max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             
-            <!-- Context Used -->
-            <div v-if="props.analysis?.contextUsed && props.analysis.contextUsed.length > 0" class="space-y-4">
-                <h4 class="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                    <Database class="w-3.5 h-3.5" />
-                    Data Sources
-                </h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div v-for="(ctx, idx) in props.analysis.contextUsed" :key="idx" 
-                         class="p-4 rounded-[20px] bg-muted/30 border border-border/50 flex items-center gap-3 hover:bg-muted/50 transition-colors">
-                        <div class="w-8 h-8 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500 shrink-0">
-                            <Table class="w-4 h-4" />
-                        </div>
-                        <div class="min-w-0">
-                            <div class="text-sm font-bold truncate">{{ ctx.name || ctx.table }}</div>
-                            <div class="text-[10px] text-muted-foreground truncate">{{ ctx.provider }} • {{ ctx.rows || 'Unknown' }} rows</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Execution Timeline -->
             <div class="space-y-4">
@@ -324,10 +310,10 @@ const copyToClipboard = async (text: string) => {
                 </h4>
                 
                 <div class="relative pl-4 space-y-6 before:absolute before:left-[5px] before:top-2 before:bottom-2 before:w-px before:bg-border/60">
-                    <div v-for="(step, idx) in (props.analysis?.steps || [])" :key="idx" class="relative pl-6 group">
+                    <div v-for="(step, idx) in displaySteps" :key="idx" class="relative pl-6 group">
                         <!-- Connector Dot -->
                         <div class="absolute left-0 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-background"
-                             :class="idx === (props.analysis?.steps?.length || 0) - 1 ? 'bg-violet-500 shadow-[0_0_10px_theme(colors.violet.500)] animate-pulse' : 'bg-muted-foreground/30'">
+                             :class="idx === (displaySteps.length || 0) - 1 && props.loading ? 'bg-violet-500 shadow-[0_0_10px_theme(colors.violet.500)] animate-pulse' : 'bg-muted-foreground/30'">
                         </div>
                         
                         <div class="space-y-1">
@@ -352,7 +338,7 @@ const copyToClipboard = async (text: string) => {
             <div v-if="props.lastQuery" class="space-y-4">
                 <h4 class="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                     <ArrowRight class="w-3.5 h-3.5" />
-                    Generated Protocol
+                    Generated Query
                 </h4>
                 <div class="p-5 rounded-[24px] bg-stone-950 text-stone-300 font-mono text-xs overflow-x-auto relative group">
                     <pre>{{ props.lastQuery }}</pre>

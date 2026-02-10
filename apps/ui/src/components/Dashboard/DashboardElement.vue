@@ -87,7 +87,7 @@
 
           <div class="flex-1 relative overflow-hidden min-h-[200px]">
             <ChartRenderer 
-              v-if="element && element.type !== 'stat' && element.type !== 'text' && element.type !== 'file' && element.config" 
+              v-if="element && element.type !== 'stat' && element.type !== 'table' && element.type !== 'text' && element.type !== 'file' && element.config" 
               :type="element.type" 
               :data="element.config.data" 
               :options="{ ...element.config.options, maintainAspectRatio: false, responsive: true }"
@@ -117,6 +117,7 @@
             <TableElement
               v-else-if="element?.type === 'table' && element.config"
               :config="element.config"
+              :title="element.title"
               class="h-full"
             />
 

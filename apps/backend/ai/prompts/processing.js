@@ -57,6 +57,7 @@ Rules for "answer":
 1. Length: At least 1 paragraph, maximum 5 paragraphs.
 2. Use Markdown (**bold**, lists, etc).
 3. Identify patterns, trends, or outliers.
+4. TABULAR DATA: If you need to show a data table, append "Results: " followed by a JSON array of objects to the end of your "answer" string.
 `.trim();
 }
 

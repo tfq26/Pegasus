@@ -681,6 +681,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
                                 updatedElement.config.label = firstRow[labelKey]
                             }
                         }
+                    } else if (updatedElement.type === 'table') {
+                        // For tables, always use the raw result
+                        updatedElement.config.data = body.result
                     } else if (body.result && Array.isArray(body.result)) {
                         // Transform raw result to chart config using local generator
                         const { generateChartConfig } = await import('@/lib/chartGenerator')

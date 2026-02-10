@@ -72,7 +72,32 @@ export const DIALECTS = {
         examples: [
             "SELECT SUBSTRING(c.timestamp, 0, 10) as day, AVG(c.cpuPercent) as avg_cpu FROM c GROUP BY SUBSTRING(c.timestamp, 0, 10)",
             "SELECT c.serverName, c.cpuPercent, c.errorMessage FROM c WHERE c.status = 'online' AND (c.cpuPercent > 80 OR c.errorMessage != null)"
-        ]
+        ],
+        translationRules: {
+            description: 'SQL to Cosmos DB SQL translation mappings',
+            mappings: {
+                'LIKE': 'CONTAINS/STARTSWITH/ENDSWITH',
+                'ILIKE': 'LOWER() + CONTAINS',
+                'JOIN': 'NOT SUPPORTED',
+                'LIMIT': 'TOP',
+                'OFFSET': 'OFFSET...LIMIT'
+            },
+            transformations: [
+                "FROM table → FROM c (always use 'c' as root alias)",
+                "table.column → c.column (prefix all columns with 'c.')",
+                "LIKE '%pattern%' → CONTAINS(LOWER(c.column), 'pattern')",
+                "LIKE 'pattern%' → STARTSWITH(c.column, 'pattern')",
+                "LIKE '%pattern' → ENDSWITH(c.column, 'pattern')",
+                "LIMIT n → TOP n (place at start: SELECT TOP n)"
+            ],
+            unsupportedFeatures: [
+                'JOIN (any type)',
+                'Subqueries in FROM',
+                'Window functions',
+                'CTEs (WITH clause)',
+                'UNION/INTERSECT/EXCEPT'
+            ]
+        }
     },
     kusto: {
         displayName: 'Kusto (KQL)',
@@ -86,7 +111,33 @@ export const DIALECTS = {
         },
         examples: [
             "StormEvents | summarize count() by State | order by count_ desc"
-        ]
+        ],
+        translationRules: {
+            description: 'SQL to Kusto KQL translation mappings',
+            mappings: {
+                'SELECT': 'project',
+                'FROM': 'Table at start',
+                'WHERE': 'where',
+                'GROUP BY': 'summarize...by',
+                'ORDER BY': 'order by / sort by',
+                'LIMIT': 'take',
+                'COUNT(*)': 'count()',
+                'LIKE': 'contains/startswith/endswith'
+            },
+            transformations: [
+                "SELECT col1, col2 FROM table WHERE x > 5 → table | where x > 5 | project col1, col2",
+                "SELECT COUNT(*) FROM table GROUP BY category → table | summarize count() by category",
+                "WHERE col LIKE '%pattern%' → where col contains 'pattern'",
+                "WHERE col LIKE 'pattern%' → where col startswith 'pattern'",
+                "WHERE col LIKE '%pattern' → where col endswith 'pattern'",
+                "LIMIT n → | take n",
+                "ORDER BY col DESC → | order by col desc"
+            ],
+            unsupportedFeatures: [
+                'Explicit JOIN syntax (use join operator)',
+                'Some SQL-specific functions'
+            ]
+        }
     },
     mongodb: {
         displayName: 'MongoDB',
