@@ -144,8 +144,8 @@ export class DuckDBAdapter {
                     // Sanitize table name from raw filename (Aggressively remove UUIDs)
                     const baseName = path.basename(this.rawPath, ext);
                     const uuidRegex = /[a-f0-9]{8}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{4}[-_][a-f0-9]{12}|[a-f0-9]{32}/gi;
-                    const cleanBaseName = baseName.replace(uuidRegex, '').replace(/^_+|_+$/g, '').replace(/_+/g, '_');
-                    const tableName = (cleanBaseName || baseName).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                    const cleanBaseName = baseName.replace(uuidRegex, '').replace(/_+/g, '_');
+                    const tableName = (cleanBaseName || baseName).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
                     let query = "";
 
                     console.log(`[DuckDB] Attempting to register data file: ${this.dataFileSource} as table: ${tableName} (ZeroCopy: ${this.isZeroCopy})`);

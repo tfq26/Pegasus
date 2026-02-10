@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { generateTestData } from '@/lib/api'
-import { toast } from 'vue-sonner'
+import { toast } from '@/composables/useNotifications'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

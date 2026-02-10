@@ -52,6 +52,8 @@ import { storageRoutes } from "./src/routes/storage.js"
 import importRoutes from "./src/routes/import.js"
 import supportRoutes from "./src/routes/support.js"
 import piscesRoutes from "./src/routes/pisces.js"
+import { queryRoutes } from "./src/routes/query.js"
+import { querySessionRoutes } from "./src/routes/querySessions.js"
 import {
     EXPERIMENTAL_FEATURES,
     initExperimentalTables,
@@ -345,6 +347,7 @@ app.route('/connections', connectionRoutes)
 app.route('/experimental', experimental) // Mount as /experimental/features
 app.route('/api/experimental', experimental) // Also mount as /api/experimental/features for backward compatibility
 app.route('/api', tableRoutes)
+app.route('/api', queryRoutes)
 app.route('/', chatRoutes)
 app.route('/operations', operationRoutes)
 app.route('/workspace', workspaceRoutes)
@@ -363,6 +366,7 @@ app.route('/api/kusto-ingest', kustoIngest)
 app.route('/import', importRoutes) // Smart Batch Import
 app.route('/support', supportRoutes) // Automated Support Reporting
 app.route('/support', piscesRoutes) // Smart Pisces Analysis
+app.route('/query-sessions', querySessionRoutes)
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -1585,6 +1589,19 @@ app.post("/query", async (c) => {
     if (provider === 'surrealdb') provider = 'postgres'
     if (connection && connection.provider === 'surrealdb') connection.provider = 'postgres'
 
+    // System Injection for OrionMetrics (Cosmos DB)
+    if ((connection?.id === 'system:orion_metrics' || provider === 'cosmosdb') && process.env.COSMOS_ENDPOINT) {
+        provider = 'cosmosdb';
+        connection = {
+            ...connection,
+            endpoint: process.env.COSMOS_ENDPOINT,
+            key: process.env.COSMOS_KEY,
+            database: 'PegasusLive',
+            container: 'OrionMetrics'
+        };
+        console.log(`[Backend] Injected system credentials for OrionMetrics (ID: ${connection?.id || 'manual'})`);
+    }
+
     console.log(`[Backend] Received query request for provider: ${provider}`)
 
     // Try to get user session for history
@@ -1627,38 +1644,77 @@ app.post("/query", async (c) => {
 
     try {
         await adapter.connect()
-        result = await adapter.query(query)
-    } catch (err) {
-        status = 'error'
-        error = err.message
+        try {
+            result = await adapter.query(query)
+        } catch (err) {
+            status = 'error'
+            error = err.message
 
-        // --- SMART FALLBACK: If query fails due to missing table, check if it's a Note ---
-        if (err.message.toLowerCase().includes('no such table') || err.message.toLowerCase().includes('does not exist')) {
-            try {
-                // Determine if any word in the query matches a note name
-                // Look for notes in user's spaces
-                const userNotes = await db.select().from(spaceNotes)
-                    .innerJoin(dataSpaces, eq(spaceNotes.spaceId, dataSpaces.id))
-                    .where(eq(dataSpaces.userId, userId));
+            // --- SMART FALLBACK ---
+            if (error.toLowerCase().includes('no such table') || error.toLowerCase().includes('does not exist')) {
+                try {
+                    const userNotes = await db.select().from(spaceNotes)
+                        .innerJoin(dataSpaces, eq(spaceNotes.spaceId, dataSpaces.id))
+                        .where(eq(dataSpaces.userId, userId));
 
-                const matchedNote = userNotes.find(n => {
-                    const note = n.space_note;
-                    const normTitle = note.title.toLowerCase().replace(/[^a-z0-9]/g, '_');
-                    const slug = note.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const original = note.title.toLowerCase();
-                    const lowQuery = query.toLowerCase();
-                    return lowQuery.includes(normTitle) || lowQuery.includes(slug) || lowQuery.includes(original);
-                });
+                    const matchedNote = userNotes.find(n => {
+                        const note = n.space_note;
+                        const normTitle = note.title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                        const slug = note.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const original = note.title.toLowerCase();
+                        const lowQuery = query.toLowerCase();
+                        return lowQuery.includes(normTitle) || lowQuery.includes(slug) || lowQuery.includes(original);
+                    });
 
-                if (matchedNote) {
-                    const note = matchedNote.space_note;
-                    console.log(`[Backend] Detected query targeting missing table that matches note: ${note.title}. Falling back to note content.`);
-                    result = [{ content: note.content, source: 'Note Fallback' }];
-                    error = null;
-                    status = 'success';
+                    if (matchedNote) {
+                        const note = matchedNote.space_note;
+                        console.log(`[Backend] Detected query targeting missing table that matches note: ${note.title}. Falling back to note content.`);
+                        result = [{ content: note.content, source: 'Note Fallback' }];
+                        error = null;
+                        status = 'success';
+                    }
+                } catch (fallbackError) {
+                    console.warn("[Backend] Note fallback check failed:", fallbackError.message);
                 }
-            } catch (fallbackError) {
-                console.warn("[Backend] Note fallback check failed:", fallbackError.message);
+            }
+        }
+
+        // --- SESSION SAVING ---
+        const { sessionId, alias, space_id } = await c.req.json()
+        if (userId && sessionId && space_id) {
+            try {
+                const rawSpaceId = space_id.includes(':') ? space_id.split(':')[1] : space_id
+                const entry = {
+                    query,
+                    alias: alias || '',
+                    status,
+                    timestamp: new Date().toISOString(),
+                    error: error || null
+                }
+
+                // Update session document
+                await db.execute(sql`
+                    UPDATE query_session 
+                    SET queries = queries || ${JSON.stringify([entry])}::jsonb,
+                        updated_at = NOW()
+                    WHERE id = ${sessionId} AND user_id = ${userId}
+                `)
+
+                // Also log to history for legacy support/audit
+                await db.insert(queryHistory).values({
+                    userId,
+                    spaceId: rawSpaceId,
+                    sessionId,
+                    query,
+                    alias: entry.alias,
+                    status,
+                    connectionId: connection?.id || null,
+                    source: source || 'user',
+                    model: model || null,
+                    tokensUsed: tokens_used || 0
+                })
+            } catch (sessErr) {
+                console.error("[Backend] Failed to save session entry:", sessErr)
             }
         }
     } finally {

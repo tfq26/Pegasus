@@ -21,6 +21,7 @@ import NotesEditor from '../Explorer/NotesEditor.vue';
 import RichTextEditor from './RichTextEditor.vue';
 import FileViewer from './FileViewer.vue';
 import Toolbar from './Toolbar.vue';
+import { showProgressToast } from '@/lib/toastProgress';
 
 // Interface for version history
 interface TableVersion {
@@ -39,6 +40,7 @@ const props = defineProps<{
   autoExecute: boolean;
   privateMode?: boolean;
   isThinking?: boolean;
+  alias?: string;
 }>();
 
 const emit = defineEmits<{
@@ -55,6 +57,7 @@ const emit = defineEmits<{
   (e: 'share'): void;
   (e: 'ai-respond', response: any): void;
   (e: 'generate-insights', payload: { query: string; results: any; messageIndex: number }): void;
+  (e: 'update:alias', alias: string): void;
 }>();
 
 // --- Pinia Store ---
@@ -284,11 +287,14 @@ const refreshTableData = async (engine: Engine) => {
     return;
   }
   
+  const progress = showProgressToast(`Refreshing ${formatTableName(engine.sourceTable)}...`, 20);
   try {
     isRefreshing.value = true; // Prevent save during refresh
     console.log('[Refresh] Reloading with new API...');
     const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider);
     
+    progress.update(60, undefined, `Processing ${rows.length} rows...`);
+
     // Clear existing data first to prevent duplication
     // Clear values but keep styles during a data-only refresh. Use silent mode to prevent triggering save/sync.
     engine.clear({ keepStyles: true, silent: true }); 
@@ -337,9 +343,10 @@ const refreshTableData = async (engine: Engine) => {
     engine.setOriginalData(rows);
     
     console.log('[Refresh] Table data reloaded successfully');
-  } catch (e) {
+    progress.success('Table refreshed');
+  } catch (e: any) {
     console.error('[Refresh] Failed to refresh table data:', e);
-    toast.error('Failed to refresh table data');
+    progress.error('Refresh failed', e.message);
   } finally {
     isRefreshing.value = false;
   }
@@ -419,10 +426,18 @@ const getEngineForTab = (tabId: string) => {
         if (!loadingTabIds.value.has(tabId)) {
             console.log('[Workspace] Triggering initial data load for tab:', tabId);
             loadingTabIds.value.add(tabId);
-            fetchTableData(tab.data.tableName as string, tab.data.connection, tab.data.provider as string)
+            
+            const tableName = tab.data.tableName as string;
+            const progress = showProgressToast(`Loading ${formatTableName(tableName)}...`, 20);
+            
+            fetchTableData(tableName, tab.data.connection, tab.data.provider as string)
                 .then(({ rows }) => {
-                     if (!rows) return;
+                     if (!rows) {
+                         progress.dismiss();
+                         return;
+                     }
                      console.log(`[Workspace] Loaded ${rows.length} rows for tab ${tabId}`);
+                     if (progress) progress.update(60, undefined, `Processing ${rows.length} rows...`);
                      
                      engine.beginBatch();
                      // Preserving styles during reload. Use silent mode to avoid redundant sync during initial load.
@@ -460,8 +475,12 @@ const getEngineForTab = (tabId: string) => {
                      
                      engine.endBatch();
                      engine.setOriginalData(rows);
+                     if (progress) progress.success(`${formatTableName(tableName)} ready`);
                 })
-                .catch(e => console.error('[Workspace] Failed to load data:', e))
+                .catch(e => {
+                    console.error('[Workspace] Failed to load data:', e);
+                    if (progress) progress.error('Load failed', e.message);
+                })
                 .finally(() => {
                     loadingTabIds.value.delete(tabId);
                 });
@@ -671,7 +690,7 @@ const openTable = async (tableName: string, connection: any, provider: string) =
     let newId: string | undefined;
 
     try {
-        const loadingId = toast.loading(`Loading ${formatTableName(tableName)}...`);
+        const progress = showProgressToast(`Loading ${formatTableName(tableName)}...`, 10);
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
 
         // 1. Fetch Schema and Data in parallel (OPTIMIZATION)
@@ -679,15 +698,28 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         
         // Use API client to ensure correct headers and auth
         const [schemaBody, queryBody] = await Promise.all([
-             fetchTableSchema(connection, tableName) as Promise<any>,
-             fetchTableQuery(connection, tableName, 500) as Promise<any>
+             (fetchTableSchema(connection, tableName) as Promise<any>).then(res => {
+                progress.update(40, undefined, 'Schema loaded');
+                return res;
+             }),
+             (fetchTableQuery(connection, tableName, 500) as Promise<any>).then(res => {
+                progress.update(80, undefined, 'Data loaded');
+                return res;
+             })
         ])
 
         // Helpers will throw if error, or return body
-        if (schemaBody.error) throw new Error(schemaBody.error);
-        if (queryBody.error) throw new Error(queryBody.error);
+        if (schemaBody.error) {
+            progress.error('Failed to load schema', schemaBody.error);
+            throw new Error(schemaBody.error);
+        }
+        if (queryBody.error) {
+            progress.error('Failed to load data', queryBody.error);
+            throw new Error(queryBody.error);
+        }
 
         const rows = queryBody.rows || [];
+        progress.update(90, undefined, `Processing ${rows.length} rows...`);
         
         // Get column names from schema OR from first row of data as fallback
         let headers = [];
@@ -707,9 +739,6 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         
         console.log('[Workspace] Loaded', rows.length, 'rows with', headers.length, 'columns');
 
-        // 2. Clear toast
-        toast.dismiss(loadingId);
-        
         // Check for specific columns
         const isColumnLetters = headers.every((h: string) => /^[A-Z]+$/.test(h));
         
@@ -753,7 +782,6 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         // Use store action to create tab
         const createdTab = workspaceStore.createTab('table', { 
             tableName, 
-            // data: rows, // Don't persist rows to store to avoid bloat
             label: sheetLabel,
             connection,
             provider,
@@ -816,11 +844,12 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         engine.setOriginalData(rows);
 
         console.log('[Workspace] Table loaded successfully with schema mode:', schemaMode);
-        toast.dismiss(loadingId);
+        progress.success(`Loaded ${formatTableName(tableName)}!`);
         emit('update:mode', 'spreadsheet');
     } catch (e: any) {
         console.error('[Workspace] Failed to open table:', e);
-        toast.error(`Failed to open table: ${e.message}`);
+        // Error is handled by toast.error within showProgressToast if we refactor but here we just use it
+        // toast.error(`Failed to open table: ${e.message}`);
     } finally {
         if (typeof newId !== 'undefined') {
             loadingTabIds.value.delete(newId);
@@ -970,12 +999,11 @@ const handlePersistTable = async (tabId: string) => {
     const tableName = prompt('Enter a name for your new table:', (tabs.value as any).find((t: any) => t.id === tabId)?.label || 'MySheet1');
     if (!tableName) return;
 
-    let loadingId;
+    const progress = showProgressToast(`Persisting ${tableName}...`, 10);
     try {
-        loadingId = toast.loading(`Persisting ${tableName} to database...`);
-        
         // 1. Prepare data for export
         const csvContent = CSVExporter.getContent(engine);
+        progress.update(30, undefined, 'Data serialized');
         
         // 2. Upload to backend
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
@@ -991,10 +1019,14 @@ const handlePersistTable = async (tabId: string) => {
         });
 
         const body = await res.json();
-        if (!res.ok) throw new Error(body.error || 'Failed to persist table');
+        if (!res.ok) {
+            progress.error('Failed to persist', body.error);
+            throw new Error(body.error || 'Failed to persist table');
+        }
 
-        toast.dismiss(loadingId);
-        toast.success(`Table "${tableName}" persisted successfully!`);
+        progress.update(80, undefined, 'Finalizing sync...');
+
+        progress.success(`Table "${tableName}" persisted!`);
 
         // 3. Update engine and tab metadata to point to the new source
         engine.setSource(body.tableName, body.connection, engine.columnNames, body.provider);
@@ -1016,9 +1048,8 @@ const handlePersistTable = async (tabId: string) => {
         await engine.commit();
         
     } catch (e: any) {
-        if (loadingId) toast.dismiss(loadingId);
+        // progress.error already called above for specific stages
         console.error('[Workspace] Persist failed:', e);
-        toast.error(`Failed to persist table: ${e.message}`);
     }
 };
 
@@ -1040,9 +1071,8 @@ const handleForkTable = async (tabId: string) => {
     // For now we pass the user label, backend might generate data_UUID_CleanName
     const newSystemName = `data_${crypto.randomUUID().replace(/-/g, '')}_${cleanName.replace(/\s+/g, '_')}`;
 
-    let loadingId;
+    const progress = showProgressToast(`Saving copy as ${cleanName}...`, 20);
     try {
-        loadingId = toast.loading(`Saving copy as ${cleanName}...`);
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
         
         const res = await fetch(`${baseUrl}/api/copy-table`, {
@@ -1058,19 +1088,20 @@ const handleForkTable = async (tabId: string) => {
         });
 
         const result = await res.json();
-        if (!res.ok) throw new Error(result.error || 'Failed to copy table');
+        if (!res.ok) {
+            progress.error('Failed to copy', result.error);
+            throw new Error(result.error || 'Failed to copy table');
+        }
 
-        toast.dismiss(loadingId);
-        toast.success(`Saved copy "${cleanName}"`);
+        progress.update(90, undefined, 'Copy created, opening...');
+        progress.success(`Saved copy "${cleanName}"`);
 
         // Open the NEW copy
         // We reuse openTable logic to load this new table
         await openTable(result.tableName, engine.sourceConnection || {}, engine.sourceProvider || 'local');
 
     } catch (e: any) {
-        if (loadingId) toast.dismiss(loadingId);
         console.error('[Workspace] Copy failed:', e);
-        toast.error(`Failed to save copy: ${e.message}`);
     }
 };
 
@@ -1496,7 +1527,7 @@ const handleSaveSheet = async () => {
         const sheetId = currentTab?.data?.sheetId;
         
         if (sheetId) {
-             const loadingId = toast.loading('Saving sheet...');
+             const progress = showProgressToast('Saving sheet...', 30);
              await sheetStore.saveSheet({
                  id: sheetId,
                  data: state,
@@ -1504,8 +1535,7 @@ const handleSaveSheet = async () => {
                  updatedAt: new Date().toISOString(),
                  spaceId: currentTab?.data?.spaceId || spaceStore.currentSpaceId || null
              });
-             toast.dismiss(loadingId);
-             toast.success('Sheet saved');
+             progress.success('Sheet saved');
              
              // Reset dirty state
              // engine.clearDirty? Or just assume it's clean (engine doesn't track "saved" for sheets same way as DB?)
@@ -1763,7 +1793,9 @@ defineExpose({
             :model-value="tab.data?.content || ''"
             :is-thinking="props.isThinking"
             :label="tab.label"
+            :alias="props.alias"
             @update:model-value="(val) => handleTabInputUpdate(tab.id, tab.type, val)"
+            @update:alias="(val: string) => emit('update:alias', val)"
             @submit="emit('submit')"
             @save="() => { /* handled by auto-save */ }"
             @explain-query="(q) => emit('explain-query', q)"

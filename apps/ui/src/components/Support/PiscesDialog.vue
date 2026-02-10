@@ -15,7 +15,7 @@ import {
   Cpu,
   Copy
 } from 'lucide-vue-next';
-import { toast } from 'vue-sonner';
+import { toast } from '@/composables/useNotifications'
 
 const isEnabled = import.meta.env.DEV;
 const { reportBug, isReporting, autoReportError, lastReport: globalLastReport } = usePisces();

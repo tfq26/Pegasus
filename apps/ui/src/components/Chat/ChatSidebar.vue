@@ -13,6 +13,7 @@
           :chats="chats"
           :selected-chat-id="selectedChatId"
           :query-history="queryHistory"
+          :query-sessions="querySessions"
           :is-pinned="isPinned"
           @update:selected-connection-id="$emit('update:selectedConnectionId', $event)"
           @edit-table="(conn, table) => $emit('edit-table', conn, table)"
@@ -67,12 +68,14 @@ const props = withDefaults(defineProps<{
   chats?: any[]
   selectedChatId?: string
   queryHistory?: any[]
+  querySessions?: any[]
   isPinned?: boolean
 }>(), { 
   visible: true,
   side: 'left',
   chats: () => [],
-  queryHistory: () => []
+  queryHistory: () => [],
+  querySessions: () => []
 })
 
 defineEmits<{

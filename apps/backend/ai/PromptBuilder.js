@@ -38,8 +38,8 @@ export class PromptBuilder {
     return buildAnalysisPrompt(question, results, query, schema);
   }
 
-  static buildVisualizationPrompt(originalPrompt, data, forceVisualization) {
-    return buildVisualizationPrompt(originalPrompt, data, forceVisualization);
+  static buildVisualizationPrompt(originalPrompt, data, forceVisualization, dataProfile = null) {
+    return buildVisualizationPrompt(originalPrompt, data, forceVisualization, dataProfile);
   }
 
   static buildTitlePrompt(messages) {

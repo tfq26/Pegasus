@@ -84,11 +84,17 @@
             <!-- Regular Text Content -->
             <div 
               v-else
-              class="text-foreground/90 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white markdown-chat"
+              class="text-foreground/90 leading-[1.5] text-[13px] font-normal selection:bg-violet-500/30 selection:text-white"
             >
                 <div class="break-words">
-                  <MarkdownRenderer v-if="shouldTruncate(msg.content) && !isExpanded(msg)" :content="getTruncatedContent(msg.content)" />
-                  <MarkdownRenderer v-else :content="formatContent(msg.content)" />
+                  <ChatMessage
+      :content="msg.content"
+      :role="msg.role"
+      :meta="(msg as any).meta"
+      :is-truncated="shouldTruncate(msg.content) && !isExpanded(msg)"
+      @add-to-dashboard="(config) => emit('add-to-dashboard', config)"
+      @generate-insights="(payload) => emit('generate-insights', payload)"
+    />
                 </div>
                 
                 <button 
@@ -176,6 +182,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, nextTick, defineAsyncComponent } from 'vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import ChatMessage from '@/components/Chat/ChatMessage.vue'
 import { toast } from '@/composables/useNotifications'
 import ChartRenderer from '@/components/Dashboard/ChartRenderer.vue'
 import { 
@@ -230,7 +237,13 @@ const props = defineProps<{
   isThinking?: boolean
 }>()
 
-const emit = defineEmits(['update:input', 'submit', 'add-to-dashboard', 'show-results', 'generate-insights'])
+const emit = defineEmits<{
+  (e: 'update:input', value: string): void
+  (e: 'submit'): void
+  (e: 'add-to-dashboard', config: any): void
+  (e: 'show-results'): void
+  (e: 'generate-insights', payload: { query: string; results: any; messageIndex?: number }): void
+}>()
 
 const localInput = ref(props.input)
 const isInputFocused = ref(false)
@@ -248,12 +261,6 @@ const isExpanded = (msg: any) => expandedMessages.value.has(msg.timestamp)
 const shouldTruncate = (content: string) => {
   const text = formatContent(content)
   return text.length > 800 || (text.match(/\n/g) || []).length > 12
-}
-
-const getTruncatedContent = (content: string) => {
-  const text = formatContent(content)
-  if (text.length <= 800) return text
-  return text.substring(0, 750) + '...'
 }
 
 const handleReadMore = (msg: any) => {

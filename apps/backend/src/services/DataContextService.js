@@ -278,7 +278,10 @@ export class DataContextService {
                     name: 'System Metrics',
                     id: 'system:orion_metrics',
                     type: 'database',
-                    aiInsights: ['Contains CPU usage, memory stats, and health metrics for app servers like "Orion"']
+                    aiInsights: [
+                        'Contains CPU usage, memory stats, and health metrics for app servers like "Orion"',
+                        'Columns include: serverId, serverName, serverType, status (online/offline), cpuPercent, memoryPercent, errorMessage, and timestamp'
+                    ]
                 });
 
                 // Specifically register 'OrionMetrics' as a resource

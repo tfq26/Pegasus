@@ -260,8 +260,11 @@ auth.get("/callback", async (c) => {
 
         if (existingUsers.length > 0) {
             const existingId = existingUsers[0].id
-            console.log(`[AUTH_TRACE] [${traceId}] Conflict resolution: Removing stale record ${existingId}`)
-            await db.delete(users).where(eq(users.id, existingId))
+            console.log(`[AUTH_TRACE] [${traceId}] Conflict resolution: Updating record ID from ${existingId} to ${user.id}`)
+            // Now safe because we added onUpdate: 'cascade' to related tables
+            await db.update(users)
+                .set({ id: user.id })
+                .where(eq(users.id, existingId))
         }
 
         await upsertUser(user, traceId)

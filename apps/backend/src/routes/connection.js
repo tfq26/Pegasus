@@ -73,10 +73,27 @@ router.get("/", async (c) => {
                 nickname: row.name,
                 space: row.spaceId,
                 spaceId: row.spaceId,
-                isLocked: row.isVirtual, // Mapping is_locked to isVirtual or similar if conceptually close, or add isLocked to schema
+                isLocked: row.isVirtual,
                 ...config
             }
         })
+
+        // Inject System Metrics (Cosmos DB)
+        if (process.env.COSMOS_ENDPOINT) {
+            mapped.unshift({
+                id: 'system:orion_metrics',
+                name: 'System Metrics (Live)',
+                provider: 'cosmosdb',
+                type: 'cosmosdb',
+                isVirtual: true,
+                is_virtual: true,
+                isLocked: false,
+                config: {
+                    database: 'PegasusLive',
+                    container: 'OrionMetrics'
+                }
+            });
+        }
 
         return c.json({ connections: mapped });
     } catch (e) {

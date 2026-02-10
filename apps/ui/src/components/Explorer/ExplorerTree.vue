@@ -44,6 +44,7 @@ const props = defineProps<{
   spaces?: any[]
   chats?: any[]
   queryHistory?: any[]
+  querySessions?: any[]
   sheets?: any[]
   selectedTable?: { connectionId: string; tableName: string } | null
   searchFilter?: string
@@ -89,6 +90,8 @@ const emit = defineEmits<{
   'load-query': [query: string]
   'delete-query': [id: string]
   'delete-queries': [queries: any[]]
+  'select-session': [session: any]
+  'delete-session': [session: any]
   'add-note-to-dashboard': [note: any]
   
   // Drag & Drop
@@ -395,6 +398,11 @@ onMounted(() => {
 })
 
 function handleSelect(id: string, event?: MouseEvent) {
+    if (id.startsWith('session:')) {
+        const sessionId = id.replace('session:', '')
+        const session = props.querySessions?.find(s => s.id === sessionId)
+        if (session) emit('select-session', session)
+    }
   if (event?.shiftKey && lastSelectedId.value && !props.isDeleteMode) {
     const all = allSelectableIds.value
     const start = all.indexOf(lastSelectedId.value)
@@ -893,11 +901,49 @@ const handleDeleteQuery = (id: string) => {
         </ContextMenuContent>
       </ContextMenu>
 
-       <!-- QUERIES ROOT -->
-       <ContextMenu>
-        <ContextMenuTrigger as-child>
+            <!-- QUERY SESSIONS -->
             <Folder 
-                id="root:queries" 
+                v-if="querySessions && querySessions.length > 0"
+                id="root:query-sessions" 
+                name="Query Sessions"
+                class="font-medium"
+            >
+                <template #label>
+                    <div class="flex items-center gap-2">
+                        <Database class="w-3.5 h-3.5 text-violet-500" />
+                        <span class="text-foreground">Query Sessions</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">{{ querySessions.length }}</span>
+                    </div>
+                </template>
+                <ContextMenu v-for="session in querySessions" :key="session.id">
+                    <ContextMenuTrigger as-child>
+                        <File 
+                            :id="`session:${session.id}`" 
+                            :name="session.name || 'Untitled Session'"
+                            icon="lucide:database"
+                            class="text-xs"
+                            :is-selected="selectedIds.includes(`session:${session.id}`)"
+                        />
+                    </ContextMenuTrigger>
+                    <ContextMenuContent class="w-48 bg-background border border-border/50 shadow-xl rounded-xl p-1 backdrop-blur-xl">
+                        <ContextMenuItem @select="emit('select-session', session)" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted text-sm transition-colors outline-none cursor-pointer">
+                            <Eye class="w-3.5 h-3.5 text-muted-foreground" />
+                            <span>Open Session</span>
+                        </ContextMenuItem>
+                        <ContextMenuSeparator class="h-px bg-border/50 my-1 mx-2" />
+                        <ContextMenuItem @select="emit('delete-session', session)" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-rose-500/10 text-rose-500 text-sm transition-colors outline-none cursor-pointer">
+                            <Trash class="w-3.5 h-3.5" />
+                            <span>Delete Session</span>
+                        </ContextMenuItem>
+                    </ContextMenuContent>
+                </ContextMenu>
+            </Folder>
+
+            <!-- QUERIES ROOT -->
+            <ContextMenu>
+                <ContextMenuTrigger as-child>
+                    <Folder 
+                        id="root:queries" 
                 name="Queries" 
                 open-icon="lucide:scroll-text" 
                 close-icon="lucide:scroll-text"

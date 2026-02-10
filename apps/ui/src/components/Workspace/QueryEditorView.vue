@@ -10,9 +10,10 @@ const CodeEditor = defineAsyncComponent(() => import('../Chat/CodeEditor.vue'))
 const props = defineProps<{
   modelValue: string
   isThinking?: boolean
+  alias?: string
 }>()
 
-const emit = defineEmits(['update:modelValue', 'submit', 'save', 'explain-query', 'optimize-query'])
+const emit = defineEmits(['update:modelValue', 'update:alias', 'submit', 'save', 'explain-query', 'optimize-query'])
 
 const localValue = ref(props.modelValue)
 
@@ -85,18 +86,30 @@ const handleAction = (payload: { type: string, query: string }) => {
       </div>
 
       <!-- Statistics/Info Footer -->
-      <div class="px-4 py-1.5 bg-muted/50 border-t border-border flex items-center justify-between z-10">
-        <div class="flex items-center gap-4">
+      <div class="px-4 py-1.5 bg-muted/50 border-t border-border flex items-center justify-between z-10 gap-4">
+        <div class="flex items-center gap-4 flex-1">
           <div class="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
              <Terminal class="w-3 h-3" />
              <span>Ln {{ (localValue.match(/\n/g) || []).length + 1 }}, Col 1</span>
           </div>
-          <div v-if="settings.showQueryTips" class="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
-             <Sparkles class="w-3 h-3" />
+
+          <!-- Alias Input -->
+          <div class="flex items-center gap-2 flex-1 max-w-xs border-l border-border/50 pl-4">
+            <span class="text-[10px] text-muted-foreground font-mono uppercase opacity-50">Alias:</span>
+            <input 
+              :value="props.alias"
+              @input="(e) => emit('update:alias', (e.target as HTMLInputElement).value)"
+              placeholder="QUERY_NAME (OPTIONAL)"
+              class="flex-1 bg-transparent border-none outline-none text-[10px] text-violet-400 font-mono placeholder:text-muted-foreground/30 px-1 py-0.5"
+            />
+          </div>
+
+          <div v-if="settings.showQueryTips" class="flex items-center gap-2 text-[10px] text-muted-foreground font-mono border-l border-border/50 pl-4">
+             <Sparkles class="w-3 h-3 ml-2" />
              <span>AI Insights Ready</span>
           </div>
         </div>
-        <div class="text-[10px] text-muted-foreground/70 font-black uppercase tracking-widest">
+        <div class="text-[10px] text-muted-foreground/70 font-black uppercase tracking-widest hidden sm:block">
            Pegasus Query Engine 0.8.4
         </div>
       </div>

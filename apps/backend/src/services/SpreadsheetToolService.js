@@ -775,7 +775,7 @@ export class SpreadsheetToolService {
 
         this.registerTool({
             name: "convert_dialect",
-            description: "Convert a SQL query between different database dialects",
+            description: "Convert a SQL query between different database dialects (e.g., SQL to Cosmos DB, SQL to Kusto KQL)",
             parameters: {
                 type: "object",
                 properties: {
@@ -785,17 +785,49 @@ export class SpreadsheetToolService {
                     },
                     targetDialect: {
                         type: "string",
-                        description: "Target SQL dialect (e.g., 'postgresql', 'mysql', 'surrealdb')"
+                        description: "Target SQL dialect: 'cosmosdb', 'kusto', 'postgresql', 'mysql', 'sqlite', 'duckdb'"
                     }
                 },
                 required: ["query", "targetDialect"]
             },
             handler: async ({ query, targetDialect }, context) => {
-                return {
-                    type: "dialect_conversion",
-                    query,
-                    targetDialect
-                };
+                try {
+                    // Import translation service
+                    const { queryTranslationService } = await import('./QueryTranslationService.js');
+
+                    // Perform translation
+                    const result = await queryTranslationService.translateQuery(
+                        query,
+                        targetDialect,
+                        context.schema || {}
+                    );
+
+                    return {
+                        type: "dialect_conversion",
+                        success: result.confidence > 0,
+                        originalQuery: result.originalQuery,
+                        translatedQuery: result.translatedQuery,
+                        dialect: result.dialect,
+                        confidence: result.confidence,
+                        warnings: result.warnings,
+                        notes: result.notes,
+                        translationTimeMs: result.translationTimeMs,
+                        cached: result.cached
+                    };
+                } catch (error) {
+                    console.error('[convert_dialect] Translation error:', error);
+                    return {
+                        type: "dialect_conversion",
+                        success: false,
+                        originalQuery: query,
+                        translatedQuery: query,
+                        dialect: targetDialect,
+                        confidence: 0,
+                        warnings: [`Translation failed: ${error.message}`],
+                        notes: 'Error occurred during translation',
+                        error: error.message
+                    };
+                }
             }
         });
 

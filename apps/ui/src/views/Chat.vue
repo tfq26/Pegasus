@@ -19,9 +19,10 @@
       :side="sidebarSide" 
       :connections="connections"
       :selected-connection-id="selectedConnectionId"
-      :chats="chats"
-      :selected-chat-id="selectedChatId"
+      :chats="(chats as any)"
+      :selected-chat-id="(selectedChatId as string)"
       :query-history="queryHistory"
+      :query-sessions="querySessions"
       @update:selected-connection-id="handleSelectConnection"
       @edit-table="handleEditTableWrapper"
       @toggle="toggleSidebar" 
@@ -70,14 +71,16 @@
           ref="workspaceRef"
           class="flex-1 min-h-0"
           :mode="mode"
-          :input="currentInput || ''"
+          :input="chatInput || ''"
           :chat-history="chatHistory"
           :ai-mode="aiMode"
           :auto-execute="autoExecute"
           :private-mode="privateMode"
           :is-thinking="isExecuting"
+          :alias="alias"
           @update:mode="mode = $event"
           @update:input="handleUpdateInput"
+          @update:alias="alias = $event"
           @submit="run"
           @show-results="resultsPanelVisible = !resultsPanelVisible"
           @save-query="handleSaveFormulaQuery"
@@ -216,7 +219,7 @@ import { useProgress } from '@/lib/progress'
 import { getAuthHeaders, api } from '@/lib/apiClient'
 import { buildConnectionPayload } from '@/lib/db-connections'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { QUERY_API_URL, fetchQueries, fetchSettings, getAIModels, analyzeResults, saveQuery, saveMessage } from '@/lib/api'
+import { QUERY_API_URL, fetchQueries, fetchQuerySessions, fetchSettings, getAIModels, analyzeResults, saveQuery, saveMessage } from '@/lib/api'
 import { generateKey, decryptData } from '@/lib/crypto'
 import { db } from '@/lib/local-db'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
@@ -389,6 +392,21 @@ const handleUpdateLiveMode = (val: boolean) => {
     }
 }
 const queryHistory = ref<any[]>([])
+const querySessions = ref<any[]>([])
+
+const loadQuerySessions = async () => {
+    if (!spaceStore.currentSpaceId) return
+    try {
+        querySessions.value = await fetchQuerySessions(spaceStore.currentSpaceId)
+    } catch (e) {
+        console.error('[Chat] Failed to load query sessions:', e)
+    }
+}
+
+// Watch for space changes to reload sessions
+watch(() => spaceStore.currentSpaceId, () => {
+    loadQuerySessions()
+})
 
 // --- Composable Logic Integration ---
 
@@ -535,7 +553,8 @@ const {
     stopExecution,
     handleAIGenerate,
     handleCreateDashboardElement,
-    currentExecutionSteps
+    currentExecutionSteps,
+    alias
 } = useChatExecution(
     mode,
     chatInput,
@@ -814,19 +833,31 @@ const loadQueries = async () => {
 
 // Handle adding chart from ChatEditor to dashboard
 const handleAddChartToDashboard = (chartConfig: any) => {
-    console.log('[Chat] Adding chart to dashboard:', chartConfig)
+    console.log('[Chat] Adding to dashboard:', chartConfig)
     
-    // Convert chat chart config to dashboard preview format
-    dashboardPreviewConfig.value = {
-        type: chartConfig.type || 'bar',
-        title: chartConfig.title || 'Chart from Chat',
-        config: {
-            data: chartConfig.data,
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                plugins: {
-                    legend: { display: true }
+    if (chartConfig.type === 'table') {
+        dashboardPreviewConfig.value = {
+            type: 'table',
+            title: chartConfig.title || 'Table from Chat',
+            connectionId: chartConfig.connectionId || '',
+            query: chartConfig.query || '',
+            config: {
+                data: chartConfig.data
+            }
+        }
+    } else {
+        // Convert chat chart config to dashboard preview format
+        dashboardPreviewConfig.value = {
+            type: chartConfig.type || 'bar',
+            title: chartConfig.title || 'Chart from Chat',
+            config: {
+                data: chartConfig.data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: true }
+                    }
                 }
             }
         }
@@ -1074,7 +1105,8 @@ onMounted(async () => {
     await Promise.all([
       loadConnections(),
       loadChats(),
-      loadQueries()
+      loadQueries(),
+      loadQuerySessions()
     ])
 
     // 2. Setup Encryption

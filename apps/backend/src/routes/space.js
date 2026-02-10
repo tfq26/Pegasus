@@ -465,7 +465,10 @@ spaces.get("/:id/files", async (c) => {
             createdAt: spaceFiles.createdAt
         })
             .from(spaceFiles)
-            .where(eq(spaceFiles.spaceId, rawId))
+            .where(and(
+                eq(spaceFiles.spaceId, rawId),
+                sql`${spaceFiles.filename} NOT LIKE '%.temp.csv'`
+            ))
             .orderBy(sql`${spaceFiles.createdAt} DESC`)
 
         return c.json({ files: results || [] });

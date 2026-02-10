@@ -11,7 +11,7 @@ import {
 export interface MentionItem {
   id: string
   label: string
-  type: 'file' | 'table' | 'note' | 'database' | 'command'
+  type: 'file' | 'table' | 'note' | 'database' | 'command' | 'wildcard'
   icon?: any
   value?: string
   meta?: any
@@ -130,7 +130,8 @@ defineExpose({ handleKeyDown })
                'bg-green-500/10 text-green-500': item.type === 'table',
                'bg-yellow-500/10 text-yellow-500': item.type === 'note',
                'bg-purple-500/10 text-purple-500': item.type === 'database',
-               'bg-violet-500/10 text-violet-500': item.type === 'command'
+               'bg-violet-500/10 text-violet-500': item.type === 'command',
+               'bg-orange-500/10 text-orange-500': item.type === 'wildcard'
             }"
           >
              <component :is="item.icon || FileText" class="w-3.5 h-3.5" />
