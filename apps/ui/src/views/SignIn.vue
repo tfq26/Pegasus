@@ -130,7 +130,7 @@ import { useRouter } from 'vue-router'
 import { identityService } from '@/services/identityService'
 import { useAuth } from '@/composables/useAuth'
 import { useNotifications } from '@/composables/useNotifications'
-import { Chrome, Github, Wind, Check, Loader2, ArrowRight } from 'lucide-vue-next'
+import { Check, Loader2, ArrowRight } from 'lucide-vue-next'
 import { useColorMode } from '@vueuse/core'
 
 const router = useRouter()

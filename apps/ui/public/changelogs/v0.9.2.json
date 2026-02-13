@@ -1,0 +1,121 @@
+{
+    "title": "v0.9.2 - Graceful Entitlements & Unified Error Handling",
+    "date": "2026-02-12",
+    "version": "0.9.2",
+    "description": "This release focuses on user experience stability, introducing a graceful flow for experimental feature access, smarter entitlement checks, and a refactored API client for precise error handling.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Graceful Experimental Access",
+                    "description": "A polished flow for managing premium feature entitlements.",
+                    "details": [
+                        "Intelligent Upgrades: Users are now guided through a Pro+ upgrade modal when accessing restricted experimental features.",
+                        "Access Status Differentiating: Backend now distinguishes between tier limitations, pending reviews, and metadata sync issues.",
+                        "Safe State Management: Integrated WorkOS metadata and manual database grants into a unified access controller."
+                    ]
+                },
+                {
+                    "title": "Theme-Aware Identity Branding",
+                    "description": "Polished visual personality for the authentication suite.",
+                    "details": [
+                        "Dynamic Assets: The Sign-In page now automatically toggles between dark and light GitHub branding to match your system theme.",
+                        "Visual Consistency: Ensures maximum contrast and readability across high-brightness and dark modes."
+                    ]
+                },
+                {
+                    "title": "Enhanced Dashboard Visuals",
+                    "description": "Granular control over how your data is visualized and presented.",
+                    "details": [
+                        "Line Chart Precision: Fine-tune line thickness, point radius, and style (dashed/dotted).",
+                        "Dynamic Trend Coloring: Line segments now automatically colorize based on slope (Green for rising, Red for falling).",
+                        "Bar Chart Flexibility: New controls for bar thickness, border radius, and dataset stacking.",
+                        "UX Toggles: Instantly hide or show legends and tooltips per element."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Improvements",
+            "items": [
+                {
+                    "title": "Smarter API Error Handling",
+                    "description": "A fundamental shift in how the frontend communicates with the Pegasus engine.",
+                    "details": [
+                        "Preserved Context: The API Client now captures full HTTP status codes and JSON error bodies, enabling 'smart' UI reactions.",
+                        "Real-time Entitlement Sync: Added proactive subscription fetching on critical settings tabs to ensure data accuracy."
+                    ]
+                },
+                {
+                    "title": "Cleaned Production Settings",
+                    "description": "Streamlining the administrative interface for end-users.",
+                    "details": [
+                        "Developer Sanitization: Removed legacy debug actions and crash tests from the General settings tab.",
+                        "Lint-Free Stability: Resolved complex TypeScript mismatches in connection forms for smoother session performance."
+                    ]
+                },
+                {
+                    "title": "Polished Statistic Styling",
+                    "description": "A more intuitive and spacious interface for critical metrics.",
+                    "details": [
+                        "Dedicated Color Space: Moved text color configuration to a standalone 'Colors' tab for statistics.",
+                        "Immersive Color Picker: Introduced a full-width, full-height inline color picker for precise UI tailoring.",
+                        "Streamlined Editor: Automatically hides irrelevant chart categories when editing simple metrics."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Technical Improvements",
+            "items": [
+                {
+                    "title": "Intelligent Query Routing",
+                    "description": "Dynamic multi-database context resolution for federated queries.",
+                    "details": [
+                        "Cross-Database Awareness: The engine now automatically routes queries to specialized adapters (e.g. CosmosDB for OrionMetrics) regardless of the primary connection.",
+                        "Visualization Precision: Enhanced AI prompts to prioritize hourly granularity for time-series data, ensuring high-frequency metrics (like server stats) remain readable."
+                    ]
+                },
+                {
+                    "title": "Granular Status API",
+                    "description": "Enhanced metadata reporting in the backend governance layer.",
+                    "details": [
+                        "Modified getExperimentalStatus to return specific failure 'reasons' and 'requiredTier' payloads.",
+                        "Updated 403 Forbidden responses to carry diagnostic JSON instead of generic text."
+                    ]
+                },
+                {
+                    "title": "Type-Safe Connection States",
+                    "description": "Deep hardening of the database connection engine.",
+                    "details": [
+                        "Standardized reactive state for DynamoDB, BigQuery, and CosmosDB adapters.",
+                        "Unified reset procedures for complex nested provider configurations."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "Core Engine Stability",
+                    "description": "Resolving critical unhandled exceptions in the backend chat service.",
+                    "details": [
+                        "Logout Loop Suppression: Fixed a missing helper function (upsertUser) that was triggering 401 Unauthorized errors and force-logging users out during AI generation.",
+                        "JSON Parsing Resilience: Added robust guards against interrupted request bodies in message persistence routes."
+                    ]
+                },
+                {
+                    "title": "CosmosDB Adapter Hardening",
+                    "description": "Refined the NoSQL-to-SQL translation layer for Azure metrics.",
+                    "details": [
+                        "Prefix-Collision Fix: Resolved a bug causing double-prefixing of column names (e.g. 'c.c.status') in filtered queries.",
+                        "Distinct Query Support: Added native support for 'SELECT DISTINCT' translations in the CosmosDB adapter layer."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}
