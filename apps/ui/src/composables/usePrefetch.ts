@@ -14,7 +14,7 @@ const routeImports: Record<string, () => Promise<unknown>> = {
     '/profile': () => import('@/views/profile.vue'),
     '/settings': () => import('@/views/settings/settings.vue'),
     '/feedback': () => import('@/views/Feedback.vue'),
-    '/login': () => import('@/views/Login.vue'),
+    '/login': () => import('@/views/SignIn.vue'),
     '/error': () => import('@/views/ErrorPage.vue'),
 }
 

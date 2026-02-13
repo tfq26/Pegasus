@@ -95,7 +95,9 @@ export async function getExperimentalStatus(database, userId, jwtPayload = null)
             hasAccess,
             source: hasAccess ? 'postgres' : null,
             requested,
-            requestedAt: requested ? request.requestedAt : null
+            requestedAt: requested ? request.requestedAt : null,
+            reason: hasAccess ? null : (requested ? 'pending' : 'tier'),
+            requiredTier: hasAccess ? null : 'pro_plus'
         }
     } catch (e) {
         console.error("Error getting experimental status:", e);

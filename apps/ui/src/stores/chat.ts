@@ -103,9 +103,14 @@ export const useChatStore = defineStore('chat', () => {
         }
     }
 
-    async function saveMessage(chatId: string, role: 'user' | 'ai', content: string, meta?: any) {
+    async function saveMessage(chatId: string, role: 'user' | 'ai', content: string, meta?: any, modelId?: string) {
         try {
-            const response = await api.post<{ id: string; title?: string }>(`/chats/${chatId}/messages`, { role, content, meta })
+            const response = await api.post<{ id: string; title?: string }>(`/chats/${chatId}/messages`, {
+                role,
+                content,
+                meta,
+                modelId
+            })
 
             // Update local state
             const chat = chats.value.find(c => c.id === chatId)

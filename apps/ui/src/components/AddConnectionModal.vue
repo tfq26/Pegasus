@@ -57,8 +57,7 @@ const canAddConnection = computed(() => {
   if (f.provider === 'dynamodb') return !!(f.dynamodb.region && f.dynamodb.accessKeyId)
   if (f.provider === 'bigquery') return !!f.bigquery.projectId
   if (f.provider === 'sqlite') return !!f.sqlite.path
-  if (f.provider === 'file') return !!(f.sqlite.path || f.surrealdb?.uploadId) // File uploads can store in either sqlite.path or surrealdb.uploadId
-  if (f.provider === 'surrealdb') return !!f.surrealdb?.uploadId // SurrealDB file uploads
+  if (f.provider === 'file') return !!f.sqlite.path
   if (f.provider === 'ai_provider') return !!f.ai_provider?.apiKey
   if (f.provider === 'cloud_storage') {
       const cs = f.cloud_storage

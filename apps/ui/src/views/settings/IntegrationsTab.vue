@@ -139,7 +139,7 @@ const awsStatus = computed(() => {
           <div class="p-4 bg-primary/5 rounded-2xl border border-primary/10 flex items-start gap-3">
             <Info class="w-5 h-5 text-primary mt-0.5" />
             <p class="text-xs text-muted-foreground leading-relaxed">
-              These credentials will be automatically used when you provision a new SurrealDB instance on Azure.
+              These credentials will be automatically used when you provision new cloud database instances.
               They are also optionally shared with Kusto connections to simplify your setup.
             </p>
           </div>
@@ -166,7 +166,7 @@ const awsStatus = computed(() => {
                 </span>
               </div>
               <p class="text-sm text-muted-foreground mt-1 mx-w-md">
-                Used for ECS Fargate automation to host SurrealDB on your AWS infrastructure.
+                Used for ECS Fargate automation to host data services on your AWS infrastructure.
               </p>
               <button 
                 @click="openDoc('aws-credentials')"

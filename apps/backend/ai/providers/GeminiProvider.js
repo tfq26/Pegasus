@@ -260,8 +260,15 @@ export class GeminiProvider extends AIProvider {
         const model = this.genAI.getGenerativeModel({ model: modelId })
 
         try {
-            const result = await model.embedContent(text)
-            return result.embedding.values
+            if (Array.isArray(text)) {
+                const result = await model.batchEmbedContents({
+                    requests: text.map(t => ({ content: { role: 'user', parts: [{ text: t }] } }))
+                });
+                return result.embeddings.map(e => e.values);
+            } else {
+                const result = await model.embedContent(text)
+                return result.embedding.values
+            }
         } catch (e) {
             if (e.message.includes('404') || e.message.includes('not found')) {
                 console.warn(`[Gemini] Embedding model '${modelId}' not found or not accessible. RAG will be disabled for this request.`)

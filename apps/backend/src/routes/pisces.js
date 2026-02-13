@@ -7,6 +7,7 @@ import { supportReports } from '../db/schema.js';
 const piscesRoutes = new Hono();
 
 piscesRoutes.post('/analyze', async (c) => {
+    console.log(`[Pisces] HIT /support/analyze route`);
     try {
         const payload = await c.req.json();
         const { error, userNotes, logs, metadata, timestamp } = payload;

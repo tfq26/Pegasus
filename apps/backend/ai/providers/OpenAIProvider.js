@@ -161,7 +161,7 @@ export class OpenAIProvider extends AIProvider {
             }
 
             const data = await response.json()
-            return data.data[0].embedding
+            return Array.isArray(text) ? data.data.map(d => d.embedding) : data.data[0].embedding
         } catch (e) {
             console.error('[OpenAI] Embedding failed:', e)
             throw e

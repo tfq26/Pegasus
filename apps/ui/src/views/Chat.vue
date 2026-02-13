@@ -139,7 +139,7 @@
         @confirm-merge="handleConfirmMerge"
       />
       
-      <PresenceCounter v-if="aiMode" />
+      <!-- Presence counter removed (SurrealDB legacy) -->
       
       <!-- Preview Modals -->
       <!-- Preview Modals -->
@@ -201,7 +201,7 @@ import SanitizePreviewDialog from '@/components/Chat/SanitizePreviewDialog.vue'
 import DashboardElementPreview from '@/components/Dashboard/DashboardElementPreview.vue'
 import DialogManager from '@/components/Chat/DialogManager.vue'
 import DiffView from '@/components/TableView/DiffView.vue'
-import PresenceCounter from '@/components/PresenceCounter.vue'
+// PresenceCounter removed
 import UnsavedTabWarning from '@/components/Workspace/UnsavedTabWarning.vue'
 import UnsavedTabsDialog from '@/components/Workspace/UnsavedTabsDialog.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -638,12 +638,32 @@ const toggleSidebar = () => {
     sidebarSide.value = sidebarOpen.value ? (sidebarSide.value === 'left' ? 'right' : 'left') : sidebarSide.value
 }
 
-const handleEditTableWrapper = (conn: any, table: string) => {
+const tableOpenDebounce = ref(new Map<string, number>());
+
+const handleEditTableWrapper = async (conn: any, table: string) => {
     // If conn is provided, we use it, otherwise fallback to selectedConnection
-    const connection = conn || selectedConnection.value
-    if (!connection) return
+    const connection = conn || selectedConnection.value;
+    if (!connection) return;
+
+    // Check if we need to switch connection context first (Lazy Loading support)
+    if (connection.id !== selectedConnectionId.value) {
+        console.log('[Chat] Auto-switching connection for table open:', connection.id);
+        await handleSelectConnection(connection.id);
+    }
+
+    // Debounce check
+    const key = `${connection.id}:${table}`;
+    const now = Date.now();
+    const last = tableOpenDebounce.value.get(key) || 0;
+    
+    if (now - last < 500) {
+        console.log('[Chat] Debounced open request for:', key);
+        return;
+    }
+    tableOpenDebounce.value.set(key, now);
+
     if (workspaceRef.value?.openTable) {
-        workspaceRef.value.openTable(table, connection, connection.provider || 'sqlite')
+        workspaceRef.value.openTable(table, connection, connection.provider || 'sqlite');
     }
 }
 

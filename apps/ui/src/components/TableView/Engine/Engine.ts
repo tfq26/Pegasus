@@ -776,6 +776,12 @@ export class Engine {
     }
 
     private saveToStorage() {
+        // Skip localStorage persistence entirely for database-backed tables
+        // They reload from the database and serializing 1000+ rows freezes the UI
+        if (this.sourceTable) {
+            return;
+        }
+
         try {
             const data = Array.from(this.cells.entries());
 
@@ -786,7 +792,7 @@ export class Engine {
             }
 
             // For large datasets without database backing, skip localStorage persistence
-            if (data.length > 5000 && !this.sourceTable) {
+            if (data.length > 5000) {
                 console.warn('[Storage] Skipping localStorage for large non-database sheet');
                 return;
             }
@@ -825,6 +831,15 @@ export class Engine {
             const stored = localStorage.getItem(this.storageKey);
             if (stored) {
                 const parsed = JSON.parse(stored);
+
+                // Skip loading from localStorage for database-backed tables.
+                // They reload from the DB and their stale data here would freeze the UI.
+                if (parsed?.source?.table || parsed?.version === 2 && parsed?.source?.connection) {
+                    console.log(`[Engine] Removing stale localStorage for DB table: ${parsed.source?.table}`);
+                    localStorage.removeItem(this.storageKey);
+                    return;
+                }
+
                 this.loadState(parsed);
             }
         } catch (e) {
@@ -837,6 +852,41 @@ export class Engine {
      * @param silent - If true, don't trigger onChange callbacks (useful during editing)
      * @param source - Source of the edit ('local' or 'remote')
      */
+    /**
+     * Set multiple values at once (optimized for bulk load)
+     */
+    public bulkSetValues(updates: { pos: CellPosition, value: string }[], silent: boolean = true) {
+        const wasBatching = this.isBatching;
+        this.isBatching = true;
+        try {
+            updates.forEach(({ pos, value }) => {
+                const key = posToKey(pos);
+                // ... same logic ...
+                const existing = this.cells.get(key);
+
+                let cellData: CellData = {
+                    rawInput: value,
+                    value: value,
+                    type: CellType.TEXT,
+                    style: existing?.style
+                };
+
+                // Simple numeric detection (optimized)
+                if (value !== '' && !isNaN(value as any)) {
+                    cellData.type = CellType.NUMBER;
+                    cellData.value = Number(value);
+                }
+
+                this.cells.set(key, cellData);
+                if (!silent) {
+                    this.changeTracker.markCellModified(pos);
+                }
+            });
+        } finally {
+            this.isBatching = wasBatching;
+        }
+    }
+
     public setValue(pos: CellPosition, input: string, silent: boolean = false, source: 'local' | 'remote' = 'local') {
         const key = posToKey(pos);
 

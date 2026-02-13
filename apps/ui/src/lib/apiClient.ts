@@ -112,16 +112,21 @@ export class ApiClient {
         if (!response.ok) {
             const errorText = await response.text()
             let errorMessage = `${method} ${path} failed: ${response.status}`
+            let errorData = null
 
             try {
-                const errorJson = JSON.parse(errorText)
-                errorMessage = errorJson.error || errorMessage
+                errorData = JSON.parse(errorText)
+                errorMessage = errorData.error || errorMessage
             } catch {
                 // If not JSON, use the text or status
                 errorMessage = errorText || errorMessage
             }
 
-            throw new Error(errorMessage)
+            const error = new Error(errorMessage) as any
+            error.status = response.status
+            error.data = errorData
+            error.response = response // For advanced cases
+            throw error
         }
 
         // Handle empty responses (204 No Content, etc.)

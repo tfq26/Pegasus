@@ -10,14 +10,24 @@ const SURREAL_DB = import.meta.env.VITE_SURREAL_DB || 'test';
 const SURREAL_USER = import.meta.env.VITE_SURREAL_USER || 'root';
 const SURREAL_PASS = import.meta.env.VITE_SURREAL_PASS || 'root';
 
-export const connectToSurreal = async () => {
-    try {
-        // Check if already connected (status is usually exposed, or try/catch)
-        // With surrealdb.js v1, we can check status or just try/catch
-        if (surreal.status === 'connected') { // hypothetical status check or just try
-            return true;
-        }
+let lastAttemptTime = 0;
+let isConnecting = false;
+const ATTEMPT_COOLDOWN = 10000; // 10 seconds
 
+export const connectToSurreal = async () => {
+    // Correct status check for surreallDB v1.x
+    if (surreal.status === 'connected' as any) return true;
+    if (isConnecting) return false;
+
+    const now = Date.now();
+    if (now - lastAttemptTime < ATTEMPT_COOLDOWN) {
+        return false;
+    }
+
+    isConnecting = true;
+    lastAttemptTime = now;
+
+    try {
         console.log('[Surreal] Connecting to', SURREAL_URL);
 
         await surreal.connect(SURREAL_URL, {
@@ -35,13 +45,14 @@ export const connectToSurreal = async () => {
         if (e.message && e.message.includes('already connected')) {
             return true;
         }
-        // Silence connection refused errors to avoid cluttering console for users without local SurrealDB
-        if (e.message && (e.message.includes('fetch') || e.message.includes('VersionRetrievalFailure'))) {
-            console.warn('[Surreal] Realtime sync unavailable: SurrealDB unreachable at ' + SURREAL_URL);
+        if (e.message && (e.message.includes('fetch') || e.message.includes('VersionRetrievalFailure') || e.message.includes('Socket closed') || e.message.includes('transport'))) {
+            console.warn('[Surreal] Realtime sync unreachable (local SurrealDB not running)');
         } else {
             console.error('[Surreal] Connection failed:', e);
         }
         return false;
+    } finally {
+        isConnecting = false;
     }
 };
 

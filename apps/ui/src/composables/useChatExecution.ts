@@ -272,7 +272,8 @@ export function useChatExecution(
 
             if (selectedChatId.value) {
                 try {
-                    await chatStore.saveMessage(selectedChatId.value, 'ai', quickSummary)
+                    const activeModel = options.aiOptions.value?.model
+                    await chatStore.saveMessage(selectedChatId.value, 'ai', quickSummary, undefined, activeModel)
                 } catch (e) { console.warn('Failed to persist message', e) }
             }
 
@@ -346,7 +347,8 @@ export function useChatExecution(
 
                 if (selectedChatId.value) {
                     try {
-                        await chatStore.saveMessage(selectedChatId.value, 'ai', explanationText)
+                        const activeModel = options.aiOptions.value?.model
+                        await chatStore.saveMessage(selectedChatId.value, 'ai', explanationText, undefined, activeModel)
                     } catch (e) { console.warn('Failed to persist messages', e) }
                 }
             } catch (err: any) {
@@ -620,7 +622,8 @@ export function useChatExecution(
                         })
                         if (selectedChatId.value) {
                             try {
-                                await chatStore.saveMessage(selectedChatId.value, 'ai', fallbackContent)
+                                const activeModel = options.aiOptions.value?.model
+                                await chatStore.saveMessage(selectedChatId.value, 'ai', fallbackContent, undefined, activeModel)
                             } catch (e) { console.warn(e) }
                         }
                         isExecuting.value = false
@@ -676,7 +679,8 @@ export function useChatExecution(
                     })
                     if (selectedChatId.value) {
                         try {
-                            await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, meta)
+                            const activeModel = options.aiOptions.value?.model
+                            await chatStore.saveMessage(selectedChatId.value, 'ai', assistantContent, meta, activeModel)
                         } catch (e) { console.warn(e) }
                     }
                 }

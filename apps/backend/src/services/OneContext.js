@@ -2,6 +2,7 @@ import { db } from '../db/index.js';
 import { files, spaceNotes, connections, spaceFiles, knowledgeChunks, dataSpaces, spacePermissions, connectionWorkspaces } from '../db/schema.js';
 import { eq, ilike, or, and, like, sql } from 'drizzle-orm';
 import { RAGService } from './ragService.js';
+import { SearchService } from './SearchService.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -119,25 +120,26 @@ export class OneContext {
         // Step 2: Implicit database discovery (run early for all queries)
         await this._discoverDatabases(text, userId, spaceId, resolved, resolvedIds);
 
-        // Step 3: Resolve explicit mentions
-        for (const mention of mentions) {
-            const resource = await this._resolveMention(mention, userId, spaceId);
-            if (resource) {
-                // Handle array results (e.g., directory scans)
-                if (Array.isArray(resource)) {
-                    resource.forEach(r => {
-                        if (!resolvedIds.has(r.id)) {
-                            resolved.push(r);
-                            resolvedIds.add(r.id);
-                        }
-                    });
-                } else if (!resolvedIds.has(resource.id)) {
-                    resolved.push(resource);
-                    resolvedIds.add(resource.id);
+        // Step 3: Resolve explicit mentions in parallel
+        if (mentions.length > 0) {
+            const results = await Promise.all(mentions.map(m => this._resolveMention(m, userId, spaceId)));
+            results.forEach((resource, index) => {
+                if (resource) {
+                    if (Array.isArray(resource)) {
+                        resource.forEach(r => {
+                            if (!resolvedIds.has(r.id)) {
+                                resolved.push(r);
+                                resolvedIds.add(r.id);
+                            }
+                        });
+                    } else if (!resolvedIds.has(resource.id)) {
+                        resolved.push(resource);
+                        resolvedIds.add(resource.id);
+                    }
+                } else {
+                    missing.push(mentions[index]);
                 }
-            } else {
-                missing.push(mention);
-            }
+            });
         }
 
         // Step 4: Implicit discovery (only if no explicit mentions)
@@ -145,7 +147,13 @@ export class OneContext {
             await this._runImplicitDiscovery(text, userId, spaceId, connectionId, resolved, resolvedIds);
         }
 
-        // Step 5: Log resolution summary
+        // Step 5: Context Enrichment via Web Research
+        // Only trigger if we have zero or low-confidence results and the intent warrants research
+        if (resolved.length < 2 && text.length > 15) {
+            await this._enrichContextWithResearch(text, resolved);
+        }
+
+        // Step 6: Log resolution summary
         this._logResolutionSummary(resolved, missing, spaceId);
 
         return resolved;
@@ -156,6 +164,12 @@ export class OneContext {
      * @private
      */
     static async _resolveSpaceId(connectionId) {
+        if (!connectionId || connectionId.startsWith('system:')) return null;
+
+        // Skip if not a valid UUID to avoid Postgres cast errors
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(connectionId)) return null;
+
         try {
             const conn = await db.query.connections.findFirst({
                 where: eq(connections.id, connectionId)
@@ -290,7 +304,9 @@ export class OneContext {
      * @private
      */
     static async _resolveDatabase(mention, userId) {
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mention.name);
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isUUID = uuidRegex.test(mention.name);
+
         const whereClause = isUUID
             ? or(eq(connections.id, mention.name), ilike(connections.name, `%${mention.name}%`))
             : ilike(connections.name, `%${mention.name}%`);
@@ -662,14 +678,16 @@ export class OneContext {
     static async _runImplicitDiscovery(text, userId, spaceId, connectionId, resolved, resolvedIds) {
         console.log('[OneContext] Running implicit discovery...');
 
-        // A. Vector search for knowledge chunks
-        await this._searchKnowledgeChunks(text, userId, spaceId, resolved);
+        await Promise.all([
+            // A. Vector search for knowledge chunks
+            this._searchKnowledgeChunks(text, userId, spaceId, resolved),
 
-        // B. Implicit file discovery
-        await this._discoverFiles(text, userId, spaceId, connectionId, resolved, resolvedIds);
+            // B. Implicit file discovery
+            this._discoverFiles(text, userId, spaceId, connectionId, resolved, resolvedIds),
 
-        // C. Implicit note discovery
-        await this._discoverNotes(text, userId, spaceId, resolved, resolvedIds);
+            // C. Implicit note discovery
+            this._discoverNotes(text, userId, spaceId, resolved, resolvedIds)
+        ]);
     }
 
     /**
@@ -701,6 +719,39 @@ export class OneContext {
             }
         } catch (e) {
             console.warn('[OneContext] Knowledge chunk search failed:', e.message);
+        }
+    }
+
+    /**
+     * Enrich context with active web research for domain knowledge/definitions.
+     * @private
+     */
+    static async _enrichContextWithResearch(text, resolved) {
+        try {
+            // Identify potential terms for research (longer words, nouns, phrases)
+            const researchWords = text.split(/\s+/)
+                .filter(w => w.length > 5 && !this.NOISE_WORDS.has(w.toLowerCase()));
+
+            if (researchWords.length === 0) return;
+
+            console.log(`[OneContext] Triggering context research for: ${researchWords.join(', ')}`);
+
+            const researchPrompt = researchWords.slice(0, 3).join(' '); // Limit search scope
+            const results = await SearchService.researchContext(researchPrompt);
+
+            if (results && results.length > 0) {
+                results.forEach(res => {
+                    resolved.push({
+                        type: 'research_note',
+                        title: res.title,
+                        content: res.snippet,
+                        link: res.link,
+                        method: 'tavily-research'
+                    });
+                });
+            }
+        } catch (e) {
+            console.warn('[OneContext] Context enrichment failed:', e.message);
         }
     }
 
@@ -991,6 +1042,15 @@ export class OneContext {
                 const source = c.metadata?.source || 'Unknown';
                 const score = c.score ? ` [Score: ${c.score.toFixed(2)}]` : '';
                 contextParts.push(`Source: ${source}${score}\n"${c.content}"\n`);
+            });
+        }
+
+        // Research Notes section
+        const research = resources.filter(r => r.type === 'research_note');
+        if (research.length) {
+            contextParts.push('\n[RESEARCH NOTES (Web Enrichment)]');
+            research.forEach(r => {
+                contextParts.push(`Title: ${r.title}\nContent: ${r.content}\nSource: ${r.link}\n`);
             });
         }
 

@@ -41,17 +41,6 @@
             :theme-mode="mode" 
             :toggle-theme="toggleTheme" 
           />
-          
-          <!-- Debug Area -->
-          <div class="mt-8 pt-8 border-t border-border">
-             <h3 class="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Debug Actions</h3>
-             <button 
-                @click="() => { throw new Error('This is a simulated crash to test the global error boundary.') }"
-                class="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 rounded-lg text-sm font-medium transition-colors"
-             >
-                Trigger Test Error
-             </button>
-          </div>
         </section>
 
 
@@ -241,6 +230,19 @@ const connectionForm = reactive<ConnectionFormState>({
     ssl: false
   },
   surrealdb: {},
+  dynamodb: {
+    region: 'us-east-1',
+    accessKeyId: '',
+    secretAccessKey: '',
+  },
+  bigquery: {
+    projectId: '',
+  },
+  cosmosdb: {
+    endpoint: '',
+    key: '',
+    database: '',
+  },
   ai_provider: {
     service: 'openai',
     apiKey: '',
@@ -371,6 +373,19 @@ const resetConnectionForm = () => {
       ssl: false
     },
     surrealdb: {},
+    dynamodb: {
+      region: 'us-east-1',
+      accessKeyId: '',
+      secretAccessKey: '',
+    },
+    bigquery: {
+      projectId: '',
+    },
+    cosmosdb: {
+      endpoint: '',
+      key: '',
+      database: '',
+    },
     ai_provider: {
       service: 'openai',
       apiKey: '',

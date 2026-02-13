@@ -39,6 +39,7 @@
     "clsx": "^2.1.1",
     "dexie": "^4.2.1",
     "handsontable": "^16.2.0",
+    "html-to-image": "^1.11.13",
     "hyperformula": "^3.1.0",
     "interactjs": "^1.10.27",
     "jszip": "^3.10.1",

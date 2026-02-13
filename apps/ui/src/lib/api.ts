@@ -748,3 +748,21 @@ export async function deleteSpaceFile(fileId: string) {
 export async function deleteSpaceNote(noteId: string) {
   return api.delete(`/spaces/notes/${noteId}`)
 }
+
+// Sheets API
+export async function fetchSheets(spaceId?: string) {
+  const url = spaceId ? `/api/sheets?spaceId=${spaceId}` : '/api/sheets'
+  return api.get<any[]>(url)
+}
+
+export async function fetchSheet(id: string) {
+  return api.get<any>(`/api/sheets/${id}`)
+}
+
+export async function apiSaveSheet(sheet: any) {
+  return api.post<any>('/api/sheets', sheet)
+}
+
+export async function apiDeleteSheet(id: string) {
+  return api.delete(`/api/sheets/${id}`)
+}

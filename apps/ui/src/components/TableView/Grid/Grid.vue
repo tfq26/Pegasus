@@ -76,6 +76,7 @@ const emit = defineEmits<{
     openInNewTab?: boolean;
     description?: string;
   }];
+  'persist-table': [];
 }>();
 
 

@@ -29,6 +29,7 @@ export interface ColorPickerProps {
   hideDefaultSwatches?: boolean;
   class?: string;
   open?: boolean;
+  inline?: boolean;
 }
 
 const props = withDefaults(defineProps<ColorPickerProps>(), {
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<ColorPickerProps>(), {
   hideContrastRatio: false,
   hideDefaultSwatches: false,
   open: false,
+  inline: false,
 });
 
 const emit = defineEmits<{
@@ -300,19 +302,26 @@ function updateAlpha(event: MouseEvent | TouchEvent) {
 </script>
 
 <template>
-  <div class="relative">
-    <div @click="isOpen = !isOpen">
+  <div :class="{ 'relative': !inline }">
+    <div v-if="!inline" @click="isOpen = !isOpen">
       <slot />
     </div>
 
     <div
-      v-if="isOpen"
-      class="bg-popover absolute top-full left-1/2 z-50 mt-2 w-80 -translate-x-1/2 transform rounded-md border p-4 shadow-md"
+      v-if="isOpen || inline"
+      :class="[
+        inline 
+          ? 'w-full h-full flex flex-col' 
+          : 'bg-popover absolute top-full left-1/2 z-50 mt-2 w-80 -translate-x-1/2 transform rounded-md border p-4 shadow-md'
+      ]"
     >
-      <div class="space-y-4">
+      <div :class="inline ? 'flex flex-col h-full gap-4' : 'space-y-4'">
         <div
           ref="saturationRef"
-          class="relative aspect-[4/2] w-full cursor-crosshair rounded border"
+          :class="[
+            'relative w-full cursor-crosshair rounded border',
+             inline ? 'flex-1 min-h-0' : 'aspect-[4/2]'
+          ]"
           :style="{
             background: `linear-gradient(to right, #fff, hsl(${colorHsv.h}, 100%, 50%)), linear-gradient(to top, #000, transparent)`,
           }"
@@ -451,7 +460,7 @@ function updateAlpha(event: MouseEvent | TouchEvent) {
     </div>
 
     <div
-      v-if="isOpen"
+      v-if="isOpen && !inline"
       class="fixed inset-0 z-40"
       @click="isOpen = false"
     />

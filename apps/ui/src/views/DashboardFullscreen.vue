@@ -104,6 +104,39 @@
           <!-- Live Collaborator Avatars -->
           <CollaboratorAvatars :collaborators="collaborators" />
 
+          <!-- Undo/Redo Buttons -->
+          <div v-if="currentDashboard && !isShared" class="flex items-center gap-1 mr-1">
+            <TooltipProvider :delay-duration="0">
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <button
+                    @click="store.undo()"
+                    :disabled="undoStack.length < 2"
+                    class="p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center justify-center shrink-0 disabled:opacity-30"
+                  >
+                    <Undo class="w-4 h-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Undo (Opt+Shift+Z)</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <TooltipProvider :delay-duration="0">
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <button
+                    @click="store.redo()"
+                    :disabled="redoStack.length === 0"
+                    class="p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center justify-center shrink-0 disabled:opacity-30"
+                  >
+                    <Redo class="w-4 h-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Redo (Opt+Shift+Y)</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
           <!-- Save Button -->
           <TooltipProvider :delay-duration="0">
             <Tooltip>
@@ -154,7 +187,11 @@
                 <EyeOff v-if="autoHideHeader" class="w-4 h-4 mr-2" />
                 <Eye v-else class="w-4 h-4 mr-2" />
                 <span>{{ autoHideHeader ? 'Show Header' : 'Auto-hide Header' }}</span>
-                <span v-if="autoHideHeader" class="ml-auto text-primary">✓</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem @click="handleExportImage" class="cursor-pointer">
+                <Image class="w-4 h-4 mr-2" />
+                <span>Export as Image</span>
               </DropdownMenuItem>
               
               <DropdownMenuSeparator />
@@ -212,7 +249,7 @@
         </Transition>
 
         <!-- Main Grid Container -->
-        <div class="flex-1 overflow-auto p-4">
+        <div class="flex-1 overflow-auto p-4" ref="dashboardContainer">
           <!-- AI Insights -->
           <DashboardInsights v-if="currentDashboard && activeLayout.length > 0" />
 
@@ -281,6 +318,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { onKeyStroke, useThrottleFn } from '@vueuse/core'
 import { useDashboardStore, type DashboardPage, type DashboardElement as DashboardElementType } from '@/stores/dashboard'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
@@ -306,15 +344,19 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { RefreshCw, Lock, Unlock, X, ExternalLink, LayoutDashboard, Eye, EyeOff, MoreVertical, BrainCircuit, Loader2, Save, Plus, MessageSquare } from 'lucide-vue-next'
+import { RefreshCw, Lock, Unlock, X, ExternalLink, LayoutDashboard, Eye, EyeOff, MoreVertical, BrainCircuit, Loader2, Save, Plus, MessageSquare, Image, Undo, Redo } from 'lucide-vue-next'
+import { exportElementAsImage } from '@/lib/exportImage'
 import { toast } from '@/composables/useNotifications'
-import { useThrottleFn } from '@vueuse/core'
+// useThrottleFn imported above from @vueuse/core
 
 defineOptions({ name: 'DashboardFullscreen' })
 
 const route = useRoute()
 const router = useRouter()
 const store = useDashboardStore()
+const isShared = computed(() => route.path.includes('/shared/'))
+const undoStack = computed(() => store.undoStack as unknown as any[])
+const redoStack = computed(() => store.redoStack as unknown as any[])
 
 // State
 const isInitializing = ref(true)
@@ -328,6 +370,16 @@ const showAddElementDialog = ref(false)
 const showEditModal = ref(false)
 const editingElementForModal = ref<DashboardElementType | null>(null)
 const hasUnreadMessages = ref(false)
+const dashboardContainer = ref<HTMLElement | null>(null)
+
+const handleExportImage = async () => {
+  if (!dashboardContainer.value || !currentDashboard.value) return
+  await exportElementAsImage(
+    dashboardContainer.value, 
+    currentDashboard.value.title || 'dashboard',
+    'png'
+  )
+}
 
 // Collaboration & Chat
 const { 
@@ -585,6 +637,22 @@ watch(chatMessages, (newMessages, oldMessages) => {
     }
   }
 }, { deep: true })
+
+onKeyStroke(['z', 'Z'], (e) => {
+  // Undo: Option/Alt + Shift + Z
+  if (e.altKey && e.shiftKey) {
+    e.preventDefault()
+    store.undo()
+  }
+})
+
+onKeyStroke(['y', 'Y'], (e) => {
+  // Redo: Option/Alt + Shift + Y
+  if (e.altKey && e.shiftKey) {
+    e.preventDefault()
+    store.redo()
+  }
+})
 
 watch(showChat, (isVisible) => {
   if (isVisible) {

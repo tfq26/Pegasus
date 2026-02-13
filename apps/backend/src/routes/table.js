@@ -13,65 +13,23 @@ import { analyzeForSanitization, applySanitization, interpretDataset } from "../
 import { ConfigService } from "../services/ConfigService.js"
 import { SyncService } from "../services/SyncService.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
+import { authMiddleware, requireUser } from '../middleware/auth.js'
 
 const table = new Hono()
+table.use('*', authMiddleware)
 const jwtSecret = ConfigService.getJwtSecret()
 
-// Helper
-const upsertUser = async (payload) => {
-    try {
-        const userId = payload.sub || payload.id
 
-        const existing = await db.query.users.findFirst({
-            where: eq(users.id, userId)
-        })
-
-        const userData = {
-            id: userId,
-            email: payload.email,
-            firstName: payload.firstName || payload.first_name,
-            lastName: payload.lastName || payload.last_name,
-            profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
-            updatedAt: new Date()
-        }
-
-        if (existing) {
-            await db.update(users)
-                .set(userData)
-                .where(eq(users.id, userId))
-            return existing
-        } else {
-            const [newUser] = await db.insert(users)
-                .values({ ...userData, createdAt: new Date() })
-                .returning()
-            return newUser
-        }
-    } catch (e) {
-        console.error("[Table] Failed to upsert user:", e)
-        throw e
-    }
-}
-
-
-table.post("/rename-table", async (c) => {
+table.post("/rename-table", requireUser, async (c) => {
     try {
         let { connection, oldTableName, newTableName, provider } = await c.req.json()
+        const userId = c.get('userId')
+
         if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
             provider = 'postgres';
         }
 
         console.log(`[Rename] Received rename request:`, { oldTableName, newTableName, provider })
-
-        const token = getAuthToken(c)
-        if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-        let userId = null
-        try {
-            const payload = await verify(token, jwtSecret)
-            userId = payload.sub
-        } catch (e) {
-            return c.json({ error: "Invalid session" }, 401)
-        }
 
         let actualConnection = connection
         let extractedUploadId = null
@@ -116,9 +74,13 @@ table.post("/rename-table", async (c) => {
             await adapter.query(sqlStr)
 
             if (connection.id) {
-                const connRow = await db.query.connections.findFirst({
-                    where: eq(connections.id, connection.id)
-                });
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                let connRow = null;
+                if (uuidRegex.test(connection.id) && !connection.id.startsWith('system:')) {
+                    connRow = await db.query.connections.findFirst({
+                        where: eq(connections.id, connection.id)
+                    });
+                }
 
                 if (connRow) {
                     const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
@@ -195,7 +157,10 @@ table.post("/delete-table", async (c) => {
             await adapter.query(sql)
 
             if (connection.id) {
-                const connRow = await db.query.connections.findFirst({ where: eq(connections.id, connection.id) });
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                const connRow = (uuidRegex.test(connection.id) && !connection.id.startsWith('system:'))
+                    ? await db.query.connections.findFirst({ where: eq(connections.id, connection.id) })
+                    : null;
                 if (connRow) {
                     const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
                     if (config.sqlite && Array.isArray(config.sqlite.tables)) {

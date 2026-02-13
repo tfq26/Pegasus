@@ -45,12 +45,20 @@ export class Pisces {
             timestamp: new Date().toISOString()
         };
 
-        console.info("[Pisces] Analyzing bug report...");
-
         try {
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+            // Inject token from localStorage if in browser
+            if (isBrowser) {
+                const token = localStorage.getItem('auth_token');
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+            }
+
             const response = await fetch(this.endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify(payload)
             });
 

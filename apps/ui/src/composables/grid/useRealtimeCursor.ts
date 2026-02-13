@@ -35,11 +35,16 @@ export function useRealtimeCursor(
     };
 
     const updateCursor = (pos: CellPosition) => {
-        if (realtimeSync) realtimeSync.updateCursor(pos);
+        // [DEPRECATED] SurrealDB sync disabled
+        // if (realtimeSync) realtimeSync.updateCursor(pos);
     }
 
     // Sync initialization
     const initRealtimeSync = async () => {
+        // [DEPRECATED] SurrealDB sync disabled in favor of Socket.io collaboration
+        return;
+
+        /*
         // Cleanup existing
         if (realtimeSync) {
             realtimeSync.stop();
@@ -72,15 +77,15 @@ export function useRealtimeCursor(
             console.warn('[Realtime] Failed to initialize realtime sync:', error);
             // Don't block spreadsheet loading if realtime fails
         }
+        */
     };
 
     onMounted(() => {
-        initRealtimeSync();
+        // initRealtimeSync();
 
         // Watch for private mode or engine changes
-        // engine itself might not change often but passed prop reference might
         watch(() => [privateMode.value, engine], () => {
-            initRealtimeSync();
+            // initRealtimeSync();
         });
 
         // Watch engine presence changes for "Follow Me"
@@ -98,7 +103,7 @@ export function useRealtimeCursor(
     });
 
     onUnmounted(() => {
-        if (realtimeSync) realtimeSync.stop();
+        // if (realtimeSync) realtimeSync.stop();
     });
 
     return {

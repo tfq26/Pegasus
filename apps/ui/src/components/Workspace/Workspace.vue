@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, onMounted, computed } from 'vue';
+import { ref, watch, onUnmounted, onMounted, computed, unref } from 'vue';
 import { storeToRefs } from 'pinia';
 import TabsManager from './TabsManager.vue';
 import { useWorkspaceStore } from '@/stores/workspace';
 import type { Tab } from '@/stores/workspace';
 import { Engine } from '../TableView/Engine/Engine';
+import type { CellPosition } from '../TableView/Engine/types';
 import Grid from '../TableView/Grid/Grid.vue'; 
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
@@ -233,6 +234,9 @@ const handleNoteDownload = () => {
 const preloadQueue = ref<string[]>([]);
 let isPreloadingBackground = false;
 
+// Track tabs that have already been data-loaded (to prevent redundant fetches)
+const dataLoadedTabs = new Set<string>();
+
 const processPreloadQueue = async () => {
     if (isPreloadingBackground || preloadQueue.value.length === 0) return;
     isPreloadingBackground = true;
@@ -240,10 +244,12 @@ const processPreloadQueue = async () => {
     while (preloadQueue.value.length > 0) {
         const nextTabId = preloadQueue.value.shift();
         if (nextTabId && !engineCache.has(nextTabId)) {
-            console.log(`[Workspace] Background preloading tab: ${nextTabId} (${preloadQueue.value.length} left)`);
+            console.log(`[Workspace] Background preloading engine skeleton: ${nextTabId} (${preloadQueue.value.length} left)`);
+            // Create the engine and set metadata, but DON'T fetch data.
+            // Data will be fetched lazily when the tab becomes active.
             getEngineForTab(nextTabId);
             // Wait a bit between tabs to let the UI breathe
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
     }
     
@@ -251,18 +257,21 @@ const processPreloadQueue = async () => {
 };
 
 // Helper to fetch schema + data
-const fetchTableData = async (tableName: string, connection: any, provider: string) => {
+const fetchTableData = async (tableName: string, connection: any, provider: string, limit: number = 2000) => {
     const baseUrl = import.meta.env.VITE_QUERY_API_URL;
     
     // NEW: Use combined load endpoint for 2x speedup
     const res = await fetch(`${baseUrl}/api/table/${tableName}/load`, { 
              method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
+             headers: { 
+                 ...getAuthHeaders(),
+                 'Content-Type': 'application/json' 
+             },
              credentials: 'include',
              body: JSON.stringify({ 
                  connection: buildConnectionPayload(connection), 
                  provider, 
-                 limit: 2000 
+                 limit 
              })
     });
 
@@ -287,21 +296,28 @@ const refreshTableData = async (engine: Engine) => {
     return;
   }
   
+  const connectionId = engine.sourceConnection.id || 'unknown';
+  const tableKey = `${connectionId}:${engine.sourceTable}`;
+  
+  if (loadingTables.value.has(tableKey)) {
+      console.log('[Workspace] Refresh skipped - table locked (loading in progress):', tableKey);
+      return;
+  }
+  loadingTables.value.add(tableKey);
+  
   const progress = showProgressToast(`Refreshing ${formatTableName(engine.sourceTable)}...`, 20);
   try {
     isRefreshing.value = true; // Prevent save during refresh
     console.log('[Refresh] Reloading with new API...');
-    const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider);
+    // Use limit 1000 to improve initial refresh speed
+    const { headers, rows } = await fetchTableData(engine.sourceTable, engine.sourceConnection, engine.sourceProvider, 1000);
     
     progress.update(60, undefined, `Processing ${rows.length} rows...`);
 
     // Clear existing data first to prevent duplication
     // Clear values but keep styles during a data-only refresh. Use silent mode to prevent triggering save/sync.
     engine.clear({ keepStyles: true, silent: true }); 
-    
-    // Reload into Engine with silent mode to prevent modification tracking
-    engine.beginBatch();
-    
+
     // Deduplication Logic: Check if first row of data matches headers
     let dataStartsAtRow = 1;
     let injectHeaders = true;
@@ -320,26 +336,52 @@ const refreshTableData = async (engine: Engine) => {
             injectHeaders = false;
         }
     }
+    // Chunked loading logic
+    const stringifyValue = (v: any) => (v === null || v === undefined) ? '' : String(v);
+    const CHUNK_SIZE = 50;
+    const totalRows = rows.length;
+    let processedRows = 0;
 
-    // Reload headers (if not already in data)
-    if (injectHeaders) {
-        headers.forEach((header: any, colIndex: any) => {
-          engine.setValue({ row: 0, col: colIndex }, header, true, 'remote');
-        });
+    while (processedRows < totalRows) {
+        // Yield to main thread for interactivity
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const chunkEnd = Math.min(processedRows + CHUNK_SIZE, totalRows);
+        const updates: { pos: CellPosition, value: string }[] = [];
+
+        for (let i = processedRows; i < chunkEnd; i++) {
+            const row = rows[i];
+            const gridRow = i + dataStartsAtRow;
+
+            if (injectHeaders && i === 0) {
+                headers.forEach((h: string, colIndex: number) => {
+                    updates.push({ pos: { row: 0, col: colIndex }, value: h });
+                });
+            }
+
+            headers.forEach((h: string, colIndex: number) => {
+                updates.push({ pos: { row: gridRow, col: colIndex }, value: stringifyValue(row[h]) });
+            });
+        }
+
+        engine.bulkSetValues(updates, true);
+        processedRows = chunkEnd;
+        
+        // Update progress UI less frequently (every 500 rows)
+        if (processedRows % 500 === 0 || processedRows === totalRows) {
+            progress.update(70 + Math.floor((processedRows / totalRows) * 20), undefined, `Refreshing ${processedRows}/${totalRows} rows`);
+        }
     }
-    
-    // Reload data
-    rows.forEach((row: any, rowIndex: number) => {
-      headers.forEach((header: any, colIndex: any) => {
-        const value = row[header];
-        engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true, 'remote');
-      });
-    });
     
     engine.endBatch();
     
+    // Update row count
+    const actualRowCount = engine.schemaMode === 'column-letters' ? rows.length : rows.length + 1;
+    engine.config.rowCount = Math.max(actualRowCount, 1000);
+    engine.config.colCount = Math.max(headers.length, 26);
+    
     // Update persistence metadata
-    engine.setSource(engine.sourceTable, engine.sourceConnection, headers, engine.sourceProvider);
+    engine.setSource(engine.sourceTable, engine.sourceConnection, headers, engine.sourceProvider, engine.schemaMode);
     engine.setOriginalData(rows);
     
     console.log('[Refresh] Table data reloaded successfully');
@@ -349,6 +391,7 @@ const refreshTableData = async (engine: Engine) => {
     progress.error('Refresh failed', e.message);
   } finally {
     isRefreshing.value = false;
+    loadingTables.value.delete(tableKey);
   }
 };
 
@@ -405,88 +448,24 @@ const getEngineForTab = (tabId: string) => {
     // Restore metadata from tab if available
     const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
 
-    // NEW SYNC LOGIC: If we have persisted engine state in Pinia, load it!
-    if (tab?.data?.engineState) {
+    // Restore engine state from Pinia for lightweight tabs (explorer sheets) only.
+    // Database-backed tabs (those with tableName) reload from the DB, so loading
+    // their potentially massive engineState here would freeze the UI.
+    if (tab?.data?.engineState && !tab?.data?.tableName) {
         console.log('[Workspace] Restoring engine state from Pinia store (Cross-device sync enabled)');
         engine.loadState(tab.data.engineState);
     }
     
-    // Set source metadata if available (but DON'T fetch data if already loading)
+    // Set source metadata if available (but DON'T fetch data here — it's loaded lazily)
     if (tab?.data?.tableName) {
-        console.log('[Workspace] Restoring engine metadata from tab:', tab.data);
+        console.log('[Workspace] Setting engine metadata from tab (lazy load - no fetch):', tab.data.tableName);
         engine.setSource(
             tab.data.tableName,
             tab.data.connection,
             tab.data.headers || [],
             tab.data.provider
         );
-        
-        // IMPORTANT: Only fetch data if NOT already being loaded by another caller (e.g., openTable)
-        // This prevents race conditions where openTable populates the engine, then this fetch clears it
-        if (!loadingTabIds.value.has(tabId)) {
-            console.log('[Workspace] Triggering initial data load for tab:', tabId);
-            loadingTabIds.value.add(tabId);
-            
-            const tableName = tab.data.tableName as string;
-            const progress = showProgressToast(`Loading ${formatTableName(tableName)}...`, 20);
-            
-            fetchTableData(tableName, tab.data.connection, tab.data.provider as string)
-                .then(({ rows }) => {
-                     if (!rows) {
-                         progress.dismiss();
-                         return;
-                     }
-                     console.log(`[Workspace] Loaded ${rows.length} rows for tab ${tabId}`);
-                     if (progress) progress.update(60, undefined, `Processing ${rows.length} rows...`);
-                     
-                     engine.beginBatch();
-                     // Preserving styles during reload. Use silent mode to avoid redundant sync during initial load.
-                     engine.clear({ keepStyles: true, silent: true });
-                     
-                     const headers = tab?.data?.headers || [];
-                     let dataStartsAtRow = 1;
-                     let injectHeaders = true;
-
-                     // Logic to detect if headers are already in data (dedup)
-                     if (rows.length > 0) {
-                        const firstRow = rows[0];
-                        const isMatch = headers.every((h: string) => {
-                             const val = firstRow[h];
-                             return val === h || val === String(h);
-                        });
-                        if (isMatch) {
-                            dataStartsAtRow = 0;
-                            injectHeaders = false;
-                        }
-                     }
-                     
-                     if (injectHeaders) {
-                        headers.forEach((header: string, colIndex: number) => {
-                             engine.setValue({ row: 0, col: colIndex }, header, true);
-                        });
-                     }
-                     
-                     rows.forEach((row: any, rowIndex: number) => {
-                         headers.forEach((header: string, colIndex: number) => {
-                             const value = row[header];
-                             engine.setValue({ row: rowIndex + dataStartsAtRow, col: colIndex }, String(value ?? ''), true);
-                         });
-                     });
-                     
-                     engine.endBatch();
-                     engine.setOriginalData(rows);
-                     if (progress) progress.success(`${formatTableName(tableName)} ready`);
-                })
-                .catch(e => {
-                    console.error('[Workspace] Failed to load data:', e);
-                    if (progress) progress.error('Load failed', e.message);
-                })
-                .finally(() => {
-                    loadingTabIds.value.delete(tabId);
-                });
-        } else {
-            console.log('[Workspace] Skipping data load - already loading for tab:', tabId);
-        }
+        // Data will be fetched lazily when this tab becomes active via loadTabDataLazy()
     }
     
     // Auto-save listener with rate limiting
@@ -507,18 +486,25 @@ const getEngineForTab = (tabId: string) => {
         // Update dirty state in workspace store
         workspaceStore.setTabDirty(tabId, engine.hasPendingModifications());
 
-        // Debounce Pinia sync to prevent UI hangs with large datasets
-        // Optimization: Use a larger debounce for local-only state sync
-        const debounceMs = engine.hasSource() ? 1000 : 3000;
-        
-        const syncToPinia = () => {
-             console.log(`[Workspace] Syncing engine state to Pinia for tab ${tabId}`);
-             workspaceStore.updateTabData(tabId, { engineState: engine.getState() });
-        };
-        
-        if (!(window as any).syncTimeouts) (window as any).syncTimeouts = {};
-        if ((window as any).syncTimeouts[tabId]) clearTimeout((window as any).syncTimeouts[tabId]);
-        (window as any).syncTimeouts[tabId] = setTimeout(syncToPinia, debounceMs);
+        // PERFORMANCE FIX: Only sync full engine state to Pinia for lightweight tabs (sheets).
+        // Database-backed tabs (Cosmos, Postgres, DuckDB) reload from the DB on mount,
+        // so syncing their full cell data (potentially 1000+ rows) to Pinia causes:
+        //   1. engine.getState() → serializes entire Map (expensive)
+        //   2. updateTabData() → deep reactive copy in Pinia (expensive)
+        //   3. saveWorkspace() → JSON.stringify all tabs + POST to backend (expensive)
+        // This triple-serialization was the root cause of the UI freeze.
+        if (!engine.hasSource()) {
+            const debounceMs = 3000;
+            
+            const syncToPinia = () => {
+                 console.log(`[Workspace] Syncing engine state to Pinia for tab ${tabId}`);
+                 workspaceStore.updateTabData(tabId, { engineState: engine.getState() });
+            };
+            
+            if (!(window as any).syncTimeouts) (window as any).syncTimeouts = {};
+            if ((window as any).syncTimeouts[tabId]) clearTimeout((window as any).syncTimeouts[tabId]);
+            (window as any).syncTimeouts[tabId] = setTimeout(syncToPinia, debounceMs);
+        }
         
         // Manual save required now - notifying UI of dirty state is handled by workspaceStore.setTabDirty above
     });
@@ -677,20 +663,30 @@ const labelToColIndex = (label: string): number => {
   return index - 1;
 };
 
+const loadingTables = ref(new Set<string>());
+
 // Robust Table Loading (New)
 const openTable = async (tableName: string, connection: any, provider: string) => {
-    console.log('[Workspace] openTable called:', { tableName, provider });
+    const tableKey = `${connection?.id || 'unknown'}:${tableName}`;
     
-    // Check if exists
-    if (findOrCreateSheetTab(tableName)) {
-        console.log('[Workspace] Tab already exists, switching to it');
+    // 1. Check lock
+    if (loadingTables.value.has(tableKey)) {
+        console.log('[Workspace] Table load prevented by lock:', tableKey);
         return;
     }
-
+    
+    // 2. Check if already open (and switch)
+    if (findOrCreateSheetTab(tableName)) {
+        console.log('[Workspace] Tab already exists, switched to it.');
+        return;
+    }
+    
+    console.log('[Workspace] openTable acquiring lock for:', tableKey);
+    loadingTables.value.add(tableKey);
     let newId: string | undefined;
+    const progress = showProgressToast(`Loading ${formatTableName(tableName)}...`, 10);
 
     try {
-        const progress = showProgressToast(`Loading ${formatTableName(tableName)}...`, 10);
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
 
         // 1. Fetch Schema and Data in parallel (OPTIMIZATION)
@@ -750,7 +746,10 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         let currentUiVersion = 0;
         
         // Don't block initial load on version history
-        fetch(`${baseUrl}/api/table/${tableName}/versions`, { credentials: 'include' })
+        fetch(`${baseUrl}/api/table/${tableName}/versions`, { 
+            headers: getAuthHeaders(),
+            credentials: 'include' 
+        })
             .then(vRes => vRes.ok ? vRes.json() : null)
             .then(history => {
                 if (!history) return;
@@ -794,63 +793,106 @@ const openTable = async (tableName: string, connection: any, provider: string) =
         // Prevent getEngineForTab from triggering a redundant fetch
         loadingTabIds.value.add(newId);
 
-        // 4. Load into Engine (OPTIMIZED)
+        // 4. Load into Engine (CHUNKED & OPTIMIZED)
         const engine = getEngineForTab(newId);
-        engine.clear();
+        engine.clear({ silent: true });
         engine.beginBatch();
 
-        // Pre-convert all values to strings once (avoid repeated String() calls)
         const stringifyValue = (v: any) => (v === null || v === undefined) ? '' : String(v);
 
-        if (schemaMode === 'column-letters') {
-            // Column letters mode - all rows are data
-            for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-                const row = rows[rowIndex];
-                for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-                    const value = stringifyValue(row[headers[colIndex]]);
-                    engine.setValue({ row: rowIndex, col: colIndex }, value, true);
-                }
-            }
-        } else {
-            // Named headers mode - set headers first
-            for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-                engine.setValue({ row: 0, col: colIndex }, headers[colIndex], true);
-            }
+        // Deduplication Logic for headers
+        let dataStartsAtRow = schemaMode === 'column-letters' ? 0 : 1;
+        let injectHeaders = schemaMode === 'named-headers';
+
+        if (schemaMode === 'named-headers' && rows.length > 0) {
+            const firstRow = rows[0];
+            const isMatch = headers.every((h: string) => {
+                 const val = firstRow[h];
+                 return val === h || val === String(h);
+            });
             
-            // Then set data rows (optimized loop)
-            for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-                const row = rows[rowIndex];
-                for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-                    const value = stringifyValue(row[headers[colIndex]]);
-                    engine.setValue({ row: rowIndex + 1, col: colIndex }, value, true);
-                }
+            if (isMatch) {
+                console.log('[Workspace] Detected headers in data, preventing duplication');
+                dataStartsAtRow = 0;
+                injectHeaders = false;
             }
         }
 
-        engine.endBatch();
-        
-        // Set correct rowCount based on actual data
-        const actualRowCount = schemaMode === 'column-letters' 
-            ? rows.length  // In column-letters mode, all rows are data
-            : rows.length + 1;  // In named-headers mode, add 1 for header row
-        
-        engine.config.rowCount = actualRowCount;
-        engine.config.colCount = headers.length;
-        
-        console.log(`[Workspace] Set rowCount=${actualRowCount}, colCount=${headers.length}`);
-        
-        // Set source with schema mode
-        engine.setSource(tableName, connection, headers, provider, schemaMode);
-        engine.setOriginalData(rows);
+        // Chunked loading logic
+        const CHUNK_SIZE = 50; 
+        const totalRows = rows.length;
+        let processedRows = 0;
 
-        console.log('[Workspace] Table loaded successfully with schema mode:', schemaMode);
-        progress.success(`Loaded ${formatTableName(tableName)}!`);
-        emit('update:mode', 'spreadsheet');
+        const populateChunks = async () => {
+            while (processedRows < totalRows) {
+                // Yield to main thread for interactivity every few chunks or every chunk
+                // Using setTimeout ensures other tasks (clicks, inputs) can be processed
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                const chunkEnd = Math.min(processedRows + CHUNK_SIZE, totalRows);
+                const updates: { pos: CellPosition, value: string }[] = [];
+
+                for (let i = processedRows; i < chunkEnd; i++) {
+                    const row = rows[i];
+                    const gridRow = i + dataStartsAtRow;
+
+                    // Batch headers once if needed
+                    if (injectHeaders && i === 0) {
+                        headers.forEach((h: string, colIndex: number) => {
+                            updates.push({ pos: { row: 0, col: colIndex }, value: h });
+                        });
+                    }
+
+                    headers.forEach((h: string, colIndex: number) => {
+                        updates.push({ pos: { row: gridRow, col: colIndex }, value: stringifyValue(row[h]) });
+                    });
+                }
+
+                engine.bulkSetValues(updates, true);
+                processedRows = chunkEnd;
+
+                // Update progress UI less frequently (every 500 rows) to avoid DOM trashing
+                if (processedRows % 500 === 0 || processedRows === totalRows) {
+                   progress.update(90 + Math.floor((processedRows / totalRows) * 8), undefined, `Loaded ${processedRows}/${totalRows} rows`);
+                }
+            }
+
+            engine.endBatch();
+            
+            // Set correct rowCount based on actual data
+            const actualRowCount = schemaMode === 'column-letters' ? rows.length : rows.length + 1;
+            engine.config.rowCount = Math.max(actualRowCount, 1000); // Minimum 1000 rows for scrolling space
+            engine.config.colCount = Math.max(headers.length, 26);
+            
+            // Set source and original data
+            engine.setSource(tableName, connection, headers, provider, schemaMode);
+            engine.setOriginalData(rows);
+
+            console.log('[Workspace] Table loaded successfully:', tableName);
+            progress.success(`Loaded ${formatTableName(tableName)}!`);
+            emit('update:mode', 'spreadsheet');
+            
+            // Mark this tab as data-loaded so lazy-loader won't re-fetch
+            if (newId) dataLoadedTabs.add(newId);
+
+        };
+
+        // Start async population (don't await if we want immediate switch, but here we want to finalize state)
+        if (totalRows > 0) {
+             progress.update(60, undefined, `Processing ${totalRows} rows...`);
+        }
+        await populateChunks();
+
+
+
     } catch (e: any) {
         console.error('[Workspace] Failed to open table:', e);
-        // Error is handled by toast.error within showProgressToast if we refactor but here we just use it
-        // toast.error(`Failed to open table: ${e.message}`);
+        if (newId) workspaceStore.closeTab(newId);
+        progress.error('Failed to open table', e.message || 'Unknown error');
     } finally {
+        // Ensure lock is released (use safe key generated at top of function)
+        loadingTables.value.delete(tableKey);
+
         if (typeof newId !== 'undefined') {
             loadingTabIds.value.delete(newId);
         }
@@ -1009,7 +1051,10 @@ const handlePersistTable = async (tabId: string) => {
         const baseUrl = import.meta.env.VITE_QUERY_API_URL;
         const res = await fetch(`${baseUrl}/api/table/upload`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json' 
+            },
             credentials: 'include',
             body: JSON.stringify({
                 name: tableName,
@@ -1077,7 +1122,10 @@ const handleForkTable = async (tabId: string) => {
         
         const res = await fetch(`${baseUrl}/api/copy-table`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json' 
+            },
             credentials: 'include',
             body: JSON.stringify({
                 sourceTableName: engine.sourceTable,
@@ -1124,8 +1172,12 @@ const findOrCreateSheetTab = (tableName: string): boolean => {
     // Optionally refresh data in existing tab
     const engine = getEngineForTab(existingTab.id);
     if (engine && engine.sourceTable) {
-      console.log('[Workspace] Refreshing existing tab data');
-      refreshTableData(engine).catch(e => console.error('[Workspace] Refresh failed:', e));
+      // Only refresh if not already loading/refreshing
+      const tableKey = `${existingTab.data?.connection?.id || 'unknown'}:${existingTab.data?.tableName}`;
+      if (!loadingTables.value.has(tableKey)) {
+          console.log('[Workspace] Refreshing existing tab data');
+          refreshTableData(engine).catch(e => console.error('[Workspace] Refresh failed:', e));
+      }
     }
     
     return true;
@@ -1444,6 +1496,114 @@ onUnmounted(() => {
 });
 
 // Pre-load all spreadsheet tabs in parallel
+// Lazy-load data into a tab's engine when it becomes active
+const loadTabDataLazy = async (tabId: string) => {
+    const engine = engineCache.get(tabId);
+    if (!engine) return;
+    
+    // Skip if already loaded or currently loading
+    if (dataLoadedTabs.has(tabId)) return;
+    if (loadingTabIds.value.has(tabId)) return;
+    
+    const tab = (tabs.value as unknown as Tab[])?.find((t: Tab) => t.id === tabId);
+    if (!tab?.data?.tableName) return;
+    
+    // Skip if engine already has data
+    if (engine.getCells().size > 0) {
+        dataLoadedTabs.add(tabId);
+        return;
+    }
+    
+    const tableKey = `${tab.data.connection?.id || 'unknown'}:${tab.data.tableName}`;
+    if (loadingTables.value.has(tableKey)) {
+        console.log('[Workspace] Skipping lazy load - table operation in progress:', tableKey);
+        return;
+    }
+    
+    console.log(`[Workspace] Lazy loading data for active tab: ${tab.data.tableName}`);
+    loadingTabIds.value.add(tabId);
+    
+    const tableName = tab.data.tableName as string;
+    const progress = showProgressToast(`Loading ${formatTableName(tableName)}...`, 20);
+    
+    try {
+        const { headers: fetchedHeaders, rows } = await fetchTableData(tableName, tab.data.connection, tab.data.provider as string);
+        if (!rows) {
+            progress.dismiss();
+            return;
+        }
+        console.log(`[Workspace] Loaded ${rows.length} rows for tab ${tabId}`);
+        progress.update(60, undefined, `Processing ${rows.length} rows...`);
+        
+        const headers = tab.data.headers?.length ? tab.data.headers : fetchedHeaders;
+        
+        engine.beginBatch();
+        engine.clear({ keepStyles: true, silent: true });
+        
+        let dataStartsAtRow = 1;
+        let injectHeaders = true;
+        
+        // Detect if headers are already in data (dedup)
+        if (rows.length > 0) {
+            const firstRow = rows[0];
+            const isMatch = headers.every((h: string) => {
+                const val = firstRow[h];
+                return val === h || val === String(h);
+            });
+            if (isMatch) {
+                dataStartsAtRow = 0;
+                injectHeaders = false;
+            }
+        }
+        
+        const stringifyValue = (v: any) => (v === null || v === undefined) ? '' : String(v);
+        const CHUNK_SIZE = 250;
+        const totalRows = rows.length;
+        let processedRows = 0;
+        
+        while (processedRows < totalRows) {
+            const chunkEnd = Math.min(processedRows + CHUNK_SIZE, totalRows);
+            const updates: { pos: CellPosition, value: string }[] = [];
+            
+            for (let i = processedRows; i < chunkEnd; i++) {
+                const row = rows[i];
+                const gridRow = i + dataStartsAtRow;
+                
+                if (injectHeaders && i === 0) {
+                    headers.forEach((h: string, colIndex: number) => {
+                        updates.push({ pos: { row: 0, col: colIndex }, value: h });
+                    });
+                }
+                
+                headers.forEach((h: string, colIndex: number) => {
+                    updates.push({ pos: { row: gridRow, col: colIndex }, value: stringifyValue(row[h]) });
+                });
+            }
+            
+            engine.bulkSetValues(updates, true);
+            processedRows = chunkEnd;
+            progress.update(60 + Math.floor((processedRows / totalRows) * 30), undefined, `Loaded ${processedRows}/${totalRows} rows`);
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+        
+        engine.endBatch();
+        engine.setOriginalData(rows);
+        
+        // Update headers if we got better ones from the fetch
+        if (fetchedHeaders.length > 0) {
+            engine.setSource(tableName, tab.data.connection, fetchedHeaders, tab.data.provider as string);
+        }
+        
+        dataLoadedTabs.add(tabId);
+        progress.success(`${formatTableName(tableName)} ready`);
+    } catch (e: any) {
+        console.error('[Workspace] Failed to lazy load data:', e);
+        progress.error('Load failed', e.message);
+    } finally {
+        loadingTabIds.value.delete(tabId);
+    }
+};
+
 const preloadAllTabs = async () => {
     const tableTabs = (tabs.value as unknown as Tab[]).filter(t => t.type === 'table' || t.type === 'spreadsheet');
     if (tableTabs.length === 0) return;
@@ -1453,19 +1613,23 @@ const preloadAllTabs = async () => {
     
     const activeId = activeTabId.value as unknown as string;
     
-    // 1. Immediately prioritize and load the active tab
+    // 1. Create engine skeleton for the active tab and lazy-load its data
     if (activeId) {
         const isActiveTable = tableTabs.some(t => t.id === activeId);
         if (isActiveTable) {
-            console.log(`[Workspace] Prioritizing active tab load: ${activeId}`);
-            getEngineForTab(activeId);
+            console.log(`[Workspace] Prioritizing active tab: ${activeId}`);
+            if (!engineCache.has(activeId)) {
+                getEngineForTab(activeId);
+            }
+            // Lazy-load data for the active tab immediately
+            loadTabDataLazy(activeId);
         }
     }
     
-    // 2. Queue the rest for background loading
+    // 2. Queue the rest for background engine creation (metadata only, no data fetch)
     const otherTabs = tableTabs.filter(t => t.id !== activeId && !engineCache.has(t.id));
     if (otherTabs.length > 0) {
-        console.log(`[Workspace] Queuing ${otherTabs.length} background tabs for lazy load...`);
+        console.log(`[Workspace] Queuing ${otherTabs.length} background tab skeletons...`);
         preloadQueue.value.push(...otherTabs.map(t => t.id));
         processPreloadQueue();
     }
@@ -1480,7 +1644,7 @@ watch(() => (tabs.value as unknown as Tab[]).map((t: Tab) => t.id).join(','), ()
     preloadAllTabs(); // Re-use the prioritized loading logic
 });
 
-// Also prioritize load when switching active tab
+// Lazy-load data when switching to a tab that hasn't been loaded yet
 watch(() => activeTabId.value, (newId) => {
     if (newId) {
         const tabId = newId as unknown as string;
@@ -1489,6 +1653,8 @@ watch(() => activeTabId.value, (newId) => {
             if (!engineCache.has(tabId)) {
                 getEngineForTab(tabId);
             }
+            // Lazy-load data if this tab hasn't been loaded yet
+            loadTabDataLazy(tabId);
         }
     }
 });
@@ -1536,12 +1702,21 @@ const handleSaveSheet = async () => {
                  spaceId: currentTab?.data?.spaceId || spaceStore.currentSpaceId || null
              });
              progress.success('Sheet saved');
-             
-             // Reset dirty state
-             // engine.clearDirty? Or just assume it's clean (engine doesn't track "saved" for sheets same way as DB?)
         } else {
-             // Handle "Save As" for new sheets if needed, but usually we have an ID
-             toast.error('No sheet ID found');
+             const progress = showProgressToast('Saving to explorer...', 30);
+             const newSheet = await sheetStore.saveSheet({
+                 name: currentTab.label || 'New Spreadsheet',
+                 data: state,
+                 spaceId: unref(spaceStore.currentSpaceId) || null
+             });
+             
+             // Update tab metadata to link it to the newly created sheet
+             workspaceStore.updateTabData(tabId, {
+                 sheetId: newSheet.id,
+                 isLocalSheet: true
+             });
+             
+             progress.success('Saved to explorer');
         }
     } catch (e: any) {
         toast.error('Failed to save sheet', { description: e.message });

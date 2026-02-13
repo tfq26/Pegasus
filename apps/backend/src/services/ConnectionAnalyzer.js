@@ -83,7 +83,7 @@ export class ConnectionAnalyzer {
 
             // 3. Fetch Detailed Schema & Samples
             if (typeof adapter.getOneTableSchema === 'function') {
-                for (const realTableName of tablesToFetch) {
+                const analysisPromises = tablesToFetch.map(async (realTableName) => {
                     const normalizedTableName = tableMap.get(realTableName) || realTableName;
 
                     try {
@@ -134,7 +134,9 @@ export class ConnectionAnalyzer {
                     } catch (err) {
                         console.warn(`[ConnectionAnalyzer] Failed to analyze table ${realTableName}:`, err.message);
                     }
-                }
+                });
+
+                await Promise.all(analysisPromises);
             }
 
             // 5. Attach Final Mappings & Context Metadata

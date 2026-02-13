@@ -199,11 +199,15 @@ async function checkServiceConnections() {
     console.log("✅  DuckDB: Ready (Embedded/In-Memory)");
 
     // 3. Storage Check
+    const hasBackblaze = process.env.BACKBLAZE_KEY_ID && process.env.BACKBLAZE_KEY;
     const hasAws = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY;
-    if (hasAws) {
-        console.log("✅  Storage: AWS Credentials found");
+
+    if (hasBackblaze) {
+        console.log(`✅  Storage: Backblaze B2 (${process.env.BACKBLAZE_REGION || 'S3 API'})`);
+    } else if (hasAws) {
+        console.log("✅  Storage: AWS S3 Credentials found");
     } else {
-        console.log("⚠️   Storage: No AWS credentials found");
+        console.log("⚠️   Storage: No Cloud credentials found (using Local)");
     }
 
     // 4. WorkOS Check

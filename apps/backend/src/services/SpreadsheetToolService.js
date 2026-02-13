@@ -196,9 +196,12 @@ export class SpreadsheetToolService {
 
                 let updated = false;
 
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                const isUuid = uuidRegex.test(sid);
+
                 try {
                     // Try spaceFiles
-                    const file = await db.query.spaceFiles.findFirst({ where: eq(spaceFiles.id, sid) });
+                    const file = isUuid ? await db.query.spaceFiles.findFirst({ where: eq(spaceFiles.id, sid) }) : null;
                     if (file) {
                         const insights = Array.isArray(file.aiInsights) ? file.aiInsights : [];
                         insights.push(newInsight);
@@ -208,7 +211,7 @@ export class SpreadsheetToolService {
 
                     if (!updated) {
                         // Try connections
-                        const conn = await db.query.connections.findFirst({ where: eq(connections.id, sid) });
+                        const conn = (isUuid && !sid.startsWith('system:')) ? await db.query.connections.findFirst({ where: eq(connections.id, sid) }) : null;
                         if (conn) {
                             const insights = Array.isArray(conn.aiInsights) ? conn.aiInsights : [];
                             insights.push(newInsight);
@@ -842,15 +845,16 @@ export class SpreadsheetToolService {
                     chartType: { type: "string", enum: ["bar", "line", "pie", "stat", "table"] },
                     title: { type: "string" },
                     xAxis: { type: "string" },
-                    yAxis: { type: "array", items: { type: "string" } }
+                    yAxis: { type: "array", items: { type: "string" } },
+                    live: { type: "boolean", description: "Set to true if the user wants real-time/live updates" }
                 },
                 required: ["query", "chartType", "xAxis", "yAxis"]
             },
-            handler: async ({ query, chartType, title, xAxis, yAxis }, context) => {
+            handler: async ({ query, chartType, title, xAxis, yAxis, live }, context) => {
                 return {
                     type: "visualization_request",
                     query,
-                    config: { type: chartType, title, xAxis, yAxis }
+                    config: { type: chartType, title, xAxis, yAxis, live }
                 };
             }
         });

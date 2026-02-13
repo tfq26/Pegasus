@@ -177,7 +177,7 @@ class IdentityService {
         return this._fetchPromise
     }
 
-    async login() {
+    async login(provider?: string) {
         const API_URL = api.getBaseUrl()
 
         if (this.isTauri() && !this._isOnline.value) {
@@ -185,7 +185,7 @@ class IdentityService {
             return
         }
 
-        if (this.isTauri()) {
+        if (this.isTauri() && !provider) {
             try {
                 const { useDesktopAuth } = await import('@/composables/useDesktopAuth')
                 const { loginWithCloud } = useDesktopAuth()
@@ -201,7 +201,33 @@ class IdentityService {
         }
 
         const returnTo = window.location.href
-        window.location.href = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
+        let loginUrl = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
+        if (provider) {
+            loginUrl += `&provider=${provider}`
+        }
+        window.location.href = loginUrl
+    }
+
+    async loginWithPassword(email: string, password: string): Promise<{ success: boolean; error?: string }> {
+        this._isLoading.value = true
+        try {
+            const data = await api.post<{ success: boolean; token: string; user: User }>('/auth/password/login', {
+                email,
+                password
+            })
+
+            localStorage.setItem('auth_token', data.token)
+            this._user.value = data.user
+            return { success: true }
+        } catch (e) {
+            console.error('[IdentityService] loginWithPassword failed:', e)
+            return {
+                success: false,
+                error: (e as Error).message || 'Authentication failed'
+            }
+        } finally {
+            this._isLoading.value = false
+        }
     }
 
     /**

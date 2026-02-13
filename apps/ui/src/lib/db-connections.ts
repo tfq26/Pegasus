@@ -247,4 +247,84 @@ const getMongoDatabaseFromUrl = (uri?: string | undefined): string | undefined =
   }
 }
 
+/**
+ * Identify if a connection is a static file upload (Excel, CSV, local file)
+ * Based on provider type - live database connections can be refreshed, file uploads cannot.
+ */
+export const isStaticSource = (conn: any): boolean => {
+  if (!conn) return false
+
+  // System connections (like system:orion_metrics) are always live
+  if (conn.id && conn.id.startsWith('system:')) {
+    return false
+  }
+
+  const provider = conn.provider || conn.type
+
+  // Live/refreshable providers - these connect to actual databases/services
+  const liveProviders = [
+    'mysql',
+    'postgres',
+    'mongodb',
+    'cosmosdb',
+    'kusto',
+    'dynamodb',
+    'bigquery',
+    'surrealdb'
+  ]
+
+  // Static providers - file uploads that cannot be refreshed
+  const staticProviders = [
+    'file'  // Explicit file uploads (CSV, Excel, etc.)
+  ]
+
+  // Check explicit static providers first
+  if (staticProviders.includes(provider)) {
+    return true
+  }
+
+  // Check explicit live providers
+  if (liveProviders.includes(provider)) {
+    return false
+  }
+
+  // For DuckDB and SQLite, we need to distinguish between:
+  // 1. Remote databases (Turso, etc.) - live/refreshable
+  // 2. Local file uploads - static
+  if (provider === 'sqlite' || provider === 'duckdb') {
+    // Check for remote database indicators
+    const path = conn.path || conn.config?.path || conn.sqlite?.path || conn.duckdb?.path || ''
+
+    // Remote databases (like Turso) are live
+    if (path.includes('turso.io') || (path.includes('://') && !path.startsWith('file:'))) {
+      return false
+    }
+
+    // Check if explicitly marked as locked/virtual (uploaded files)
+    if (conn.isLocked || conn.isVirtual) {
+      return true
+    }
+
+    // Check for file upload indicators in the name/path
+    const searchStr = [
+      conn.nickname,
+      conn.alias,
+      conn.name,
+      path
+    ].filter(Boolean).join(' ').toLowerCase()
+
+    // If it has file extensions, it's likely an uploaded file
+    if (searchStr.includes('.xlsx') || searchStr.includes('.xls') ||
+      searchStr.includes('.csv') || searchStr.includes('.parquet')) {
+      return true
+    }
+
+    // Default: local SQLite/DuckDB without remote indicators = static
+    return true
+  }
+
+  // Unknown provider - assume it's live to be safe
+  return false
+}
+
 export { getMongoDatabaseFromUrl }

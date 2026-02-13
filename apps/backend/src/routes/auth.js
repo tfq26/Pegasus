@@ -187,13 +187,14 @@ const upsertUser = async (payload, traceId = 'system') => {
 // Routes
 auth.get("/login", async (c) => {
     const returnTo = c.req.query("return_to")
+    const provider = c.req.query("provider")
     const traceId = Math.random().toString(36).substring(7)
     const isProduction = ConfigService.isProduction()
 
-    console.log(`[AUTH_TRACE] [${traceId}] Login initiated. return_to: ${returnTo || 'none'}`)
+    console.log(`[AUTH_TRACE] [${traceId}] Login initiated. return_to: ${returnTo || 'none'} provider: ${provider || 'authkit'}`)
 
     // DEV MODE BYPASS
-    if (process.env.PEGASUS_DEV_MODE === 'true') {
+    if (process.env.PEGASUS_DEV_MODE === 'true' && !provider) {
         const frontendUrl = ConfigService.getFrontendUrl()
         const devPayload = {
             sub: 'dev_user',
@@ -222,24 +223,47 @@ auth.get("/login", async (c) => {
         })
     }
 
+    const socialMapping = {
+        'google': 'GoogleOAuth',
+        'microsoft': 'MicrosoftOAuth',
+        'github': 'GitHubOAuth',
+        'apple': 'AppleOAuth'
+    }
+
+    const mappedProvider = socialMapping[provider] || provider
+    const socialProviders = Object.values(socialMapping)
+    const isSocial = socialProviders.includes(mappedProvider)
+
     const authorizationUrl = workos.userManagement.getAuthorizationUrl({
-        provider: "authkit",
+        provider: (mappedProvider === 'authkit' || isSocial || !mappedProvider) ? (mappedProvider || 'authkit') : undefined,
+        connectionId: (mappedProvider && !isSocial && mappedProvider !== 'authkit') ? mappedProvider : undefined,
         clientId,
         redirectUri,
     })
 
-    console.log(`[AUTH_TRACE] [${traceId}] Redirecting to WorkOS...`)
+    console.log(`[AUTH_TRACE] [${traceId}] Redirecting to WorkOS (Provider: ${mappedProvider || 'authkit'}, isSocial: ${isSocial})...`)
     return c.redirect(authorizationUrl)
 })
 
 auth.get("/callback", async (c) => {
     const code = c.req.query("code")
+    const error = c.req.query("error")
+    const errorDescription = c.req.query("error_description")
     const traceId = Math.random().toString(36).substring(7)
     const isProduction = ConfigService.isProduction()
 
-    console.log(`[AUTH_TRACE] [${traceId}] Callback received. Exchange start.`)
+    console.log(`[AUTH_TRACE] [${traceId}] Callback received. params:`, {
+        code: code ? '***' : null,
+        error,
+        errorDescription,
+        state: c.req.query("state")
+    })
 
     if (!code) {
+        if (error) {
+            console.error(`[AUTH_TRACE] [${traceId}] WorkOS Error: ${error} - ${errorDescription}`)
+            return c.json({ error, description: errorDescription }, 400)
+        }
         console.error(`[AUTH_TRACE] [${traceId}] Error: No code in callback query params.`)
         return c.json({ error: "No code provided" }, 400)
     }
@@ -635,6 +659,59 @@ auth.post('/device/authorize', async (c) => {
     } catch (e) {
         console.error('[DeviceAuth] Authorize failed:', e)
         return c.json({ error: 'server_error' }, 500)
+    }
+})
+
+auth.post('/password/login', async (c) => {
+    const { email, password } = await c.req.json()
+    const traceId = Math.random().toString(36).substring(7)
+
+    console.log(`[AUTH_TRACE] [${traceId}] Direct password login attempt: ${email}`)
+
+    if (!email || !password) {
+        return c.json({ error: "Email and password are required" }, 400)
+    }
+
+    try {
+        const { user } = await workos.userManagement.authenticateWithPassword({
+            email,
+            password,
+            clientId,
+        })
+
+        console.log(`[AUTH_TRACE] [${traceId}] Direct auth success: ${user.email}`)
+
+        await upsertUser(user, traceId)
+
+        const payload = {
+            sub: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            profilePictureUrl: user.profile_picture_url || user.profilePictureUrl || null,
+            organizationName: user.organizationName || user.organization?.name || null,
+            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 Days
+        }
+
+        const token = await sign(payload, jwtSecret)
+
+        return c.json({
+            success: true,
+            token,
+            user: {
+                ...payload,
+                id: user.id
+            }
+        })
+
+    } catch (error) {
+        console.error(`[AUTH_TRACE] [${traceId}] Direct auth failure:`, error.message)
+        // Map WorkOS errors to user-friendly messages if needed
+        let message = "Invalid email or password"
+        if (error.message.includes("not_found")) message = "User not found"
+        if (error.message.includes("invalid_credentials")) message = "Invalid email or password"
+
+        return c.json({ error: message, details: error.message }, 401)
     }
 })
 

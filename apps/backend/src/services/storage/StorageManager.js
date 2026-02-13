@@ -216,11 +216,12 @@ export class StorageManager {
         if (selectedType === 'system' || selectedType === 'default') {
             // Check for Backblaze system config first
             if (process.env.BACKBLAZE_KEY_ID && process.env.BACKBLAZE_KEY) {
+                console.log("[StorageManager] Backblaze credentials found, using B2 S3Provider.");
                 const config = {
                     accessKeyId: process.env.BACKBLAZE_KEY_ID,
                     secretAccessKey: process.env.BACKBLAZE_KEY,
                     endpoint: process.env.BACKBLAZE_ENDPOINT || "https://s3.us-east-005.backblazeb2.com",
-                    bucket: process.env.BACKBLAZE_BUCKET_NAME || "pegasus-general",
+                    bucket: process.env.BACKBLAZE_BUCKET_NAME || process.env.BACKBLAZE_KEY_NAME || "pegasus-general",
                     region: process.env.BACKBLAZE_REGION || "us-east-005"
                 };
                 return new S3Provider(config);
@@ -235,10 +236,10 @@ export class StorageManager {
                 endpoint: process.env.S3_ENDPOINT
             };
             if (!config.accessKeyId) {
-                console.log("[StorageManager] S3 credentials not found, using LocalProvider.");
+                console.log("[StorageManager] S3/B2 credentials not found, using LocalProvider.");
                 return new LocalProvider();
             }
-            console.log("[StorageManager] S3 credentials found, using S3Provider.");
+            console.log("[StorageManager] AWS S3 credentials found, using S3Provider.");
             return new S3Provider(config);
         }
 

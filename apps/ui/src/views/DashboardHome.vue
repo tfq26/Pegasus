@@ -36,7 +36,7 @@
               v-for="template in DASHBOARD_TEMPLATES"
               :key="template.id"
               @click="createFromTemplate(template)"
-              class="group flex flex-col gap-2 text-left shrink-0"
+              class="group flex flex-col gap-2 text-left shrink-0 cursor-pointer"
             >
               <div 
                 class="w-72 h-44 rounded-lg border border-border overflow-hidden relative transition-all group-hover:border-primary group-hover:shadow-md"
@@ -52,8 +52,8 @@
 
                 <!-- Hover Icon -->
                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div class="bg-white/20 backdrop-blur-md rounded-full p-3 border border-white/30 shadow-2xl">
-                    <Plus class="w-8 h-8 text-white" />
+                  <div class="bg-white/20 backdrop-blur-md rounded-full p-3 border border-white/30 shadow-2xl hover:bg-white/30 hover:border-primary hover:shadow-lg transition-all duration-300">
+                    <Plus class="w-8 h-8 text-white hover:text-primary transition-all duration-300" />
                   </div>
                 </div>
               </div>

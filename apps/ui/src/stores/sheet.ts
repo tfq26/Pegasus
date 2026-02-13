@@ -1,6 +1,7 @@
+
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { useStorage } from '@vueuse/core'
+import { fetchSheets, fetchSheet, apiSaveSheet, apiDeleteSheet } from '@/lib/api'
 
 /**
  * Interface for a Sheet entity
@@ -8,67 +9,81 @@ import { useStorage } from '@vueuse/core'
  */
 export interface Sheet {
     id: string
+    userId?: string
     name: string
     spaceId: string | null // null for global/unassigned
     data: any // Serialized Engine state (cells, styles, metadata)
+    config?: any
+    storageId?: string
     createdAt: string
     updatedAt: string
 }
 
 export const useSheetStore = defineStore('sheet', () => {
-    // Persist sheets in localStorage for now (simulating backend)
-    // In production, this would sync with a backend API
-    const sheets = useStorage<Sheet[]>('pegasus-sheets', [])
+    const sheets = ref<Sheet[]>([])
+    const currentSheet = ref<Sheet | null>(null)
+    const isLoading = ref(false)
 
     const loadSheets = async (spaceId: string | null) => {
-        // Since it's local storage, no async fetch needed really, 
-        // but we keep signature async for future API integration
-        return sheets.value.filter(s => s.spaceId === spaceId)
+        isLoading.value = true
+        try {
+            const data = await fetchSheets(spaceId || undefined)
+            sheets.value = data
+            return data
+        } catch (error) {
+            console.error('[SheetStore] Failed to load sheets:', error)
+            throw error
+        } finally {
+            isLoading.value = false
+        }
     }
 
     const getAllSheets = () => sheets.value
 
-    const getSheet = (id: string) => {
-        return sheets.value.find(s => s.id === id)
+    const getSheet = async (id: string) => {
+        try {
+            const data = await fetchSheet(id)
+            currentSheet.value = data
+            return data
+        } catch (error) {
+            console.error('[SheetStore] Failed to get sheet:', error)
+            throw error
+        }
     }
 
-    const saveSheet = async (sheet: Partial<Sheet> & { name: string, data: any, spaceId: string | null }) => {
-        const existingIndex = sheets.value.findIndex(s => s.id === sheet.id)
+    const saveSheet = async (sheet: Partial<Sheet> & { name: string, data?: any, spaceId: string | null }) => {
+        try {
+            const saved = await apiSaveSheet(sheet)
 
-        const now = new Date().toISOString()
+            // Update local list
+            const idx = sheets.value.findIndex(s => s.id === saved.id)
+            if (idx >= 0) {
+                sheets.value[idx] = saved
+            } else {
+                sheets.value.push(saved)
+            }
 
-        if (existingIndex >= 0) {
-            // Update
-            sheets.value[existingIndex] = {
-                ...sheets.value[existingIndex],
-                ...sheet,
-                updatedAt: now
-            }
-            return sheets.value[existingIndex]
-        } else {
-            // Create
-            const newSheet: Sheet = {
-                id: (sheet.id ?? crypto.randomUUID()) as string,
-                name: sheet.name,
-                spaceId: sheet.spaceId,
-                data: sheet.data,
-                createdAt: now,
-                updatedAt: now
-            }
-            sheets.value.push(newSheet)
-            return newSheet
+            return saved
+        } catch (error) {
+            console.error('[SheetStore] Failed to save sheet:', error)
+            throw error
         }
     }
 
     const deleteSheet = async (id: string) => {
-        const index = sheets.value.findIndex(s => s.id === id)
-        if (index >= 0) {
-            sheets.value.splice(index, 1)
+        try {
+            await apiDeleteSheet(id)
+            sheets.value = sheets.value.filter(s => s.id !== id)
+        } catch (error) {
+            console.error('[SheetStore] Failed to delete sheet:', error)
+            throw error
         }
     }
 
     return {
         sheets,
+        currentSheet,
+        isLoading,
         loadSheets,
         getAllSheets,
         getSheet,

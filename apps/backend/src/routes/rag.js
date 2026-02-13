@@ -26,6 +26,11 @@ rag.post("/index", async (c) => {
         if (type === 'database') {
             // 1. Fetch connection
             const rawConnId = sourceId.includes(':') ? sourceId.split(':')[1] : sourceId;
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+            if (sourceId.startsWith('system:') || !uuidRegex.test(rawConnId)) {
+                return c.json({ error: "System or invalid connections cannot be indexed for RAG currently" }, 400);
+            }
 
             const connRow = await db.query.connections.findFirst({
                 where: eq(connections.id, rawConnId)

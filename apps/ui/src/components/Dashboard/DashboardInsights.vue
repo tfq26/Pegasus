@@ -45,9 +45,11 @@
             </div>
         </div>
         
-        <div v-if="!isCollapsed" class="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed whitespace-pre-wrap animate-in fade-in slide-in-from-top-2 duration-300">
-          {{ analysisResult }}
-        </div>
+        <div 
+          v-if="!isCollapsed" 
+          class="prose prose-sm dark:prose-invert max-w-none text-foreground/90 leading-relaxed animate-in fade-in slide-in-from-top-2 duration-300 insights-render"
+          v-html="renderedInsights"
+        ></div>
       </div>
     </div>
   </div>
@@ -65,11 +67,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { BrainCircuit, RefreshCw, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-vue-next'
+import MarkdownIt from 'markdown-it'
 
 const { isAnalyzing, analysisResult, generateDashboardSummary } = useDashboardAnalysis()
+
+const md = new MarkdownIt({
+  breaks: true,
+  linkify: true,
+  html: false
+})
+
+const renderedInsights = computed(() => {
+  if (!analysisResult.value) return ''
+  return md.render(analysisResult.value)
+})
 
 const isDismissed = ref(false)
 const isCollapsed = ref(false)
@@ -90,3 +104,28 @@ watch(isAnalyzing, (val) => {
     }
 })
 </script>
+
+<style scoped>
+.insights-render :deep(p) {
+  margin-bottom: 1rem;
+}
+
+.insights-render :deep(ul), .insights-render :deep(ol) {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.insights-render :deep(li) {
+  margin-bottom: 0.375rem;
+}
+
+.insights-render :deep(li:last-child) {
+  margin-bottom: 0;
+}
+
+.insights-render :deep(h1), .insights-render :deep(h2), .insights-render :deep(h3) {
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--primary);
+}
+</style>

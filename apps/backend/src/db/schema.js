@@ -202,6 +202,7 @@ export const spaceRelations = relations(dataSpaces, ({ one, many }) => ({
     files: many(spaceFiles),
     notes: many(spaceNotes),
     connections: many(connections),
+    sheets: many(sheets),
 }));
 
 export const spacePermissionRelations = relations(spacePermissions, ({ one }) => ({
@@ -482,6 +483,18 @@ export const files = pgTable("file", {
     mimeType: text("mime_type"),
     provider: text("provider").default('default'), // 'default' or 'custom'
     createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- Sheets ---
+export const sheets = pgTable("sheet", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+    spaceId: uuid("space_id").references(() => dataSpaces.id, { onDelete: 'cascade' }),
+    name: text("name").notNull(),
+    config: jsonb("config").default({}),
+    storageId: text("storage_id"), // Hybrid Storage: S3 Key (pointing to JSON data)
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const storageCredentials = pgTable("storage_credential", {

@@ -54,6 +54,7 @@ import supportRoutes from "./src/routes/support.js"
 import piscesRoutes from "./src/routes/pisces.js"
 import { queryRoutes } from "./src/routes/query.js"
 import { querySessionRoutes } from "./src/routes/querySessions.js"
+import sheetsRouter from "./src/routes/sheets.js"
 import {
     EXPERIMENTAL_FEATURES,
     initExperimentalTables,
@@ -232,7 +233,7 @@ app.use('*', async (c, next) => {
 // On Vercel, startServer() is NOT called, so we need to connect on first request
 // isVercel is defined at the top
 
-// No-op for SurrealDB connection check
+// No-op for database connection check
 
 
 // Global Error Handlers
@@ -309,7 +310,7 @@ experimental.get("/features", async (c) => {
     try {
         const payload = await verify(token, jwtSecret)
         const status = await getExperimentalStatus(db, payload.sub, payload)
-        if (!status.hasAccess) return c.json({ error: "No experimental access" }, 403)
+        if (!status.hasAccess) return c.json({ error: "No experimental access", ...status }, 403)
         const enabledFeatures = await getUserFeatureFlags(db, payload.sub)
         const features = Object.values(EXPERIMENTAL_FEATURES).map(feature => ({
             ...feature,
@@ -364,9 +365,10 @@ app.route('/spaces', spaceRoutes)
 app.route('/storage', storageRoutes) // Modular Storage (Upload/Download/Config)
 app.route('/api/kusto-ingest', kustoIngest)
 app.route('/import', importRoutes) // Smart Batch Import
-app.route('/support', supportRoutes) // Automated Support Reporting
 app.route('/support', piscesRoutes) // Smart Pisces Analysis
-app.route('/query-sessions', querySessionRoutes)
+app.route('/support', supportRoutes) // Automated Support Reporting
+app.route("/api/query-sessions", querySessionRoutes)
+app.route("/api/sheets", sheetsRouter)
 app.get('/payments', getPayments)
 
 // Helper to ensure user exists in DB
@@ -407,9 +409,9 @@ const upsertUser = async (payload) => {
 
 
 // File Upload Endpoint
-// Migrated from Turso to SurrealDB
-// We will store uploaded data in SurrealDB tables.
-// Metadata in `uploads` table, data in `data_{uploadId}_{tableName}` tables.
+// Migrated to DuckDB/Postgres
+// We will store metadata in Postgres and parsed data in DuckDB tables.
+// Metadata in `space_files` table, data in `upload_{uuid}.duckdb` files.
 
 app.post("/upload", async (c) => {
     try {

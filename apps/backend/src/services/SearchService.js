@@ -108,4 +108,71 @@ export class SearchService {
             link: res.link
         })).slice(0, 5);
     }
+
+    /**
+     * Specialized research mode for context enrichment (definitions, domain knowledge).
+     * @param {string} query - The term or concept to research
+     * @returns {Promise<Array>} - Research results
+     */
+    static async researchContext(query) {
+        if (this.isQuantitativeQuery(query)) {
+            console.log(`[SearchService] Skipping research for quantitative query: ${query}`);
+            return [];
+        }
+
+        const researchQuery = `What is ${query}? Define and explain in a business/data context.`;
+        console.log(`[SearchService] Researching context for: ${query}`);
+
+        const tavilyKey = process.env.TAVILY_API_KEY;
+        if (tavilyKey) {
+            try {
+                // Use Tavily with 'advanced' depth for better context
+                const response = await fetch('https://api.tavily.com/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: tavilyKey,
+                        query: researchQuery,
+                        search_depth: "advanced",
+                        max_results: 3,
+                        include_answer: true
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const results = (data.results || []).map(r => ({
+                        title: r.title,
+                        snippet: r.content || r.snippet,
+                        link: r.url
+                    }));
+
+                    if (data.answer) {
+                        results.unshift({
+                            title: "Summary Definition",
+                            snippet: data.answer,
+                            link: "tavily-ai-summary"
+                        });
+                    }
+                    return results;
+                }
+            } catch (e) {
+                console.warn("[SearchService] Tavily research failed:", e.message);
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Heuristic check to see if a query is requesting direct data/numbers.
+     */
+    static isQuantitativeQuery(query) {
+        const patterns = [
+            /\b(sum|count|average|median|min|max|total|revenue|sales|users|customers)\b/i,
+            /\b(how many|how much|what is the (total|sum))\b/i,
+            /\d+/ // Contains numbers
+        ];
+        return patterns.some(p => p.test(query));
+    }
 }

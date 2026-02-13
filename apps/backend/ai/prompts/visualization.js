@@ -62,23 +62,36 @@ SMART RECOMMENDATIONS:
 - Best Y-axis candidates: ${columnAnalysis.yAxisCandidates.join(', ') || 'None detected'}
 - Suggested chart type: ${columnAnalysis.suggestedChart}
 
-RULES:
-1. If intent is clearly NOT visual (e.g., "list all...", "find the row..."), return { "shouldVisualize": false }.
-2. NEVER use high-cardinality columns (>50 unique values) for X-axis categories.
-3. For pie/doughnut: LIMIT to 8 slices maximum. If more categories, use bar chart instead.
-4. For line charts: X-axis MUST be time/date or sequence. Data MUST be sorted.
-5. Always use EXACT column names from the data.
-6. FORMATTING: The UI automatically handles smart date (e.g. 2026-01-12 -> 1/12/26) and numeric formatting. If the user asks for "cleaner" or "better" labels, proced with the chart and mention the UI formatting in your reason.
-7. REFINEMENT: If the user requests a change to an existing chart, you MUST fulfill it by updating the 'type', 'xAxis', or 'yAxis'. DO NOT simply repeat the old config if a change was requested.
+CRITICAL TIME-SERIES RULES (Robinhood-style):
+1. **TIME FORMATTING PRIORITY**: For time-based x-axis, ALWAYS prefer timestamp/datetime columns that include time-of-day (hours:minutes), NOT just date-only columns.
+   - ✅ GOOD: "timestamp", "datetime", "created_at" (contains hours)
+   - ❌ BAD: "date", "day" (date-only, no time component)
+   - The UI will auto-format timestamps to show hours (e.g., "10:30 AM", "2:45 PM") for recent data
+   
+2. **DATA AGGREGATION**: If rowCount > 50, recommend aggregation in your response:
+   - Suggest grouping timestamps into time buckets (e.g., 5-minute intervals, hourly)
+   - This creates smooth, readable charts like stock apps (Robinhood, Yahoo Finance)
+   - Example: 330 data points → suggest aggregating to ~30 buckets for clean display
 
-OUTPUTSCHEMA (JSON ONLY):
+3. **SORTING**: Time-series data MUST be sorted by timestamp ascending for line charts.
+
+GENERAL RULES:
+4. If intent is clearly NOT visual (e.g., "list all...", "find the row..."), return { "shouldVisualize": false }.
+5. NEVER use high-cardinality columns (>50 unique values) for X-axis categories.
+6. For pie/doughnut: LIMIT to 8 slices maximum. If more categories, use bar chart instead.
+7. Always use EXACT column names from the data.
+8. FORMATTING: The UI automatically handles smart date/time formatting and numeric formatting.
+9. REFINEMENT: If the user requests a change to an existing chart, you MUST fulfill it by updating the 'type', 'xAxis', or 'yAxis'.
+
+OUTPUT SCHEMA (JSON ONLY):
 {
   "shouldVisualize": true,
   "type": "bar|line|pie|doughnut|stat|scatter",
   "title": "Descriptive chart title",
   "xAxis": "column_name",
   "yAxis": ["numeric_column_1", "numeric_column_2"],
-  "reasoning": "Why this chart type was chosen"
+  "aggregationHint": "If >50 rows: suggest bucket size like '5m', '15m', '1h', or '1d'. Otherwise null.",
+  "reasoning": "Why this chart type was chosen and any aggregation recommendations"
 }
 `.trim();
 }

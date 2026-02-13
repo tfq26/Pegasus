@@ -141,8 +141,11 @@ export class CosmosAdapter extends DatabaseAdapter {
                 translated = translated.replace(regex, camel);
             });
 
-            // 1. Map rowid and __id to id if they appear in SELECT
-            translated = translated.replace(/rowid\s+as\s+__id/gi, 'c.id as __id');
+            let addSyntheticId = false;
+            if (/rowid\s+as\s+__id/i.test(queryString)) {
+                addSyntheticId = true;
+                translated = translated.replace(/rowid\s+as\s+__id\s*,?\s*/gi, '');
+            }
             translated = translated.replace(/"rowid"/gi, 'c.id');
 
             // 2. Handle FROM clause: replace 'FROM "TableName"' with 'FROM c'
@@ -207,11 +210,16 @@ export class CosmosAdapter extends DatabaseAdapter {
             const aliasMatch = translated.match(/SELECT\s+(?:TOP\s+\d+\s+)?(.+?)\s+FROM/i);
             if (aliasMatch) {
                 splitByComma(aliasMatch[1]).forEach(col => {
-                    const parts = col.trim().split(/\s+AS\s+/i);
+                    let cleanCol = col.trim();
+                    if (/^DISTINCT\s+/i.test(cleanCol)) {
+                        cleanCol = cleanCol.replace(/^DISTINCT\s+/i, '').trim();
+                    }
+
+                    const parts = cleanCol.split(/\s+AS\s+/i);
                     if (parts.length > 1) {
                         knownAliases.add(parts[1].trim());
                     } else {
-                        const spaceParts = col.trim().split(/\s+/);
+                        const spaceParts = cleanCol.split(/\s+/);
                         if (spaceParts.length === 2 && !keywords.includes(spaceParts[1].toUpperCase())) {
                             knownAliases.add(spaceParts[1].trim());
                         }
@@ -222,8 +230,15 @@ export class CosmosAdapter extends DatabaseAdapter {
             // Fix clauses: WHERE, GROUP BY, ORDER BY
             const clauseRegex = /(WHERE|GROUP\s+BY|ORDER\s+BY)\s+([\s\S]+?)(?=\s+GROUP\s+BY|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/gi;
             translated = translated.replace(clauseRegex, (match, clause, content) => {
-                const fixedContent = content.replace(/'[^']*'|"[^"]*"|\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (m, identifier) => {
+                const fixedContent = content.replace(/'[^']*'|"[^"]*"|\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (m, identifier, offset, fullString) => {
                     if (identifier) {
+                        // Check if already prefixed by 'c.' or just '.'
+                        // We check the characters before this match in the fullString (content)
+                        // Use fullString (which is 'content' from outer replace)
+                        const pre = fullString.substring(Math.max(0, offset - 2), offset);
+                        if (pre.endsWith('.') || pre === 'c.') {
+                            return m; // Already prefixed, don't touch
+                        }
                         return prefixIfCol(identifier, knownAliases);
                     }
                     return m; // Preserve string literals
@@ -234,17 +249,24 @@ export class CosmosAdapter extends DatabaseAdapter {
             // Fix SELECT list atoms (special handling to exclude aliases from prefixing)
             translated = translated.replace(/SELECT\s+(?:(TOP\s+\d+)\s+)?(.+?)\s+FROM/i, (match, topClause, selectList) => {
                 const newSelectList = splitByComma(selectList).map(col => {
-                    const trimmed = col.trim();
+                    let trimmed = col.trim();
+                    let distinctPrefix = "";
+
+                    if (/^DISTINCT\s+/i.test(trimmed)) {
+                        distinctPrefix = "DISTINCT ";
+                        trimmed = trimmed.replace(/^DISTINCT\s+/i, "");
+                    }
+
                     const parts = trimmed.split(/\s+AS\s+/i);
                     if (parts.length > 1) {
                         // col AS alias -> prefix col but NOT alias
-                        return `${prefixIfCol(parts[0], knownAliases)} AS ${parts[1]}`;
+                        return `${distinctPrefix}${prefixIfCol(parts[0], knownAliases)} AS ${parts[1]}`;
                     }
                     const spaceParts = trimmed.split(/\s+/);
                     if (spaceParts.length === 2 && !keywords.includes(spaceParts[1].toUpperCase())) {
-                        return `${prefixIfCol(spaceParts[0], knownAliases)} ${spaceParts[1]}`;
+                        return `${distinctPrefix}${prefixIfCol(spaceParts[0], knownAliases)} ${spaceParts[1]}`;
                     }
-                    return prefixIfCol(trimmed, knownAliases);
+                    return `${distinctPrefix}${prefixIfCol(trimmed, knownAliases)}`;
                 }).join(', ');
 
                 return `SELECT ${topClause ? topClause + ' ' : ''}${newSelectList} FROM`;
@@ -332,10 +354,29 @@ export class CosmosAdapter extends DatabaseAdapter {
 
             const { resources } = await this.container.items.query(translated).fetchAll()
 
-            const successMsg = `[CosmosAdapter] query success. Found ${resources.length} items.\n`
+            // Strip CosmosDB internal metadata fields to reduce payload size
+            const COSMOS_INTERNAL_FIELDS = new Set(['_rid', '_self', '_etag', '_attachments', '_ts']);
+            const cleanedResources = resources.map(doc => {
+                if (!doc || typeof doc !== 'object') return doc;
+                const cleaned = {};
+                for (const [key, value] of Object.entries(doc)) {
+                    if (!COSMOS_INTERNAL_FIELDS.has(key)) {
+                        cleaned[key] = value;
+                    }
+                }
+                return cleaned;
+            });
+
+            if (addSyntheticId) {
+                cleanedResources.forEach(r => {
+                    if (r && typeof r === 'object') r.__id = r.id;
+                });
+            }
+
+            const successMsg = `[CosmosAdapter] query success. Found ${cleanedResources.length} items (stripped ${COSMOS_INTERNAL_FIELDS.size} internal fields).\n`
             try { fs.appendFileSync('/tmp/cosmos_debug.log', successMsg) } catch (e) { }
 
-            return resources
+            return cleanedResources
         } catch (e) {
             const errMsg = `[CosmosAdapter] query ERROR: ${e.message} ${e.stack} (Query: ${queryString})\n`
             try { fs.appendFileSync('/tmp/cosmos_debug.log', errMsg) } catch (e) { }
@@ -352,6 +393,10 @@ export class CosmosAdapter extends DatabaseAdapter {
                 const schema = {}
 
                 for (const containerId of containers) {
+                    if (!this.database) {
+                        console.warn('[CosmosAdapter] Database lost during schema fetch, reconnecting...');
+                        await this.connect();
+                    }
                     const container = this.database.container(containerId)
                     // Sample more documents to infer a more complete schema, especially for sparse data
                     const query = "SELECT TOP 50 * FROM c"
@@ -404,6 +449,10 @@ export class CosmosAdapter extends DatabaseAdapter {
     async getOneTableSchema(tableName) {
         try {
             if (!this.client) await this.connect()
+            if (!this.database) {
+                console.warn('[CosmosAdapter] Database lost during single table schema fetch, reconnecting...');
+                await this.connect();
+            }
 
             const container = this.database.container(tableName)
             const query = "SELECT TOP 5 * FROM c"

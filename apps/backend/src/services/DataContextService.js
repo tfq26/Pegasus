@@ -22,10 +22,14 @@ export class DataContextService {
 
         // 1. Resolve Connection
         let connRow = null;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
         if (connectionId && connectionId !== 'undefined' && connectionId !== 'null' && connectionId !== 'local' && connectionId !== 'connection:local') {
-            connRow = await db.query.connections.findFirst({
-                where: eq(connections.id, connectionId)
-            });
+            if (!connectionId.startsWith('system:') && uuidRegex.test(connectionId)) {
+                connRow = await db.query.connections.findFirst({
+                    where: eq(connections.id, connectionId)
+                });
+            }
         }
 
         // Handle local/virtual
@@ -194,6 +198,7 @@ export class DataContextService {
         // Let's allow passing resolvedResources if already resolved.
         // 4. OneContext Integration (Databases, Files, Notes)
         const allResolved = options.resolvedResources || [];
+        const analysisPromises = [];
 
         for (const meta of allResolved) {
             // Avoid re-analyzing the primary connection
@@ -251,14 +256,18 @@ export class DataContextService {
 
                     const otherAdapter = new OtherAdapterClass(nestedCfg, userId);
                     extraAdapters.push(otherAdapter);
-                    await analyzeConnection(otherAdapter, otherProvider, false, {
+                    analysisPromises.push(analyzeConnection(otherAdapter, otherProvider, false, {
                         name: meta.name || meta.title,
                         id: meta.id,
                         type: meta.type,
                         aiInsights: meta.aiInsights
-                    });
+                    }));
                 }
             }
+        }
+
+        if (analysisPromises.length > 0) {
+            await Promise.all(analysisPromises);
         }
 
         // 5. System Injection: OrionMetrics (Cosmos DB)
@@ -279,8 +288,11 @@ export class DataContextService {
                     id: 'system:orion_metrics',
                     type: 'database',
                     aiInsights: [
-                        'Contains CPU usage, memory stats, and health metrics for app servers like "Orion"',
-                        'Columns include: serverId, serverName, serverType, status (online/offline), cpuPercent, memoryPercent, errorMessage, and timestamp'
+                        'Contains CPU usage, memory stats, and health metrics for app servers',
+                        'Columns: serverId (string), serverName (string), serverType (string), status (string: online/offline), cpuPercent (number), memoryPercent (number), errorMessage (string), timestamp (datetime)',
+                        'To query a specific server: WHERE serverName = \'App server 2\' or WHERE serverId = \'app-server-2\'',
+                        'To get latest metrics: ORDER BY timestamp DESC LIMIT 10',
+                        'Example: SELECT * FROM OrionMetrics WHERE serverName = \'App server 2\' ORDER BY timestamp DESC LIMIT 10'
                     ]
                 });
 
@@ -342,6 +354,7 @@ export class DataContextService {
 
         // 6. Minimal Semantic Spark (For generic headers)
         try {
+            const sparkPromises = [];
             for (const tableName of normalizedSchema.tables) {
                 const schema = normalizedSchema.detailedSchema[tableName];
                 const hasGenericHeaders = schema?.some(c => (/^field[0-9]+$/i.test(c.name) || /^column_[0-9]+$/i.test(c.name) || /^[A-Z]$/.test(c.name)));
@@ -351,14 +364,17 @@ export class DataContextService {
                     const targetProvider = resourceToProvider[tableName] || provider;
                     if (targetAdapter) {
                         const realName = normalizedSchema.mappings?.tables?.[tableName] || tableName;
-                        const samples = await targetAdapter.query(`SELECT * FROM "${realName}" LIMIT 3`);
-                        if (samples?.length > 0) {
-                            if (!normalizedSchema.semanticContext.samples) normalizedSchema.semanticContext.samples = {};
-                            normalizedSchema.semanticContext.samples[tableName] = samples;
-                        }
+                        sparkPromises.push((async () => {
+                            const samples = await targetAdapter.query(`SELECT * FROM "${realName}" LIMIT 3`);
+                            if (samples?.length > 0) {
+                                if (!normalizedSchema.semanticContext.samples) normalizedSchema.semanticContext.samples = {};
+                                normalizedSchema.semanticContext.samples[tableName] = samples;
+                            }
+                        })());
                     }
                 }
             }
+            if (sparkPromises.length > 0) await Promise.all(sparkPromises);
         } catch (e) { /* Ignore - non-critical */ }
 
         return {

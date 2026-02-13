@@ -78,8 +78,15 @@ router.get("/", async (c) => {
             }
         })
 
+        // Fetch user config for hidden system connections
+        const user = await db.query.users.findFirst({
+            where: eq(users.id, userId),
+            columns: { config: true }
+        });
+        const hiddenSystemConnections = user?.config?.hiddenSystemConnections || [];
+
         // Inject System Metrics (Cosmos DB)
-        if (process.env.COSMOS_ENDPOINT) {
+        if (process.env.COSMOS_ENDPOINT && !hiddenSystemConnections.includes('system:orion_metrics')) {
             mapped.unshift({
                 id: 'system:orion_metrics',
                 name: 'System Metrics (Live)',
@@ -196,8 +203,16 @@ router.put("/:id", async (c) => {
         const finalName = nickname || name
         const finalConfig = config || rest
 
+        // Validate UUID format to prevent DB cast errors (Postgres)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(id)) {
+            if (id.startsWith('system:')) return c.json({ error: "System connections cannot be modified" }, 403);
+            return c.json({ error: "Invalid connection ID format" }, 400);
+        }
+
         const [updated] = await db.update(connections)
             .set({
+                // ... (rest remains same)
                 type: finalType,
                 name: finalName,
                 config: finalConfig,
@@ -250,11 +265,50 @@ router.delete("/:id", async (c) => {
     if (!token) return c.json({ error: "Unauthorized" }, 401)
 
     let id = c.req.param("id")
+
+    // Handle system/virtual connections
+    if (id.startsWith('system:')) {
+        console.log(`[Connection] Targeted system connection for removal: ${id}`);
+        try {
+            const payload = await verify(token, jwtSecret)
+            const userId = payload.sub
+
+            // Fetch user config and update it to hide this system connection
+            const user = await db.query.users.findFirst({
+                where: eq(users.id, userId)
+            });
+
+            if (user) {
+                const updatedConfig = {
+                    ...(user.config || {}),
+                    hiddenSystemConnections: [...(user.config?.hiddenSystemConnections || [])]
+                }
+
+                if (!updatedConfig.hiddenSystemConnections.includes(id)) {
+                    updatedConfig.hiddenSystemConnections.push(id)
+                    await db.update(users)
+                        .set({ config: updatedConfig })
+                        .where(eq(users.id, userId))
+                }
+            }
+            return c.json({ ok: true });
+        } catch (e) {
+            console.error("[Connection] Failed to hide system connection:", e.message)
+            return c.json({ error: e.message }, 500)
+        }
+    }
+
     const rawId = id.includes(':') ? id.split(':')[1] : id
+
+    // Validate UUID format to prevent DB cast errors (Postgres)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(rawId)) {
+        return c.json({ error: "Invalid connection ID format" }, 400);
+    }
 
     try {
         const payload = await verify(token, jwtSecret)
-        await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, payload.sub)));
+        const result = await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, payload.sub)));
         return c.json({ ok: true });
     } catch (e) {
         console.error("Delete connection error:", e)

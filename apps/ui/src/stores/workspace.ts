@@ -95,9 +95,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             if (res.ok) {
                 const body = await res.json()
                 if (body.workspace) {
+                    // Strip engineState from database-backed tabs to prevent massive reactive objects
+                    // Database tabs reload from the DB, so their engineState is wasteful and causes UI freezes
+                    const cleanTabs = (tabs: any[]) => tabs.map(tab => {
+                        if (tab.data?.tableName && tab.data?.engineState) {
+                            const { engineState, ...cleanData } = tab.data
+                            console.log(`[WorkspaceStore] Stripped engineState from DB tab: ${tab.data.tableName}`)
+                            return { ...tab, data: cleanData }
+                        }
+                        return tab
+                    })
+
                     workspacesByConnection.value[connectionId] = {
-                        tabs: body.workspace.tabs || [],
-                        inactiveTabs: body.workspace.inactiveTabs || [],
+                        tabs: cleanTabs(body.workspace.tabs || []),
+                        inactiveTabs: cleanTabs(body.workspace.inactiveTabs || []),
                         activeTabId: body.workspace.activeTabId || null
                     }
                     cleanupOldTabs(connectionId)
@@ -145,9 +156,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
                 const workspace = workspacesByConnection.value[targetId]
                 if (!workspace) return // Should not happen
 
+                // Strip engineState from database-backed tabs before saving.
+                // This prevents the workspace JSON from growing to megabytes.
+                const stripEngineState = (tabs: Tab[]) => tabs.map(tab => {
+                    if (tab.data?.tableName && tab.data?.engineState) {
+                        const { engineState, ...cleanData } = tab.data
+                        return { ...tab, data: cleanData }
+                    }
+                    return tab
+                })
+
                 const data = {
-                    tabs: workspace.tabs,
-                    inactiveTabs: workspace.inactiveTabs,
+                    tabs: stripEngineState(workspace.tabs),
+                    inactiveTabs: stripEngineState(workspace.inactiveTabs || []),
                     activeTabId: workspace.activeTabId
                 }
 

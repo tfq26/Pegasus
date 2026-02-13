@@ -60,6 +60,39 @@
       
       <!-- Actions Menu - Right Side -->
       <div class="flex items-center gap-2" v-if="!isShared">
+        <!-- Undo/Redo Buttons -->
+        <div v-if="currentDashboard && showFullToolbar" class="flex items-center gap-1 mr-1">
+          <TooltipProvider :delay-duration="0">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  @click="store.undo()"
+                  :disabled="undoStack.length < 2"
+                  class="p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center justify-center shrink-0 disabled:opacity-30"
+                >
+                  <Undo class="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Undo (Opt+Shift+Z)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider :delay-duration="0">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <button
+                  @click="store.redo()"
+                  :disabled="redoStack.length === 0"
+                  class="p-2 text-sm font-medium border border-border hover:bg-muted rounded-md transition flex items-center justify-center shrink-0 disabled:opacity-30"
+                >
+                  <Redo class="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Redo (Opt+Shift+Y)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+
         <!-- Add Element Button -->
         <TooltipProvider :delay-duration="0">
           <Tooltip>
@@ -249,6 +282,11 @@
               <Pencil class="w-4 h-4 mr-2" />
               <span>Rename Dashboard</span>
             </DropdownMenuItem>
+
+            <DropdownMenuItem @click="handleExportImage" class="cursor-pointer">
+              <Image class="w-4 h-4 mr-2" />
+              <span>Export as Image</span>
+            </DropdownMenuItem>
             
             <DropdownMenuSeparator />
             
@@ -276,7 +314,18 @@
                 class="group relative max-w-[200px] flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-all cursor-pointer hover:bg-muted/50 rounded-t-lg select-none"
                 :class="activePageId === page.id ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:text-foreground'"
               >
-                <span class="truncate">{{ page.title }}</span>
+                <span v-if="pageToRename?.id !== page.id" class="truncate">{{ page.title }}</span>
+                <Input
+                  v-else
+                  ref="renamingInput"
+                  v-model="newPageTitle"
+                  class="bg-transparent border-none border-b border-primary/50 focus:outline-none p-0 w-full h-auto font-medium text-primary shadow-none rounded-none"
+                  @click.stop
+                  @mousedown.stop
+                  @blur="processRenamePage"
+                  @keydown.enter="processRenamePage"
+                  @keydown.esc="cancelRename"
+                />
 
                 <!-- Delete Page Button (hover) -->
                 <button 
@@ -584,44 +633,7 @@
       </DialogContent>
     </Dialog>
 
-    <!-- Rename Page Modal -->
-    <Dialog v-model:open="showRenamePageModal">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Rename Page</DialogTitle>
-          <DialogDescription>
-            Enter a new name for your page.
-          </DialogDescription>
-        </DialogHeader>
-        <div class="flex flex-col gap-4 py-4">
-          <div class="space-y-2">
-            <label for="page-name" class="text-sm font-medium">Page Name</label>
-            <input
-              id="page-name"
-              v-model="newPageTitle"
-              @keyup.enter="processRenamePage"
-              placeholder="Enter page name"
-              class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
-        </div>
-        <div class="flex justify-end gap-2">
-          <button 
-            @click="showRenamePageModal = false"
-            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md"
-          >
-            Cancel
-          </button>
-          <button 
-            @click="processRenamePage"
-            :disabled="!newPageTitle.trim()"
-            class="px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md disabled:opacity-50"
-          >
-            Rename
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
+
 
     <!-- Privacy Toggle Dialog -->
     <Dialog v-model:open="showPrivacyDialog">
@@ -701,7 +713,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, onMounted, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -725,6 +737,7 @@ import { useCollaboration } from '@/composables/useCollaboration'
 import { identityService } from '@/services/identityService'
 import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy, trackDashboardAccess, api } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
+import { exportElementAsImage } from '@/lib/exportImage'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -761,7 +774,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
-import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard, BrainCircuit, Maximize } from 'lucide-vue-next'
+import { Input } from '@/components/ui/input'
+import { Pencil, Trash2, Code, Plus, Save, Share2, ArrowLeft, Settings, MoreVertical, FileText, Lock, Globe, MessageSquare, X, Send, Loader2, LayoutDashboard, BrainCircuit, Maximize, Image, Undo, Redo } from 'lucide-vue-next'
 import DashboardElement from '@/components/Dashboard/DashboardElement.vue'
 
 defineOptions({ name: 'DashboardPage' })
@@ -772,6 +786,8 @@ const store = useDashboardStore()
 const dashboards = computed((): any[] => store.dashboards as any)
 const currentDashboard = computed((): any => store.currentDashboard as any)
 const isLoading = computed(() => store.isLoading)
+const undoStack = computed(() => store.undoStack as unknown as any[])
+const redoStack = computed(() => store.redoStack as unknown as any[])
 const isInitializing = ref(true)
 
 // Multi-page Support
@@ -826,24 +842,48 @@ const processDeletePage = async () => {
 }
 
 // Renaming State
-const showRenamePageModal = ref(false)
 const pageToRename = ref<any>(null)
 const newPageTitle = ref('')
+const renamingInput = ref<any>(null)
 
 const startRenamingPage = (page: any) => {
   if (isShared.value) return
   pageToRename.value = page
   newPageTitle.value = page.title
-  showRenamePageModal.value = true
+  nextTick(() => {
+    // Handle Vue 3 ref-in-v-for which returns an array
+    const target = Array.isArray(renamingInput.value) ? renamingInput.value[0] : renamingInput.value
+    if (target) {
+      if ('focus' in target) {
+        target.focus()
+      }
+      if ('select' in target) {
+        target.select()
+      }
+    }
+  })
+}
+
+const cancelRename = () => {
+  pageToRename.value = null
+  newPageTitle.value = ''
 }
 
 const processRenamePage = async () => {
   if (!pageToRename.value) return
-  if (newPageTitle.value.trim()) {
-    await store.renamePage(pageToRename.value.id, newPageTitle.value)
-    showRenamePageModal.value = false
-    pageToRename.value = null
-    newPageTitle.value = ''
+  const targetPage = pageToRename.value
+  const newTitle = newPageTitle.value.trim()
+  
+  // Clear state immediately to avoid double firing
+  pageToRename.value = null
+  
+  if (newTitle && newTitle !== targetPage.title) {
+    try {
+      await store.renamePage(targetPage.id, newTitle)
+      toast.success(`Page renamed to "${newTitle}"`)
+    } catch (e: any) {
+      toast.error('Failed to rename page')
+    }
   }
 }
 
@@ -1070,6 +1110,22 @@ onKeyStroke(['s', 'S'], (e) => {
   if (e.altKey || (e.metaKey && e.shiftKey)) {
     e.preventDefault()
     handleShare()
+  }
+})
+
+onKeyStroke(['z', 'Z'], (e) => {
+  // Undo: Option/Alt + Shift + Z
+  if (e.altKey && e.shiftKey) {
+    e.preventDefault()
+    store.undo()
+  }
+})
+
+onKeyStroke(['y', 'Y'], (e) => {
+  // Redo: Option/Alt + Shift + Y
+  if (e.altKey && e.shiftKey) {
+    e.preventDefault()
+    store.redo()
   }
 })
 
@@ -1323,6 +1379,9 @@ const gridStyle = computed(() => {
 })
 
 const onLayoutUpdated = () => {
+  // Push to history for undo/redo
+  store.pushToHistory()
+
   // Emit live layout update for collaboration
   if (currentDashboard.value) {
       emitDashboardUpdate(currentDashboard.value.id, { 
@@ -1372,6 +1431,15 @@ const handleDeleteDashboard = async () => {
   } else {
     await confirmDelete()
   }
+}
+
+const handleExportImage = async () => {
+  if (!dashboardContainer.value || !currentDashboard.value) return
+  await exportElementAsImage(
+    dashboardContainer.value, 
+    currentDashboard.value.title || 'dashboard',
+    'png'
+  )
 }
 
 const confirmDelete = async () => {
@@ -1493,6 +1561,8 @@ const removeElement = async (id: string) => {
   const el = activePage.value.elements.find((e: any) => e.id === id)
   const elTitle = el?.title || 'Unknown Element'
   
+  store.pushToHistory()
+
   activePage.value.elements = activePage.value.elements.filter((el: any) => el.id !== id)
   activePage.value.layout = activePage.value.layout.filter((item: any) => item.i !== id)
   

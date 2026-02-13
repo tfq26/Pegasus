@@ -232,15 +232,89 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
     const dateColumn = dateColumns[0] || null
     const chartType = pickChartType(categoryColumn, numericColumns, dateColumn, data.length)
 
-    // Generate labels (store both full and truncated)
+    // Generate labels with smart time formatting
     let labels: string[]
     let fullLabels: string[]
+    let shouldAggregate = data.length > 50 && dateColumn !== null
+
     if (dateColumn) {
-        labels = data.map(row => {
+        // Parse all timestamps
+        const timestamps = data.map(row => {
             const d = new Date(row[dateColumn])
-            return isNaN(d.getTime()) ? String(row[dateColumn]) : d.toLocaleDateString()
+            return { date: d, valid: !isNaN(d.getTime()), row }
         })
-        fullLabels = labels // Dates are usually short enough
+
+        const validTimestamps = timestamps.filter(t => t.valid)
+
+        if (validTimestamps.length === 0) {
+            // Fallback to string labels
+            labels = data.map(row => String(row[dateColumn]))
+            fullLabels = labels
+            shouldAggregate = false
+        } else {
+            // Determine time range
+            const dates = validTimestamps.map(t => t.date.getTime())
+            const minTime = Math.min(...dates)
+            const maxTime = Math.max(...dates)
+            const rangeMs = maxTime - minTime
+
+            // Time range constants
+            const HOUR = 3600000
+            const DAY = 86400000
+            const WEEK = 7 * DAY
+            const MONTH = 30 * DAY
+
+            // Smart formatting based on range
+            let formatLabel: (d: Date) => string
+
+            if (rangeMs < 6 * HOUR) {
+                // Last few hours → show time only (HH:MM)
+                formatLabel = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+            } else if (rangeMs < DAY) {
+                // Last 24 hours → show time (HH:MM AM/PM)
+                formatLabel = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+            } else if (rangeMs < WEEK) {
+                // Last week → show day + time
+                formatLabel = (d) => d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', hour12: true })
+            } else if (rangeMs < MONTH) {
+                // Last month → show date
+                formatLabel = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            } else {
+                // Longer → show month/year
+                formatLabel = (d) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+            }
+
+            // Aggregate if too many points
+            if (shouldAggregate) {
+                const targetBuckets = 30
+                const bucketSize = Math.ceil(data.length / targetBuckets)
+                const aggregated: any[] = []
+
+                for (let i = 0; i < data.length; i += bucketSize) {
+                    const bucket = data.slice(i, i + bucketSize)
+                    const bucketTime = new Date(bucket[0][dateColumn])
+
+                    // Average numeric values in this bucket
+                    const aggregatedRow: any = { [dateColumn]: bucket[0][dateColumn] }
+                    for (const numCol of numericColumns) {
+                        const values = bucket.map(r => {
+                            const val = r[numCol]
+                            return typeof val === 'number' ? val : parseFloat(val) || 0
+                        })
+                        aggregatedRow[numCol] = values.reduce((a, b) => a + b, 0) / values.length
+                    }
+                    aggregated.push(aggregatedRow)
+                }
+
+                // Use aggregated data
+                data = aggregated
+                labels = aggregated.map(row => formatLabel(new Date(row[dateColumn])))
+                fullLabels = aggregated.map(row => new Date(row[dateColumn]).toLocaleString())
+            } else {
+                labels = validTimestamps.map(t => formatLabel(t.date))
+                fullLabels = validTimestamps.map(t => t.date.toLocaleString())
+            }
+        }
     } else if (categoryColumn) {
         fullLabels = data.map(row => String(row[categoryColumn]))
         labels = fullLabels.map(truncateLabel)

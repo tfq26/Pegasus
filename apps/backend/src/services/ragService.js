@@ -59,19 +59,23 @@ export class RAGService {
 
         console.log(`[RAG] Indexing ${chunks.length} chunks for ${metadata.source}...`);
 
-        for (const content of chunks) {
+        const BATCH_SIZE = metadata.type === 'table_data' ? 50 : 20;
+
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
             try {
-                // 1. Generate Embedding
-                const embedding = await aiClient.generateEmbedding(content, modelId);
-                if (!embedding || embedding.length === 0) {
-                    console.warn(`[RAG] Skipping chunk indexing: No embedding generated`);
+                // 1. Generate Batch Embeddings
+                const embeddings = await aiClient.generateEmbedding(batch, modelId);
+
+                if (!embeddings || embeddings.length === 0) {
+                    console.warn(`[RAG] Skipping batch starting at ${i}: No embeddings generated`);
                     continue;
                 }
 
-                // 2. Store in Neon
-                await db.insert(knowledgeChunks).values({
+                // 2. Prepare Batch Insert
+                const values = batch.map((content, idx) => ({
                     content,
-                    embedding,
+                    embedding: Array.isArray(embeddings[0]) ? embeddings[idx] : (idx === 0 ? embeddings : null),
                     metadata: {
                         ...metadata,
                         indexed_at: new Date().toISOString()
@@ -79,9 +83,13 @@ export class RAGService {
                     userId: userId,
                     fileId: metadata.fileId || null,
                     noteId: metadata.noteId || null
-                });
+                })).filter(v => v.embedding);
+
+                if (values.length > 0) {
+                    await db.insert(knowledgeChunks).values(values);
+                }
             } catch (e) {
-                console.error(`[RAG] Failed to index chunk:`, e);
+                console.error(`[RAG] Failed to index batch starting at ${i}:`, e);
             }
         }
     }

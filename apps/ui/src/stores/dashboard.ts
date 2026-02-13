@@ -18,6 +18,7 @@ import {
 import { identityService } from '@/services/identityService'
 import { toast } from '@/composables/useNotifications'
 import { useCollaboration } from '@/composables/useCollaboration'
+import { isStaticSource } from '@/lib/db-connections'
 
 export interface DashboardElement {
     id: string
@@ -30,6 +31,7 @@ export interface DashboardElement {
     cacheUntil?: number
     refreshFrequency?: number // minutes, 0 means live
     created_by_name?: string
+    error?: string
 }
 
 export interface DashboardPage {
@@ -115,6 +117,66 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const analysisResult = ref<string | null>(null)
     const activityLogs = ref<DashboardActivity[]>([])
 
+    // Undo/Redo History
+    const undoStack = ref<any[]>([])
+    const redoStack = ref<any[]>([])
+    const isUndoingOrRedoing = ref(false)
+
+    const pushToHistory = () => {
+        if (!currentDashboard.value || isUndoingOrRedoing.value) return
+
+        // Deep clone the current data state
+        const stateToPush = JSON.parse(JSON.stringify(currentDashboard.value.data))
+
+        // Only push if it's different from the top of the stack
+        if (undoStack.value.length > 0) {
+            const lastState = undoStack.value[undoStack.value.length - 1]
+            if (JSON.stringify(lastState) === JSON.stringify(stateToPush)) {
+                return
+            }
+        }
+
+        undoStack.value.push(stateToPush)
+        // Keep stack size reasonable
+        if (undoStack.value.length > 50) {
+            undoStack.value.shift()
+        }
+
+        // Clear redo stack on new action
+        redoStack.value = []
+    }
+
+    const undo = () => {
+        if (undoStack.value.length < 2 || !currentDashboard.value) return
+
+        isUndoingOrRedoing.value = true
+
+        // Current state is the top of undoStack, move it to redoStack
+        const currentState = undoStack.value.pop()
+        redoStack.value.push(currentState)
+
+        // Revert to the previous state
+        const prevState = undoStack.value[undoStack.value.length - 1]
+        currentDashboard.value.data = JSON.parse(JSON.stringify(prevState))
+
+        isUndoingOrRedoing.value = false
+        saveCurrentDashboard()
+    }
+
+    const redo = () => {
+        if (redoStack.value.length === 0 || !currentDashboard.value) return
+
+        isUndoingOrRedoing.value = true
+
+        const nextState = redoStack.value.pop()
+        undoStack.value.push(nextState)
+
+        currentDashboard.value.data = JSON.parse(JSON.stringify(nextState))
+
+        isUndoingOrRedoing.value = false
+        saveCurrentDashboard()
+    }
+
     const addActivityLog = (activity: Omit<DashboardActivity, 'id' | 'timestamp'>) => {
         const newActivity: DashboardActivity = {
             ...activity,
@@ -163,45 +225,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         }
     }
 
-    // Helper: Identify if a connection is likely a static file upload
-    const isStaticSource = (conn: any): boolean => {
-        if (!conn) return false
-        const p = conn.provider || conn.type
-        if (p !== 'duckdb' && p !== 'file' && p !== 'sqlite') return false
-
-        // Check if explicitly marked as locked/virtual
-        if (conn.isLocked || conn.isVirtual) {
-            return true
-        }
-
-        // Check for file extension hints
-        const searchStr = [
-            conn.nickname,
-            conn.alias,
-            conn.name,
-            conn.path,
-            conn.config?.path,
-            conn.config?.filename,
-            conn.duckdb?.path,
-            conn.sqlite?.path,
-            conn.file?.path
-        ].filter(Boolean).join(' ').toLowerCase()
-
-        if (searchStr.includes('.xlsx') || searchStr.includes('.xls') || searchStr.includes('.csv') || searchStr.includes('.db')) {
-            return true
-        }
-
-        // Check if it's a local file (not a remote database like turso.io)
-        const rawPath = conn.path || conn.config?.path || conn.sqlite?.path || conn.duckdb?.path || ''
-        const isRemoteDb = rawPath.includes('turso.io') || (rawPath.includes('://') && !rawPath.startsWith('file:'))
-
-        // If it's a file-based provider with no remote URL, it's a static source
-        if (!isRemoteDb) {
-            return true
-        }
-
-        return false
-    }
+    // Helper moved to @/lib/db-connections
 
     // Helper: Migrate legacy dashboard to have pages
     const migrateDashboard = (dashboard: Dashboard) => {
@@ -331,6 +355,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
             // Setup Orion Live Sync if needed
             setupOrionSync()
 
+            // Initialize History
+            undoStack.value = []
+            redoStack.value = []
+            pushToHistory()
+
             // Update list item if needed
             const index = dashboards.value.findIndex(d => d.id === id)
             if (index !== -1) {
@@ -402,6 +431,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
     const addPage = async (title: string = 'New Page') => {
         if (!currentDashboard.value?.data?.pages) return
 
+        pushToHistory()
+
         // Calculate new order
         const maxOrder = Math.max(...currentDashboard.value.data.pages.map(p => p.order), -1)
 
@@ -426,6 +457,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
             throw new Error("Cannot delete the last page")
         }
 
+        pushToHistory()
+
         const index = currentDashboard.value.data.pages.findIndex(p => p.id === pageId)
         if (index === -1) return
 
@@ -443,6 +476,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
         if (!currentDashboard.value?.data?.pages) return
         const page = currentDashboard.value.data.pages.find(p => p.id === pageId)
         if (page) {
+            pushToHistory()
             page.title = newTitle
             await saveCurrentDashboard()
         }
@@ -512,6 +546,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
             }
 
             if (!dashboard) throw new Error('Dashboard not found')
+
+            pushToHistory()
 
             // Ensure data exists and is migrated
             if (!dashboard.data) dashboard.data = { layout: [], elements: [], pages: [], parameters: {} } as any
@@ -643,6 +679,14 @@ export const useDashboardStore = defineStore('dashboard', () => {
                 query: query
             })
 
+            if (foundPage) {
+                const page = foundPage as any
+                const elementIndex = page.elements.findIndex((el: any) => el.id === elementId)
+                if (elementIndex !== -1) {
+                    page.elements[elementIndex].error = undefined
+                }
+            }
+
             // Update element data in current dashboard (in the correct page)
             if (foundPage) {
                 const elementIndex = foundPage.elements.findIndex(el => el.id === elementId)
@@ -722,6 +766,16 @@ export const useDashboardStore = defineStore('dashboard', () => {
             return body.result
         } catch (e: any) {
             console.error('[DashboardStore] executeElementQuery failed:', e)
+
+            // Save error to element for UI status
+            if (foundPage) {
+                const page = foundPage as any
+                const elementIndex = page.elements.findIndex((el: any) => el.id === elementId)
+                if (elementIndex !== -1) {
+                    page.elements[elementIndex].error = e.message || 'Unknown error'
+                }
+            }
+
             throw e
         }
     }
@@ -925,12 +979,18 @@ export const useDashboardStore = defineStore('dashboard', () => {
         executeElementQuery,
         refreshDashboard,
         importDashboard,
+        isStaticSource,
         addPage,
         removePage,
         renamePage,
         authorizedUsers,
         loadPermissions,
         activityLogs,
-        addActivityLog
+        addActivityLog,
+        undoStack,
+        redoStack,
+        pushToHistory,
+        undo,
+        redo
     }
 })

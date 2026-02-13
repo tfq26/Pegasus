@@ -847,7 +847,10 @@ spaces.post("/bulk-delete", async (c) => {
                         await db.delete(spaceNotes).where(eq(spaceNotes.id, rawId));
                     }
                 } else if (type === 'connection') {
-                    await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, userId)));
+                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                    if (uuidRegex.test(rawId) && !id.startsWith('system:')) {
+                        await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, userId)));
+                    }
                 } else if (type === 'chat') {
                     // Chat Deletion (handles storage cleanup if needed?)
                     // For now basic DB delete, logic mirror chat.delete endpoint

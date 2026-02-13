@@ -1,123 +1,127 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="!w-[95vw] !max-w-[95vw] h-[90vh] flex gap-6 lg:gap-8 p-6">
+    <DialogContent class="!w-[95vw] !max-w-[95vw] h-[90vh] flex gap-0 p-0 overflow-hidden rounded-2xl shadow-2xl border-none">
       <!-- Left Side: Editor (60%) -->
-      <div class="w-[60%] flex flex-col min-w-0">
-        <DialogHeader class="mb-4">
-          <DialogTitle>Edit Dashboard Element</DialogTitle>
-          <DialogDescription>
-            Customize appearance, data, and behavior of your dashboard element
-          </DialogDescription>
-        </DialogHeader>
+      <div class="w-[60%] flex flex-col min-w-0 bg-background">
+        <div class="p-8 pb-4">
+          <DialogHeader class="mb-6">
+            <DialogTitle class="text-3xl font-bold tracking-tight">Edit Element</DialogTitle>
+            <DialogDescription class="text-base font-medium text-muted-foreground/80">
+              Customize appearance, data, and behavior.
+            </DialogDescription>
+          </DialogHeader>
 
-        <!-- Tabs -->
-        <Tabs v-model="activeTab" class="flex-1 flex flex-col min-h-0">
-          <TabsList class="grid w-full grid-cols-3 mb-4">
-            <TabsTrigger value="general">
-              <Settings class="w-4 h-4 mr-2" />
-              General
-            </TabsTrigger>
-            <TabsTrigger value="colors">
-              <Palette class="w-4 h-4 mr-2" />
-              Colors
-            </TabsTrigger>
-            <TabsTrigger value="labels">
-              <Tag class="w-4 h-4 mr-2" />
-              Labels
-            </TabsTrigger>
-          </TabsList>
+          <!-- Tabs -->
+          <Tabs v-model="activeTab" class="flex flex-col">
+            <TabsList class="inline-flex h-12 items-center justify-start rounded-xl bg-muted/50 p-1 text-muted-foreground w-fit border border-border/40">
+              <TabsTrigger value="general" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs uppercase tracking-widest">
+                <Settings class="w-3.5 h-3.5 mr-2" />
+                General
+              </TabsTrigger>
+              <TabsTrigger value="colors" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs uppercase tracking-widest">
+                <Palette class="w-3.5 h-3.5 mr-2" />
+                Colors
+              </TabsTrigger>
+              <TabsTrigger value="labels" v-if="elementConfig?.type !== 'stat'" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs uppercase tracking-widest">
+                <Tag class="w-3.5 h-3.5 mr-2" />
+                Labels
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
-          <!-- Tab Content -->
-          <div class="flex-1 min-h-0 overflow-auto">
-            <TabsContent value="general" class="mt-0 h-full">
-              <GeneralSettings v-model="elementConfig" />
+        <!-- Tab Content Area -->
+        <div class="flex-1 min-h-0 overflow-auto px-8 py-4">
+          <div class="h-full">
+            <TabsContent value="general" class="mt-0 h-full animate-in fade-in slide-in-from-left-4 duration-300">
+              <GeneralSettings v-if="elementConfig" v-model="elementConfig" />
             </TabsContent>
 
-            <TabsContent value="colors" class="mt-0 h-full">
+            <TabsContent value="colors" class="mt-0 h-full animate-in fade-in slide-in-from-left-4 duration-300">
               <ColorCustomization v-if="elementConfig" v-model="elementConfig" />
             </TabsContent>
 
-            <TabsContent value="labels" class="mt-0 h-full">
+            <TabsContent value="labels" class="mt-0 h-full animate-in fade-in slide-in-from-left-4 duration-300">
               <LabelEditor v-if="elementConfig" v-model="elementConfig" />
             </TabsContent>
           </div>
-        </Tabs>
+        </div>
 
-        <!-- Actions -->
-        <div class="flex justify-between items-center gap-2 pt-4 border-t border-border mt-4">
+        <!-- Actions Footer -->
+        <div class="flex justify-between items-center gap-4 px-8 py-6 bg-muted/20 border-t border-border/40">
           <button 
             @click="resetToDefaults"
-            class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition"
+            class="px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all active:scale-95 border border-transparent hover:border-border/60"
           >
-            Reset to Defaults
+            Reset
           </button>
-          <div class="flex gap-2">
+          <div class="flex gap-3">
             <button 
               @click="$emit('update:open', false)"
-              class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition"
+              class="px-6 py-2.5 text-sm font-bold text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all active:scale-95"
             >
               Cancel
             </button>
             <button 
               @click="saveChanges"
               :disabled="isSaving"
-              class="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition disabled:opacity-50"
+              class="px-8 py-2.5 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
             >
-              {{ isSaving ? 'Saving...' : 'Save Changes' }}
+              <Loader2 v-if="isSaving" class="w-4 h-4 animate-spin" />
+              {{ isSaving ? 'Updating...' : 'Save Changes' }}
             </button>
           </div>
         </div>
       </div>
 
       <!-- Right Side: Live Preview (40%) -->
-      <div class="w-[40%] flex flex-col min-w-0 border-l border-border pl-6">
-        <div class="mb-4 flex items-center justify-between">
-          <h3 class="font-semibold text-lg">Live Preview</h3>
-          <div v-if="elementConfig?.type === 'stat'" class="flex gap-1 bg-muted rounded-md p-1 mr-6">
-            <button 
-              @click="previewSize = 'small'"
-              :class="{ 'bg-background shadow-sm': previewSize === 'small' }"
-              class="px-2 py-1 text-xs rounded transition"
-            >
-              Small
-            </button>
-            <button 
-              @click="previewSize = 'medium'"
-              :class="{ 'bg-background shadow-sm': previewSize === 'medium' }"
-              class="px-2 py-1 text-xs rounded transition"
-            >
-              Medium
-            </button>
-            <button 
-              @click="previewSize = 'large'"
-              :class="{ 'bg-background shadow-sm': previewSize === 'large' }"
-              class="px-2 py-1 text-xs rounded transition"
-            >
-              Large
-            </button>
+      <div class="w-[40%] flex flex-col min-w-0 bg-muted/30 border-l border-border/60 relative">
+        <div class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none"></div>
+        
+        <div class="p-8 pb-4 flex flex-col h-full relative z-10">
+          <div class="flex items-center justify-between mb-8">
+            <div>
+              <h3 class="font-bold text-xl tracking-tight">Live Preview</h3>
+              <p class="text-xs text-muted-foreground font-medium uppercase tracking-widest mt-1">Real-time appearance</p>
+            </div>
+            
+            <div v-if="elementConfig?.type === 'stat'" class="flex gap-1 bg-muted/60 rounded-xl p-1 border border-border/40">
+              <button 
+                v-for="size in (['small', 'medium', 'large'] as const)"
+                :key="size"
+                @click="previewSize = size"
+                :class="previewSize === size ? 'bg-background text-primary shadow-sm scale-110' : 'text-muted-foreground hover:text-foreground'"
+                class="px-3 py-1 text-[10px] font-bold rounded-lg transition-all capitalize"
+              >
+                {{ size }}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <!-- Preview Container -->
-        <div class="flex-1 border border-border rounded-lg p-4 bg-card overflow-auto">
-          <div :class="previewSizeClass">
-            <ChartRenderer 
-              v-if="elementConfig"
-              :type="elementConfig.type"
-              :data="previewData"
-              :options="previewOptions"
-              :customization="elementConfig.customization"
-              :key="previewKey"
-            />
+          <!-- Preview Container -->
+          <div class="flex-1 bg-card rounded-2xl p-8 border border-border/60 shadow-xl overflow-hidden flex flex-col transition-all duration-500">
+            <div :class="previewSizeClass" class="w-full relative">
+              <ChartRenderer 
+                v-if="elementConfig"
+                :type="elementConfig.type"
+                :data="previewData"
+                :options="previewOptions"
+                :customization="elementConfig.customization"
+                :key="previewKey"
+                class="w-full h-full"
+              />
+            </div>
           </div>
-        </div>
 
-        <!-- Preview Info -->
-        <div class="mt-3 text-xs text-muted-foreground flex items-center justify-between">
-          <span>Last updated: {{ lastPreviewUpdate }}</span>
-          <div class="flex items-center gap-1">
-            <div class="w-2 h-2 rounded-lg bg-green-500 animate-pulse"></div>
-            <span>Live</span>
+          <!-- Preview Info Footer -->
+          <div class="mt-6 flex items-center justify-between px-2">
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2 bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full border border-emerald-500/20">
+                <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                <span class="text-[10px] font-bold uppercase tracking-widest">Live Sync</span>
+              </div>
+              <span class="text-[10px] font-medium text-muted-foreground uppercase opacity-60">Updated {{ lastPreviewUpdate }}</span>
+            </div>
           </div>
         </div>
       </div>

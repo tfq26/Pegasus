@@ -496,9 +496,11 @@ function handleSelect(id: string, event?: MouseEvent) {
     return
   }
 
-  const conn = props.connections.find(c => c.id === id)
+    const conn = props.connections.find(c => c.id === id)
     if (conn) {
-      emit('select-connection', conn)
+      // Lazy Switching: Do not automatically switch workspace when clicking connection folder.
+      // Wait for user to select a specific table or resource inside.
+      // emit('select-connection', conn)
     }
   }
 }

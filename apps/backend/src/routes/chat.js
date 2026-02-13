@@ -23,12 +23,11 @@ import { ConversationState } from "../services/ConversationState.js"
 import { DataProfiler } from "../services/DataProfiler.js"
 import { QueryRepair } from "../services/QueryRepair.js"
 import { SemanticIntentClassifier } from "../services/SemanticIntentClassifier.js"
+import { authMiddleware, requireUser } from '../middleware/auth.js'
+
 
 // Fix BigInt serialization for JSON.stringify
 BigInt.prototype.toJSON = function () { return this.toString() }
-
-const chat = new Hono()
-const jwtSecret = ConfigService.getJwtSecret()
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {
@@ -38,28 +37,57 @@ const upsertUser = async (payload) => {
             .values({
                 id: userId,
                 email: payload.email,
-                firstName: payload.firstName || payload.first_name,
-                lastName: payload.lastName || payload.last_name,
-                profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
+                firstName: payload.firstName || "",
+                lastName: payload.lastName || "",
+                profilePictureUrl: payload.profilePictureUrl || null,
                 updatedAt: new Date()
             })
             .onConflictDoUpdate({
                 target: users.id,
                 set: {
                     email: payload.email,
-                    firstName: payload.firstName || payload.first_name,
-                    lastName: payload.lastName || payload.last_name,
-                    profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
+                    firstName: payload.firstName || "",
+                    lastName: payload.lastName || "",
+                    profilePictureUrl: payload.profilePictureUrl || null,
                     updatedAt: new Date()
                 }
             })
             .returning();
         return user.id;
     } catch (e) {
-        console.error("[Chat] Failed to upsert user:", e)
-        return null;
+        // If it fails (e.g. invalid ID format or constraint), log it but don't crash
+        console.error("[Chat] Failed to upsert user:", e);
+        // Fallback: just return the ID from payload so we can proceed with limited functionality
+        return payload.sub || payload.id;
     }
 }
+
+// Helper to resolve adapter based on table name in query
+const resolveAdapterForQuery = (query, defaultAdapter, resourceToAdapter) => {
+    if (!resourceToAdapter) return defaultAdapter;
+
+    // Sort keys by length descending to match longest identifiers first
+    const tables = Object.keys(resourceToAdapter).sort((a, b) => b.length - a.length);
+
+    for (const table of tables) {
+        if (!resourceToAdapter[table]) continue; // Skip null/virtual adapters
+
+        // Regex to match table identifier allowing for quotes/brackets
+        // Matches: "Table", 'Table', [Table], or just Table with word boundaries
+        // We use 'i' flag for case-insensitive matching as users/AI might vary casing
+        const regex = new RegExp(`["'\\[]?\\b${table}\\b["'\\]]?`, 'i');
+
+        if (regex.test(query)) {
+            // console.log(`[Chat] Routing query to adapter for resource: ${table}`);
+            return resourceToAdapter[table];
+        }
+    }
+    return defaultAdapter;
+}
+
+const chat = new Hono()
+chat.use('*', authMiddleware)
+const jwtSecret = ConfigService.getJwtSecret()
 
 // Helper to check AI quota
 const checkAiQuota = async (userId) => {
@@ -202,23 +230,14 @@ const captureQueryPlan = async (adapter, query, provider) => {
 }
 
 // Routes
-chat.get("/chats", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+chat.get("/chats", requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
+        const userId = c.get('userId')
         const spaceId = c.req.query("space_id")
-
         const conditions = [eq(chats.userId, userId)]
 
         if (spaceId) {
             conditions.push(eq(chats.spaceId, spaceId))
-        } else {
-            // If no spaceId provided (legacy), verify behavior. 
-            // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
-            // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
-            // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
         }
 
         const results = await db.query.chats.findMany({
@@ -232,12 +251,9 @@ chat.get("/chats", async (c) => {
     }
 })
 
-chat.post("/chats", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+chat.post("/chats", requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
-        const userId = await upsertUser(payload)
+        const userId = c.get('userId')
         const { title, space_id } = await c.req.json()
 
         const [created] = await db.insert(chats)
@@ -258,16 +274,14 @@ chat.post("/chats", async (c) => {
     }
 })
 
-chat.get("/chats/:id", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+chat.get("/chats/:id", requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
+        const userId = c.get('userId')
         let chatId = c.req.param("id")
         const rawChatId = chatId.includes(':') ? chatId.split(':')[1] : chatId
 
         const result = await db.query.chats.findFirst({
-            where: and(eq(chats.id, rawChatId), eq(chats.userId, payload.sub))
+            where: and(eq(chats.id, rawChatId), eq(chats.userId, userId))
         });
 
         if (!result) return c.json({ error: "Chat not found" }, 404)
@@ -277,7 +291,7 @@ chat.get("/chats/:id", async (c) => {
         // Hybrid Storage Check
         if (result.storageId) {
             try {
-                const provider = await StorageManager.getProvider(payload.sub);
+                const provider = await StorageManager.getProvider(userId);
                 const url = await provider.getPresignedUrl(result.storageId, 60);
                 const response = await fetch(url);
                 if (response.ok) {
@@ -297,16 +311,20 @@ chat.get("/chats/:id", async (c) => {
     }
 })
 
-chat.post("/chats/:id/messages", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+chat.post("/chats/:id/messages", requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
-        const userId = await upsertUser(payload)
+        const userId = c.get('userId')
         let chatId = c.req.param("id")
         const rawChatId = chatId.includes(':') ? chatId.split(':')[1] : chatId
 
-        const { role, content, meta } = await c.req.json()
+        let body;
+        try {
+            body = await c.req.json();
+        } catch (e) {
+            console.warn('[Chat] Invalid JSON body in message send:', e.message);
+            return c.json({ error: "Invalid request body" }, 400);
+        }
+        const { role, content, meta, modelId } = body;
         const newMessage = { id: crypto.randomUUID(), role, content, meta: meta || null, created_at: Math.floor(Date.now() / 1000) }
 
         // Fetch current messages
@@ -367,8 +385,17 @@ chat.post("/chats/:id/messages", async (c) => {
         let generatedTitle = null;
         if (existingChat.title === 'New Chat' && updatedMessages.length >= 2) {
             try {
+                // Limit title generation to first few exchanges to avoid repeated generation
+                // Or verify if current message is Assistant message?
+                // `newMessage.role` === 'assistant' (or 'ai' mapped to assistant)?
+                // Generally we want title after the FIRST complete turn.
+                // If length is exactly 2 (User -> AI), generate.
+                // If length > 2, maybe skip?
+                // User requirement: "every chat is still showing up as new chat" -> means it never generates.
+                // If we check >= 2, it should run.
+
                 console.log('[Chat] Generating smart title for chat:', rawChatId);
-                const newTitle = await aiClient.generateTitle(updatedMessages);
+                const newTitle = await aiClient.generateTitle(updatedMessages, modelId, userId);
                 if (newTitle && newTitle.trim() && newTitle !== 'New Chat') {
                     generatedTitle = newTitle.trim().substring(0, 100); // Limit to 100 chars
                     await db.update(chats).set({ title: generatedTitle }).where(eq(chats.id, rawChatId));
@@ -389,15 +416,13 @@ chat.post("/chats/:id/messages", async (c) => {
     }
 })
 
-chat.delete("/chats/:id", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+chat.delete("/chats/:id", requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
+        const userId = c.get('userId')
         let chatId = c.req.param("id")
         const rawChatId = chatId.includes(':') ? chatId.split(':')[1] : chatId
 
-        await db.delete(chats).where(and(eq(chats.id, rawChatId), eq(chats.userId, payload.sub)));
+        await db.delete(chats).where(and(eq(chats.id, rawChatId), eq(chats.userId, userId)));
         return c.json({ success: true })
     } catch (e) {
         console.error("[Chat] Delete failed:", e);
@@ -405,12 +430,10 @@ chat.delete("/chats/:id", async (c) => {
     }
 })
 
-chat.delete("/chats", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+chat.delete("/chats", requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
-        await db.delete(chats).where(eq(chats.userId, payload.sub));
+        const userId = c.get('userId')
+        await db.delete(chats).where(eq(chats.userId, userId));
         return c.json({ success: true })
     } catch (e) {
         console.error("[Chat] Multi-delete failed:", e);
@@ -518,10 +541,14 @@ chat.post("/ai/explain-table", async (c) => {
         const payload = await verify(token, jwtSecret)
         const { connectionId, tableName, model } = await c.req.json()
         const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-        const connRow = await db.query.connections.findFirst({
-            where: eq(connections.id, rawConnId)
-        });
+        let connRow = null;
+        if (uuidRegex.test(rawConnId) && !connectionId.startsWith('system:')) {
+            connRow = await db.query.connections.findFirst({
+                where: eq(connections.id, rawConnId)
+            });
+        }
 
         if (!connRow) return c.json({ error: "Connection not found" }, 404)
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
@@ -569,10 +596,14 @@ chat.post("/ai/explain-query", async (c) => {
         const payload = await verify(token, jwtSecret)
         const { query, connectionId, model } = await c.req.json()
         const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-        const connRow = await db.query.connections.findFirst({
-            where: eq(connections.id, rawConnId)
-        });
+        let connRow = null;
+        if (uuidRegex.test(rawConnId) && !connectionId.startsWith('system:')) {
+            connRow = await db.query.connections.findFirst({
+                where: eq(connections.id, rawConnId)
+            });
+        }
 
         if (!connRow) return c.json({ error: "Connection not found" }, 404)
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
@@ -607,10 +638,14 @@ chat.post("/ai/optimize-query", async (c) => {
         const payload = await verify(token, jwtSecret)
         const { query, connectionId, model } = await c.req.json()
         const rawConnId = connectionId.includes(':') ? connectionId.split(':')[1] : connectionId
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-        const connRow = await db.query.connections.findFirst({
-            where: eq(connections.id, rawConnId)
-        });
+        let connRow = null;
+        if (uuidRegex.test(rawConnId) && !connectionId.startsWith('system:')) {
+            connRow = await db.query.connections.findFirst({
+                where: eq(connections.id, rawConnId)
+            });
+        }
 
         if (!connRow) return c.json({ error: "Connection not found" }, 404)
         const config = typeof connRow.config === 'string' ? JSON.parse(connRow.config) : connRow.config
@@ -656,9 +691,17 @@ chat.post("/ai/generate", async (c) => {
 
     // Pre-stream: Auth & Validation
     let payload, body, userId;
+
+    // 1. Verify Authentication
     try {
         payload = await verify(token, jwtSecret)
+    } catch (e) {
+        console.error("[Auth] Token verification failed:", e.message);
+        return c.json({ error: "Unauthorized" }, 401)
+    }
 
+    // 2. Process Request Data
+    try {
         // Resolve User ID
         let rawUserId = payload.sub
         const resolvedId = await upsertUser(payload)
@@ -674,7 +717,8 @@ chat.post("/ai/generate", async (c) => {
 
         body = await c.req.json()
     } catch (e) {
-        return c.json({ error: "Unauthorized or Invalid Request" }, 401)
+        console.error("[Request] Failed to process request body or user data:", e);
+        return c.json({ error: "Invalid Request: " + e.message }, 400)
     }
 
     return stream(c, async (stream) => {
@@ -724,12 +768,26 @@ chat.post("/ai/generate", async (c) => {
             }
 
             // Handle Slash Commands
+            // Handle Slash Commands
             if (prompt.trim().startsWith('/visualization') || prompt.trim().startsWith('/chart') || prompt.trim().startsWith('/plot')) {
-                forceVisualization = true;
+                const isLiveRequest = prompt.match(/\b(live|monitor|real-time|doing|updates)\b/i);
+
+                // If it's a live request, we DON'T want to force the static visualization tool exclusively.
+                // We want the AI to be able to use BOTH generate_visualization (with live=true) AND monitor_data_source.
+                forceVisualization = !isLiveRequest;
+
                 isExplicitAction = true;
                 const corePrompt = prompt.trim().replace(/^\/(visualization|chart|plot)\s*/i, '');
-                basePrompt = `[USER REQUESTS VISUALIZATION]: ${corePrompt}`;
-                console.log(`[AI Generate] Slash command detected. Forcing visualization for: ${corePrompt}`);
+
+                if (isLiveRequest) {
+                    basePrompt = `[USER REQUESTS LIVE VISUALIZATION]: ${corePrompt}. You MUST use 'generate_visualization' with live=true. You should also consider using 'monitor_data_source' if the user wants continuous updates.`;
+                    console.log(`[AI Generate] Live visualization request detected. Enabling auto-tool selection.`);
+                } else {
+                    // Disable forceVisualization - let AI choose tools freely (e.g. query_data first)
+                    forceVisualization = false;
+                    basePrompt = `[USER REQUESTS VISUALIZATION]: ${corePrompt}. Your goal is to generate a beautiful, Robinhood-style line chart. Use 'generate_visualization'. If you need data, call 'query_data' first.`;
+                    console.log(`[AI Generate] Slash command detected. Hinting visualization for: ${corePrompt}`);
+                }
             } else if (prompt.trim().startsWith('/query')) {
                 forceQuery = true;
                 isExplicitAction = true;
@@ -833,10 +891,13 @@ chat.post("/ai/generate", async (c) => {
                 // 1. Resolve Space ID from current connection to scope "Unloaded" list
                 let currentSpaceId = null;
                 if (connectionId) {
-                    const activeConn = await db.query.connections.findFirst({
-                        where: eq(connections.id, connectionId),
-                        columns: { spaceId: true }
-                    });
+                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                    const activeConn = (uuidRegex.test(connectionId) && !connectionId.startsWith('system:'))
+                        ? await db.query.connections.findFirst({
+                            where: eq(connections.id, connectionId),
+                            columns: { spaceId: true }
+                        })
+                        : null;
                     if (activeConn) currentSpaceId = activeConn.spaceId;
                 }
 
@@ -1269,7 +1330,9 @@ chat.post("/ai/generate", async (c) => {
                         let data = [];
                         let error = null;
                         try {
-                            data = await adapter.query(vizQuery);
+                            // Resolve the correct adapter (e.g. if query hits 'OrionMetrics' -> CosmosDB)
+                            const vizAdapter = resolveAdapterForQuery(vizQuery, adapter, resourceToAdapter);
+                            data = await vizAdapter.query(vizQuery);
                         } catch (e) {
                             console.error(`[AI Generate] Visualization Query Failed:`, e.message);
                             error = e.message;
@@ -1307,8 +1370,10 @@ chat.post("/ai/generate", async (c) => {
                     if (queryTool) {
                         try {
                             const args = JSON.parse(queryTool.function.arguments);
-                            const targetAdapter = adapter; // execute_query usually uses the local context adapter
-                            const targetProvider = provider;
+
+                            // Resolve correct adapter dynamically
+                            const targetAdapter = resolveAdapterForQuery(args.query, adapter, resourceToAdapter);
+                            const targetProvider = provider; // Provider for dialect (assumed consistent or handled by adapter translation)
 
                             const data = await spreadsheetToolService.callTool('execute_query', args, {
                                 adapter: targetAdapter,
@@ -1374,13 +1439,14 @@ chat.post("/ai/generate", async (c) => {
                         generatedQuery = parsed.query
                     } else if (parsed.ambiguous) {
                         return sendResult({ ...lastToolResult, ambiguous: true, text: parsed.message, message: parsed.message, choices: parsed.choices, usage: finalResult.usage, needs_disclaimer: parsed.needs_disclaimer })
-                    } else if (parsed.answer) {
-                        // Qualitative response from knowledge base
+                    } else if (parsed.answer || parsed.analysis || parsed.explanation) {
+                        // Qualitative response or diagnostic explanation
+                        const content = parsed.answer || parsed.analysis || parsed.explanation;
                         return sendResult({
                             ...lastToolResult,
-                            text: parsed.answer,
-                            explanation: parsed.answer,
-                            message: parsed.answer,
+                            text: content,
+                            explanation: content,
+                            message: content,
                             needs_disclaimer: parsed.needs_disclaimer || false,
                             usage: finalResult.usage,
                             contextUsed: resolvedResources
