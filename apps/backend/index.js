@@ -342,6 +342,7 @@ experimental.post("/features/:featureId/toggle", async (c) => {
 
 // Route Mounting
 app.route('/auth', authRoutes)
+app.route('/api/auth', authRoutes) // Ensure /api/auth prefix is also handled by authRoutes skiping table middleware
 app.route('/admin-fix', adminFixTier) // Temporary admin endpoint for fixing subscription tiers
 app.route('/', dashboardRoutes)
 app.route('/connections', connectionRoutes)
@@ -370,6 +371,8 @@ app.route('/support', supportRoutes) // Automated Support Reporting
 app.route("/api/query-sessions", querySessionRoutes)
 app.route("/api/sheets", sheetsRouter)
 app.get('/payments', getPayments)
+import { exportRoute } from "./src/routes/export.js"
+app.route('/api/export', exportRoute)
 
 // Helper to ensure user exists in DB
 const upsertUser = async (payload) => {

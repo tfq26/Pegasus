@@ -196,4 +196,19 @@ export class PostgresAdapter extends DatabaseAdapter {
             return {}
         }
     }
+
+    async getEstimatedCount(tableName) {
+        if (!this.client) await this.connect();
+        try {
+            const res = await this.client.query(`
+                SELECT reltuples::bigint AS estimate 
+                FROM pg_class 
+                WHERE oid = $1::regclass
+            `, [tableName]);
+            return parseInt(res.rows[0]?.estimate) || 0;
+        } catch (e) {
+            console.warn(`[Postgres] Failed to get estimated count for ${tableName}:`, e.message);
+            return null;
+        }
+    }
 }

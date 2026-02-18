@@ -769,7 +769,7 @@ chat.post("/ai/generate", async (c) => {
 
             // Handle Slash Commands
             // Handle Slash Commands
-            if (prompt.trim().startsWith('/visualization') || prompt.trim().startsWith('/chart') || prompt.trim().startsWith('/plot')) {
+            if (/\/(visualization|chart|plot)/i.test(prompt)) {
                 const isLiveRequest = prompt.match(/\b(live|monitor|real-time|doing|updates)\b/i);
 
                 // If it's a live request, we DON'T want to force the static visualization tool exclusively.
@@ -777,7 +777,7 @@ chat.post("/ai/generate", async (c) => {
                 forceVisualization = !isLiveRequest;
 
                 isExplicitAction = true;
-                const corePrompt = prompt.trim().replace(/^\/(visualization|chart|plot)\s*/i, '');
+                const corePrompt = prompt.trim().replace(/^.*?\/(visualization|chart|plot)\s*/i, '');
 
                 if (isLiveRequest) {
                     basePrompt = `[USER REQUESTS LIVE VISUALIZATION]: ${corePrompt}. You MUST use 'generate_visualization' with live=true. You should also consider using 'monitor_data_source' if the user wants continuous updates.`;
@@ -788,16 +788,16 @@ chat.post("/ai/generate", async (c) => {
                     basePrompt = `[USER REQUESTS VISUALIZATION]: ${corePrompt}. Your goal is to generate a beautiful, Robinhood-style line chart. Use 'generate_visualization'. If you need data, call 'query_data' first.`;
                     console.log(`[AI Generate] Slash command detected. Hinting visualization for: ${corePrompt}`);
                 }
-            } else if (prompt.trim().startsWith('/query')) {
+            } else if (/\/(query|sql)/i.test(prompt)) {
                 forceQuery = true;
                 isExplicitAction = true;
-                const corePrompt = prompt.trim().replace(/^\/query\s*/i, '');
+                const corePrompt = prompt.trim().replace(/^.*?\/(query|sql)\s*/i, '');
                 basePrompt = `[USER REQUESTS SQL QUERY ONLY - DO NOT EXECUTE]: ${corePrompt}`;
                 console.log(`[AI Generate] Slash command detected. Forcing query representation for: ${corePrompt}`);
-            } else if (prompt.trim().startsWith('/text')) {
+            } else if (/\/(text)/i.test(prompt)) {
                 forceText = true;
                 isExplicitAction = true;
-                const corePrompt = prompt.trim().replace(/^\/text\s*/i, '');
+                const corePrompt = prompt.trim().replace(/^.*?\/(text)\s*/i, '');
                 basePrompt = `[USER REQUESTS TEXT RESPONSE ONLY - NO VISUALS]: ${corePrompt}`;
                 console.log(`[AI Generate] Slash command detected. Forcing text response for: ${corePrompt}`);
             }
@@ -995,7 +995,8 @@ chat.post("/ai/generate", async (c) => {
                     activeTable,
                     adHocSchema,
                     resolvedResources: allResolved,
-                    unloadedResources
+                    unloadedResources,
+                    userMessage: basePrompt
                 });
             } catch (e) {
                 console.error(`[AI Generate] DataContext build failed:`, e);

@@ -1,4 +1,4 @@
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, computed, unref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { fetchChats, fetchChatHistory } from '@/lib/api'
@@ -14,10 +14,10 @@ export function useChat() {
     const workspaceStore = useWorkspaceStore()
 
     // Reactive bridge to store
-    const chats = computed(() => chatStore.chats)
+    const chats = computed(() => unref(chatStore.chats))
     const selectedChatId = computed({
-        get: () => chatStore.selectedChatId || '',
-        set: (val: string) => { chatStore.selectedChatId = val || null }
+        get: () => unref(chatStore.selectedChatId) || '',
+        set: (val: string) => { (chatStore as any).selectedChatId = val || null }
     })
     const chatHistory = ref<any[]>([])
 
@@ -70,7 +70,7 @@ export function useChat() {
      */
     async function selectChat(id: string) {
         try {
-            const chat = chats.value.find((c: Chat) => c.id === id)
+            const chat = (unref(chats) as any)?.find((c: Chat) => c.id === id)
             if (!chat) return
 
             // Load chat history
@@ -88,7 +88,7 @@ export function useChat() {
      * Continue with selected chat (from preview)
      */
     function continueChat(id: string) {
-        const chat = chats.value.find((c: Chat) => c.id === id)
+        const chat = (unref(chats) as any)?.find((c: Chat) => c.id === id)
         const messagesToLoad = [...previewMessages.value]
 
         closeChatPreview()
@@ -116,7 +116,7 @@ export function useChat() {
         try {
             await chatStore.deleteChat(id)
 
-            if (selectedChatId.value === id) {
+            if (unref(selectedChatId) === id) {
                 selectedChatId.value = ''
                 chatHistory.value = []
             }
@@ -169,7 +169,7 @@ export function useChat() {
 
             // Get connection
             const connectionStore = useConnectionStore()
-            const connection = connectionStore.connections.find((c: any) => c.id === connectionId)
+            const connection = (unref(connectionStore.connections) as any).find((c: any) => c.id === connectionId)
             if (!connection) {
                 throw new Error('Connection not found')
             }
@@ -178,10 +178,10 @@ export function useChat() {
             const settingsStore = useSettingsStore()
 
             // Ensure settings are loaded or use current value
-            if (!settingsStore.settings.activeModel) {
+            if (!(unref(settingsStore.settings) as any).activeModel) {
                 await settingsStore.loadSettings()
             }
-            const { temperature, maxTokens } = settingsStore.settings
+            const { temperature, maxTokens } = unref(settingsStore.settings) as any
 
             // Generate SQL from natural language
             const aiResponse = await generateAIQuery(prompt, connectionId, chatHistory.value, undefined, {

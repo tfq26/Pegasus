@@ -324,7 +324,7 @@ auth.get("/callback", async (c) => {
 
     } catch (error) {
         console.error(`[AUTH_TRACE] [${traceId}] Auth failure:`, error.message)
-
+        const frontendUrl = ConfigService.getFrontendUrl()
         return c.redirect(`${frontendUrl}/login?error=${encodeURIComponent(error.message)}`);
     }
 })

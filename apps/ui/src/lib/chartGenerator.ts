@@ -6,19 +6,21 @@
  */
 
 interface ChartConfig {
-    type: 'bar' | 'line' | 'pie' | 'doughnut' | 'stat'
+    type: 'bar' | 'line' | 'pie' | 'doughnut' | 'stat' | 'scatter' | 'radar' | 'polarArea' | 'bubble'
     title: string
     config: {
         data?: {
             labels: string[]
             datasets: Array<{
                 label: string
-                data: number[]
+                data: any[]
                 backgroundColor?: string | string[]
                 borderColor?: string | string[]
                 borderWidth?: number
                 tension?: number
                 fill?: boolean
+                pointRadius?: number
+                showLine?: boolean
             }>
         }
         options?: any
@@ -115,10 +117,20 @@ function pickChartType(
     numericColumns: string[],
     dateColumn: string | null,
     rowCount: number
-): 'bar' | 'line' | 'pie' | 'stat' {
+): ChartConfig['type'] {
     // Single value → Stat
     if (rowCount === 1 && numericColumns.length === 1) {
         return 'stat'
+    }
+
+    // Two numeric columns with many rows and no strong category → Scatter
+    if (numericColumns.length >= 2 && !categoryColumn && !dateColumn && rowCount > 10) {
+        return 'scatter'
+    }
+
+    // Many numeric columns with a central category → Radar
+    if (numericColumns.length >= 3 && categoryColumn && rowCount <= 10) {
+        return 'radar'
     }
 
     // Has date column → Line chart (time series)
@@ -138,8 +150,12 @@ function pickChartType(
 /**
  * Generate chart configuration from query results
  */
-export function generateChartConfig(data: any[], query?: string): ChartConfig | null {
+export function generateChartConfig(data: any[], query?: string, options: { xAxis?: string, yAxis?: string[] } = {}): ChartConfig | null {
     if (!data || data.length === 0) return null
+
+    // Override detection if xAxis and yAxis are provided
+    const userXAxis = options.xAxis;
+    const userYAxis = options.yAxis;
 
     // Handle primitive arrays (e.g., SELECT VALUE)
     if (typeof data[0] !== 'object' || data[0] === null) {
@@ -187,7 +203,7 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
 
     // Find category, numeric, and date columns
     const categoricalColumns = columns.filter(c => columnTypes[c] === 'categorical')
-    const numericColumns = columns.filter(c => columnTypes[c] === 'numeric')
+    const numericColumns = userYAxis ? userYAxis.filter(c => columns.includes(c)) : columns.filter(c => columnTypes[c] === 'numeric')
     const dateColumns = columns.filter(c => columnTypes[c] === 'date')
 
     // No numeric columns → can't visualize meaningfully
@@ -228,8 +244,8 @@ export function generateChartConfig(data: any[], query?: string): ChartConfig | 
     }
 
     // Pick best columns for visualization
-    const categoryColumn = categoricalColumns[0] || null
-    const dateColumn = dateColumns[0] || null
+    const categoryColumn = userXAxis && columns.includes(userXAxis) ? userXAxis : (categoricalColumns[0] || null)
+    const dateColumn = userXAxis && dateColumns.includes(userXAxis) ? userXAxis : (dateColumns[0] || null)
     const chartType = pickChartType(categoryColumn, numericColumns, dateColumn, data.length)
 
     // Generate labels with smart time formatting

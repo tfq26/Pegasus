@@ -69,6 +69,7 @@ export type SettingsModel = {
   slackConnected: boolean
   azureConnected: boolean
   enabledModels?: string[]
+  activeModel?: string
   localModel?: string
   temperature?: number
   maxTokens?: number

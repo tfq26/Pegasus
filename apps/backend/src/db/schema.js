@@ -49,6 +49,8 @@ export const dashboards = pgTable("dashboard", {
     title: text("title").notNull(),
     ownerId: text("owner_id").references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     isPublic: boolean("is_public").default(false),
+    shareToken: text("share_token"),
+    shareTokenExpiresAt: timestamp("share_token_expires_at", { withTimezone: true, mode: 'date' }),
     coverImage: text("cover_image"),
     config: jsonb("config"),
     messages: jsonb("messages").default([]),

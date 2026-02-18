@@ -14,7 +14,7 @@ export function buildVisualizationPrompt(originalPrompt, data, forceVisualizatio
 
    const directive = forceVisualization
       ? "\nDETECTION OVERRIDE: The user has explicitly requested a visualization. You MUST return shouldVisualize: true unless technically impossible.\n"
-      : "\nSTRICT TEXT MODE: The user has NOT requested a visualization. Return shouldVisualize: false UNLESS the USER REQUEST explicitly uses words like 'chart', 'graph', 'plot', 'visualize', or 'trend'. If the request is for a 'summary', 'explanation', or 'analysis', do NOT visualize.\n";
+      : "\nVISUALIZATION JUDGEMENT: Determine if the data is best understood visually. If the user request implies a trend, comparison, or distribution (e.g., 'Compare revenue by region', 'Show month-over-month growth'), you SHOULD suggest a visualization. If the request is purely for a list or a detailed breakdown (e.g., 'List all customers from NY'), prefer text.\n";
 
    // Smart warnings based on data shape
    const warnings = [];

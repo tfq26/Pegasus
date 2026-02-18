@@ -16,7 +16,7 @@ import UpgradeModal from '@/components/UpgradeModal.vue'
 import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle, Lock, ChevronDown } from 'lucide-vue-next'
 
 const settingsStore = useSettingsStore()
-const { settings } = storeToRefs(settingsStore)
+const settings = settingsStore.settings
 
 const models = ref<any[]>([])
 const loading = ref(false)
@@ -106,11 +106,11 @@ onMounted(async () => {
       'pro_plus': 'Pro+'
     }
     
-    const TIER_ORDER = { 'free': 0, 'pro': 1, 'pro_plus': 2 }
+    const TIER_ORDER: Record<string, number> = { 'free': 0, 'pro': 1, 'pro_plus': 2, 'teams': 3, 'enterprise': 4 }
     
     models.value = cloudModels.map((m: any) => {
       const requiredTier = TIER_REQUIREMENTS[m.id] || 'free'
-      const isLocked = TIER_ORDER[requiredTier] > TIER_ORDER[subscriptionTier.value]
+      const isLocked = (TIER_ORDER[requiredTier] || 0) > (TIER_ORDER[subscriptionTier.value] || 0)
       
       return {
         ...m,
@@ -168,7 +168,7 @@ const toggleModelEnabled = (id: string, checked: boolean) => {
       settings.value.enabledModels.push(id)
     }
   } else {
-    settings.value.enabledModels = settings.value.enabledModels.filter(m => m !== id)
+    settings.value.enabledModels = settings.value.enabledModels.filter((m: any) => m !== id)
   }
 }
 

@@ -20,21 +20,34 @@ export class DataProfiler {
         }
 
         try {
-            // Get total row count first
-            const countResult = await adapter.query(`SELECT COUNT(*) as total FROM "${tableName}"`);
-            const totalRows = countResult?.[0]?.total || 0;
+            // Get row count - prioritize fast estimate
+            let totalRows = await adapter.getEstimatedCount(tableName);
+
+            // If no estimate or estimate says 0 but we want to be sure it's not empty, 
+            // do a quick capped count
+            if (totalRows === null || totalRows === 0) {
+                const countResult = await adapter.query(`SELECT COUNT(*) as total FROM (SELECT 1 FROM "${tableName}" LIMIT 10001) as sub`);
+                totalRows = countResult?.[0]?.total || 0;
+            }
 
             if (totalRows === 0) {
                 return { _meta: { totalRows: 0, isEmpty: true } };
             }
 
+            // If table is VERY large, skip detailed profiling to avoid timeouts
+            const isVeryLarge = totalRows > 50000;
+            console.log(`[DataProfiler] Table size: ${totalRows}. Very large: ${isVeryLarge}`);
+
             // Profile each column
-            for (const col of columns.slice(0, 20)) { // Limit to 20 columns for performance
+            for (const col of columns.slice(0, 20)) {
                 const colName = col.originalName || col.name;
                 const colType = (col.type || 'unknown').toLowerCase();
 
                 try {
-                    const stats = await this._getColumnStats(adapter, tableName, colName, colType, dialect);
+                    // Skip expensive stats (cardinality) for very large tables
+                    const stats = isVeryLarge
+                        ? { cardinality: totalRows, nullCount: 0 } // Placeholder
+                        : await this._getColumnStatsWithTimeout(adapter, tableName, colName, colType, dialect);
 
                     profile[col.name] = {
                         type: colType,
@@ -82,6 +95,20 @@ export class DataProfiler {
             console.error('[DataProfiler] Profile failed:', error);
             return { _meta: { error: error.message } };
         }
+    }
+
+    /**
+     * Get column stats with a hard timeout to prevent blocking.
+     * @private
+     */
+    static async _getColumnStatsWithTimeout(adapter, tableName, colName, colType, dialect) {
+        return Promise.race([
+            this._getColumnStats(adapter, tableName, colName, colType, dialect),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Profile timeout')), 2000))
+        ]).catch(err => {
+            console.warn(`[DataProfiler] Stats timeout for ${colName}:`, err.message);
+            return { cardinality: 0, nullCount: 0 }; // Fallback
+        });
     }
 
     /**

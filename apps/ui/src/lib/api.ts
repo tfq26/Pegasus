@@ -685,6 +685,22 @@ export async function saveTableData(tableName: string, updates: any[], deletedRo
     provider: connection.provider
   })
 }
+
+export function getExportUrl(tableName: string, connection?: any) {
+  let url = `${QUERY_API_URL}/api/export/${tableName}/csv`;
+  const params: string[] = [];
+  if (connection?.id) {
+    params.push(`connectionId=${connection.id}`);
+  }
+  if (connection?.provider) {
+    params.push(`provider=${connection.provider}`);
+  }
+  if (params.length > 0) {
+    url += `?${params.join('&')}`;
+  }
+  return url;
+}
+
 export async function fetchSpaces() {
   const body = await api.get<{ spaces: any[] }>('/spaces')
   return body.spaces || []

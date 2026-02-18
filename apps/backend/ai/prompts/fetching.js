@@ -55,7 +55,7 @@ Then, and only then, call the query_data tool.
 
     // 5. Components
     const dataSourceStrategy = buildDataSourceStrategy(schema);
-    const { schemaPresentation, dialectInstructions } = buildDialectInstructions(dialect, schema, settings);
+    const { schemaPresentation, dialectInstructions } = buildDialectInstructions(dialect, schema, settings, context);
     const executionRules = buildExecutionRules();
 
     return `
@@ -182,7 +182,7 @@ STEP 4 - RESPONDING WITH DATA (CRITICAL):
 /**
  * Generates dialect-specific instructions (SQL, Mongo, Surreal, Kusto)
  */
-export function buildDialectInstructions(dialect, schema, settings) {
+export function buildDialectInstructions(dialect, schema, settings, context = {}) {
     let schemaPresentation = '';
     const activeTable = settings.activeTable || schema.activeTable;
 
@@ -199,14 +199,17 @@ export function buildDialectInstructions(dialect, schema, settings) {
         schemaPresentation = `\nDatabase Schema:\n`;
         if (schema.detailedSchema) {
             Object.entries(schema.detailedSchema).forEach(([table, columns]) => {
-                const isRelevant = table === activeTable || tables.length <= 15;
+                const isRelevant = table === activeTable ||
+                    tables.indexOf(table) < 5 ||
+                    (context.userMessage && context.userMessage.toLowerCase().includes(table.toLowerCase()));
+
                 if (isRelevant) {
                     schemaPresentation += `Table: ${table}\nColumns:\n`;
                     columns.forEach(col => {
                         schemaPresentation += `  - ${col.name} (${col.type})${col.pk ? ' [PK]' : ''}\n`;
                     });
                 } else {
-                    schemaPresentation += `Table: ${table} (Columns hidden - query to inspect)\n`;
+                    schemaPresentation += `Table: ${table} (Columns hidden - YOU MUST call 'get_table_schema' to see columns)\n`;
                 }
             });
         } else {

@@ -519,7 +519,7 @@ table.post("/table/:tableName/query", async (c) => {
             const serializedRows = Array.isArray(rows) ? rows.map(row => {
                 const newRow = {}
                 for (const [key, value] of Object.entries(row)) {
-                    newRow[key] = typeof value === 'bigint' ? Number(value) : value
+                    newRow[key] = typeof value === 'bigint' ? String(value) : value
                 }
                 return newRow
             }) : []

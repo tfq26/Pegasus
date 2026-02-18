@@ -20,7 +20,7 @@
       :connections="connections"
       :selected-connection-id="selectedConnectionId"
       :chats="(chats as any)"
-      :selected-chat-id="(selectedChatId as string)"
+      :selected-chat-id="(unref(selectedChatId) as string)"
       :query-history="queryHistory"
       :query-sessions="querySessions"
       @update:selected-connection-id="handleSelectConnection"
@@ -397,7 +397,10 @@ const querySessions = ref<any[]>([])
 const loadQuerySessions = async () => {
     if (!spaceStore.currentSpaceId) return
     try {
-        querySessions.value = await fetchQuerySessions(spaceStore.currentSpaceId)
+        const currentSpaceId = unref(spaceStore.currentSpaceId) as string
+        if (currentSpaceId) {
+            querySessions.value = await fetchQuerySessions(currentSpaceId)
+        }
     } catch (e) {
         console.error('[Chat] Failed to load query sessions:', e)
     }
@@ -556,7 +559,7 @@ const {
     currentExecutionSteps,
     alias
 } = useChatExecution(
-    mode,
+    mode as any,
     chatInput,
     writeInput,
     selectedChatId,
@@ -892,7 +895,7 @@ const handleCreateChat = async () => {
 
     if (isReusable) {
         // Reset
-        selectedChatId.value = ''
+        (selectedChatId as any).value = ''
         chatHistory.value = []
         chatInput.value = ''
         mode.value = 'chat'
@@ -1020,7 +1023,7 @@ const handleAnalyze = async () => {
         aiSummary = sanitizeAIResponse(aiSummary)
         
         chatHistory.value.push({ role: 'assistant', content: aiSummary, timestamp: Date.now() })
-        if (selectedChatId.value) await saveMessage(selectedChatId.value, 'ai', aiSummary)
+        if (unref(selectedChatId)) await saveMessage(unref(selectedChatId) as string, 'ai', aiSummary)
         toast.success('Analysis added to chat')
     } catch(e) {
         toast.error('Analysis failed')
@@ -1030,7 +1033,7 @@ const handleAnalyze = async () => {
 }
 
 // On-demand insights generation for messages with results
-const handleGenerateInsights = async (payload: { query: string; results: any; messageIndex: number }) => {
+const handleGenerateInsights = async (payload: { query: string; results: any; messageIndex?: number }) => {
     isAnalyzing.value = true
     try {
         const analysis = await analyzeResults('Analyze these results and provide insights', payload.results, payload.query)
@@ -1045,7 +1048,7 @@ const handleGenerateInsights = async (payload: { query: string; results: any; me
         })
         
         // Mark the original message as having insights generated (so button disappears)
-        if (chatHistory.value[payload.messageIndex]) {
+        if (payload.messageIndex !== undefined && chatHistory.value[payload.messageIndex]) {
             const msg = chatHistory.value[payload.messageIndex] as any
             if (msg.meta) {
                 msg.meta.insightsGenerated = true
@@ -1053,7 +1056,7 @@ const handleGenerateInsights = async (payload: { query: string; results: any; me
             }
         }
         
-        if (selectedChatId.value) await saveMessage(selectedChatId.value, 'ai', `**✨ Insights:**\n\n${aiSummary}`)
+        if (unref(selectedChatId)) await saveMessage(unref(selectedChatId) as string, 'ai', `**✨ Insights:**\n\n${aiSummary}`)
         toast.success('Insights generated!')
     } catch(e) {
         console.error('[Chat] Failed to generate insights:', e)

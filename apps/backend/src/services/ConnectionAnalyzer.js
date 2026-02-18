@@ -16,10 +16,12 @@ export class ConnectionAnalyzer {
      * @param {object} adapter - The database adapter instance
      * @param {string} provider - The provider name (duckdb, postgres, etc)
      * @param {string} activeTable - Optional table to focus on (fetches samples for this one)
+     * @param {string} userMessage - Optional user message to prioritize column matches
      * @returns {Promise<object>} { schema, mappings, translator }
      */
-    static async analyze(adapter, provider, activeTable = null) {
+    static async analyze(adapter, provider, activeTable = null, userMessage = null) {
         const translator = new SchemaTranslator();
+        const userTokens = userMessage ? userMessage.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2) : [];
 
         // Output structure
         const normalizedSchema = {
@@ -87,10 +89,11 @@ export class ConnectionAnalyzer {
                     const normalizedTableName = tableMap.get(realTableName) || realTableName;
 
                     try {
-                        const columns = await adapter.getOneTableSchema(realTableName);
+                        const rawColumns = await adapter.getOneTableSchema(realTableName);
                         const normalizedCols = [];
 
-                        for (const col of columns) {
+                        // 1. Normalize all columns first
+                        for (const col of rawColumns) {
                             const originalColName = col.name;
                             const normalizedColName = translator.normalizeIdentifier(originalColName);
 
@@ -106,7 +109,46 @@ export class ConnectionAnalyzer {
                             });
                         }
 
-                        normalizedSchema.detailedSchema[normalizedTableName] = normalizedCols;
+                        // 2. Apply Smart Pruning if table is wide (>50 columns)
+                        let prunedCols = normalizedCols;
+                        if (normalizedCols.length > 50) {
+                            const scored = normalizedCols.map(col => {
+                                let score = 0;
+                                const lowerName = col.name.toLowerCase();
+                                const lowerOrig = col.originalName.toLowerCase();
+                                const lowerPrompt = (userMessage || '').toLowerCase();
+
+                                // 1. Exact match in full prompt (Highest priority)
+                                if (lowerPrompt.includes(lowerName) || lowerPrompt.includes(lowerOrig)) score += 20;
+
+                                // 2. Exact match with a token
+                                if (userTokens.some(t => lowerName === t || lowerOrig === t)) score += 10;
+
+                                // 3. Partial match with a token
+                                else if (userTokens.some(t => lowerName.includes(t) || lowerOrig.includes(t))) score += 5;
+
+                                // 4. PK (always helpful)
+                                if (col.pk) score += 8;
+
+                                // Fallback: keep original order for ties (but slightly penalized by index)
+                                score -= (rawColumns.indexOf(col) / 1000);
+
+                                return { col, score };
+                            });
+
+                            // Sort by score descending
+                            scored.sort((a, b) => b.score - a.score);
+
+                            // Take top 50
+                            prunedCols = scored.slice(0, 50).map(s => s.col);
+
+                            // Re-sort current selection by original index to maintain schema order
+                            prunedCols.sort((a, b) => normalizedCols.indexOf(a) - normalizedCols.indexOf(b));
+
+                            console.log(`[ConnectionAnalyzer] Pruned wide table ${normalizedTableName}: ${normalizedCols.length} -> ${prunedCols.length} columns (Top score: ${scored[0].score.toFixed(2)})`);
+                        }
+
+                        normalizedSchema.detailedSchema[normalizedTableName] = prunedCols;
 
                         // 4. Fetch Samples
                         if (typeof adapter.sampleCollection === 'function') {

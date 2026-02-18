@@ -28,9 +28,8 @@ import path from 'path';
 export class OneContext {
     // Configuration constants
     static NOISE_WORDS = new Set([
-        'global', 'market', 'data', 'sales', 'report', 'file',
-        'analysis', 'summary', 'compare', 'region', 'total',
-        'growth', 'loss', 'gain', 'general', 'overview'
+        'global', 'data', 'file', 'general', 'overview',
+        'table', 'database', 'column', 'row', 'show', 'tell', 'about', 'the'
     ]);
 
     static MIN_QUERY_LENGTH = 10;

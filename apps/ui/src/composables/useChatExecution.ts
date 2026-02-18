@@ -477,7 +477,10 @@ export function useChatExecution(
                         const { generateChartConfig } = await import('@/lib/chartGenerator');
                         const dataArray = Array.isArray(response.data) ? response.data : [response.data];
 
-                        let finalConfig = generateChartConfig(dataArray, lastQuery.value);
+                        let finalConfig = generateChartConfig(dataArray, lastQuery.value, {
+                            xAxis: aiConfig.xAxis,
+                            yAxis: Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : (aiConfig.yAxis ? [aiConfig.yAxis] : undefined)
+                        });
                         if (finalConfig) {
                             if (aiConfig.type) finalConfig.type = aiConfig.type as any;
                             if (aiConfig.title) finalConfig.title = aiConfig.title;
@@ -509,7 +512,10 @@ export function useChatExecution(
                             const { generateChartConfig } = await import('@/lib/chartGenerator');
                             const dataArray = Array.isArray(response.data) ? response.data : [response.data];
 
-                            let finalConfig = generateChartConfig(dataArray, lastQuery.value);
+                            let finalConfig = generateChartConfig(dataArray, lastQuery.value, {
+                                xAxis: aiConfig.xAxis,
+                                yAxis: Array.isArray(aiConfig.yAxis) ? aiConfig.yAxis : (aiConfig.yAxis ? [aiConfig.yAxis] : undefined)
+                            });
                             if (finalConfig) {
                                 if (aiConfig.type) finalConfig.type = aiConfig.type as any;
                                 if (aiConfig.title) finalConfig.title = aiConfig.title;

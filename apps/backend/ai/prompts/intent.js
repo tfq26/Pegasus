@@ -11,13 +11,13 @@ export function classifyIntent(message, context = {}) {
     const lower = message.toLowerCase().trim();
 
     // 1. Explicit Slash Commands (Highest Priority)
-    if (lower.startsWith('/visualization') || lower.startsWith('/chart') || lower.startsWith('/plot')) {
+    if (/\/(visualization|chart|plot)/i.test(lower)) {
         return { type: 'visualization', force: true };
     }
-    if (lower.startsWith('/query') || lower.startsWith('/sql')) {
+    if (/\/(query|sql)/i.test(lower)) {
         return { type: 'query', force: true, noExecute: true }; // Just generate SQL
     }
-    if (lower.startsWith('/analyze') || lower.startsWith('/explain')) {
+    if (/\/(analyze|explain)/i.test(lower)) {
         return { type: 'analysis', force: true };
     }
 

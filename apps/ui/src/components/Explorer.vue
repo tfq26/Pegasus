@@ -762,7 +762,7 @@ const handleSelectSheet = (sheet: any) => {
                 {{ isPinned ? 'Unlock Sidebar' : 'Lock Sidebar' }}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem @select="isDeleteMode = !isDeleteMode" :class="{ 'bg-rose-500/10 text-rose-500': isDeleteMode }">
+              <DropdownMenuItem @select="isDeleteMode = !isDeleteMode" :class="isDeleteMode ? 'bg-rose-500/10 text-rose-500' : ''">
                  <Trash class="w-3.5 h-3.5 mr-2" />
                  {{ isDeleteMode ? 'Exit Delete Mode' : 'Delete Items' }}
               </DropdownMenuItem>

@@ -16,7 +16,7 @@ export class DataContextService {
      * @returns {object} { normalizedSchema, adapter, extraAdapters, resourceToAdapter, resourceToProvider }
      */
     static async buildContext(userId, connectionId, options = {}) {
-        const { activeTable, adHocSchema } = options;
+        const { activeTable, adHocSchema, userMessage } = options;
 
         console.log(`[DataContext] Building context for user ${userId}, conn: ${connectionId}`);
 
@@ -79,7 +79,7 @@ export class DataContextService {
             try {
                 await targetAdapter.connect();
                 console.log(`[DataContext] Analyzing ${isActive ? 'active' : 'extra'} connection (${targetProvider})...`);
-                const result = await ConnectionAnalyzer.analyze(targetAdapter, targetProvider, isActive ? activeTable : null);
+                const result = await ConnectionAnalyzer.analyze(targetAdapter, targetProvider, isActive ? activeTable : null, metadata.userMessage);
 
                 // Determine structure type
                 let structureType = 'STRUCTURED';
@@ -187,7 +187,8 @@ export class DataContextService {
                 await analyzeConnection(adapter, provider, true, {
                     name: connRow.name,
                     id: connRow.id,
-                    aiInsights: connRow.aiInsights
+                    aiInsights: connRow.aiInsights,
+                    userMessage
                 });
             }
         }
@@ -260,7 +261,8 @@ export class DataContextService {
                         name: meta.name || meta.title,
                         id: meta.id,
                         type: meta.type,
-                        aiInsights: meta.aiInsights
+                        aiInsights: meta.aiInsights,
+                        userMessage
                     }));
                 }
             }

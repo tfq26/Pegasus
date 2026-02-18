@@ -22,4 +22,8 @@ export class DatabaseAdapter {
   async sampleCollection(/* collectionName, limit = 5 */) {
     return []
   }
+
+  async getEstimatedCount(collectionName) {
+    return null
+  }
 }

@@ -36,17 +36,17 @@ export class SemanticIntentClassifier {
 
         const lower = message.toLowerCase().trim();
 
-        // Check slash commands first (highest priority)
-        if (lower.startsWith('/visualization') || lower.startsWith('/chart') || lower.startsWith('/plot')) {
+        // Check slash commands (highest priority)
+        if (/\/(visualization|chart|plot)/i.test(lower)) {
             return { type: 'visualization', confidence: 1.0, force: true };
         }
-        if (lower.startsWith('/query') || lower.startsWith('/sql')) {
+        if (/\/(query|sql)/i.test(lower)) {
             return { type: 'query', confidence: 1.0, force: true };
         }
-        if (lower.startsWith('/analyze') || lower.startsWith('/explain')) {
+        if (/\/(analyze|explain)/i.test(lower)) {
             return { type: 'analysis', confidence: 1.0, force: true };
         }
-        if (lower.startsWith('/text')) {
+        if (/\/(text)/i.test(lower)) {
             return { type: 'chat', confidence: 1.0, force: true };
         }
 

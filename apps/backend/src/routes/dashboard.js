@@ -487,6 +487,11 @@ dashboard.get("/dashboards/:id", async (c) => {
 
         if (!role && !dashboard.isPublic) return c.json({ error: "Unauthorized" }, 403)
 
+        // Check for share token expiry if relying on public access
+        if (!role && dashboard.isPublic && dashboard.shareTokenExpiresAt && new Date() > new Date(dashboard.shareTokenExpiresAt)) {
+            return c.json({ error: "Share link has expired" }, 403)
+        }
+
         // 3. Hybrid Storage Resolution
         let fullConfig = dashboard.config || {};
 
@@ -625,6 +630,8 @@ dashboard.post("/dashboards/:id/share", async (c) => {
         let id = c.req.param("id")
         const rawId = id.includes(':') ? id.split(':')[1] : id
 
+        const { expiresIn } = await c.req.json().catch(() => ({}))
+
         const dash = await db.query.dashboards.findFirst({
             where: and(eq(dashboards.id, rawId), eq(dashboards.ownerId, userId))
         });
@@ -632,12 +639,22 @@ dashboard.post("/dashboards/:id/share", async (c) => {
         if (!dash) return c.json({ error: "Unauthorized" }, 403);
 
         let shareToken = dash.shareToken || crypto.randomUUID();
+        let expiresAt = null;
+
+        if (expiresIn) {
+            // expiresIn in seconds
+            expiresAt = new Date(Date.now() + expiresIn * 1000);
+        }
 
         await db.update(dashboards)
-            .set({ shareToken, isPublic: true })
+            .set({
+                shareToken,
+                isPublic: true,
+                shareTokenExpiresAt: expiresAt
+            })
             .where(eq(dashboards.id, rawId));
 
-        return c.json({ token: shareToken })
+        return c.json({ token: shareToken, expiresAt })
     } catch (e) {
         console.error("[Share] Error:", e);
         return c.json({ error: "Failed to share dashboard" }, 500)

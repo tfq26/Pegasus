@@ -11,7 +11,7 @@ import ChatEditor from '@/components/Chat/ChatEditor.vue';
 import QueryEditorView from './QueryEditorView.vue';
 import { toast } from '@/composables/useNotifications';
 import { CSVExporter, ExcelExporter, PDFExporter } from '../TableView/Engine/Exporters';
-import { fetchTableSchema, fetchTableQuery, getAIModels, QUERY_API_URL, getAuthHeaders } from '@/lib/api';
+import { fetchTableSchema, fetchTableQuery, getAIModels, QUERY_API_URL, getAuthHeaders, getExportUrl } from '@/lib/api';
 import { buildConnectionPayload } from '@/lib/db-connections';
 import { localAI } from '@/services/LocalAIService';
 import { useSettingsStore } from '@/stores/settings';
@@ -57,7 +57,7 @@ const emit = defineEmits<{
   (e: 'show-results'): void;
   (e: 'share'): void;
   (e: 'ai-respond', response: any): void;
-  (e: 'generate-insights', payload: { query: string; results: any; messageIndex: number }): void;
+  (e: 'generate-insights', payload: { query: string; results: any; messageIndex?: number }): void;
   (e: 'update:alias', alias: string): void;
 }>();
 
@@ -67,7 +67,7 @@ const settingsStore = useSettingsStore();
 const sheetStore = useSheetStore(); 
 const spaceStore = useSpaceStore(); // NEW
 const { tabs, activeTabId, activeTab } = storeToRefs(workspaceStore);
-const { settings } = storeToRefs(settingsStore);
+const settings = settingsStore.settings;
 
 const allModels = ref<any[]>([]);
 
@@ -1449,22 +1449,43 @@ const handleRedo = () => {
 const exportCurrentTable = async (format: 'csv' | 'xlsx' | 'pdf') => {
   const currentTabIdValue = (activeTabId.value as unknown as string);
   if (!currentTabIdValue) return;
-  const activeTabObj = (tabs.value as unknown as Tab[]).find((t: Tab) => t.id === currentTabIdValue);
-  if (activeTabObj && activeTabObj.type === 'table') {
+  const activeTabObj = (tabs.value as unknown as any[]).find((t: any) => t.id === currentTabIdValue);
+  
+  if (activeTabObj && (activeTabObj.type === 'table' || activeTabObj.type === 'spreadsheet')) {
     const engine = getEngineForTab(currentTabIdValue);
-    const filename = `${activeTabObj.label || 'export'}.${format}`;
+    const filename = `${activeTabObj.label || 'export'}`;
     
     if (format === 'csv') {
-      await CSVExporter.export(engine, filename);
+      // Use Server-Side Streaming Export if available
+      if (activeTabObj.data?.tableName && activeTabObj.data?.connection) {
+          try {
+              const exportUrl = getExportUrl(activeTabObj.data.tableName, activeTabObj.data.connection);
+              
+              const link = document.createElement('a');
+              link.href = exportUrl;
+              link.download = `${filename}.csv`; // Note: Browser might respect Content-Disposition header more
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              
+              toast.success('Export started');
+              return;
+          } catch (e: any) {
+              console.error('Server export failed, falling back to client-side', e);
+          }
+      }
+      
+      // Fallback to client-side
+      await CSVExporter.export(engine, `${filename}.csv`);
+      toast.success('Exported to CSV');
+      
     } else if (format === 'xlsx') {
-      await ExcelExporter.export(engine, filename);
+      await ExcelExporter.export(engine, `${filename}.xlsx`);
+      toast.success('Exported to XLSX');
     } else if (format === 'pdf') {
-      await PDFExporter.export(engine, filename);
+      await PDFExporter.export(engine, `${filename}.pdf`);
     }
-    
-    if (format !== 'pdf') {
-        toast.success(`Exported to ${format.toUpperCase()}`);
-    }
+
   } else {
       toast.error('No table active');
   }
