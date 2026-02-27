@@ -16,7 +16,7 @@
                     <TooltipTrigger as-child>
                       <div class="flex-1 min-w-0">
                         <h3 class="card-title text-foreground/90 font-bold text-sm truncate tracking-tight group-hover:text-foreground transition-colors">{{ element?.title || 'Untitled' }}</h3>
-                        <p class="card-subtitle text-[10px] font-medium text-muted-foreground truncate uppercase tracking-[0.05em] opacity-70 group-hover:opacity-100 transition-opacity">{{ element?.customization?.description || element?.query }}</p>
+                        <p class="card-subtitle text-[10px] font-medium text-muted-foreground truncate  tracking-[0.05em] opacity-70 group-hover:opacity-100 transition-opacity">{{ element?.customization?.description || element?.query }}</p>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" class="bg-popover border-border/50 text-xs shadow-xl">
@@ -141,7 +141,7 @@
                  <File class="w-8 h-8 text-primary shadow-sm" />
                </div>
                <div class="text-sm font-bold text-center truncate max-w-full px-4 text-foreground/90">{{ element.config.fileName }}</div>
-               <div class="text-[10px] font-bold text-muted-foreground uppercase opacity-60 mt-1 tracking-widest">{{ formatSize(element.config.fileSize) }}</div>
+               <div class="text-[10px] font-bold text-muted-foreground  opacity-60 mt-1 tracking-widest">{{ formatSize(element.config.fileSize) }}</div>
                <button 
                  class="mt-6 px-6 py-2 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95 rounded-xl transition-all duration-300 shadow-lg shadow-primary/20" 
                  @click="$emit('download')"

@@ -56,7 +56,7 @@
                 v-for="t in chartTypes" 
                 :key="t.value"
                 @click="applyChartType(t.value)"
-                class="p-2 px-3 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-300"
+                class="p-2 px-3 rounded-full text-[10px] font-bold  tracking-wider transition-all duration-300"
                 :class="config?.type === t.value || (config?.type === 'bar' && t.value === 'horizontalBar' && config.config?.options?.indexAxis === 'y') ? 'bg-background text-primary shadow-sm scale-105' : 'text-muted-foreground hover:text-foreground'"
              >
                 {{ t.label }}
@@ -77,7 +77,7 @@
             <table class="w-full text-xs border-collapse">
               <thead class="sticky top-0 bg-muted z-20">
                 <tr>
-                  <th v-for="col in dataColumns" :key="col" class="px-4 py-3 text-left font-bold text-foreground/80 border-b border-border/50 uppercase tracking-widest text-[9px]">
+                  <th v-for="col in dataColumns" :key="col" class="px-4 py-3 text-left font-bold text-foreground/80 border-b border-border/50  tracking-widest text-[9px]">
                     {{ col }}
                   </th>
                 </tr>
@@ -90,7 +90,7 @@
                 </tr>
               </tbody>
             </table>
-            <div v-if="results.length > 50" class="px-4 py-3 text-[10px] font-bold text-muted-foreground/60 text-center bg-muted/20 uppercase tracking-widest">
+            <div v-if="results.length > 50" class="px-4 py-3 text-[10px] font-bold text-muted-foreground/60 text-center bg-muted/20  tracking-widest">
               Limited to first 50 rows ({{ results.length }} total)
             </div>
           </div>
@@ -142,7 +142,7 @@
       </DialogHeader>
       <div class="grid gap-4 py-4">
         <div class="grid gap-2">
-          <label for="name" class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Dashboard Name</label>
+          <label for="name" class="text-xs font-bold  tracking-wider text-muted-foreground">Dashboard Name</label>
           <input 
             id="name" 
             v-model="newDashboardName" 

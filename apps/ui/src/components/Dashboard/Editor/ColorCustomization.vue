@@ -47,7 +47,7 @@
         <div class="absolute inset-0 flex items-center">
           <span class="w-full border-t border-border" />
         </div>
-        <div class="relative flex justify-center text-xs uppercase">
+        <div class="relative flex justify-center text-xs ">
           <span class="bg-background px-2 text-muted-foreground">Or Customize</span>
         </div>
       </div>
@@ -71,7 +71,7 @@
                     class="h-4 w-4 rounded border border-border"
                     :style="{ backgroundColor: baseColor }"
                   />
-                  <span class="uppercase font-mono">{{ baseColor }}</span>
+                  <span class=" font-mono">{{ baseColor }}</span>
                   <ChevronDown class="ml-auto size-3 opacity-50" />
                 </button>
               </ColorPicker>
@@ -128,7 +128,7 @@
                 class="w-full aspect-square rounded-md border border-border shadow-sm cursor-pointer hover:scale-105 transition-transform"
                 @click="copyColor(color)"
               />
-              <span class="text-[10px] font-mono text-muted-foreground uppercase opacity-0 group-hover:opacity-100 transition-opacity">
+              <span class="text-[10px] font-mono text-muted-foreground  opacity-0 group-hover:opacity-100 transition-opacity">
                 {{ color }}
               </span>
               <div v-if="copiedColor === color" class="absolute inset-0 flex items-center justify-center bg-black/50 rounded-md text-white text-xs font-bold">

@@ -44,7 +44,7 @@ const copyToClipboard = async () => {
       <DialogHeader class="px-6 py-4 border-b border-border bg-muted/50">
         <div class="flex items-center justify-between w-full">
           <div>
-            <DialogTitle class="text-sm font-black uppercase tracking-widest text-violet-500 dark:text-violet-400">In-Depth Analysis</DialogTitle>
+            <DialogTitle class="text-sm font-black  tracking-widest text-violet-500 dark:text-violet-400">In-Depth Analysis</DialogTitle>
             <DialogDescription class="text-[10px] text-muted-foreground font-mono mt-1">PEGASUS INTELLIGENCE REPORT</DialogDescription>
           </div>
         </div>
@@ -65,14 +65,14 @@ const copyToClipboard = async () => {
       <div class="px-6 py-4 border-t border-border bg-muted/30 flex justify-end gap-3">
         <button 
           @click="copyToClipboard"
-          class="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/50 text-[10px] font-bold uppercase tracking-wider transition-all"
+          class="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted border border-border text-muted-foreground hover:text-foreground hover:border-muted-foreground/50 text-[10px] font-bold  tracking-wider transition-all"
         >
           <component :is="copied ? Check : Copy" class="w-3.5 h-3.5" />
           <span>{{ copied ? 'Copied' : 'Copy All' }}</span>
         </button>
         <button 
           @click="emit('update:open', false)"
-          class="px-4 py-2 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+          class="px-4 py-2 bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground text-[10px] font-black  tracking-widest rounded-lg transition-all"
         >
           Close Report
         </button>

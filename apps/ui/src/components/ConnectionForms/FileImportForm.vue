@@ -279,7 +279,7 @@ const processFile = async (file: File) => {
 <template>
   <div class="space-y-4">
       <div class="flex items-center justify-between">
-          <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Upload File</label>
+          <label class="text-[10px]  tracking-wide text-muted-foreground">Upload File</label>
           <div v-if="kustoConnections.length > 0" class="flex items-center gap-2">
               <span class="text-[10px] text-muted-foreground">Destination:</span>
               <select 

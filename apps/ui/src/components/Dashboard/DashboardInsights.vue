@@ -13,7 +13,7 @@
         <div class="flex items-center justify-between mb-2">
             <h3 class="text-sm font-bold text-primary flex items-center gap-2">
               Pegasus AI Insights
-              <span class="text-[10px] font-medium bg-primary/10 px-1.5 py-0.5 rounded text-primary uppercase tracking-wider">Automated</span>
+              <span class="text-[10px] font-medium bg-primary/10 px-1.5 py-0.5 rounded text-primary  tracking-wider">Automated</span>
             </h3>
             
             <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

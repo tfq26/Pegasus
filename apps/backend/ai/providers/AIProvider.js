@@ -125,11 +125,44 @@ export class AIProvider {
      */
     async generateTitle(messages) {
         const prompt = PromptBuilder.buildTitlePrompt(messages)
+        console.log(`[AIProvider] generateTitle prompt:`, prompt);
         const response = await this.generateContent([{ role: 'user', content: prompt }])
-        return PromptBuilder.cleanResponse(response)
+        const text = typeof response === 'string' ? response : response.text
+        console.log(`[AIProvider] generateTitle raw response:`, text);
+        return PromptBuilder.cleanResponse(text)
     }
 
     async listModels() {
         throw new Error('listModels must be implemented')
+    }
+
+    /**
+     * Enriches a prompt with expert strategies based on intent.
+     * Shared across all providers to ensure intelligence parity.
+     */
+    enrichPromptWithStrategies(prompt, intent) {
+        if (!intent) return prompt;
+
+        let enrichment = '';
+
+        // Temporal Comparison Strategy
+        if (intent.type === 'comparison' || intent.scores?.comparison > 0) {
+            enrichment += `\n[Expert Strategy - Temporal Comparison]: 
+If identifying trends or comparisons (e.g., 'last week vs previous week'):
+1. Identify BOTH date ranges (Current vs Baseline).
+2. Fetch data for BOTH periods (use multiple tool calls if needed).
+3. Analyze the DELTA (percentage/value change) between the two.
+DO NOT claim data is missing if a tool call can resolve a specific time range.\n`;
+        }
+
+        // Deep Analysis Strategy
+        if (intent.type === 'analysis' || intent.scores?.analysis > 1) {
+            enrichment += `\n[Expert Strategy - Deep Dive]:
+1. Don't just show the top results; look for correlations.
+2. If data is surprisingly high or low, hypothesize why (e.g., seasonal, specific customer, geographic region).
+3. Suggest the NEXT question the user should ask based on your findings.\n`;
+        }
+
+        return enrichment ? `${prompt}\n${enrichment}` : prompt;
     }
 }

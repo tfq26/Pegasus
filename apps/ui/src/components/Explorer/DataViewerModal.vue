@@ -345,7 +345,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
             </div>
             <div>
               <h3 class="text-lg font-bold text-foreground">{{ formatTableName(viewer.table, viewer.connection?.id) }}</h3>
-              <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{{ viewer.connection?.nickname }} / {{ viewer.total ?? '...' }} Records</p>
+              <p class="text-[10px] font-bold  tracking-[0.2em] text-muted-foreground">{{ viewer.connection?.nickname }} / {{ viewer.total ?? '...' }} Records</p>
             </div>
           </div>
 
@@ -353,7 +353,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
             <button
                v-if="selectedRows.size > 0"
                @click="copySelected"
-               class="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-violet-500/20 active:scale-95"
+               class="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-[10px] font-bold  tracking-widest rounded-xl transition-all shadow-lg shadow-violet-500/20 active:scale-95"
             >
                <Copy class="w-3.5 h-3.5" />
                Copy Selected ({{ selectedRows.size }})
@@ -417,7 +417,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                 class="w-full pl-10 pr-4 py-2 bg-muted/50 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/40 transition-all"
               />
             </div>
-            <div v-if="localSearchQuery" class="text-[10px] font-bold uppercase tracking-widest text-violet-500 dark:text-violet-400">
+            <div v-if="localSearchQuery" class="text-[10px] font-bold  tracking-widest text-violet-500 dark:text-violet-400">
               {{ filteredAndSortedRows.length }} matches
             </div>
             <button 
@@ -433,7 +433,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
           <div class="flex-1 overflow-auto px-8 py-6 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
             <div v-if="viewer.loading" class="h-full flex flex-col items-center justify-center py-20 space-y-4">
               <Loader2 class="w-8 h-8 text-violet-500 animate-spin" />
-              <p class="text-xs font-bold uppercase tracking-widest text-muted-foreground">Reading records...</p>
+              <p class="text-xs font-bold  tracking-widest text-muted-foreground">Reading records...</p>
             </div>
             <div v-else-if="viewer.error" class="p-6 rounded-2xl bg-rose-500/5 border border-rose-500/20 text-rose-500 dark:text-rose-400 text-sm">
               {{ viewer.error }}
@@ -451,12 +451,12 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                           class="border-border data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500" 
                         />
                       </th>
-                      <th class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground w-10"></th>
+                      <th class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 text-[10px] font-bold  tracking-widest text-muted-foreground w-10"></th>
                       <th
                         v-for="col in viewerColumns"
                         :key="col"
                         @click="emit('toggle-sort', col)"
-                        class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                        class="sticky top-0 z-10 bg-card/80 backdrop-blur-sm border-b border-border px-4 py-3 text-[10px] font-bold  tracking-widest text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                       >
                         <div class="flex items-center gap-2">
                            {{ col }}
@@ -548,7 +548,7 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
-            <div v-else class="py-20 text-center text-muted-foreground font-bold uppercase tracking-widest text-xs">
+            <div v-else class="py-20 text-center text-muted-foreground font-bold  tracking-widest text-xs">
               No entries found
             </div>
           </div>
@@ -556,16 +556,16 @@ function formatTableName(tableName: string | undefined, connectionId?: string | 
           <!-- Footer -->
           <div class="px-8 py-4 border-t border-border bg-muted/10 flex items-center justify-between">
             <div class="flex items-center gap-6">
-              <span v-if="selectedRows.size" class="text-[10px] font-bold uppercase tracking-widest text-violet-500 dark:text-violet-400 bg-violet-500/10 px-2 py-1 rounded">
+              <span v-if="selectedRows.size" class="text-[10px] font-bold  tracking-widest text-violet-500 dark:text-violet-400 bg-violet-500/10 px-2 py-1 rounded">
                 {{ selectedRows.size }} selected
               </span>
-              <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <span class="text-[10px] font-bold  tracking-widest text-muted-foreground">
                 Showing {{ paginatedRows.length }} of {{ filteredAndSortedRows.length }} records
               </span>
               
               <!-- Rows per page selector -->
               <div class="flex items-center gap-2">
-                <span class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Per page:</span>
+                <span class="text-[10px] font-bold  tracking-widest text-muted-foreground">Per page:</span>
                 <select 
                   v-model.number="rowsPerPage"
                   @change="handleLimitChange"

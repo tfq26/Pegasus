@@ -116,7 +116,7 @@ const currentProviderLabel = computed(() => {
         <!-- Sidebar -->
         <div class="w-64 border-r border-border bg-muted/10 flex flex-col overflow-y-auto shrink-0">
           <div class="p-4">
-             <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 px-2">Data Sources</div>
+             <div class="text-xs font-semibold  tracking-wider text-muted-foreground mb-3 px-2">Data Sources</div>
              <div class="space-y-1">
                 <button 
                   v-for="p in providers" 
@@ -140,7 +140,7 @@ const currentProviderLabel = computed(() => {
               <!-- Common Fields -->
                <div class="grid gap-6 mb-6">
                   <div class="space-y-2">
-                    <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Connection Name</label>
+                    <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Connection Name</label>
                     <input
                       v-model="props.connectionForm.alias"
                       type="text"
@@ -150,7 +150,7 @@ const currentProviderLabel = computed(() => {
                   </div>
                   
                   <div class="space-y-2">
-                    <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description (Optional)</label>
+                    <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Description (Optional)</label>
                     <textarea
                       v-model="props.connectionForm.description"
                       rows="2"
@@ -164,7 +164,7 @@ const currentProviderLabel = computed(() => {
                      <div class="space-y-0.5">
                        <div class="flex items-center gap-2">
                           <component :is="props.connectionForm.isLocked ? 'Lock' : 'Unlock'" class="w-3.5 h-3.5" :class="props.connectionForm.isLocked ? 'text-amber-500' : 'text-muted-foreground'" />
-                          <span class="text-xs font-bold uppercase tracking-tight">Prevent Accidental Deletion</span>
+                          <span class="text-xs font-bold  tracking-tight">Prevent Accidental Deletion</span>
                        </div>
                      </div>
                      <div 
@@ -187,7 +187,7 @@ const currentProviderLabel = computed(() => {
               <!-- Provider Specific Form -->
               <div class="space-y-4">
                   <div class="flex items-center gap-2 mb-4">
-                    <span class="text-xs font-semibold uppercase tracking-wider text-primary">{{ currentProviderLabel }} Configuration</span>
+                    <span class="text-xs font-semibold  tracking-wider text-primary">{{ currentProviderLabel }} Configuration</span>
                   </div>
 
                   <MySQLForm v-if="props.connectionForm.provider === 'mysql'" :connection-form="props.connectionForm" />

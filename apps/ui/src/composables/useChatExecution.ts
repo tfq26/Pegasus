@@ -337,7 +337,7 @@ export function useChatExecution(
 
             try {
                 const explanation = await analyzeResults(userPrompt, queryResult.value, lastQuery.value)
-                const explanationText = typeof explanation === 'string' ? explanation : JSON.stringify(explanation)
+                const explanationText = typeof explanation === 'object' ? (explanation.message || explanation.analysis || explanation.text || JSON.stringify(explanation)) : explanation
 
                 chatHistory.value.push({
                     role: 'assistant',
@@ -448,6 +448,30 @@ export function useChatExecution(
                     return
                 }
 
+                // Handle in-chat clarification questions from AI
+                if ((aiResponse as any).type === 'clarification') {
+                    const response = aiResponse as any;
+                    chatHistory.value.push({
+                        role: 'clarification',
+                        content: response.question,
+                        timestamp: Date.now(),
+                        meta: {
+                            interpretation: response.interpretation,
+                            confidence: response.confidence,
+                            hints: response.hints || [],
+                            steps: currentExecutionSteps.value
+                        }
+                    });
+                    if (selectedChatId.value) {
+                        try {
+                            const activeModel = options.aiOptions.value?.model;
+                            await chatStore.saveMessage(selectedChatId.value, 'ai', response.question, { isClarification: true, interpretation: response.interpretation, confidence: response.confidence, hints: response.hints || [] }, activeModel);
+                        } catch (e) { console.warn(e); }
+                    }
+                    isExecuting.value = false;
+                    return;
+                }
+
                 // Handle INTENT-BASED architecture responses
                 if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
                     const response = aiResponse as any;
@@ -466,7 +490,12 @@ export function useChatExecution(
 
                     // 3. Prepare the Assistant Response
                     const needsDisclaimer = response.needs_disclaimer || false;
-                    const assistantContent = response.message || (response.isCompound ? `Here is the data for ${response.results.length} regions.` : `Here is the data you requested.`);
+                    const dataRows = response.data;
+                    const rowCount = Array.isArray(dataRows) ? dataRows.length : (dataRows ? 1 : 0);
+                    const defaultMsg = response.isCompound
+                        ? `Here is the data for ${response.results?.length} region(s).`
+                        : `Found ${rowCount} result${rowCount !== 1 ? 's' : ''}.`;
+                    const assistantContent = response.message || defaultMsg;
 
                     // 4. Handle Visualizations or Standard Data
                     if (response.type === 'visualization_request') {
@@ -668,7 +697,7 @@ export function useChatExecution(
                         console.error('[Chat] Failed to generate single-step summary:', err)
                     }
 
-                    const assistantContent = typeof aiSummary === 'object' ? JSON.stringify(aiSummary) : aiSummary
+                    const assistantContent = typeof aiSummary === 'object' ? (aiSummary.message || aiSummary.analysis || aiSummary.text || JSON.stringify(aiSummary)) : aiSummary
 
                     const meta = {
                         ...(prediction ? { prediction } : {}),

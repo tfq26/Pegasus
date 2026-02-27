@@ -5,7 +5,9 @@ export class GeminiProvider extends AIProvider {
     constructor(config) {
         super(config)
         this.genAI = new GoogleGenerativeAI(config.apiKey)
-        // We don't initialize this.model here because systemInstruction changes per request
+        // Set API version to v1 for stability in embeddings if needed, 
+        // though the SDK usually defaults or allows specifying.
+        // Let's ensure we use the stable endpoint if possible.
     }
 
     async generateContent(messages, options = {}) {
@@ -197,14 +199,12 @@ export class GeminiProvider extends AIProvider {
     }
 
     async listModels() {
-        // The specific models we want to support
         const supportedModels = [
             'gemini-3-pro-preview',
             'gemini-3-flash-preview',
             'gemini-2.5-pro',
             'gemini-2.5-flash',
-            'deep-research-pro-preview-12-2025',
-            'gemini-exp-1206'
+            'gemini-2.5-flash-lite'
         ];
 
         let apiModelsMap = new Map();
@@ -256,8 +256,8 @@ export class GeminiProvider extends AIProvider {
     }
 
     async embed(text, options = {}) {
-        const modelId = options.model || "text-embedding-004"
-        const model = this.genAI.getGenerativeModel({ model: modelId })
+        const modelId = options.model || "models/text-embedding-004"
+        const model = this.genAI.getGenerativeModel({ model: modelId }, { apiVersion: 'v1' })
 
         try {
             if (Array.isArray(text)) {
@@ -270,11 +270,10 @@ export class GeminiProvider extends AIProvider {
                 return result.embedding.values
             }
         } catch (e) {
-            if (e.message.includes('404') || e.message.includes('not found')) {
-                console.warn(`[Gemini] Embedding model '${modelId}' not found or not accessible. RAG will be disabled for this request.`)
+            if (e.message.indexOf('404') !== -1 || e.message.indexOf('not found') !== -1) {
+                console.warn(`[Gemini] Embedding model '${modelId}' not found or not accessible.`)
                 return null
             }
-            console.error("[Gemini] Embedding failed:", e)
             throw e
         }
     }

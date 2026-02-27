@@ -12,7 +12,7 @@ defineProps<{
 <template>
   <div class="grid gap-4 md:grid-cols-3">
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Host</label>
       <input 
         v-model="connectionForm.postgres.host" 
         placeholder="127.0.0.1" 
@@ -20,7 +20,7 @@ defineProps<{
       />
     </div>
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Port</label>
       <input 
         v-model.number="connectionForm.postgres.port" 
         type="number" 
@@ -29,7 +29,7 @@ defineProps<{
       />
     </div>
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Database</label>
       <input 
         v-model="connectionForm.postgres.database" 
         placeholder="postgres" 
@@ -37,7 +37,7 @@ defineProps<{
       />
     </div>
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">User</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">User</label>
       <input 
         v-model="connectionForm.postgres.user" 
         placeholder="postgres" 
@@ -45,7 +45,7 @@ defineProps<{
       />
     </div>
     <div class="space-y-1.5 md:col-span-2">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Password</label>
       <input 
         v-model="connectionForm.postgres.password" 
         type="password" 
@@ -97,7 +97,7 @@ defineProps<{
         
         <div v-if="connectionForm.postgres.enableLiveCache" class="space-y-3">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
+                <label class="text-[10px]  tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
                 <input 
                     v-model.number="connectionForm.postgres.pollingInterval" 
                     type="number"

@@ -1,5 +1,6 @@
 
-import { ref, onBeforeUnmount } from 'vue';
+import { ref, onBeforeUnmount, onMounted } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './useAuth';
 import { QUERY_API_URL } from '@/lib/api';
@@ -14,6 +15,14 @@ const orionListeners = ref<((data: any) => void)[]>([]);
 
 export function useCollaboration() {
     const { user } = useAuth();
+    const isPageVisible = ref(true);
+
+    if (typeof document !== 'undefined') {
+        useEventListener(document, 'visibilitychange', () => {
+            isPageVisible.value = !document.hidden;
+            console.log(`[Collaboration] Visibility changed: ${isPageVisible.value ? 'Visible' : 'Hidden'}`);
+        });
+    }
     // Use the same URL as the API, but typically Socket.io handles the path/port automatically 
     // if served from the same origin, or we specify the full URL.
     // If QUERY_API_URL is "http://localhost:3000", that's our target.
@@ -177,7 +186,7 @@ export function useCollaboration() {
     };
 
     const emitCursorMove = (dashboardId: string, x: number, y: number) => {
-        if (!socket.value?.connected) return;
+        if (!socket.value?.connected || !isPageVisible.value) return;
         socket.value.emit('cursor_move', { dashboardId, x, y });
     };
 
@@ -211,7 +220,7 @@ export function useCollaboration() {
 
 
     const emitTypingStart = (dashboardId: string) => {
-        if (!socket.value?.connected) return;
+        if (!socket.value?.connected || !isPageVisible.value) return;
         socket.value.emit('typing_start', dashboardId);
     };
 

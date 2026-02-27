@@ -82,7 +82,7 @@ watch(() => props.config, fetchData, { deep: true })
       <div class="flex-1 flex items-center justify-center">
         <div class="flex flex-col items-center gap-3">
           <Loader2 class="w-8 h-8 text-primary/40 animate-spin" />
-          <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">Fetching Data</span>
+          <span class="text-[10px] font-bold  tracking-[0.2em] text-muted-foreground/50">Fetching Data</span>
         </div>
       </div>
     </div>
@@ -98,7 +98,7 @@ watch(() => props.config, fetchData, { deep: true })
       <p class="text-xs text-muted-foreground max-w-[200px] mb-6 leading-relaxed">{{ error }}</p>
       <button 
         @click="fetchData" 
-        class="px-6 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all active:scale-95 border border-border/50"
+        class="px-6 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-[10px] font-bold  tracking-widest transition-all active:scale-95 border border-border/50"
       >
         Retry Connection
       </button>
@@ -122,7 +122,7 @@ watch(() => props.config, fetchData, { deep: true })
       <div class="w-20 h-20 rounded-3xl bg-muted/20 flex items-center justify-center mb-4 border border-border/40">
         <TableIcon class="w-10 h-10 text-muted-foreground/40" />
       </div>
-      <h4 class="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/60">No Results</h4>
+      <h4 class="text-xs font-bold  tracking-[0.2em] text-muted-foreground/60">No Results</h4>
       <p class="text-[10px] text-muted-foreground/40 mt-2 max-w-[180px]">Your query returned zero rows. Check your connection or filters.</p>
     </div>
   </div>

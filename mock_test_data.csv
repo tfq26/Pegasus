@@ -1,6 +1,0 @@
-id,name,email,role
-1,Alice,alice@example.com,Admin
-2,Bob,bob@example.com,User
-3,Charlie,charlie@example.com,Editor
-4,David,david@example.com,User
-5,Eve,eve@example.com,Admin

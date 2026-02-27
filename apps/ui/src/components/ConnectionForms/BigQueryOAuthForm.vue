@@ -236,7 +236,7 @@ onMounted(() => {
 
       <!-- Project Selection -->
       <div class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">GCP Project</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">GCP Project</label>
         <Select v-model="selectedProject" :disabled="loadingProjects">
           <SelectTrigger class="w-full">
             <SelectValue placeholder="Select project" />
@@ -251,7 +251,7 @@ onMounted(() => {
 
       <!-- Location Selection -->
       <div v-if="selectedProject" class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Data Location</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Data Location</label>
         <Select v-model="selectedLocation">
           <SelectTrigger class="w-full">
             <SelectValue placeholder="Select location" />
@@ -267,7 +267,7 @@ onMounted(() => {
 
       <!-- Dataset Selection -->
       <div v-if="selectedProject" class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">BigQuery Dataset (Optional)</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">BigQuery Dataset (Optional)</label>
         <div v-if="loadingDatasets" class="flex items-center justify-center py-4">
           <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
         </div>

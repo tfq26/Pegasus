@@ -13,9 +13,9 @@
         <div class="flex flex-col">
           <div class="flex items-center gap-2">
             <span class="text-xl font-bold tracking-tight text-foreground hidden sm:block leading-none">Pegasus</span>
-            <span class="hidden sm:inline-flex text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-wider self-start mt-0.5">Beta</span>
+            <span class="hidden sm:inline-flex text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20  tracking-wider self-start mt-0.5">Beta</span>
           </div>
-          <span v-if="isDevMode" class="text-[10px] font-bold text-amber-500 tracking-widest uppercase mt-0.5">Dev Mode</span>
+          <span v-if="isDevMode" class="text-[10px] font-bold text-amber-500 tracking-widest  mt-0.5">Dev Mode</span>
         </div>
       </RouterLink>
 
@@ -101,7 +101,7 @@
               {{ user.firstName || 'User' }}
               <span
                 v-if="tierDisplay && subscriptionTier !== 'free'"
-                class="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                class="text-[9px] px-1.5 py-0.5 rounded font-black  tracking-wider shadow-sm"
                 :class="tierDisplay.badgeClass"
               >
                 {{ tierDisplay.label }}
@@ -190,7 +190,7 @@
               <img src="/logo_new_purple.svg" class="h-7 w-7" />
               <div class="flex items-center gap-2">
                 <span class="text-sm font-bold tracking-tight text-foreground">Pegasus</span>
-                <span class="text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20 uppercase tracking-wider">Beta</span>
+                <span class="text-[9px] font-black bg-purple-500/10 text-purple-600 px-1.5 py-0.5 rounded border border-purple-500/20  tracking-wider">Beta</span>
               </div>
             </RouterLink>
 
@@ -219,7 +219,7 @@
                 class="w-4 h-4 text-muted-foreground group-[.router-link-active]:text-primary"
               />
               <div class="flex-1">
-                <div class="text-xs font-bold uppercase tracking-widest text-foreground">
+                <div class="text-xs font-bold  tracking-widest text-foreground">
                   {{ link.label }}
                 </div>
                 <div class="text-[10px] text-muted-foreground leading-tight">
@@ -245,7 +245,7 @@
                     </span>
                     <span
                       v-if="tierDisplay && subscriptionTier !== 'free'"
-                      class="text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                      class="text-[9px] px-1.5 py-0.5 rounded font-black  tracking-wider shadow-sm"
                       :class="tierDisplay.badgeClass"
                     >
                       {{ tierDisplay.label }}
@@ -261,7 +261,7 @@
                 <RouterLink
                   to="/profile"
                   class="flex items-center justify-center gap-2 p-3 rounded-xl border border-border bg-background
-                         text-foreground font-bold text-[10px] uppercase tracking-widest transition hover:bg-muted"
+                         text-foreground font-bold text-[10px]  tracking-widest transition hover:bg-muted"
                   @click="mobileOpen = false"
                 >
                   <User class="w-3.5 h-3.5" />
@@ -273,7 +273,7 @@
                 @click="handleLogout"
                 class="w-full flex items-center justify-center gap-2 p-3 rounded-xl
                        border border-destructive/20 bg-destructive/5 text-destructive
-                       font-bold text-[10px] uppercase tracking-widest transition hover:bg-destructive/10"
+                       font-bold text-[10px]  tracking-widest transition hover:bg-destructive/10"
               >
                 <LogOut class="w-3.5 h-3.5" />
                 Logout
@@ -285,7 +285,7 @@
                 to="/login"
                 class="w-full flex items-center justify-center gap-2 p-3 rounded-xl
                        bg-primary text-primary-foreground
-                       font-bold text-[10px] uppercase tracking-widest transition hover:opacity-90"
+                       font-bold text-[10px]  tracking-widest transition hover:opacity-90"
                 @click="mobileOpen = false"
               >
                 <LogIn class="w-3.5 h-3.5" />

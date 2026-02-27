@@ -39,6 +39,21 @@ export async function fetchConnectionSchema(entry: ConnectionEntry) {
   }
 }
 
+export async function fetchTableDetails(entry: ConnectionEntry, table: string) {
+  const connection = buildConnectionPayload(entry)
+  const body = await api.post<any>('/schema/details', {
+    provider: entry.provider,
+    connection,
+    table
+  })
+
+  return {
+    table: body.table as string,
+    rows: (body.rows ?? []) as Record<string, unknown>[],
+    columns: (body.columns ?? []) as { name: string; type: string }[]
+  }
+}
+
 export async function fetchTableEntries({
   entry,
   table,
@@ -246,14 +261,36 @@ export async function searchData(term: string, connectionId: string) {
   })
 }
 
+let cachedModels: any[] | null = null
+let modelsLastFetched = 0
+const MODELS_CACHE_TTL = 300000 // 5 minutes
+
 export async function getAIModels() {
+  const now = Date.now()
+  if (cachedModels && (now - modelsLastFetched < MODELS_CACHE_TTL)) {
+    return cachedModels
+  }
+
   const body = await api.get<{ models: any[] }>('/ai/models')
-  return body.models || []
+  cachedModels = body.models || []
+  modelsLastFetched = now
+  return cachedModels
 }
 
+let cachedSettings: any = null
+let settingsLastFetched = 0
+const SETTINGS_CACHE_TTL = 300000 // 5 minutes
+
 export async function fetchSettings() {
+  const now = Date.now()
+  if (cachedSettings && (now - settingsLastFetched < SETTINGS_CACHE_TTL)) {
+    return cachedSettings
+  }
+
   const body = await api.get<{ settings: any }>('/settings')
-  return body.settings || {}
+  cachedSettings = body.settings || {}
+  settingsLastFetched = now
+  return cachedSettings
 }
 
 // Chat API
@@ -765,20 +802,20 @@ export async function deleteSpaceNote(noteId: string) {
   return api.delete(`/spaces/notes/${noteId}`)
 }
 
-// Sheets API
-export async function fetchSheets(spaceId?: string) {
+// Data Views API
+export async function fetchDataViews(spaceId?: string) {
   const url = spaceId ? `/api/sheets?spaceId=${spaceId}` : '/api/sheets'
   return api.get<any[]>(url)
 }
 
-export async function fetchSheet(id: string) {
+export async function fetchDataView(id: string) {
   return api.get<any>(`/api/sheets/${id}`)
 }
 
-export async function apiSaveSheet(sheet: any) {
-  return api.post<any>('/api/sheets', sheet)
+export async function apiSaveDataView(view: any) {
+  return api.post<any>('/api/sheets', view)
 }
 
-export async function apiDeleteSheet(id: string) {
+export async function apiDeleteDataView(id: string) {
   return api.delete(`/api/sheets/${id}`)
 }

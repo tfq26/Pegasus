@@ -157,6 +157,15 @@ const providerLabels = computed(() => {
     }
 })
 
+const providerLabel = computed(() => {
+    switch (props.provider) {
+        case 'azure': return 'Azure'
+        case 'aws': return 'AWS'
+        case 'gcp': return 'GCP'
+        default: return props.provider
+    }
+})
+
 // Watch for dialog to open and provider to be set
 watch(() => props.open, (isOpen) => {
     if (isOpen && props.provider) {
@@ -842,14 +851,14 @@ onUnmounted(() => {
                             <h4 class="font-semibold text-base">Custom Setup</h4>
                         </div>
                         <p class="text-sm text-muted-foreground">
-                            Link directly to the {{ provider?.toUpperCase() }} portal to create and configure resources manually.
+                            Link directly to the {{ providerLabel }} portal to create and configure resources manually.
                         </p>
                     </div>
                 </div>
 
                 <div v-if="provisioningMode === 'manual'" class="mt-6 p-4 bg-muted/50 rounded-lg border flex flex-col items-center gap-4 text-center">
                     <p class="text-sm text-muted-foreground">
-                        You've chosen to configure your resources manually. Click the button below to open the {{ provider.toUpperCase() }} portal in a new tab.
+                        You've chosen to configure your resources manually. Click the button below to open the {{ providerLabel }} portal in a new tab.
                     </p>
                     <Button 
                         @click="handleOpenPortal"
@@ -857,7 +866,7 @@ onUnmounted(() => {
                         class="gap-2"
                     >
                         <ExternalLink class="w-4 h-4" />
-                        Open {{ provider.toUpperCase() }} Portal
+                        Open {{ providerLabel }} Portal
                     </Button>
                 </div>
             </div>
@@ -963,7 +972,7 @@ onUnmounted(() => {
                 <!-- Azure Defaults -->
                 <div v-if="provider === 'azure'" class="space-y-3 px-1">
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">Azure OpenAI</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">Azure OpenAI</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Model Deployment</span> <span class="text-foreground font-medium">gpt-4</span></li>
                             <li class="flex justify-between"><span>Pricing Tier</span> <span class="text-foreground font-medium">Standard</span></li>
@@ -971,7 +980,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">CosmosDB</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">CosmosDB</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Account Offer</span> <span class="text-foreground font-medium">Standard</span></li>
                             <li class="flex justify-between"><span>Capacity Mode</span> <span class="text-foreground font-medium">Serverless</span></li>
@@ -980,7 +989,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">Blob Storage</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">Blob Storage</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>SKU Name</span> <span class="text-foreground font-medium">Standard_LRS</span></li>
                             <li class="flex justify-between"><span>Storage Kind</span> <span class="text-foreground font-medium">StorageV2</span></li>
@@ -989,7 +998,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">Data Explorer (KQL)</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">Data Explorer (KQL)</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Cluster SKU</span> <span class="text-foreground font-medium">Dev Tier (No SLA)</span></li>
                             <li class="flex justify-between"><span>Database Name</span> <span class="text-foreground font-medium">pegasus-kql</span></li>
@@ -1001,7 +1010,7 @@ onUnmounted(() => {
                 <!-- AWS Defaults -->
                 <div v-else-if="provider === 'aws'" class="space-y-3 px-1">
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">AWS Bedrock</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">AWS Bedrock</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Model ID</span> <span class="text-foreground font-medium">claude-3-sonnet</span></li>
                             <li class="flex justify-between"><span>Throughput</span> <span class="text-foreground font-medium">On-demand</span></li>
@@ -1009,7 +1018,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">DynamoDB</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">DynamoDB</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Billing Mode</span> <span class="text-foreground font-medium">Pay-per-request</span></li>
                             <li class="flex justify-between"><span>Partition Key</span> <span class="text-foreground font-medium">id (String)</span></li>
@@ -1017,7 +1026,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">S3 Storage</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">S3 Storage</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Storage Class</span> <span class="text-foreground font-medium">Standard</span></li>
                             <li class="flex justify-between"><span>Security</span> <span class="text-foreground font-medium">Block Public Access</span></li>
@@ -1028,7 +1037,7 @@ onUnmounted(() => {
                 <!-- GCP Defaults -->
                 <div v-else-if="provider === 'gcp'" class="space-y-3 px-1">
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">Vertex AI</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">Vertex AI</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Model ID</span> <span class="text-foreground font-medium">gemini-1.5-pro</span></li>
                             <li class="flex justify-between"><span>Location</span> <span class="text-foreground font-medium">Global</span></li>
@@ -1036,7 +1045,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">Firestore</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">Firestore</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Database Mode</span> <span class="text-foreground font-medium">Native</span></li>
                             <li class="flex justify-between"><span>Location</span> <span class="text-foreground font-medium">Regional</span></li>
@@ -1044,7 +1053,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="p-3 bg-muted/40 rounded-lg border border-border/50">
-                        <p class="text-xs font-bold uppercase tracking-widest text-primary mb-2">Cloud Storage</p>
+                        <p class="text-xs font-bold  tracking-widest text-primary mb-2">Cloud Storage</p>
                         <ul class="text-sm space-y-1 text-muted-foreground">
                             <li class="flex justify-between"><span>Storage Class</span> <span class="text-foreground font-medium">Standard</span></li>
                             <li class="flex justify-between"><span>Access Control</span> <span class="text-foreground font-medium">Uniform</span></li>

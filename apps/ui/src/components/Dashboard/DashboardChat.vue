@@ -317,8 +317,8 @@ const isCurrentUser = (userId: string) => {
 }
 
 const getInitials = (u: any) => {
-  if (u.firstName && u.lastName) return (u.firstName[0] + u.lastName[0]).toUpperCase()
-  if (u.email) return u.email.substring(0, 2).toUpperCase()
+  if (u.firstName && u.lastName) return (u.firstName[0] + u.lastName[0]).to()
+  if (u.email) return u.email.substring(0, 2).to()
   return '??'
 }
 

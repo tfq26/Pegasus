@@ -31,7 +31,7 @@ const importKustoCreds = async () => {
 <template>
   <div class="space-y-4">
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Cluster URL</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Cluster URL</label>
       <input 
         v-model="connectionForm.kusto.cluster" 
         placeholder="https://<cluster>.<region>.kusto.windows.net" 
@@ -39,7 +39,7 @@ const importKustoCreds = async () => {
       />
     </div>
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database Name</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Database Name</label>
       <input 
         v-model="connectionForm.kusto.database" 
         placeholder="e.g. MyDatabase" 
@@ -68,7 +68,7 @@ const importKustoCreds = async () => {
 
     <div v-if="showAdvancedKusto" class="space-y-4 pl-3 border-l-2 border-border ml-1.5 animate-in slide-in-from-top-2 fade-in duration-200">
       <div class="space-y-1.5">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Tenant ID</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Tenant ID</label>
         <input 
           v-model="connectionForm.kusto.tenantId" 
           placeholder="Azure Tenant ID" 
@@ -76,7 +76,7 @@ const importKustoCreds = async () => {
         />
       </div>
       <div class="space-y-1.5">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Client ID</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Client ID</label>
         <input 
           v-model="connectionForm.kusto.clientId" 
           placeholder="Azure Client ID (App ID)" 
@@ -84,7 +84,7 @@ const importKustoCreds = async () => {
         />
       </div>
       <div class="space-y-1.5">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Client Secret</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Client Secret</label>
         <input 
           v-model="connectionForm.kusto.clientSecret" 
           type="password"
@@ -106,7 +106,7 @@ const importKustoCreds = async () => {
         
         <div v-if="connectionForm.kusto.enableLiveCache" class="space-y-3">
              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
+                <label class="text-[10px]  tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
                 <input 
                     v-model.number="connectionForm.kusto.pollingInterval" 
                     type="number"

@@ -114,15 +114,15 @@ const formatSql = (template: string, tableName: string) => {
         <div class="grid grid-cols-3 gap-4">
             <div class="bg-muted/50 p-4 rounded-lg text-center">
                 <div class="text-2xl font-bold">{{ issues.length }}</div>
-                <div class="text-xs text-muted-foreground uppercase">Issues Found</div>
+                <div class="text-xs text-muted-foreground ">Issues Found</div>
             </div>
              <div class="bg-muted/50 p-4 rounded-lg text-center">
                 <div class="text-2xl font-bold text-primary">{{ totalSelected }}</div>
-                <div class="text-xs text-muted-foreground uppercase">Selected</div>
+                <div class="text-xs text-muted-foreground ">Selected</div>
             </div>
              <div class="bg-muted/50 p-4 rounded-lg text-center">
                 <div class="text-2xl font-bold text-orange-500">Review</div>
-                <div class="text-xs text-muted-foreground uppercase">Status</div>
+                <div class="text-xs text-muted-foreground ">Status</div>
             </div>
         </div>
 
@@ -148,7 +148,7 @@ const formatSql = (template: string, tableName: string) => {
                             <h4 class="font-medium flex items-center gap-2">
                                 {{ issue.description }}
                                 <span :class="['text-xs px-2 py-0.5 rounded-lg font-medium', getRiskColor(issue.risk)]">
-                                    {{ issue.risk ? issue.risk.toUpperCase() : 'UNKNOWN' }}
+                                    {{ issue.risk ? issue.risk.to() : 'UNKNOWN' }}
                                 </span>
                             </h4>
                             <span class="text-xs text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">

@@ -40,7 +40,7 @@
 
           <div class="grid grid-cols-2 gap-3 pl-6">
             <div class="space-y-1">
-              <label class="text-[10px] uppercase font-bold text-muted-foreground">Custom Label</label>
+              <label class="text-[10px]  font-bold text-muted-foreground">Custom Label</label>
               <input 
                 v-model="customLabels[index]"
                 @input="updateCustomization"
@@ -49,7 +49,7 @@
               />
             </div>
             <div class="space-y-1">
-              <label class="text-[10px] uppercase font-bold text-muted-foreground">Hover Note</label>
+              <label class="text-[10px]  font-bold text-muted-foreground">Hover Note</label>
               <input 
                 v-model="customNotes[index]"
                 @input="updateCustomization"

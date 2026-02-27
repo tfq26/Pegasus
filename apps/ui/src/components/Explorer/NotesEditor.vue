@@ -42,6 +42,11 @@ const handleSave = async () => {
   }
 }
 
+const handleContentUpdate = async (newContent: string) => {
+  content.value = newContent;
+  await handleSave();
+}
+
 const handleDelete = async () => {
   if (!confirm('Are you sure you want to delete this note?')) return
   try {
@@ -73,7 +78,7 @@ const handleDelete = async () => {
         <div class="flex bg-muted/50 p-1 rounded-lg mr-2 border border-border/50">
           <button 
             @click="isEditMode = true"
-            class="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all"
+            class="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold  tracking-wider rounded-md transition-all"
             :class="isEditMode ? 'bg-background text-foreground shadow-sm shadow-black/20' : 'text-muted-foreground hover:text-foreground'"
           >
             <Edit3 class="w-3 h-3" />
@@ -81,7 +86,7 @@ const handleDelete = async () => {
           </button>
           <button 
             @click="isEditMode = false"
-            class="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all"
+            class="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold  tracking-wider rounded-md transition-all"
             :class="!isEditMode ? 'bg-background text-foreground shadow-sm shadow-black/20' : 'text-muted-foreground hover:text-foreground'"
           >
             <Eye class="w-3 h-3" />
@@ -125,7 +130,7 @@ const handleDelete = async () => {
           placeholder="Start documenting your space knowledge here... (Markdown supported)"
         />
         <div v-else class="min-h-full cursor-text" @click="isEditMode = true">
-          <MarkdownRenderer :content="content || '*No content yet...*'" />
+          <MarkdownRenderer :content="content || '*No content yet...*'" @update:content="handleContentUpdate" />
         </div>
       </div>
     </div>

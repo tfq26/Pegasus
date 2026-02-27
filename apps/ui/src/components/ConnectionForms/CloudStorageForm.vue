@@ -16,7 +16,7 @@ const providers = [
 <template>
   <div class="grid gap-4 md:grid-cols-2">
     <div class="space-y-1.5 md:col-span-2">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Storage Provider</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Storage Provider</label>
       <Select v-model="connectionForm.cloud_storage.service">
         <SelectTrigger class="w-full h-9 rounded-lg border-input bg-background">
           <SelectValue />
@@ -32,7 +32,7 @@ const providers = [
     <!-- AZURE Configuration -->
     <div v-if="connectionForm.cloud_storage.service === 'azure_blob'" class="contents">
         <div class="space-y-1.5 md:col-span-2">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Connection String</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Connection String</label>
             <textarea 
                 v-model="connectionForm.cloud_storage.connectionString" 
                 rows="3"
@@ -45,7 +45,7 @@ const providers = [
     <!-- AWS S3 Configuration -->
     <div v-if="connectionForm.cloud_storage.service === 's3'" class="contents">
         <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Access Key ID</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Access Key ID</label>
             <input 
                 v-model="connectionForm.cloud_storage.accessKey" 
                 placeholder="AKIA..." 
@@ -53,7 +53,7 @@ const providers = [
             />
         </div>
         <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Secret Access Key</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Secret Access Key</label>
             <input 
                 v-model="connectionForm.cloud_storage.secretKey" 
                 type="password"
@@ -61,7 +61,7 @@ const providers = [
             />
         </div>
         <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Region</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Region</label>
             <input 
                 v-model="connectionForm.cloud_storage.region" 
                 placeholder="us-east-1" 
@@ -73,7 +73,7 @@ const providers = [
     <!-- GCS Configuration -->
     <div v-if="connectionForm.cloud_storage.service === 'gcs'" class="contents">
          <div class="space-y-1.5 md:col-span-2">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Service Account Key (JSON)</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Service Account Key (JSON)</label>
             <textarea 
                 v-model="connectionForm.cloud_storage.secretKey" 
                 rows="5"
@@ -85,7 +85,7 @@ const providers = [
 
     <!-- Common Config -->
     <div class="space-y-1.5 md:col-span-2">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Default Bucket / Container</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Default Bucket / Container</label>
         <input 
             v-model="connectionForm.cloud_storage.bucket" 
             placeholder="my-app-data" 

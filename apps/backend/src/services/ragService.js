@@ -73,17 +73,24 @@ export class RAGService {
                 }
 
                 // 2. Prepare Batch Insert
-                const values = batch.map((content, idx) => ({
-                    content,
-                    embedding: Array.isArray(embeddings[0]) ? embeddings[idx] : (idx === 0 ? embeddings : null),
-                    metadata: {
-                        ...metadata,
-                        indexed_at: new Date().toISOString()
-                    },
-                    userId: userId,
-                    fileId: metadata.fileId || null,
-                    noteId: metadata.noteId || null
-                })).filter(v => v.embedding);
+                const values = batch.map((content, idx) => {
+                    let embedding = null;
+                    if (Array.isArray(embeddings)) {
+                        embedding = Array.isArray(embeddings[0]) ? embeddings[idx] : (idx === 0 ? embeddings : null);
+                    }
+
+                    return {
+                        content,
+                        embedding,
+                        metadata: {
+                            ...metadata,
+                            indexed_at: new Date().toISOString()
+                        },
+                        userId: userId,
+                        fileId: metadata.fileId || null,
+                        noteId: metadata.noteId || null
+                    };
+                }).filter(v => v.embedding && Array.isArray(v.embedding) && v.embedding.length > 0);
 
                 if (values.length > 0) {
                     await db.insert(knowledgeChunks).values(values);

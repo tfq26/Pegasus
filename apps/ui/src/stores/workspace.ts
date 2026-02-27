@@ -4,7 +4,7 @@ import { QUERY_API_URL, getAuthHeaders } from '../lib/api'
 
 export interface Tab {
     id: string
-    type: 'chat' | 'query' | 'table' | 'spreadsheet' | 'note' | 'file'
+    type: 'chat' | 'query' | 'table' | 'spreadsheet' | 'note' | 'file' | 'default' | 'mockup' | 'dataview'
     label: string
     isDirty?: boolean  // Track unsaved changes
     closedAt?: string // ISO string for history cleanup
@@ -216,7 +216,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             table: 'Spreadsheet',
             spreadsheet: 'Spreadsheet',
             note: 'Note',
-            file: 'File'
+            file: 'File',
+            dataview: 'Data View',
+            mockup: 'Data Studio',
+            launcher: 'New Tab'
         }
 
         const newTab: Tab = {
@@ -226,7 +229,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             isDirty: false,
             data: {
                 ...(data || {}),
-                ...(type === 'chat' ? { chatHistory: [] } : {}),
+                ...(type === 'chat' && !data?.chatHistory ? { chatHistory: [] } : {}),
                 ...(type === 'query' && !data?.sessionId ? { localQueries: [] } : {})
             }
         }
@@ -341,6 +344,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         }
     }
 
+    function updateTab(tabId: string, updates: Partial<Tab>) {
+        const workspace = workspacesByConnection.value[activeConnectionId.value]
+        if (!workspace) return
+
+        const tab = workspace.tabs.find(t => t.id === tabId)
+        if (tab) {
+            Object.assign(tab, updates)
+            saveWorkspace()
+        }
+    }
+
     function setTabDirty(tabId: string, isDirty: boolean) {
         const workspace = workspacesByConnection.value[activeConnectionId.value]
         if (!workspace) return
@@ -409,6 +423,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         deleteInactiveTab,
         cleanupOldTabs,
         setActiveTab,
+        updateTab,
         updateTabData,
         setTabDirty,
         updateActiveTabData,

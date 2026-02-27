@@ -49,32 +49,29 @@ export class PostgresAdapter extends DatabaseAdapter {
         return res.rows.map(row => row.table_name)
     }
 
-    async sampleCollection(collectionName, limit = 5) {
+    async *queryStream(queryString) {
         if (!this.client) await this.connect()
+        const res = await this.client.query(queryString)
 
-        // Use quote_ident to safely escape table names
-        const res = await this.client.query(`SELECT * FROM "${collectionName}" LIMIT $1`, [limit])
-        return res.rows
-    }
-
-    async query(query) {
-        if (!this.client) await this.connect()
-
-        const res = await this.client.query(query)
-
-        // Postgres returns 'command' (e.g. 'SELECT', 'INSERT') and 'rowCount'
+        // Postgres returns metadata in 'command', 'rowCount', etc.
+        // If it's a SELECT, we stream rows.
         const command = res.command ? res.command.toUpperCase() : ''
-
         if (command === 'SELECT' || command === 'SHOW' || (res.rows && res.rows.length > 0)) {
-            return res.rows
+            for (const row of res.rows) {
+                yield row
+            }
         } else {
-            // For mutations/DDL
-            return {
+            // For mutations/DDL, yield a synthetic result
+            yield {
                 affectedRows: res.rowCount,
                 command: res.command,
                 message: `${res.command} successful. ${res.rowCount !== null ? res.rowCount + ' rows affected' : ''}`.trim()
             }
         }
+    }
+
+    async sampleCollection(collectionName, limit = 5) {
+        return this.query(`SELECT * FROM "${collectionName}" LIMIT ${limit}`)
     }
 
     /**

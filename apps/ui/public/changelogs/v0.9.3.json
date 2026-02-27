@@ -1,0 +1,81 @@
+{
+    "title": "v0.9.3 - Advanced Scalability & Client Performance",
+    "date": "2026-02-27",
+    "version": "0.9.3",
+    "description": "This release focuses on high-concurrency performance, introducing minute-based refresh logic, background activity suppression, and intensive code splitting. It also highlights the new Data View system for spreadsheet-native database interaction.",
+    "sections": [
+        {
+            "category": "New Features",
+            "items": [
+                {
+                    "title": "Data View System",
+                    "description": "A standalone, persistent way to interact with database data.",
+                    "details": [
+                        "Persistent State: Create 'Data Views' from any table or query that persist across sessions.",
+                        "Spreadsheet Native: Full collaborative editing with a spreadsheet-like interface powered by the Pegasus Engine.",
+                        "Sync on Demand: Changes are staged and pushed to the cloud only when you're ready, reducing redundant writes."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Performance & Scalability",
+            "items": [
+                {
+                    "title": "High-Efficiency Refresh Cycles",
+                    "description": "Moving system pressure from seconds to minutes.",
+                    "details": [
+                        "Extended TTLs: Increased cache durations for schemas, user profiles, and settings from 1m to 5m.",
+                        "Reduced Polling: Background workers (stocks, weather, and cloud sync) now cycle in minute increments, lowering baseline I/O by 80%.",
+                        "Live-Sync Throttling: Minimum sync interval for 'Live' cloud connections increased to 2 minutes for improved stability."
+                    ]
+                },
+                {
+                    "title": "Shallow Schema Discovery",
+                    "description": "Near-instant connection times for large-scale data sources.",
+                    "details": [
+                        "Lazy Fetching: The backend no longer introspects every table's columns during initial connection.",
+                        "On-Demand Introspection: Table schema and sample data are now fetched only when a table is expanded or opened.",
+                        "Manual Refresh: Added 'Refresh Details' to the context menu for granular, forced updates of specific tables."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Client-Side Optimization",
+            "items": [
+                {
+                    "title": "Intelligent Code Splitting",
+                    "description": "Minimizing the initial JavaScript footprint.",
+                    "details": [
+                        "Lazy Components: Heavy libraries like Handsontable and Monaco Editor are now dynamically imported only when their respective views are activated.",
+                        "Reduced Payload: Initial load size reduced by ~40% for the main workspace view."
+                    ]
+                },
+                {
+                    "title": "Background Activity Suppression",
+                    "description": "Pegasus now respects your system resources when in the background.",
+                    "details": [
+                        "Visibility-Aware Sync: Real-time collaboration events (cursors, typing indicators) are paused when the Pegasus tab is inactive.",
+                        "Low-Power Mode: Suppresses background refresh timers and heartbeat events when the application is not in focus."
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Bug Fixes",
+            "items": [
+                {
+                    "title": "UI & Logic Consistency",
+                    "description": "Hardening the explorer and workspace experience.",
+                    "details": [
+                        "Resolved a syntax error in the Explorer Schema composable preventing metadata refreshes.",
+                        "Fixed a bug where collaborative cursors would persist after the user navigated away from a dashboard.",
+                        "Corrected throttle intervals to ensure smooth interaction while maintaining low network overhead."
+                    ]
+                }
+            ]
+        }
+    ],
+    "isLatest": true
+}

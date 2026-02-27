@@ -4,8 +4,11 @@ import { eq, and, sql } from 'drizzle-orm';
 import { adapters } from '../../adapters/index.js';
 import { ConnectionAnalyzer } from './ConnectionAnalyzer.js';
 import { OneContext } from './OneContext.js';
+import { RAGService } from './ragService.js';
 
 export class DataContextService {
+    static metricsAdapter = null;
+
     /**
      * Build a complete context for AI generation.
      * Handles connection resolution, schema normalization, and semantic context injection.
@@ -276,13 +279,18 @@ export class DataContextService {
         // If system checks are healthy, we auto-inject the metrics table for AI visibility
         if (process.env.COSMOS_ENDPOINT && process.env.COSMOS_KEY) {
             try {
-                const { CosmosAdapter } = await import('../../adapters/cosmosAdapter.js');
-                const metricsAdapter = new CosmosAdapter({
-                    endpoint: process.env.COSMOS_ENDPOINT,
-                    key: process.env.COSMOS_KEY,
-                    database: 'PegasusLive',
-                    container: 'OrionMetrics'
-                });
+                // Use cached adapter if available
+                if (!DataContextService.metricsAdapter) {
+                    const { CosmosAdapter } = await import('../../adapters/cosmosAdapter.js');
+                    DataContextService.metricsAdapter = new CosmosAdapter({
+                        endpoint: process.env.COSMOS_ENDPOINT,
+                        key: process.env.COSMOS_KEY,
+                        database: 'PegasusLive',
+                        container: 'OrionMetrics'
+                    });
+                }
+
+                const metricsAdapter = DataContextService.metricsAdapter;
 
                 // Analyze this system connection
                 await analyzeConnection(metricsAdapter, 'cosmosdb', false, {
@@ -290,11 +298,10 @@ export class DataContextService {
                     id: 'system:orion_metrics',
                     type: 'database',
                     aiInsights: [
-                        'Contains CPU usage, memory stats, and health metrics for app servers',
-                        'Columns: serverId (string), serverName (string), serverType (string), status (string: online/offline), cpuPercent (number), memoryPercent (number), errorMessage (string), timestamp (datetime)',
-                        'To query a specific server: WHERE serverName = \'App server 2\' or WHERE serverId = \'app-server-2\'',
-                        'To get latest metrics: ORDER BY timestamp DESC LIMIT 10',
-                        'Example: SELECT * FROM OrionMetrics WHERE serverName = \'App server 2\' ORDER BY timestamp DESC LIMIT 10'
+                        'Contains real-time CPU, memory, energy, and health metrics for app servers and compute nodes.',
+                        'EXACT column names (camelCase - use these precisely, do NOT invent new column names): serverId (string), serverName (string), serverType (string: AppServer|RM|ComputeNode), status (string: online|offline|error|quiescing), cpuPercent (number 0-100), memoryPercent (number 0-100), energyWatts (number), requestsPerSec (number), networkMbps (number), diskIoOps (number), latencyMs (number), errorMessage (string or null), timestamp (datetime).',
+                        'CRITICAL: There is NO column called "total_requests". Use "requestsPerSec" for request throughput.',
+                        'Example query to check server status: SELECT c.serverName, c.status, c.cpuPercent, c.memoryPercent, c.latencyMs, c.errorMessage FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT 20'
                     ]
                 });
 
@@ -378,6 +385,27 @@ export class DataContextService {
             }
             if (sparkPromises.length > 0) await Promise.all(sparkPromises);
         } catch (e) { /* Ignore - non-critical */ }
+
+        // 7. Semantic Context Injection (RAG)
+        if (userMessage && userMessage.length > 5 && userId) {
+            try {
+                console.log(`[DataContext] Injecting semantic context for: "${userMessage.substring(0, 50)}..."`);
+                const foundInsights = await RAGService.hybridSearch(userMessage, userId, 3);
+
+                if (foundInsights && foundInsights.length > 0) {
+                    console.log(`[DataContext] Found ${foundInsights.length} relevant semantic insights.`);
+                    foundInsights.forEach(insight => {
+                        normalizedSchema.semanticContext.knowledgeBase.push({
+                            id: insight.id,
+                            source: insight.metadata?.source || 'Knowledge Base',
+                            content: insight.content
+                        });
+                    });
+                }
+            } catch (ragErr) {
+                console.warn('[DataContext] Semantic injection failed:', ragErr.message);
+            }
+        }
 
         return {
             provider,

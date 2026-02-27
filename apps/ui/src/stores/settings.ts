@@ -27,6 +27,8 @@ export const useSettingsStore = defineStore('settings', () => {
         temperature: 0.7,
         maxTokens: 2000,
         chatAutoDeleteDays: 30,
+        downloadsFolder: '',
+        localModel: '',
         azureCredentials: {
             tenantId: '',
             clientId: '',

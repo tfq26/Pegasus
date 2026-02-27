@@ -363,7 +363,7 @@ function updateAlpha(event: MouseEvent | TouchEvent) {
           <div class="relative">
             <button
               type="button"
-              class="border-input bg-background inline-flex h-8 w-20 items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs font-medium uppercase"
+              class="border-input bg-background inline-flex h-8 w-20 items-center justify-between gap-2 rounded-md border px-2 py-1 text-xs font-medium "
               @click="toggleDropdown"
             >
               <span>{{ colorType }}</span>
@@ -381,7 +381,7 @@ function updateAlpha(event: MouseEvent | TouchEvent) {
                   v-for="option in colorOptions"
                   :key="option.value"
                   type="button"
-                  class="hover:bg-accent hover:text-accent-foreground relative flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-xs font-medium uppercase select-none"
+                  class="hover:bg-accent hover:text-accent-foreground relative flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-xs font-medium  select-none"
                   @click="selectColorType(option.value)"
                 >
                   {{ option.label }}

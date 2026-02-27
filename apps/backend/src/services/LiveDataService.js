@@ -1,6 +1,7 @@
 
 import { getIO } from "../socket.js";
 import { metricsContainer } from "../../lib/cosmos.ts";
+import { activityService } from "./ActivityService.js";
 
 // ==========================================
 // Strategies
@@ -45,6 +46,10 @@ class ChangeFeedStrategy {
 
     async loop(onNewData, onError) {
         while (this.isRunning) {
+            if (activityService.isIdle()) {
+                await new Promise(resolve => setTimeout(resolve, this.pollingInterval * 2));
+                continue;
+            }
             try {
                 if (this.iterator && this.iterator.hasMoreResults) {
                     const response = await this.iterator.readNext();
@@ -87,6 +92,10 @@ class PollingStrategy {
 
     async loop(onNewData, onError) {
         while (this.isRunning) {
+            if (activityService.isIdle()) {
+                await new Promise(resolve => setTimeout(resolve, this.pollingInterval * 2));
+                continue;
+            }
             try {
                 // Generic SQL Query for new records
                 // Note: DuckDB/Postgres compatible

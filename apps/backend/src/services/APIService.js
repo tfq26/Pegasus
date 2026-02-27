@@ -1,5 +1,6 @@
 import { db } from "../db/index.js";
 import { sql } from "drizzle-orm";
+import { activityService } from "./ActivityService.js";
 
 /**
  * Generic API Service for fetching external data and syncing it to Neon/Postgres.
@@ -43,6 +44,7 @@ export class APIService {
      * Fetches data from the API and syncs it to the configured table.
      */
     async sync() {
+        if (activityService.isIdle()) return;
         try {
             if (!db) return;
 
@@ -121,7 +123,7 @@ export const API_DEFAULTS = {
     STOCK_SIMULATOR: {
         name: 'StockSimulator',
         table: 'stock',
-        interval: 5000,
+        interval: 300000,
         url: null, // Signals simulation mode
     },
     WEATHER: {

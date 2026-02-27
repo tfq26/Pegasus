@@ -67,9 +67,12 @@ export const DIALECTS = {
         },
         limitations: [
             "CRITICAL: Cannot use expressions (like SUBSTRING) or aliases in ORDER BY when GROUP BY is present.",
-            "RULE: If using GROUP BY on an expression, OMIT the ORDER BY clause entirely. The UI will handle sorting."
+            "RULE: If using GROUP BY on an expression, OMIT the ORDER BY clause entirely. The UI will handle sorting.",
+            "QUOTING: Use double quotes for identifiers only if they contain special characters or are reserved keywords.",
+            "PREFIXING: All properties MUST be prefixed with the root alias (usually 'c'). e.g. 'c.name', NOT 'name'."
         ],
         examples: [
+            "SELECT c.id, c.name FROM c WHERE CONTAINS(LOWER(c.name), 'test')",
             "SELECT SUBSTRING(c.timestamp, 0, 10) as day, AVG(c.cpuPercent) as avg_cpu FROM c GROUP BY SUBSTRING(c.timestamp, 0, 10)",
             "SELECT c.serverName, c.cpuPercent, c.errorMessage FROM c WHERE c.status = 'online' AND (c.cpuPercent > 80 OR c.errorMessage != null)"
         ],
@@ -78,24 +81,23 @@ export const DIALECTS = {
             mappings: {
                 'LIKE': 'CONTAINS/STARTSWITH/ENDSWITH',
                 'ILIKE': 'LOWER() + CONTAINS',
-                'JOIN': 'NOT SUPPORTED',
-                'LIMIT': 'TOP',
+                'JOIN': 'NOT SUPPORTED (unless within same document)',
+                'LIMIT': 'TOP (or OFFSET/LIMIT at end)',
                 'OFFSET': 'OFFSET...LIMIT'
             },
             transformations: [
-                "FROM table → FROM c (always use 'c' as root alias)",
-                "table.column → c.column (prefix all columns with 'c.')",
-                "LIKE '%pattern%' → CONTAINS(LOWER(c.column), 'pattern')",
-                "LIKE 'pattern%' → STARTSWITH(c.column, 'pattern')",
-                "LIKE '%pattern' → ENDSWITH(c.column, 'pattern')",
-                "LIMIT n → TOP n (place at start: SELECT TOP n)"
+                "FROM table_name → FROM c (always use 'c' as root alias)",
+                "column_name → c.column_name (root alias prefixing is MANDATORY)",
+                "LOWER(column) LIKE '%pattern%' → CONTAINS(LOWER(c.column), 'pattern')",
+                "COUNT(*) → COUNT(1)",
+                "Identifier quoting: \"Column\" → [\"Column\"] or just c.Column if valid"
             ],
             unsupportedFeatures: [
-                'JOIN (any type)',
-                'Subqueries in FROM',
-                'Window functions',
+                'CROSS/INNER/LEFT JOIN across containers',
+                'Subqueries in FROM clause',
+                'Window functions (OVER, PARTITION BY)',
                 'CTEs (WITH clause)',
-                'UNION/INTERSECT/EXCEPT'
+                'UNION / INTERSECT / EXCEPT'
             ]
         }
     },

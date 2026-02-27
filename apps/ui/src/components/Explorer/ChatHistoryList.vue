@@ -28,7 +28,7 @@ function formatDate(timestamp: any) {
 <template>
   <div class="space-y-6">
     <div class="flex items-center justify-between px-1">
-      <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Session History</h3>
+      <h3 class="text-[10px] font-bold  tracking-[0.2em] text-muted-foreground">Session History</h3>
       <div class="flex gap-2">
         <button 
           @click="emit('create-chat')"
@@ -53,7 +53,7 @@ function formatDate(timestamp: any) {
         <div class="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center mx-auto opacity-50">
           <Search class="w-5 h-5 text-muted-foreground" />
         </div>
-        <p class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No session history</p>
+        <p class="text-[10px] font-bold  tracking-widest text-muted-foreground">No session history</p>
       </div>
 
       <div
@@ -70,7 +70,7 @@ function formatDate(timestamp: any) {
         <div class="flex justify-between items-start gap-3">
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium truncate group-hover:text-foreground transition-colors">{{ chat.title }}</p>
-            <p class="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground mt-1">{{ formatDate(chat.updated_at) }}</p>
+            <p class="text-[10px] font-bold  tracking-tighter text-muted-foreground mt-1">{{ formatDate(chat.updated_at) }}</p>
           </div>
           <button 
             @click.stop="emit('delete-chat', chat)"

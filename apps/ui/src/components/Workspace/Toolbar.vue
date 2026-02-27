@@ -7,9 +7,10 @@ import {
 import ToolbarChat from './Toolbars/ToolbarChat.vue'
 import ToolbarQuery from './Toolbars/ToolbarQuery.vue'
 import ToolbarSpreadsheet from './Toolbars/ToolbarSpreadsheet.vue'
+import ToolbarDataStudio from './Toolbars/ToolbarDataStudio.vue'
 
 const props = defineProps<{
-  mode: 'chat' | 'write' | 'spreadsheet' | 'note' | 'file'
+  mode: 'chat' | 'write' | 'spreadsheet' | 'note' | 'file' | 'datastudio'
   connections: any[]
   selectedConnectionId: string
   isExecuting: boolean
@@ -38,6 +39,15 @@ const props = defineProps<{
   zoomLevel?: number
   isSheet?: boolean
   chatName?: string
+  
+  // Data Studio Specific
+  studioTitle?: string
+  isExcelSource?: boolean
+  isSavedView?: boolean
+  stagedCount?: number
+  aiCommand?: string
+  isAIProcessing?: boolean
+  isCompact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -68,9 +78,9 @@ const emit = defineEmits<{
   'translate': []
   'explain-query': []
   'load-query': [query: string]
-  'export-chat': []
+  'export-chat': [format: 'json' | 'text']
+  'delete-chat': []
   'save': []
-  'toggle-wrangler': []
   'version-change': [version: number]
   'update:text-wrap': [value: boolean]
   'update:show-gridlines': [value: boolean]
@@ -81,6 +91,12 @@ const emit = defineEmits<{
   'note-download': []
   'update:zoom-level': [value: number]
   'save-sheet': []
+  'update:aiCommand': [value: string]
+  'submit-ai-command': []
+  'save-view': []
+  'toggle-staging': []
+  'delete': []
+  'update:isCompact': [value: boolean]
 }>()
 
 const expanded = ref(false)
@@ -113,9 +129,8 @@ const models = computed(() => {
           :is-executing="isExecuting"
           @update:ai-options="emit('update:aiOptions', $event)"
           @run="emit('run')"
-          @clear="emit('clear')"
-          @export-chat="emit('export-chat')"
-          @toggle-wrangler="emit('toggle-wrangler')"
+          @delete-chat="emit('delete-chat')"
+          @export-chat="(f) => emit('export-chat', f)"
           :chat-name="chatName"
         />
 
@@ -176,6 +191,29 @@ const models = computed(() => {
           @auto-fit="emit('format', 'auto-fit')"
           @update:ai-options="emit('update:aiOptions', $event)"
           @update:zoom-level="emit('update:zoom-level', $event)"
+        />
+
+        <!-- Data Studio Mode -->
+        <ToolbarDataStudio
+          v-if="mode === 'datastudio'"
+          :ai-options="aiOptions"
+          :available-models="models"
+          :is-executing="isExecuting"
+          :title="studioTitle || 'Data Studio'"
+          :is-excel-source="isExcelSource || false"
+          :is-saved-view="isSavedView || false"
+          :staged-count="stagedCount || 0"
+          :ai-command="aiCommand || ''"
+          :is-a-i-processing="isAIProcessing || false"
+          :is-compact="isCompact"
+          @update:ai-options="emit('update:aiOptions', $event)"
+          @update:ai-command="emit('update:aiCommand', $event)"
+          @update:is-compact="emit('update:isCompact', $event)"
+          @submit-ai-command="emit('submit-ai-command')"
+          @save-view="emit('save-view')"
+          @toggle-staging="emit('toggle-staging')"
+          @delete="emit('delete')"
+          @export="emit('export', 'xlsx')"
         />
 
         <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->

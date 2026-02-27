@@ -1,6 +1,7 @@
 import { db } from "../db/index.js"
 import { adapters } from "../../adapters/index.js"
 import { sql } from "drizzle-orm"
+import { activityService } from "./ActivityService.js"
 
 const activePollers = new Map(); // connectionId -> NodeJS.Timeout
 
@@ -105,10 +106,12 @@ export const SyncService = {
         if (!connection.enableLiveCache) return;
 
         console.log(`[SyncService] Starting polling for ${connection.id}`);
-        const intervalSeconds = Math.max(10, Number(connection.pollingInterval) || 300);
+        // Increase minimum interval to 2 minutes to reduce server load
+        const intervalSeconds = Math.max(120, Number(connection.pollingInterval) || 300);
         const intervalMs = intervalSeconds * 1000;
 
         const timer = setInterval(() => {
+            if (activityService.isIdle()) return;
             this.pollAndSync(connection)
         }, intervalMs);
 

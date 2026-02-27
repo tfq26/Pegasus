@@ -185,7 +185,14 @@ export class AIClient {
             settings = { modelId: settingsOrModelId }
         }
         const provider = await this.getProviderForModel(settings.modelId, settings.userId)
-        return provider.generateQuery(prompt, context, settings)
+
+        // Centralized Strategy Injection
+        let finalPrompt = prompt;
+        if (settings.intent) {
+            finalPrompt = provider.enrichPromptWithStrategies(prompt, settings.intent);
+        }
+
+        return provider.generateQuery(finalPrompt, context, settings)
     }
 
     async analyzeResults(question, results, query, modelId, schemaContext = {}) {
@@ -200,41 +207,60 @@ export class AIClient {
 
     async listModels(userId) {
         const models = []
+        const providerTasks = []
 
-        // 1. Add Cloud Models if connected
+        // 1. Prepare Cloud Model Tasks if connected
         if (userId) {
-            // Check AWS
-            try {
-                const vaultKey = `secret/pegasus/users/${userId}/cloud/aws/token`;
-                const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
-                if (tokenData) {
-                    const creds = JSON.parse(tokenData);
-                    const awsProvider = new AWSBedrockProvider({
-                        accessKeyId: creds.accessKeyId,
-                        secretAccessKey: creds.secretAccessKey,
-                        region: creds.region || 'us-east-1'
-                    });
-                    const awsModels = await awsProvider.listModels();
-                    models.push(...awsModels.map(m => ({ ...m, id: `aws:${m.id}` })));
+            providerTasks.push((async () => {
+                try {
+                    const vaultKey = `secret/pegasus/users/${userId}/cloud/aws/token`;
+                    const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
+                    if (tokenData) {
+                        const creds = JSON.parse(tokenData);
+                        const awsProvider = new AWSBedrockProvider({
+                            accessKeyId: creds.accessKeyId,
+                            secretAccessKey: creds.secretAccessKey,
+                            region: creds.region || 'us-east-1'
+                        });
+                        const awsModels = await awsProvider.listModels();
+                        return awsModels.map(m => ({ ...m, id: `aws:${m.id}` }));
+                    }
+                } catch (e) {
+                    // console.warn('AWS listing failed:', e.message);
                 }
-            } catch (e) {
-                // Ignore connection errors during listing
-            }
-            // Can add Azure/GCP here similarly
+                return [];
+            })());
+            // Can add Azure/GCP tasks here similarly
         }
 
-        // 2. Add Standard Models
-        for (const provider of this.providers.values()) {
-            try {
-                const providerModels = await provider.listModels()
-                if (Array.isArray(providerModels)) {
-                    models.push(...providerModels)
+        // 2. Add Standard Provider Tasks
+        for (const [id, provider] of this.providers.entries()) {
+            providerTasks.push((async () => {
+                try {
+                    // Add timeout protection (5s) for each provider fetch
+                    const providerModelsPromise = provider.listModels();
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error(`Timeout fetching from ${id}`)), 5000)
+                    );
+
+                    const providerModels = await Promise.race([providerModelsPromise, timeoutPromise]);
+                    return Array.isArray(providerModels) ? providerModels : [];
+                } catch (e) {
+                    console.error(`Error fetching models from provider '${id}':`, e.message);
+                    return [];
                 }
-            } catch (e) {
-                console.error('Error fetching models from provider:', e)
-            }
+            })());
         }
-        return models
+
+        // 3. Execute all in parallel
+        const results = await Promise.allSettled(providerTasks);
+        results.forEach(result => {
+            if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+                models.push(...result.value);
+            }
+        });
+
+        return models;
     }
 
     async recommendVisualization(query, results, previousConfig, modelId, suggestedChartType) {
@@ -248,21 +274,75 @@ export class AIClient {
     }
 
     async generateText(prompt, modelId, options = {}) {
-        // Support options.userId if provided
         const provider = await this.getProviderForModel(modelId, options.userId)
-        const result = await provider.generateContent([{ role: 'user', content: prompt }], options)
+
+        // Centralized Strategy Injection
+        let finalPrompt = prompt;
+        if (options.intent) {
+            finalPrompt = provider.enrichPromptWithStrategies(prompt, options.intent);
+        }
+
+        const result = await provider.generateContent([{ role: 'user', content: finalPrompt }], options)
         return result.text || result
     }
 
     async generateContent(messages, options = {}) {
         const provider = await this.getProviderForModel(options.model, options.userId)
+
+        // Enrich the last user message if intent is provided
+        if (options.intent && messages.length > 0) {
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg.role === 'user') {
+                lastMsg.content = provider.enrichPromptWithStrategies(lastMsg.content, options.intent);
+            }
+        }
+
         const result = await provider.generateContent(messages, options)
         return result
     }
 
+    static EMBEDDING_FALLBACKS = {
+        'models/text-embedding-004': 'models/embedding-001',
+        'text-embedding-3-small': 'text-embedding-ada-002'
+    };
+
+    static EMBEDDING_MODEL_MAPPING = {
+        'openai': 'text-embedding-3-small',
+        'gemini': 'models/text-embedding-004'
+    };
+
     async generateEmbedding(text, modelId, options = {}) {
-        const provider = await this.getProviderForModel(modelId, options.userId)
-        return provider.embed(text, options)
+        const resolvedModel = AIClient.EMBEDDING_MODEL_MAPPING[modelId] || modelId || "models/text-embedding-004";
+        const provider = await this.getProviderForModel(resolvedModel, options.userId);
+
+        try {
+            // Standardized Batch-to-Sequential strategy
+            if (Array.isArray(text)) {
+                try {
+                    const result = await provider.embed(text, { ...options, model: primaryModel });
+                    if (result === null) throw new Error("Batch embedding returned null");
+                    return result;
+                } catch (batchErr) {
+                    console.warn(`[AIClient] Batch embedding failed, falling back to sequential: ${batchErr.message}`);
+                    return await Promise.all(text.map(t => this.generateEmbedding(t, resolvedModel, options)));
+                }
+            }
+
+            const result = await provider.embed(text, { ...options, model: resolvedModel });
+            if (result === null) throw new Error("Embedding returned null");
+            return result;
+
+        } catch (e) {
+            console.warn(`[AIClient] Embedding attempt failed for ${resolvedModel}: ${e.message}`);
+            const fallbackModel = AIClient.EMBEDDING_FALLBACKS[resolvedModel];
+            if (fallbackModel) {
+                console.log(`[AIClient] Triggering fallback: ${primaryModel} -> ${fallbackModel}`);
+                return this.generateEmbedding(text, fallbackModel, options);
+            }
+
+            console.error(`[AIClient] All embedding attempts failed:`, e.message);
+            return null; // Return null to allow caller (like RAGService) to skip gracefully
+        }
     }
 }
 

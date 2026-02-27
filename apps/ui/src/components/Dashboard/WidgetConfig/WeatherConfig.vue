@@ -66,7 +66,7 @@
         <div class="space-y-2 border-t pt-4 mt-4">
           <label class="text-sm font-medium flex items-center justify-between">
             Custom API Key
-            <span class="text-[10px] uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Optional</span>
+            <span class="text-[10px]  tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Optional</span>
           </label>
           <input
             v-model="config.apiKey"

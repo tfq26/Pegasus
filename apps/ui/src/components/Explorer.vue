@@ -24,11 +24,11 @@ import SpaceSelector from './Explorer/SpaceSelector.vue'
 import ConfirmDialog from '@/components/Common/ConfirmDialog.vue'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
-import { useSheetStore } from '@/stores/sheet'
+import { useDataViewStore } from '@/stores/dataView'
 import { useDashboardStore } from '@/stores/dashboard'
 
 const connectionStore = useConnectionStore()
-const sheetStore = useSheetStore()
+const dataViewStore = useDataViewStore()
 const dashboardStore = useDashboardStore()
 
 // Add state for selected table
@@ -101,7 +101,9 @@ const emit = defineEmits<{
   'toggle-pin': []
   'select-note': [note: any]
   'select-file': [file: any]
-  'select-sheet': [sheet: any]
+  'edit-data-view': [view: any]
+  'trash-data-view': [viewId: string]
+  'add-data-view': []
   'select-session': [session: any]
   'delete-session': [session: any]
 }>()
@@ -111,7 +113,7 @@ const spaceStore = useSpaceStore()
 
 onMounted(() => {
   spaceStore.loadSpaces()
-  sheetStore.loadSheets(unref(spaceStore.currentSpaceId) || '')
+  dataViewStore.loadSheets(unref(spaceStore.currentSpaceId) || '')
   
   // Force refresh connections to ensure we have latest space assignments
   connectionStore.loadConnections(true)
@@ -128,8 +130,19 @@ const {
   connectionSchemas, 
   schemaFor, 
   refreshSchemas,
-  refreshConnectionSchema
+  refreshConnectionSchema,
+  getTableDetails
 } = useExplorerSchema(connections)
+
+const handleRefreshTableDetails = async (conn: ConnectionEntry, table: string) => {
+  try {
+    toast.info(`Fetching details for ${table}...`)
+    await getTableDetails(conn, table)
+    toast.success(`Details updated for ${table}`)
+  } catch (err: any) {
+    toast.error('Fetch failed', { description: err.message })
+  }
+}
 
 const filteredConnections = computed(() => {
   // If no specific space context is loaded yet, show everything (safe fallback)
@@ -159,7 +172,7 @@ const filteredConnections = computed(() => {
 
 const currentFiles = computed(() => spaceStore.currentSpaceFiles || [])
 const currentNotes = computed(() => spaceStore.currentSpaceNotes || [])
-const currentSheets = computed(() => sheetStore.getAllSheets())
+const currentDataViews = computed(() => dataViewStore.getAllSheets())
 
 const {
   viewer,
@@ -208,7 +221,7 @@ const handleGlobalRefresh = async () => {
     await Promise.all([
       refreshSchemas(true),
       spaceStore.loadSpaces(),
-      sheetStore.loadSheets(unref(spaceStore.currentSpaceId) || ''),
+      dataViewStore.loadSheets(unref(spaceStore.currentSpaceId) || ''),
       connectionStore.loadConnections(true)
     ])
     toast.success('Refreshed', { description: 'All sources updated' })
@@ -668,8 +681,8 @@ const onTestDataGenerated = (sql: string) => {
     toast.success('SQL generated in Query Editor')
 }
 
-// --- Sheet Logic ---
-const handleAddSheet = async () => {
+// --- Data View Logic ---
+const handleAddDataView = async () => {
     // Ensure we have a space selected
     if (!spaceStore.currentSpaceId) {
         toast.info('Selecting primary space...')
@@ -682,29 +695,29 @@ const handleAddSheet = async () => {
     }
 
     try {
-        await sheetStore.saveSheet({
-            name: "New Spreadsheet",
+        await dataViewStore.saveSheet({ // sheetStore still manages sheets, but we call them data views
+            name: "New Data View",
             data: { cells: [], rowCount: 100, colCount: 26, version: 1 },
             spaceId: unref(spaceStore.currentSpaceId)
         })
-        toast.success('Spreadsheet created')
+        toast.success('Data View created')
     } catch (e: any) {
-        toast.error('Failed to create sheet', { description: e.message })
+        toast.error('Failed to create data view', { description: e.message })
     }
 }
 
-const handleDeleteSheet = async (sheet: any) => {
+const handleDeleteDataView = async (view: any) => {
     confirmDialogState.value = {
         open: true,
-        title: 'Delete Sheet',
-        description: `Delete sheet "${sheet.name}"?`,
+        title: 'Delete Data View',
+        description: `Delete data view "${view.name}"?`,
         variant: 'destructive',
-        confirmText: 'Delete Sheet',
+        confirmText: 'Delete Data View',
         loading: false,
         onConfirm: async () => {
              try {
-                await sheetStore.deleteSheet(sheet.id)
-                toast.success('Sheet deleted')
+                await dataViewStore.deleteSheet(view.id) // sheetStore still manages sheets
+                toast.success('Data View deleted')
             } catch (e: any) {
                 toast.error('Delete failed', { description: e.message })
             }
@@ -712,19 +725,8 @@ const handleDeleteSheet = async (sheet: any) => {
     }
 }
 
-const handleSelectSheet = (sheet: any) => {
-    // TODO: Open sheet in specialized viewer/editor
-    // For now, emit event or open in grid (handled by parent Workspace probably?)
-    // Actually, Explorer shouldn't handle VIEWING, just selection.
-    // We emit an event.
-    
-    // We will assume the parent handles `select-sheet` if we emit something?
-    // But `Explorer` props/emits don't have `select-sheet`.
-    // Let's rely on `emit('edit-table')` maybe? No, that's for DB.
-    
-    // The Workspace needs to know to open a Link/Route for this Sheet.
-    // Or we emit a custom event.
-    // Let's add 'select-sheet' to Explorer Emits first.
+const handleSelectDataView = (view: any) => {
+    emit('edit-data-view', view)
 }
 
 
@@ -816,7 +818,7 @@ const handleSelectSheet = (sheet: any) => {
               :files="(currentFiles as any)"
               :notes="(currentNotes as any)"
               :spaces="(spaceStore.allSpaces as any)"
-              :sheets="(currentSheets as any)"
+              :data-views="(currentDataViews as any)"
               :chats="chats"
               :query-history="queryHistory"
               :query-sessions="querySessions"
@@ -836,23 +838,24 @@ const handleSelectSheet = (sheet: any) => {
               @add-table="handleAddTable"
               @health-check="handleHealthCheck"
               @add-note-to-dashboard="handleAddNoteToDashboard"
+              @refresh-table-details="handleRefreshTableDetails"
               
               @select-file="handleSelectFile"
               @select-note="handleSelectNote"
-              @select-sheet="(sheet) => emit('select-sheet', sheet)"
+              @select-data-view="(view: any) => emit('edit-data-view', view)"
               
               @add-connection="addConnectionModalOpen = true"
               @upload-file="handleUploadFile"
               @add-file="handleUploadFile"
               @add-note="handleAddNote"
-              @add-sheet="handleAddSheet"
+              @add-data-view="handleAddDataView"
               
               @update:context="(c) => currentContext = c"
               @move-connection="handleMoveConnection"
               
               @delete-file="handleDeleteFile"
               @delete-note="handleDeleteNote"
-              @delete-sheet="handleDeleteSheet"
+              @delete-data-view="handleDeleteDataView"
               
               @selection-change="(items) => selectedItems = items"
               @delete-files="handleBulkDelete"

@@ -139,6 +139,20 @@ TARGET DIALECT: ${dialect.displayName}
             });
         }
 
+        // Add schema context if available
+        if (schema && (schema.columns || schema.mappings)) {
+            prompt += `\nSCHEMA CONTEXT:\n`;
+            if (schema.columns) {
+                prompt += `Available columns: ${schema.columns.map(c => c.name || c).join(', ')}\n`;
+            }
+            if (schema.mappings && schema.mappings.columns) {
+                prompt += `Column Mappings (Natural Name -> DB Name):\n`;
+                Object.entries(schema.mappings.columns).forEach(([k, v]) => {
+                    prompt += `- ${k} → ${v}\n`;
+                });
+            }
+        }
+
         prompt += `\n
 INSTRUCTIONS:
 1. Translate the SQL query to ${dialect.displayName} syntax
@@ -193,7 +207,7 @@ Return ONLY the JSON object, no additional text.`;
             // Call AI for translation
             const response = await aiClient.generateText(
                 prompt,
-                'gemini-2.0-flash-exp', // Use fast model for translation
+                'gemini-2.0-flash', // Use stable flash model for translation
                 {
                     temperature: 0.1, // Low temperature for consistent translations
                     maxTokens: 2000

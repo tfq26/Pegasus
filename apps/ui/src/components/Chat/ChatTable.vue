@@ -214,7 +214,7 @@ const paginatedData = computed(() => {
               class="px-3 py-2 cursor-pointer select-none group whitespace-nowrap align-middle text-left"
             >
               <div class="flex items-center gap-1.5 transition-colors group-hover:text-foreground">
-                <span class="text-[10px] font-bold tracking-tight uppercase">{{ col }}</span>
+                <span class="text-[10px] font-bold tracking-tight ">{{ col }}</span>
                 <ArrowUpDown class="w-2.5 h-2.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-all" :class="{'text-primary opacity-100': sortKey === col}" />
               </div>
             </th>

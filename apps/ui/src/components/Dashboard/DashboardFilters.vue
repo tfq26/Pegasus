@@ -1,7 +1,7 @@
 <template>
   <div v-if="parameters && Object.keys(parameters).length > 0" class="px-6 py-2 border-b border-border bg-card/40 flex flex-wrap items-center gap-4">
     <div v-for="(val, key) in parameters" :key="key" class="flex items-center gap-2">
-      <label :for="'param-' + key" class="text-xs font-medium text-muted-foreground uppercase tracking-wider">{{ key }}</label>
+      <label :for="'param-' + key" class="text-xs font-medium text-muted-foreground  tracking-wider">{{ key }}</label>
       
       <!-- Date Picker (if key contains date) -->
       <div v-if="key.toLowerCase().includes('date')" class="relative">

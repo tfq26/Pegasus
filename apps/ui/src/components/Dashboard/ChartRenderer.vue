@@ -20,7 +20,7 @@
       >
         {{ formatStatValue(data) }}
       </div>
-      <div class="text-sm text-muted-foreground uppercase tracking-widest opacity-80 font-medium">{{ options?.label || '' }}</div>
+      <div class="text-sm text-muted-foreground  tracking-widest opacity-80 font-medium">{{ options?.label || '' }}</div>
       <div v-if="customization?.description" class="text-xs text-muted-foreground mt-3 max-w-[85%] leading-relaxed">
         {{ customization.description }}
       </div>
@@ -50,7 +50,7 @@
         
         <!-- 5-Day Forecast -->
         <div v-if="weatherData.forecast && weatherData.forecast.length > 0" class="space-y-3">
-          <h4 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70 px-1">5-Day Forecast</h4>
+          <h4 class="text-[10px] font-bold  tracking-[0.2em] text-muted-foreground/70 px-1">5-Day Forecast</h4>
           <div class="grid grid-cols-5 gap-2">
             <div 
               v-for="day in weatherData.forecast" 

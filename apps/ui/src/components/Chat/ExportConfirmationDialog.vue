@@ -44,7 +44,7 @@ const formatLabel = computed(() => {
             <FileDown class="h-4 w-4" />
           </div>
           <div>
-            <DialogTitle class="text-[13px] font-black uppercase tracking-widest text-stone-100">Export to {{ formatLabel }}</DialogTitle>
+            <DialogTitle class="text-[13px] font-black  tracking-widest text-stone-100">Export to {{ formatLabel }}</DialogTitle>
             <DialogDescription class="text-[10px] text-stone-500 font-mono italic">DATA EXTRACTION PROTOCOL</DialogDescription>
           </div>
         </div>
@@ -66,13 +66,13 @@ const formatLabel = computed(() => {
       <div class="px-6 py-4 border-t border-stone-800 bg-stone-900/30 flex justify-end items-center gap-3">
         <button 
           @click="isOpen = false"
-          class="px-4 py-2 border border-stone-800 hover:bg-stone-800 text-stone-400 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+          class="px-4 py-2 border border-stone-800 hover:bg-stone-800 text-stone-400 text-[10px] font-black  tracking-widest rounded-lg transition-all"
         >
           Cancel
         </button>
         <button 
           @click="emit('confirm')"
-          class="flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white hover:bg-violet-500 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-xl shadow-violet-950/20"
+          class="flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white hover:bg-violet-500 text-[10px] font-black  tracking-widest rounded-lg transition-all shadow-xl shadow-violet-950/20"
         >
           <span>Begin Export</span>
         </button>

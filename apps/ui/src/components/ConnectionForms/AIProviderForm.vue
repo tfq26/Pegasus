@@ -16,7 +16,7 @@ const providers = [
 <template>
   <div class="grid gap-4 md:grid-cols-2">
     <div class="space-y-1.5 md:col-span-2">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">AI Service</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">AI Service</label>
       <Select v-model="connectionForm.ai_provider.service">
         <SelectTrigger class="w-full h-9 rounded-lg border-input bg-background">
           <SelectValue />
@@ -30,7 +30,7 @@ const providers = [
     </div>
 
     <div class="space-y-1.5 md:col-span-2">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">API Key / Token</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">API Key / Token</label>
       <input 
         v-model="connectionForm.ai_provider.apiKey" 
         type="password"
@@ -43,7 +43,7 @@ const providers = [
     </div>
 
     <div v-if="connectionForm.ai_provider.service === 'azure_openai'" class="space-y-1.5 md:col-span-2">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Endpoint Base URL</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Endpoint Base URL</label>
         <input 
             v-model="connectionForm.ai_provider.baseUrl" 
             placeholder="https://my-resource.openai.azure.com/" 
@@ -52,7 +52,7 @@ const providers = [
     </div>
 
     <div class="space-y-1.5 md:col-span-2">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Default Model</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Default Model</label>
         <input 
             v-model="connectionForm.ai_provider.defaultModel" 
             placeholder="gpt-4o" 

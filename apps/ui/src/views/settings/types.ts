@@ -80,6 +80,7 @@ export type SettingsModel = {
   confirmDestructive?: boolean
   notifications?: boolean
   chatAutoDeleteDays?: number
+  downloadsFolder?: string
   azureCredentials?: {
     tenantId: string
     clientId: string

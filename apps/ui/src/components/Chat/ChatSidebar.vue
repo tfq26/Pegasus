@@ -24,7 +24,8 @@
           @toggle-pin="$emit('toggle-pin')"
           @select-note="$emit('select-note', $event)"
           @select-file="$emit('select-file', $event)"
-          @select-sheet="$emit('select-sheet', $event)"
+          @edit-data-view="$emit('edit-data-view', $event)"
+          @add-data-view="$emit('add-data-view')"
         />
       </div>
 
@@ -89,7 +90,8 @@ defineEmits<{
   'toggle-pin': []
   'select-note': [note: any]
   'select-file': [file: any]
-  'select-sheet': [sheet: any]
+  'edit-data-view': [view: any]
+  'add-data-view': []
 }>()
 
 // Resizing Logic

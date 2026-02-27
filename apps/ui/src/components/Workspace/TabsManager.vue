@@ -1,7 +1,7 @@
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { MessageSquare, Table, Database, X, Plus } from 'lucide-vue-next';
+import { ref } from 'vue';
+import { MessageSquare, Table, Database, X, Plus, FileSpreadsheet, Grid, Sparkles } from 'lucide-vue-next';
 import {
   Tooltip,
   TooltipContent,
@@ -12,8 +12,7 @@ import {
 export interface Tab {
   id: string;
   label: string;
-  type: 'chat' | 'query' | 'table';
-  isDirty?: boolean;
+  type: 'chat' | 'query' | 'table' | 'default' | 'mockup';
   data?: {
       tableName?: string;
       connection?: any;
@@ -39,36 +38,10 @@ const emit = defineEmits<{
   (e: 'add', type: Tab['type']): void;
 }>();
 
-const isDropdownOpen = ref(false);
-const plusButtonRef = ref<HTMLButtonElement | null>(null);
-const dropdownStyle = ref<any>({});
-
-const updatePosition = () => {
-    if (!plusButtonRef.value) return;
-    const rect = plusButtonRef.value.getBoundingClientRect();
-    dropdownStyle.value = {
-        top: `${rect.bottom + 4}px`,
-        left: `${rect.left}px`,
-    };
-}
-
-const toggleDropdown = () => {
-  if (!isDropdownOpen.value) {
-      updatePosition();
-      isDropdownOpen.value = true;
-  } else {
-      isDropdownOpen.value = false;
-  }
-};
-
-const closeDropdown = () => {
-  isDropdownOpen.value = false;
-};
-
 const addTab = (type: Tab['type']) => {
   emit('add', type);
-  isDropdownOpen.value = false;
 };
+
 
 const getTabTooltip = (tab: Tab) => {
   if (tab.type === 'chat') return 'AI Chat Instance';
@@ -82,6 +55,18 @@ const getTabTooltip = (tab: Tab) => {
   const tableName = data.tableName || tab.label;
   
   return `${tableName} @ ${connectionName}`;
+};
+
+const getTabIcon = (tab: Tab) => {
+  if (tab.type === 'chat') return MessageSquare;
+  if (tab.type === 'query') return Database;
+  if (tab.type === 'table') return Table;
+  if (tab.type === 'mockup') {
+    if (tab.data?.isExcelSource) return Grid;
+    if (tab.data?.isSavedView) return Sparkles;
+    return Table;
+  }
+  return Table;
 };
 
 </script>
@@ -102,9 +87,7 @@ const getTabTooltip = (tab: Tab) => {
               @click="emit('update:activeTabId', tab.id)"
             >
               <!-- Icon based on type -->
-              <MessageSquare v-if="tab.type === 'chat'" class="w-3 h-3 opacity-70" />
-              <Table v-else-if="tab.type === 'table'" class="w-3 h-3 opacity-70" />
-              <Database v-else-if="tab.type === 'query'" class="w-3 h-3 opacity-70" />
+              <component :is="getTabIcon(tab)" class="w-3.5 h-3.5 opacity-70" :class="{ 'text-green-600': tab.type === 'mockup' && tab.data?.isExcelSource, 'text-purple-500': tab.type === 'chat' }" />
               
               <span class="truncate font-medium">{{ tab.label }}</span>
               
@@ -128,12 +111,11 @@ const getTabTooltip = (tab: Tab) => {
     </TooltipProvider>
 
     <!-- Add New Tab Button (Immediately to the right) -->
-    <div class="relative ml-1 shrink-0">
+    <div class="ml-1 shrink-0">
         <button 
-          ref="plusButtonRef"
           class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" 
           title="New Tab"
-          @click.stop="toggleDropdown"
+          @click.stop="addTab('default')"
         >
            <Plus class="w-4 h-4" />
         </button>
@@ -141,31 +123,5 @@ const getTabTooltip = (tab: Tab) => {
 
     <!-- Spacer to fill the rest of the bar -->
     <div class="flex-1"></div>
-    
-    <!-- Teleport dropdown to body to escape stacking context -->
-    <Teleport to="body">
-      <!-- Backdrop to close dropdown -->
-      <div 
-        v-show="isDropdownOpen" 
-        class="fixed inset-0 z-[9998]"
-        @click="closeDropdown"
-      ></div>
-      
-      <!-- Dropdown Menu -->
-      <div 
-        v-show="isDropdownOpen"
-        :style="dropdownStyle"
-        class="fixed w-32 bg-popover border border-border rounded-md shadow-lg z-[9999] flex flex-col py-1"
-      >
-        <button 
-          v-for="type in (['chat', 'table', 'query'] as const)" 
-          :key="type"
-          class="px-3 py-1.5 text-xs text-left hover:bg-muted capitalize"
-          @click="addTab(type)"
-        >
-          New {{ type }}
-        </button>
-      </div>
-    </Teleport>
   </div>
 </template>

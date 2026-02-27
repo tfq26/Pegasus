@@ -69,7 +69,7 @@ const tierAccentClass = computed(() => {
            </div>
            
            <div class="flex flex-col items-start">
-               <div class="text-[10px] uppercase font-bold text-muted-foreground leading-none">
+               <div class="text-[10px]  font-bold text-muted-foreground leading-none">
                    History
                </div>
            </div>
@@ -102,8 +102,8 @@ const tierAccentClass = computed(() => {
                        >
                            <div class="flex items-center justify-between mb-1">
                                <div class="flex items-center gap-2 truncate pr-2">
-                                   <span v-if="op.category === 'query'" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold uppercase">SQL</span>
-                                   <span v-else-if="op.category === 'ai'" class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-500 font-bold uppercase">AI</span>
+                                   <span v-if="op.category === 'query'" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold ">SQL</span>
+                                   <span v-else-if="op.category === 'ai'" class="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-500 font-bold ">AI</span>
                                    <span class="text-xs font-medium text-foreground truncate" :title="op.label">
                                        {{ op.label }}
                                    </span>

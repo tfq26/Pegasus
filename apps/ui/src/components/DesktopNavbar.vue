@@ -76,7 +76,7 @@
               {{ user.firstName || 'User' }}
               <span
                 v-if="tierDisplay && subscriptionTier !== 'free'"
-                class="text-[8px] px-1 py-0.5 rounded font-black uppercase tracking-wider shadow-sm"
+                class="text-[8px] px-1 py-0.5 rounded font-black  tracking-wider shadow-sm"
                 :class="tierDisplay.badgeClass"
               >
                 {{ tierDisplay.label }}

@@ -31,6 +31,9 @@ class EntitlementService {
             return
         }
 
+        // Prevent parallel fetches
+        if (this._isLoading.value && !force) return
+
         const now = Date.now()
         if (!force && this._lastFetched && (now - this._lastFetched) < this.CACHE_DURATION) {
             return

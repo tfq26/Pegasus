@@ -189,14 +189,7 @@ export class EntitlementService {
      */
     async hasFeature(userId, featureName) {
         if (!userId) return false;
-        const rawId = this._getRawId(userId);
-
-        const user = await this.db.query.users.findFirst({
-            where: eq(users.id, rawId),
-            columns: { subscriptionTier: true }
-        });
-
-        const tier = user?.subscriptionTier || 'free';
+        const tier = await this.getTier(userId);
 
         const FEATURES = {
             'free': [],
@@ -208,6 +201,21 @@ export class EntitlementService {
 
         const allowedFeatures = FEATURES[tier] || [];
         return allowedFeatures.includes(featureName);
+    }
+
+    /**
+     * Helper to get user's subscription tier
+     */
+    async getTier(userId) {
+        if (!userId) return 'free';
+        const rawId = this._getRawId(userId);
+
+        const user = await this.db.query.users.findFirst({
+            where: eq(users.id, rawId),
+            columns: { subscriptionTier: true }
+        });
+
+        return user?.subscriptionTier || 'free';
     }
 
     /**

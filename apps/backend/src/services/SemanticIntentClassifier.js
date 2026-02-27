@@ -22,6 +22,10 @@ export class SemanticIntentClassifier {
         action: [
             /\b(create|update|delete|insert|add|remove|modify|change)\b/i,
             /\b(save|export|download|upload)\b/i
+        ],
+        comparison: [
+            /\b(compared to|than|vs|versus|last week|previous|historical|change|increase|decrease|growth|delta)\b/i,
+            /\b(better|worse|up|down|more|less)\b/i
         ]
     };
 

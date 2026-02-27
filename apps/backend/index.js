@@ -48,6 +48,7 @@ import { getAuthToken } from "./lib/auth.js"
 import { getPayments } from "./src/routes/payments.js"
 import adminFixTier from "./src/routes/admin-fix-tier.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
+import { authMiddleware, requireUser } from "./src/middleware/auth.js"
 import { storageRoutes } from "./src/routes/storage.js"
 import importRoutes from "./src/routes/import.js"
 import supportRoutes from "./src/routes/support.js"
@@ -74,6 +75,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
 import crypto from "node:crypto"
+import { logger } from "./src/services/Logger.js";
+import { traceMiddleware } from "./src/middleware/trace.js";
+import { errorMiddleware } from "./src/middleware/error.js";
+import { cacheMiddleware } from "./src/middleware/cache.js";
 import { analyzeAndPrintToTerminal } from "./src/lib/piscesTerminal.js"
 
 console.log(`[Backend] Booting Pegasus at ${new Date().toISOString()}`);
@@ -102,11 +107,8 @@ const allowedOrigins = [
 
 const app = new Hono()
 
-// --- EMERGENCY DIAGNOSTIC LOGGER (Top Level) ---
-app.use('*', async (c, next) => {
-    console.log(`[Proxy] Incoming Request: ${c.req.method} ${c.req.url} (Origin: ${c.req.header('origin') || 'none'})`);
-    await next();
-});
+// --- Global Trace & Logging Middleware ---
+app.use('*', traceMiddleware);
 
 // Health Checks (Immediate)
 app.get('/health', (c) => c.text('PEGASUS_OK'))
@@ -120,7 +122,7 @@ app.get('/debug/info', (c) => {
         frontendUrl: frontendUrl
     })
 })
-console.log("[Checkpoint] Diagnostic routes and logger registered");
+logger.info("Diagnostic routes and logger registered");
 
 // Refined CORS configuration
 const corsConfig = {
@@ -133,14 +135,6 @@ const corsConfig = {
         // 2. Extra safety for exact production deployment
         if (origin === "https://pegasus-ui-chi.vercel.app") return origin;
 
-        //** Pegasus Backend - Main Entry Point (Drizzle + Neon) - Trigger Restart v3 */
-        // 3. Pegasus Vercel deployments (regex for better coverage)
-        if (origin.endsWith('.vercel.app') && (origin.includes('pegasus') || origin.includes('tfq26'))) return origin;
-
-        // 3. Local development
-        const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
-        if (!isProd && (origin.includes('localhost') || origin.includes('127.0.0.1'))) return origin;
-
         return null;
     },
     methods: ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
@@ -150,35 +144,19 @@ const corsConfig = {
     maxAge: 86400
 };
 
-// --- AI Configuration ---
-app.route("/ai-config", aiRoutes);
-
 // --- Chat Endpoint ---
 app.use("/ai/chat/*", cors(corsConfig))
 
 // Apply CORS globally
 app.use("*", cors(corsConfig))
 
-// --- Unhandled Error Capture (Jobs, Async, etc.) ---
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('😱 [Unhandled Rejection]', reason);
-    if (process.env.PEGASUS_DEV_MODE === 'true') {
-        analyzeAndPrintToTerminal(reason instanceof Error ? reason : new Error(String(reason)), {
-            path: 'UNHANDLED_REJECTION',
-            context: 'Global Process'
-        });
-    }
+// --- Unhandled Rejection Capture ---
+process.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled Rejection', reason instanceof Error ? reason : new Error(String(reason)));
 });
 
 process.on('uncaughtException', (err) => {
-    console.error('💀 [Uncaught Exception]', err);
-    if (process.env.PEGASUS_DEV_MODE === 'true') {
-        analyzeAndPrintToTerminal(err, {
-            path: 'UNCAUGHT_EXCEPTION',
-            context: 'Global Process'
-        });
-    }
-    // Give some time for analysis to print before exiting if it's fatal
+    logger.error('Uncaught Exception', err);
     setTimeout(() => process.exit(1), 2000);
 });
 
@@ -205,18 +183,7 @@ if (process.env.PEGASUS_DEV_MODE === 'true') {
     });
 }
 
-// Request Logger
-app.use('*', async (c, next) => {
-    const start = Date.now();
-    await next();
-    const ms = Date.now() - start;
-
-    // Skip high-frequency polling logs to keep console clean
-    const isPolling = c.req.url.includes('/status') || c.req.url.includes('/usage') || c.req.url.includes('/subscription-status');
-    if (isPolling && (c.res.status === 200 || c.res.status === 304)) return;
-
-    console.log(`[${c.req.method}] ${c.req.url} - ${c.res.status} (${ms}ms)`);
-});
+// (Manual loggers removed in favor of traceMiddleware)
 
 if (typeof CompressionStream !== 'undefined') {
     app.use('*', async (c, next) => {
@@ -246,30 +213,8 @@ app.notFound((c) => {
     return c.text('404 Not Found', 404)
 })
 
-app.onError((err, c) => {
-    console.error('[Global Error]', err)
-
-    // Ensure CORS headers are present even on errors
-    const origin = c.req.header('origin')
-    if (origin && (allowedOrigins.includes(origin) || (origin.endsWith('.vercel.app') && origin.includes('pegasus')))) {
-        c.header('Access-Control-Allow-Origin', origin)
-        c.header('Access-Control-Allow-Credentials', 'true')
-    }
-
-    // Trigger Pisces terminal analysis in development
-    if (process.env.PEGASUS_DEV_MODE === 'true') {
-        analyzeAndPrintToTerminal(err, {
-            path: c.req.path,
-            method: c.req.method
-        });
-    }
-
-    return c.json({
-        error: 'Internal Server Error',
-        message: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    }, 500)
-})
+// Global Error Handler
+app.onError(errorMiddleware);
 
 // Mount all routes
 // --- Experimental Features Router ---
@@ -368,7 +313,12 @@ app.route('/api/kusto-ingest', kustoIngest)
 app.route('/import', importRoutes) // Smart Batch Import
 app.route('/support', piscesRoutes) // Smart Pisces Analysis
 app.route('/support', supportRoutes) // Automated Support Reporting
-app.route("/api/query-sessions", querySessionRoutes)
+app.route("/query-sessions", querySessionRoutes)
+
+// --- AI Configuration (Cached) ---
+app.route("/api/ai", aiRoutes);
+app.route("/ai", aiRoutes);
+app.use("/ai/models", cacheMiddleware({ ttl: 60000 * 10 })); // Cache model list for 10 mins
 app.route("/api/sheets", sheetsRouter)
 app.get('/payments', getPayments)
 import { exportRoute } from "./src/routes/export.js"
@@ -1532,45 +1482,20 @@ app.get("/fix-user", async (c) => {
 
 // Settings Routes
 // Settings Routes
-app.get("/settings", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
+app.get("/settings", authMiddleware, requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-
-        const userRecord = await db.query.users.findFirst({
-            where: eq(users.id, userId),
-            columns: { config: true }
-        });
-
-        if (!userRecord) {
-            return c.json({ error: "User not found" }, 404)
-        }
-
-        return c.json({ settings: userRecord.config || {} })
+        const user = c.get('user');
+        return c.json({ settings: user?.config || {} })
     } catch (error) {
         console.error("Fetch settings error:", error)
         return c.json({ error: "Failed to fetch settings" }, 500)
     }
 })
 
-app.post("/settings", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
+app.post("/settings", authMiddleware, requireUser, async (c) => {
     try {
-        const payload = await verify(token, jwtSecret)
-        let userId = payload.sub
+        const user = c.get('user');
         const settings = await c.req.json()
-
-        const resolvedId = await upsertUser(payload)
-        if (resolvedId) {
-            const parts = resolvedId.toString().split(':')
-            if (parts.length > 1) userId = parts[1]
-            else userId = resolvedId
-        }
 
         // Store settings in user config column
         await db.update(users)
@@ -1865,10 +1790,21 @@ app.post("/api/query-by-id", async (c) => {
 
 
 
+const schemaCache = new Map();
+const SCHEMA_TTL = 300000; // 5 minutes
+
 app.post("/schema", async (c) => {
     try {
         const body = await c.req.json()
         let { provider, connection } = body
+
+        // Cache Key: provider + connection string (simple hash)
+        const cacheKey = `${provider}:${JSON.stringify(connection)}`;
+        const cached = schemaCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < SCHEMA_TTL)) {
+            console.log(`[/schema] Returning cached schema for ${provider}`);
+            return c.json(cached.data);
+        }
 
         if (provider === 'file') provider = 'duckdb'
         if (provider === 'surrealdb') provider = 'postgres'
@@ -1980,24 +1916,8 @@ app.post("/schema", async (c) => {
                 databases = [connection.database]
             }
 
-            const previews = await Promise.all(
-                tables.map(async (table) => {
-                    try {
-                        const rows = await adapter.sampleCollection(table, 3)
-                        return {
-                            table,
-                            displayName: cleanTableName(table),
-                            rows
-                        }
-                    } catch (error) {
-                        return {
-                            table,
-                            displayName: cleanTableName(table),
-                            rows: []
-                        }
-                    }
-                }),
-            )
+            // In shallow mode, we skip previews to save time and bandwidth
+            const previews = []
 
             // Create metadata map for display names (if not already found)
             tables.forEach(t => {
@@ -2026,13 +1946,18 @@ app.post("/schema", async (c) => {
 
             const sanitizedPreviews = sanitizeBigInt(previews);
 
-            return c.json({
+            const responseData = {
                 ok: true,
                 tables,  // Keep as array of strings for backward compatibility
                 tableMetadata,  // Add metadata separately
                 previews: sanitizedPreviews,
                 databases
-            })
+            };
+
+            // Store in cache
+            schemaCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+            return c.json(responseData)
         } catch (err) {
             // Return a more structured error so the UI can show friendlier messages.
             // Many driver errors include a 'code' or 'name' property; include that when present.
@@ -2042,471 +1967,517 @@ app.post("/schema", async (c) => {
         } finally {
             await adapter.disconnect()
         }
-    } catch (err) {
-        return c.json({ error: err.message }, 500)
-    }
-})
-
-// AI Routes moved to src/routes/chat.js
-
-// Queries Routes
-// Queries Routes
-app.get("/queries", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        const spaceId = c.req.query("space_id")
-
-        // Only fetch queries with 'user' source - these are actual SQL queries
-        // AI usage logs (ai_generation, ai_spreadsheet, etc.) contain natural language prompts
-        // and should not be shown in the Queries tab
-        const conditions = [
-            eq(queryHistory.userId, userId),
-            eq(queryHistory.source, 'user')
-        ]
-
-        if (spaceId) {
-            conditions.push(eq(queryHistory.spaceId, spaceId))
-        } else {
-            // If no spaceId provided (legacy), verify behavior. 
-            // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
-            // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
-            // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
-        }
-
-        const results = await db.select()
-            .from(queryHistory)
-            .where(and(...conditions))
-            .orderBy(desc(queryHistory.createdAt))
-            .limit(50);
-
-        const mapped = results.map(q => ({
-            id: q.id,
-            query: q.query,
-            timestamp: q.createdAt.getTime(),
-            source: q.source,
-            model: q.model,
-            status: q.status,
-            connection_id: q.connectionId,
-            space_id: q.spaceId
-        }))
-
-        return c.json(mapped)
-    } catch (e) {
-        console.error("Fetch queries error:", e)
-        return c.json({ error: "Failed to fetch queries" }, 500)
-    }
-})
-
-app.post("/queries", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-        await upsertUser(payload)
-        const { query, source, status, connection_id, model, tokens_used, space_id } = await c.req.json()
-
-        // Create record
-        const [created] = await db.insert(queryHistory).values({
-            userId,
-            query,
-            source: source || 'user',
-            model: model || null,
-            status: status || 'success',
-            connectionId: connection_id || null,
-            tokensUsed: tokens_used || 0,
-            spaceId: space_id || null
-        }).returning();
-
-        return c.json({ id: created.id })
-    } catch (e) {
-        console.error("Save query error:", e)
-        return c.json({ error: "Failed to save query" }, 500)
-    }
-})
-
-app.delete("/queries/:id", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const { id } = c.req.param()
-
-        // User can only delete their own queries
-        await db.delete(queryHistory).where(and(eq(queryHistory.id, id), eq(queryHistory.userId, payload.sub)));
-
-        return c.json({ success: true })
-    } catch (e) {
-        console.error("Delete query error:", e)
-        return c.json({ error: "Failed to delete query" }, 500)
-    }
-})
-
-app.delete("/queries", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-
-        // Delete all queries for this user
-        await db.delete(queryHistory).where(eq(queryHistory.userId, payload.sub));
-
-        return c.json({ success: true })
-    } catch (e) {
-        console.error("Clear queries error:", e)
-        return c.json({ error: "Failed to clear queries" }, 500)
-    }
-})
-
-// Feedback endpoint
-app.post("/feedback", async (c) => {
-    try {
-        const { createFeedback } = await import("./src/services/feedback.js")
-        const { sendCriticalFeedbackEmail } = await import("./src/services/email.js")
-
-        const body = await c.req.json()
-        const feedbackData = {
-            userEmail: body.userEmail,
-            featureCategory: body.featureCategory,
-            customFeature: body.customFeature,
-            issueType: body.issueType,
-            description: body.description,
-            browserInfo: body.browserInfo,
-            isUrgent: body.isUrgent || false
-        }
-
-        // Validate required fields
-        if (!feedbackData.featureCategory || !feedbackData.issueType || !feedbackData.description) {
-            return c.json({ error: "Missing required fields" }, 400)
-        }
-
-        const { feedback, priority } = await createFeedback(feedbackData)
-
-        // Send immediate email for critical feedback
-        if (priority === "critical") {
-            await sendCriticalFeedbackEmail(feedback)
-        }
-
-        return c.json({
-            success: true,
-            message: "Feedback submitted successfully",
-            priority
-        })
-    } catch (e) {
-        console.error("Error submitting feedback:", e)
-        return c.json({ error: "Failed to submit feedback" }, 500)
-    }
-})
-
-
-
-app.get("/usage", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-    try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-
-        // DEV MODE BYPASS
-        if (process.env.PEGASUS_DEV_MODE === 'true' && userId === 'dev_user') {
-            const mockUsage = {
-                tokens: 5000,
-                limit: 1000000,
-                tier: 'pro_plus',
-                purchasedTokens: 0,
-                purchasedStorage: 0,
-                storage: 1024 * 1024 * 100, // 100MB
-                storageLimit: 1024 * 1024 * 1024 * 10,
-                storageFormatted: '100 MB',
-                storageLimitFormatted: '10 GB',
-                tierUsage: {
-                    connections: { current: 1, limit: 100 },
-                    tables: { current: 5, limit: 1000 },
-                    dashboards: { current: 1, limit: 50 }
-                }
-            }
-            return c.json(mockUsage)
-        }
-
-
-        const {
-            tier,
-            tokenLimit: limit,
-            storageLimit,
-            purchasedTokens,
-            purchasedStorage
-        } = await calculateUserLimits(db, userId);
-
-        // Calculate start of current month
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        // Get total tokens used THIS MONTH
-        const result = await db.select({ total: sql`sum(${queryHistory.tokensUsed})` })
-            .from(queryHistory)
-            .where(and(
-                eq(queryHistory.userId, userId),
-                gte(queryHistory.createdAt, startOfMonth)
-            ));
-        const tokenResult = result[0]?.total || 0;
-        const totalTokens = Number(tokenResult);
-
-        // Get storage used (approximate size of uploaded DBs)
-        // Get storage used
-        const connResult = await db.select({ config: connections.config })
-            .from(connections)
-            .where(and(eq(connections.userId, userId), eq(connections.type, 'sqlite')));
-
-        let totalStorage = 0
-
-        // 1. Local SQLite storage (legacy)
-        for (const row of connResult) {
+        app.post("/schema/details", async (c) => {
             try {
-                const config = JSON.parse(row.config)
-                const sqliteConfig = config.sqlite
+                const body = await c.req.json()
+                let { provider, connection, table } = body
+                if (!table) return c.json({ error: "Table name required" }, 400)
 
-                if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {
-                    const filePath = sqliteConfig.path.replace('file:', '')
+                // Extract userId from JWT token
+                const token = getAuthToken(c)
+                let userId = null
+                if (token) {
                     try {
-                        if (filePath.includes('/uploads/')) {
+                        const payload = await verify(token, jwtSecret)
+                        userId = payload.sub
+                    } catch (e) { }
+                }
+
+                const adapter = await createAdapter(provider, { ...connection, readOnly: true }, userId)
+                if (!adapter) return c.json({ error: `Provider '${provider}' not supported` }, 400)
+
+                try {
+                    await adapter.connect()
+                    const rows = await adapter.sampleCollection(table, 10)
+
+                    // Try to get column types if adapter supports it
+                    let columns = []
+                    try {
+                        // Some adapters might have a dedicated method, or we infer from rows
+                        if (rows.length > 0) {
+                            columns = Object.keys(rows[0]).map(key => ({
+                                name: key,
+                                type: typeof rows[0][key]
+                            }))
+                        }
+                    } catch (e) { }
+
+                    return c.json({
+                        ok: true,
+                        table,
+                        rows,
+                        columns
+                    })
+                } catch (err) {
+                    return c.json({ error: err.message }, 500)
+                } finally {
+                    await adapter.disconnect()
+                }
+            } catch (err) {
+                return c.json({ error: err.message }, 500)
+            }
+        })
+
+        // AI Routes moved to src/routes/chat.js
+
+        // Queries Routes
+        // Queries Routes
+        app.get("/queries", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+            try {
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
+                const spaceId = c.req.query("space_id")
+
+                // Only fetch queries with 'user' source - these are actual SQL queries
+                // AI usage logs (ai_generation, ai_spreadsheet, etc.) contain natural language prompts
+                // and should not be shown in the Queries tab
+                const conditions = [
+                    eq(queryHistory.userId, userId),
+                    eq(queryHistory.source, 'user')
+                ]
+
+                if (spaceId) {
+                    conditions.push(eq(queryHistory.spaceId, spaceId))
+                } else {
+                    // If no spaceId provided (legacy), verify behavior. 
+                    // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
+                    // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
+                    // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
+                }
+
+                const results = await db.select()
+                    .from(queryHistory)
+                    .where(and(...conditions))
+                    .orderBy(desc(queryHistory.createdAt))
+                    .limit(50);
+
+                const mapped = results.map(q => ({
+                    id: q.id,
+                    query: q.query,
+                    timestamp: q.createdAt.getTime(),
+                    source: q.source,
+                    model: q.model,
+                    status: q.status,
+                    connection_id: q.connectionId,
+                    space_id: q.spaceId
+                }))
+
+                return c.json(mapped)
+            } catch (e) {
+                console.error("Fetch queries error:", e)
+                return c.json({ error: "Failed to fetch queries" }, 500)
+            }
+        })
+
+        app.post("/queries", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+            try {
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
+                await upsertUser(payload)
+                const { query, source, status, connection_id, model, tokens_used, space_id } = await c.req.json()
+
+                // Create record
+                const [created] = await db.insert(queryHistory).values({
+                    userId,
+                    query,
+                    source: source || 'user',
+                    model: model || null,
+                    status: status || 'success',
+                    connectionId: connection_id || null,
+                    tokensUsed: tokens_used || 0,
+                    spaceId: space_id || null
+                }).returning();
+
+                return c.json({ id: created.id })
+            } catch (e) {
+                console.error("Save query error:", e)
+                return c.json({ error: "Failed to save query" }, 500)
+            }
+        })
+
+        app.delete("/queries/:id", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+            try {
+                const payload = await verify(token, jwtSecret)
+                const { id } = c.req.param()
+
+                // User can only delete their own queries
+                await db.delete(queryHistory).where(and(eq(queryHistory.id, id), eq(queryHistory.userId, payload.sub)));
+
+                return c.json({ success: true })
+            } catch (e) {
+                console.error("Delete query error:", e)
+                return c.json({ error: "Failed to delete query" }, 500)
+            }
+        })
+
+        app.delete("/queries", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+            try {
+                const payload = await verify(token, jwtSecret)
+
+                // Delete all queries for this user
+                await db.delete(queryHistory).where(eq(queryHistory.userId, payload.sub));
+
+                return c.json({ success: true })
+            } catch (e) {
+                console.error("Clear queries error:", e)
+                return c.json({ error: "Failed to clear queries" }, 500)
+            }
+        })
+
+        // Feedback endpoint
+        app.post("/feedback", async (c) => {
+            try {
+                const { createFeedback } = await import("./src/services/feedback.js")
+                const { sendCriticalFeedbackEmail } = await import("./src/services/email.js")
+
+                const body = await c.req.json()
+                const feedbackData = {
+                    userEmail: body.userEmail,
+                    featureCategory: body.featureCategory,
+                    customFeature: body.customFeature,
+                    issueType: body.issueType,
+                    description: body.description,
+                    browserInfo: body.browserInfo,
+                    isUrgent: body.isUrgent || false
+                }
+
+                // Validate required fields
+                if (!feedbackData.featureCategory || !feedbackData.issueType || !feedbackData.description) {
+                    return c.json({ error: "Missing required fields" }, 400)
+                }
+
+                const { feedback, priority } = await createFeedback(feedbackData)
+
+                // Send immediate email for critical feedback
+                if (priority === "critical") {
+                    await sendCriticalFeedbackEmail(feedback)
+                }
+
+                return c.json({
+                    success: true,
+                    message: "Feedback submitted successfully",
+                    priority
+                })
+            } catch (e) {
+                console.error("Error submitting feedback:", e)
+                return c.json({ error: "Failed to submit feedback" }, 500)
+            }
+        })
+
+
+
+        app.get("/usage", async (c) => {
+            const token = getAuthToken(c)
+            if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+            try {
+                const payload = await verify(token, jwtSecret)
+                const userId = payload.sub
+
+                // DEV MODE BYPASS
+                if (process.env.PEGASUS_DEV_MODE === 'true' && userId === 'dev_user') {
+                    const mockUsage = {
+                        tokens: 5000,
+                        limit: 1000000,
+                        tier: 'pro_plus',
+                        purchasedTokens: 0,
+                        purchasedStorage: 0,
+                        storage: 1024 * 1024 * 100, // 100MB
+                        storageLimit: 1024 * 1024 * 1024 * 10,
+                        storageFormatted: '100 MB',
+                        storageLimitFormatted: '10 GB',
+                        tierUsage: {
+                            connections: { current: 1, limit: 100 },
+                            tables: { current: 5, limit: 1000 },
+                            dashboards: { current: 1, limit: 50 }
+                        }
+                    }
+                    return c.json(mockUsage)
+                }
+
+
+                const {
+                    tier,
+                    tokenLimit: limit,
+                    storageLimit,
+                    purchasedTokens,
+                    purchasedStorage
+                } = await calculateUserLimits(db, userId);
+
+                // Calculate start of current month
+                const startOfMonth = new Date();
+                startOfMonth.setDate(1);
+                startOfMonth.setHours(0, 0, 0, 0);
+
+                // Get total tokens used THIS MONTH
+                const result = await db.select({ total: sql`sum(${queryHistory.tokensUsed})` })
+                    .from(queryHistory)
+                    .where(and(
+                        eq(queryHistory.userId, userId),
+                        gte(queryHistory.createdAt, startOfMonth)
+                    ));
+                const tokenResult = result[0]?.total || 0;
+                const totalTokens = Number(tokenResult);
+
+                // Get storage used (approximate size of uploaded DBs)
+                // Get storage used
+                const connResult = await db.select({ config: connections.config })
+                    .from(connections)
+                    .where(and(eq(connections.userId, userId), eq(connections.type, 'sqlite')));
+
+                let totalStorage = 0
+
+                // 1. Local SQLite storage (legacy)
+                for (const row of connResult) {
+                    try {
+                        const config = JSON.parse(row.config)
+                        const sqliteConfig = config.sqlite
+
+                        if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {
+                            const filePath = sqliteConfig.path.replace('file:', '')
                             try {
-                                const stats = await fs.stat(filePath)
-                                totalStorage += stats.size
-                            } catch (e) {
-                                if (typeof Bun !== 'undefined') {
-                                    const file = Bun.file(filePath)
-                                    totalStorage += await file.size()
+                                if (filePath.includes('/uploads/')) {
+                                    try {
+                                        const stats = await fs.stat(filePath)
+                                        totalStorage += stats.size
+                                    } catch (e) {
+                                        if (typeof Bun !== 'undefined') {
+                                            const file = Bun.file(filePath)
+                                            totalStorage += await file.size()
+                                        }
+                                    }
                                 }
-                            }
+                            } catch (e) { }
                         }
                     } catch (e) { }
                 }
-            } catch (e) { }
-        }
 
-        // 2. Cloud Storage from 'files' table
-        const [fileResult] = await db.select({ total: sql`sum(${files.size})` })
-            .from(files)
-            .where(eq(files.userId, userId));
-        totalStorage += Number(fileResult?.total || 0);
+                // 2. Cloud Storage from 'files' table
+                const [fileResult] = await db.select({ total: sql`sum(${files.size})` })
+                    .from(files)
+                    .where(eq(files.userId, userId));
+                totalStorage += Number(fileResult?.total || 0);
 
-        // 3. Cloud Storage from 'spaceFiles' table
+                // 3. Cloud Storage from 'spaceFiles' table
 
-        const [spaceFileSum] = await db.select({ total: sql`sum(${spaceFiles.fileSizeBytes})` })
-            .from(spaceFiles)
-            .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
-            .where(eq(dataSpaces.userId, userId));
+                const [spaceFileSum] = await db.select({ total: sql`sum(${spaceFiles.fileSizeBytes})` })
+                    .from(spaceFiles)
+                    .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+                    .where(eq(dataSpaces.userId, userId));
 
-        totalStorage += Number(spaceFileSum?.total || 0);
+                totalStorage += Number(spaceFileSum?.total || 0);
 
 
-        // Get tier-based usage summary
-        const tierUsage = await getUserUsageSummary(db, userId, tier)
+                // Get tier-based usage summary
+                const tierUsage = await getUserUsageSummary(db, userId, tier)
 
-        // Add tokens and storage to tierUsage for frontend compatibility
-        tierUsage.tokens = {
-            current: totalTokens,
-            limit: limit,
-            purchased: purchasedTokens,
-            percentage: limit > 0 ? Math.round((totalTokens / limit) * 100) : 0
-        }
+                // Add tokens and storage to tierUsage for frontend compatibility
+                tierUsage.tokens = {
+                    current: totalTokens,
+                    limit: limit,
+                    purchased: purchasedTokens,
+                    percentage: limit > 0 ? Math.round((totalTokens / limit) * 100) : 0
+                }
 
-        tierUsage.storage = {
-            current: totalStorage,
-            limit: storageLimit,
-            purchased: purchasedStorage,
-            currentFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
-            limitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
-            percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0
-        }
+                tierUsage.storage = {
+                    current: totalStorage,
+                    limit: storageLimit,
+                    purchased: purchasedStorage,
+                    currentFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
+                    limitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
+                    percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0
+                }
 
-        return c.json({
-            tokens: totalTokens,
-            limit: limit,
-            tier: tier,
-            purchasedTokens: purchasedTokens,
-            purchasedStorage: purchasedStorage,
-            storage: totalStorage, // in bytes
-            storageLimit: storageLimit,
-            storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
-            storageLimitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
-            tierUsage // Add tier-specific usage (connections, tables, dashboards, tokens, storage)
+                return c.json({
+                    tokens: totalTokens,
+                    limit: limit,
+                    tier: tier,
+                    purchasedTokens: purchasedTokens,
+                    purchasedStorage: purchasedStorage,
+                    storage: totalStorage, // in bytes
+                    storageLimit: storageLimit,
+                    storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
+                    storageLimitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
+                    tierUsage // Add tier-specific usage (connections, tables, dashboards, tokens, storage)
+                })
+            } catch (e) {
+                console.error("Fetch usage error:", e)
+                return c.json({ error: "Failed to fetch usage stats" }, 500)
+            }
         })
-    } catch (e) {
-        console.error("Fetch usage error:", e)
-        return c.json({ error: "Failed to fetch usage stats" }, 500)
-    }
-})
 
-// initialization block
-const isBun = typeof Bun !== 'undefined';
-// startServer logic moved to the bottom of the file to ensure instant port binding on Railway.
+        // initialization block
+        const isBun = typeof Bun !== 'undefined';
+        // startServer logic moved to the bottom of the file to ensure instant port binding on Railway.
 
-// Helper to create table and insert data (refactored to avoid duplication)
-async function createTableAndInsertData(tableName, rows) {
-    if (!rows || rows.length === 0) return;
+        // Helper to create table and insert data (refactored to avoid duplication)
+        async function createTableAndInsertData(tableName, rows) {
+            if (!rows || rows.length === 0) return;
 
-    const columnNames = new Set();
-    rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)));
+            const columnNames = new Set();
+            rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)));
 
-    // In Postgres, we'll create a table dynamically for user-uploaded data
-    // We'll use JSONB for simplicity since we don't know the schema ahead of time, 
-    // or we can try to guess types. For now, let's create a table with a 'data' jsonb column
-    // or dynamic columns.
+            // In Postgres, we'll create a table dynamically for user-uploaded data
+            // We'll use JSONB for simplicity since we don't know the schema ahead of time, 
+            // or we can try to guess types. For now, let's create a table with a 'data' jsonb column
+            // or dynamic columns.
 
-    const columnsSql = Array.from(columnNames).map(col => `"${col}" TEXT`).join(', ');
+            const columnsSql = Array.from(columnNames).map(col => `"${col}" TEXT`).join(', ');
 
-    try {
-        await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS "${tableName}" (
+            try {
+                await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS "${tableName}" (
       id SERIAL PRIMARY KEY,
       _row_order INTEGER,
       ${columnsSql}
     )`));
-        console.log(`[DB] Created dynamic table: ${tableName}`);
-    } catch (e) {
-        console.warn(`[DB] Table ${tableName} create warning:`, e.message);
-    }
-
-    // Batch Insert
-    const chunkSize = 50;
-    const allKeys = Array.from(columnNames);
-    const keysStr = allKeys.map(k => `"${k}"`).join(', ');
-
-    for (let i = 0; i < rows.length; i += chunkSize) {
-        const chunk = rows.slice(i, i + chunkSize);
-        if (!chunk.length) continue;
-
-        try {
-            // Try Batch Insert
-            const valuesChunks = [];
-            for (let j = 0; j < chunk.length; j++) {
-                const row = chunk[j];
-                const rowParams = [];
-                // _row_order
-                rowParams.push(i + j);
-                allKeys.forEach(k => {
-                    rowParams.push(row[k] !== undefined ? row[k] : null);
-                });
-
-                const rowSql = sql`(${rowParams[0]}`;
-                for (let p = 1; p < rowParams.length; p++) {
-                    rowSql.append(sql`, ${rowParams[p]}`);
-                }
-                rowSql.append(sql`)`);
-                valuesChunks.push(rowSql);
+                console.log(`[DB] Created dynamic table: ${tableName}`);
+            } catch (e) {
+                console.warn(`[DB] Table ${tableName} create warning:`, e.message);
             }
 
-            if (valuesChunks.length > 0) {
-                const finalQuery = sql.raw(`INSERT INTO "${tableName}" (_row_order, ${keysStr}) VALUES `);
-                finalQuery.append(valuesChunks[0]);
-                for (let k = 1; k < valuesChunks.length; k++) {
-                    finalQuery.append(sql`, `);
-                    finalQuery.append(valuesChunks[k]);
-                }
-                await db.execute(finalQuery);
-            }
+            // Batch Insert
+            const chunkSize = 50;
+            const allKeys = Array.from(columnNames);
+            const keysStr = allKeys.map(k => `"${k}"`).join(', ');
 
-        } catch (batchError) {
-            console.warn(`[DB] Batch insert failed for chunk ${i}, falling back to row-by-row. Error:`, batchError.message);
+            for (let i = 0; i < rows.length; i += chunkSize) {
+                const chunk = rows.slice(i, i + chunkSize);
+                if (!chunk.length) continue;
 
-            // Fallback: Row-by-Row
-            for (const row of chunk) {
-                const keys = Object.keys(row);
-                const values = keys.map(k => row[k]);
-                const rowKeysStr = keys.map(k => `"${k}"`).join(', ');
-                const placeholders = keys.map((_, idx) => `$${idx + 2}`).join(', ');
                 try {
-                    await db.execute(sql.raw(`
+                    // Try Batch Insert
+                    const valuesChunks = [];
+                    for (let j = 0; j < chunk.length; j++) {
+                        const row = chunk[j];
+                        const rowParams = [];
+                        // _row_order
+                        rowParams.push(i + j);
+                        allKeys.forEach(k => {
+                            rowParams.push(row[k] !== undefined ? row[k] : null);
+                        });
+
+                        const rowSql = sql`(${rowParams[0]}`;
+                        for (let p = 1; p < rowParams.length; p++) {
+                            rowSql.append(sql`, ${rowParams[p]}`);
+                        }
+                        rowSql.append(sql`)`);
+                        valuesChunks.push(rowSql);
+                    }
+
+                    if (valuesChunks.length > 0) {
+                        const finalQuery = sql.raw(`INSERT INTO "${tableName}" (_row_order, ${keysStr}) VALUES `);
+                        finalQuery.append(valuesChunks[0]);
+                        for (let k = 1; k < valuesChunks.length; k++) {
+                            finalQuery.append(sql`, `);
+                            finalQuery.append(valuesChunks[k]);
+                        }
+                        await db.execute(finalQuery);
+                    }
+
+                } catch (batchError) {
+                    console.warn(`[DB] Batch insert failed for chunk ${i}, falling back to row-by-row. Error:`, batchError.message);
+
+                    // Fallback: Row-by-Row
+                    for (const row of chunk) {
+                        const keys = Object.keys(row);
+                        const values = keys.map(k => row[k]);
+                        const rowKeysStr = keys.map(k => `"${k}"`).join(', ');
+                        const placeholders = keys.map((_, idx) => `$${idx + 2}`).join(', ');
+                        try {
+                            await db.execute(sql.raw(`
                   INSERT INTO "${tableName}" (_row_order, ${rowKeysStr})
                   VALUES ($1, ${placeholders})
                 `), [i + chunk.indexOf(row), ...values]);
-                } catch (e) {
-                    console.error(`[DB] Single row insert failed:`, e.message);
+                        } catch (e) {
+                            console.error(`[DB] Single row insert failed:`, e.message);
+                        }
+                    }
                 }
             }
         }
-    }
-}
 
-// 1. Core Server Start
-if (!isVercel) {
-    const numericPort = Number(port);
-    console.log(`[Railway] Booting instantly on 0.0.0.0:${numericPort}...`);
+        // 1. Core Server Start
+        if (!isVercel) {
+            const numericPort = Number(port);
+            console.log(`[Railway] Booting instantly on 0.0.0.0:${numericPort}...`);
 
-    // Basic health check registered BEFORE imports to be safe
-    app.get('/health', (c) => c.text('PEGASUS_OK'));
+            // Basic health check registered BEFORE imports to be safe
+            app.get('/health', (c) => c.text('PEGASUS_OK'));
 
-    const serverInstance = serve({
-        fetch: app.fetch.bind(app),
-        port: numericPort,
-        hostname: '0.0.0.0'
-    }, (info) => {
-        console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
+            const serverInstance = serve({
+                fetch: app.fetch.bind(app),
+                port: numericPort,
+                hostname: '0.0.0.0'
+            }, (info) => {
+                console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
 
-        // Ensure app.fetch is indeed the one being used
-        if (typeof app.fetch !== 'function') {
-            console.error('❌ [Main] CRITICAL ERROR: app.fetch is not a function! Hono is misconfigured.');
-        }
-
-        // 2. Load routes and backend services only AFTER the port is bound
-        (async () => {
-            const startInit = Date.now();
-            console.log("[Main] Starting full initialization...");
-            try {
-                // Initialize Socket.io
-                initSocketServer(serverInstance, allowedOrigins);
-                console.log("[Main] Socket.io initialized");
-
-                // Background Jobs
-                startAllJobs();
-                console.log("[Main] Background jobs scheduled");
-
-                // Start Server-dependent services
-                try {
-                    startPollingService();
-                    console.log("[Main] Polling service started");
-                } catch (e) { console.error("[Main] Polling error:", e.message); }
-
-                // Database connectivity check
-                try {
-                    await db.select({ val: sql`1` });
-                    console.log('[Main] Database (Neon) active');
-                } catch (e) {
-                    console.error('[Main] Warning: Database connectivity check failed:', e.message);
+                // Ensure app.fetch is indeed the one being used
+                if (typeof app.fetch !== 'function') {
+                    console.error('❌ [Main] CRITICAL ERROR: app.fetch is not a function! Hono is misconfigured.');
                 }
 
-                // DEV MODE: Setup test user
-                if (process.env.PEGASUS_DEV_MODE === 'true') {
-                    console.log('🛠️  [DEV_MODE] Setting up dev user...');
+                // 2. Load routes and backend services only AFTER the port is bound
+                (async () => {
+                    const startInit = Date.now();
+                    console.log("[Main] Starting full initialization...");
                     try {
-                        await db.insert(users).values({
-                            id: 'dev_user',
-                            email: 'dev@pegasus.ai',
-                            firstName: 'Developer', subscriptionTier: 'pro_plus', updatedAt: new Date()
-                        }).onConflictDoUpdate({ target: users.id, set: { updatedAt: new Date() } });
-                    } catch (e) { console.error('🛠️  [DEV_MODE] Setup failed:', e.message); }
-                }
+                        // Initialize Socket.io
+                        initSocketServer(serverInstance, allowedOrigins);
+                        console.log("[Main] Socket.io initialized");
 
-                console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
-            } catch (err) {
-                console.error("❌ [Main] Initialization error:", err);
-            }
-        })();
-    });
-}
+                        // Background Jobs
+                        startAllJobs();
+                        console.log("[Main] Background jobs scheduled");
 
-// Export for platforms
-// On Vercel, we need the handler as default export
-// On Bun, we export a dummy object to prevent Bun from auto-starting its own server
-const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
-export default defaultExport;
-export { app };
+                        // Start Server-dependent services
+                        try {
+                            startPollingService();
+                            console.log("[Main] Polling service started");
+                        } catch (e) { console.error("[Main] Polling error:", e.message); }
+
+                        // Database connectivity check
+                        try {
+                            await db.select({ val: sql`1` });
+                            console.log('[Main] Database (Neon) active');
+                        } catch (e) {
+                            console.error('[Main] Warning: Database connectivity check failed:', e.message);
+                        }
+
+                        // DEV MODE: Setup test user
+                        if (process.env.PEGASUS_DEV_MODE === 'true') {
+                            console.log('🛠️  [DEV_MODE] Setting up dev user...');
+                            try {
+                                await db.insert(users).values({
+                                    id: 'dev_user',
+                                    email: 'dev@pegasus.ai',
+                                    firstName: 'Developer', subscriptionTier: 'pro_plus', updatedAt: new Date()
+                                }).onConflictDoUpdate({ target: users.id, set: { updatedAt: new Date() } });
+                            } catch (e) { console.error('🛠️  [DEV_MODE] Setup failed:', e.message); }
+                        }
+
+                        console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
+                    } catch (err) {
+                        console.error("❌ [Main] Initialization error:", err);
+                    }
+                })();
+            });
+        }
+
+        // Export for platforms
+        // On Vercel, we need the handler as default export
+        // On Bun, we export a dummy object to prevent Bun from auto-starting its own server
+        const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
+        export default defaultExport;
+        export { app };

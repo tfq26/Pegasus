@@ -10,6 +10,7 @@ import { ChangeTracker } from './ChangeTracker';
 
 export class Engine {
     private cells: Map<string, CellData> = new Map();
+    private _cachedRows: Array<Record<string, any>> | null = null;
     private graph: DependencyGraph;
     public parser: FormulaParser;
     public config: EngineConfig;
@@ -22,6 +23,7 @@ export class Engine {
     public sourceTable: string | null = null;
     public sourceConnection: any | null = null; // Full connection config
     public sourceProvider: string | null = null;
+    public fetchPageCallback?: (offset: number, limit: number, sortBy?: string, sortDir?: string) => Promise<{ rows: any[] }>;
     public columnNames: string[] = [];
     protected originalData: Map<string, CellData> = new Map(); // Snapshot of loaded data
     protected rowIdMap: Map<number, any> = new Map(); // Store _rowid_ for each row (hidden from grid)
@@ -656,6 +658,8 @@ export class Engine {
      * Uses smart field naming: actual column names for named-headers mode, letters for column-letters mode
      */
     public getAllNonEmptyRows(): Array<Record<string, any>> {
+        if (this._cachedRows) return this._cachedRows;
+
         const rowsMap = new Map<number, Record<string, any>>();
 
         // Determine starting row based on schema mode
@@ -694,6 +698,7 @@ export class Engine {
             }
         }
 
+        this._cachedRows = result;
         return result;
     }
 
@@ -771,6 +776,7 @@ export class Engine {
      */
     public notifyChange() {
         if (this.isBatching) return; // Skip if batching
+        this._cachedRows = null;
         this.changeCallbacks.forEach(cb => cb());
         this.saveToStorage();
     }

@@ -14,15 +14,15 @@
           <!-- Tabs -->
           <Tabs v-model="activeTab" class="flex flex-col">
             <TabsList class="inline-flex h-12 items-center justify-start rounded-xl bg-muted/50 p-1 text-muted-foreground w-fit border border-border/40">
-              <TabsTrigger value="general" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs uppercase tracking-widest">
+              <TabsTrigger value="general" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs  tracking-widest">
                 <Settings class="w-3.5 h-3.5 mr-2" />
                 General
               </TabsTrigger>
-              <TabsTrigger value="colors" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs uppercase tracking-widest">
+              <TabsTrigger value="colors" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs  tracking-widest">
                 <Palette class="w-3.5 h-3.5 mr-2" />
                 Colors
               </TabsTrigger>
-              <TabsTrigger value="labels" v-if="elementConfig?.type !== 'stat'" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs uppercase tracking-widest">
+              <TabsTrigger value="labels" v-if="elementConfig?.type !== 'stat'" class="px-6 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all font-bold text-xs  tracking-widest">
                 <Tag class="w-3.5 h-3.5 mr-2" />
                 Labels
               </TabsTrigger>
@@ -51,7 +51,7 @@
         <div class="flex justify-between items-center gap-4 px-8 py-6 bg-muted/20 border-t border-border/40">
           <button 
             @click="resetToDefaults"
-            class="px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all active:scale-95 border border-transparent hover:border-border/60"
+            class="px-5 py-2.5 text-xs font-bold  tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all active:scale-95 border border-transparent hover:border-border/60"
           >
             Reset
           </button>
@@ -82,7 +82,7 @@
           <div class="flex items-center justify-between mb-8">
             <div>
               <h3 class="font-bold text-xl tracking-tight">Live Preview</h3>
-              <p class="text-xs text-muted-foreground font-medium uppercase tracking-widest mt-1">Real-time appearance</p>
+              <p class="text-xs text-muted-foreground font-medium  tracking-widest mt-1">Real-time appearance</p>
             </div>
             
             <div v-if="elementConfig?.type === 'stat'" class="flex gap-1 bg-muted/60 rounded-xl p-1 border border-border/40">
@@ -118,9 +118,9 @@
             <div class="flex items-center gap-3">
               <div class="flex items-center gap-2 bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full border border-emerald-500/20">
                 <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                <span class="text-[10px] font-bold uppercase tracking-widest">Live Sync</span>
+                <span class="text-[10px] font-bold  tracking-widest">Live Sync</span>
               </div>
-              <span class="text-[10px] font-medium text-muted-foreground uppercase opacity-60">Updated {{ lastPreviewUpdate }}</span>
+              <span class="text-[10px] font-medium text-muted-foreground  opacity-60">Updated {{ lastPreviewUpdate }}</span>
             </div>
           </div>
         </div>

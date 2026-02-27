@@ -381,7 +381,7 @@ function copyJoinCode() {
                           class="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2 border-b border-border/50 last:border-0"
                         >
                           <div class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold shrink-0">
-                            {{ user.first_name?.[0] || user.email[0].toUpperCase() }}
+                            {{ user.first_name?.[0] || user.email[0].to() }}
                           </div>
                           <div class="flex flex-col min-w-0">
                             <span class="font-medium truncate text-xs">{{ user.first_name }} {{ user.last_name }}</span>
@@ -416,7 +416,7 @@ function copyJoinCode() {
                 <div v-if="owner" class="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/50">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                      {{ owner.first_name?.[0] || owner.email[0].toUpperCase() }}
+                      {{ owner.first_name?.[0] || owner.email[0].to() }}
                     </div>
                     <div class="flex flex-col">
                       <span class="text-sm font-medium">{{ owner.first_name ? `${owner.first_name} ${owner.last_name || ''}` : owner.email }}</span>
@@ -430,7 +430,7 @@ function copyJoinCode() {
                 <div v-for="perm in permissions" :key="perm.email" class="flex items-center justify-between p-2 rounded-lg hover:bg-accent/50 group border border-transparent hover:border-border transition-all">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
-                      {{ (perm.first_name?.[0] || perm.email?.[0] || '?').toUpperCase() }}
+                      {{ (perm.first_name?.[0] || perm.email?.[0] || '?').to() }}
                     </div>
                     <div class="flex flex-col">
                       <span class="text-sm font-medium">{{ perm.first_name ? `${perm.first_name} ${perm.last_name || ''}` : perm.email }}</span>

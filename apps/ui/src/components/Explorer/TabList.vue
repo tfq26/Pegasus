@@ -115,7 +115,7 @@ function getIcon(type: Tab['type']) {
         <div class="w-10 h-10 rounded-xl bg-muted/30 border border-border/50 flex items-center justify-center mx-auto mb-3 opacity-20">
           <Archive class="w-5 h-5" />
         </div>
-        <p class="text-[10px] text-stone-600 uppercase tracking-widest font-bold">No tabs found</p>
+        <p class="text-[10px] text-stone-600  tracking-widest font-bold">No tabs found</p>
       </div>
     </div>
   </div>

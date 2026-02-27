@@ -42,7 +42,7 @@ const clearFile = () => {
 <template>
   <div class="space-y-4">
     <div class="space-y-2">
-      <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Project ID</label>
+      <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Project ID</label>
       <input
         v-model="props.connectionForm.bigquery.projectId"
         type="text"
@@ -53,7 +53,7 @@ const clearFile = () => {
     </div>
 
     <div class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Service Account Key (JSON)</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Service Account Key (JSON)</label>
         
         <div v-if="!fileName" class="border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center justify-center gap-2 hover:bg-muted/30 transition-colors cursor-pointer" @click="triggerFileSelect">
              <div class="p-3 rounded-full bg-primary/10 text-primary mb-1">
@@ -100,7 +100,7 @@ const clearFile = () => {
         
         <div v-if="props.connectionForm.bigquery.enableLiveCache" class="space-y-3">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
+                <label class="text-[10px]  tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
                 <input 
                     v-model.number="props.connectionForm.bigquery.pollingInterval" 
                     type="number"

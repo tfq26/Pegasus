@@ -70,7 +70,7 @@ function copyToClipboard(text: string) {
 <template>
   <div class="space-y-6">
     <div class="px-1 flex items-center justify-between">
-      <h3 class="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Query History</h3>
+      <h3 class="text-[10px] font-bold  tracking-[0.2em] text-muted-foreground">Query History</h3>
       <div class="flex items-center gap-2">
         <button 
           v-if="props.queryHistory?.length"
@@ -86,13 +86,13 @@ function copyToClipboard(text: string) {
 
     <div class="space-y-8">
       <div v-if="!props.queryHistory?.length" class="py-12 text-center">
-        <p class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-50">No recent queries</p>
+        <p class="text-[10px] font-bold  tracking-widest text-muted-foreground opacity-50">No recent queries</p>
       </div>
 
       <div v-for="(queries, label) in groupedHistory" :key="label">
         <div v-if="queries.length > 0" class="space-y-3">
           <div class="px-1 mb-2">
-            <span class="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{{ label }}</span>
+            <span class="text-[9px] font-bold  tracking-widest text-muted-foreground">{{ label }}</span>
           </div>
           
           <div class="space-y-2">
@@ -113,7 +113,7 @@ function copyToClipboard(text: string) {
                       </div>
                       <div class="flex-1 min-w-0 overflow-hidden">
                         <p class="text-xs font-mono truncate text-muted-foreground group-hover:text-foreground transition-colors">{{ q.query }}</p>
-                        <p class="text-[9px] text-muted-foreground mt-1 uppercase tracking-tighter font-bold">
+                        <p class="text-[9px] text-muted-foreground mt-1  tracking-tighter font-bold">
                           {{ formatTime(q.timestamp) }}
                         </p>
                       </div>
@@ -141,7 +141,7 @@ function copyToClipboard(text: string) {
             <button 
               v-if="queries.length > displayLimit"
               @click="displayLimit += 50"
-              class="w-full py-2 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
+              class="w-full py-2 text-[9px] font-bold  tracking-widest text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
             >
               Show More
               <ChevronDown class="w-3 h-3" />

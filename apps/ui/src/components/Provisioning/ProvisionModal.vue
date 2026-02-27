@@ -88,7 +88,7 @@
       <!-- Managed Config -->
       <div v-if="activeMode === 'managed'" class="space-y-4 animate-in slide-in-from-top-2 duration-300">
         <div class="space-y-1.5">
-          <label class="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Instance Nickname</label>
+          <label class="text-[10px]  font-bold text-muted-foreground tracking-widest">Instance Nickname</label>
           <input v-model="managedNickname" placeholder="e.g. MyProductionDB" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
         </div>
       </div>
@@ -96,7 +96,7 @@
       <!-- Azure Automation Form -->
       <div v-if="activeMode === 'azure_auto'" class="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
         <div class="flex items-center justify-between">
-            <label class="text-[10px] uppercase font-bold text-muted-foreground tracking-widest leading-none">Azure Credentials</label>
+            <label class="text-[10px]  font-bold text-muted-foreground tracking-widest leading-none">Azure Credentials</label>
             <button @click="importFromSettings('azure')" class="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
                 <Link2 class="w-3 h-3" /> Import from Linked Accounts
             </button>
@@ -115,7 +115,7 @@
       <!-- AWS Automation Form -->
       <div v-if="activeMode === 'aws_auto'" class="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
         <div class="flex items-center justify-between">
-            <label class="text-[10px] uppercase font-bold text-muted-foreground tracking-widest leading-none">AWS Credentials</label>
+            <label class="text-[10px]  font-bold text-muted-foreground tracking-widest leading-none">AWS Credentials</label>
             <button @click="importFromSettings('aws')" class="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
                 <Link2 class="w-3 h-3" /> Import from Linked Accounts
             </button>
@@ -132,7 +132,7 @@
 
       <!-- Local Guide -->
       <div v-if="activeMode === 'local'" class="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-        <label class="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Docker Command</label>
+        <label class="text-[10px]  font-bold text-muted-foreground tracking-widest">Docker Command</label>
         <code class="block p-3 bg-muted rounded-lg text-[10px] font-mono break-all pr-12 relative group">
           {{ localCommand }}
           <button @click="copyCommand(localCommand)" class="absolute right-2 top-2 p-1.5 hover:bg-background rounded-md transition-colors"><Copy class="w-4 h-4 text-muted-foreground" /></button>
@@ -202,7 +202,7 @@ const importFromSettings = (type: 'azure' | 'aws') => {
         Object.assign(awsCreds, cachedSettings.value.awsCredentials)
         toast.success('AWS credentials imported from Linked Accounts')
     } else {
-        toast.error(`No ${type.toUpperCase()} credentials found in your Linked Accounts.`)
+        toast.error(`No ${type.to()} credentials found in your Linked Accounts.`)
     }
 }
 

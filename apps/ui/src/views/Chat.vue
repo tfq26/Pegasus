@@ -33,7 +33,8 @@
       @sanitize-table="handleSanitizeFixed"
       @select-note="handleSelectNote"
       @select-file="handleSelectFile"
-      @select-sheet="handleSelectSheet"
+      @edit-data-view="handleEditDataView"
+      @add-data-view="handleAddDataView"
       @mouseenter="clearHoverTimer"
       @mouseleave="startHoverTimer"
     />
@@ -206,12 +207,14 @@ import UnsavedTabWarning from '@/components/Workspace/UnsavedTabWarning.vue'
 import UnsavedTabsDialog from '@/components/Workspace/UnsavedTabsDialog.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
-import { useCollaboration } from '@/composables/useCollaboration' 
+import { useCollaboration } from '@/composables/useCollaboration'
 import { useConnectionStore } from '@/stores/connection'
 import { useChatDialogs } from '@/composables/useChatDialogs'
 import { useChat } from '@/composables/useChat'
 import { useChatExecution } from '@/composables/useChatExecution'
 import { useChatToolbar } from '@/composables/useChatToolbar'
+import { useChatSidebar } from '@/composables/useChatSidebar'
+import { useChatConnectionSwitch } from '@/composables/useChatConnectionSwitch'
 
 const spaceStore = useSpaceStore()
 import { useTableActions } from '@/composables/useTableActions'
@@ -243,33 +246,13 @@ watch(() => connectionStore.selectedConnectionId, (val) => { selectedConnectionI
 const loadConnections = () => connectionStore.loadConnections()
 const _selectConnection = (id: string) => connectionStore.selectConnection(id)
 
-// Wrapper to handle workspace persistence
+// Connection switch handled by useChatConnectionSwitch (instantiated below with sidebar)
 const unsavedDialogVisible = ref(false)
-const pendingConnectionId = ref<string | null>(null)
-const pendingConnectionName = computed(() => {
-    const conn = connections.value.find(c => c.id === pendingConnectionId.value)
-    return conn ? (conn.alias || conn.nickname) : undefined
-})
 
 const handleSelectConnection = async (id: string | null) => {
-    // If we're deselecting/collapsing (id is null or empty)
-    if (!id) {
-        await _selectConnection('')
-        return
-    }
-    
-    // Seamless switch: auto-save current workspace and load the new one
+    if (!id) { await _selectConnection(''); return }
     await workspaceStore.switchConnection(id)
     await _selectConnection(id)
-}
-
-// Deprecated: No longer needed with connection-scoped tabs
-const handleMigrate = async () => {
-    console.warn('[Chat] handleMigrate is deprecated')
-}
-
-const handleDiscard = async () => {
-    console.warn('[Chat] handleDiscard is deprecated')
 }
 
 
@@ -600,74 +583,49 @@ const {
 
 // --- Local Adapters & Missing Logic ---
 
-const sidebarOpen = ref(true)
-const sidebarSide = ref<'left' | 'right'>('left')
+// Sidebar hover/pin/toggle — extracted composable
+const {
+  sidebarOpen,
+  sidebarSide,
+  isHoverRevealed,
+  effectiveSidebarOpen,
+  onHoverZoneEnter,
+  startHoverTimer,
+  clearHoverTimer,
+  toggleSidebar,
+} = useChatSidebar()
 
-// Hover Reveal Logic
-const isHoverRevealed = ref(false)
-const hoverTimer = ref<any>(null)
+// Connection switching + table open debounce — extracted composable
+const {
+  unsavedDialogVisible: _computedUnsaved,
+  pendingConnectionId,
+  pendingConnectionName,
+  tableOpenDebounce,
+  handleSelectConnection: _handleSelectConnection,
+  handleMigrate,
+  handleDiscard,
+} = useChatConnectionSwitch(
+  connections,
+  workspaceStore,
+  async (id: string) => { await _selectConnection(id) }
+)
 
-const effectiveSidebarOpen = computed(() => sidebarOpen.value || isHoverRevealed.value)
-
-const onHoverZoneEnter = () => {
-    isHoverRevealed.value = true
-    if (hoverTimer.value) clearTimeout(hoverTimer.value)
-}
-
-const startHoverTimer = () => {
-    // Only auto-hide if it's currently open due to hover (and not pinned open)
-    if (!sidebarOpen.value && isHoverRevealed.value) {
-        hoverTimer.value = setTimeout(() => {
-            isHoverRevealed.value = false
-        }, 500) // 0.5 seconds delay as requested
-    }
-}
-
-const clearHoverTimer = () => {
-    if (hoverTimer.value) clearTimeout(hoverTimer.value)
-}
-
-// Watch sidebarOpen to cancel hover state if user manually opens it
-watch(sidebarOpen, (isOpen) => {
-    if (isOpen) {
-        isHoverRevealed.value = false
-        clearHoverTimer()
-    }
-})
-
-
-const toggleSidebar = () => {
-    sidebarOpen.value = !sidebarOpen.value
-    sidebarSide.value = sidebarOpen.value ? (sidebarSide.value === 'left' ? 'right' : 'left') : sidebarSide.value
-}
-
-const tableOpenDebounce = ref(new Map<string, number>());
-
+// Local wrapper that matches ChatSidebar @edit-table signature: (conn, table)
 const handleEditTableWrapper = async (conn: any, table: string) => {
-    // If conn is provided, we use it, otherwise fallback to selectedConnection
-    const connection = conn || selectedConnection.value;
-    if (!connection) return;
+  const connection = conn || selectedConnection.value
+  if (!connection) return
 
-    // Check if we need to switch connection context first (Lazy Loading support)
-    if (connection.id !== selectedConnectionId.value) {
-        console.log('[Chat] Auto-switching connection for table open:', connection.id);
-        await handleSelectConnection(connection.id);
-    }
+  if (connection.id !== selectedConnectionId.value) {
+    await handleSelectConnection(connection.id)
+  }
 
-    // Debounce check
-    const key = `${connection.id}:${table}`;
-    const now = Date.now();
-    const last = tableOpenDebounce.value.get(key) || 0;
-    
-    if (now - last < 500) {
-        console.log('[Chat] Debounced open request for:', key);
-        return;
-    }
-    tableOpenDebounce.value.set(key, now);
+  const key = `${connection.id}:${table}`
+  const now = Date.now()
+  const last = tableOpenDebounce.value.get(key) || 0
+  if (now - last < 500) return
+  tableOpenDebounce.value.set(key, now)
 
-    if (workspaceRef.value?.openTable) {
-        workspaceRef.value.openTable(table, connection, connection.provider || 'sqlite');
-    }
+  workspaceRef.value?.openTable?.(table, connection, connection.provider || 'sqlite')
 }
 
 const handleSelectNote = (note: any) => {
@@ -682,10 +640,10 @@ const handleSelectFile = (file: any) => {
     }
 }
 
-const handleSelectSheet = (sheet: any) => {
+const handleEditDataView = (view: any) => {
     // Check if tab already exists
     const tabs = (workspaceStore.tabs as any)
-    const existing = tabs.find((t: any) => t.data?.sheetId === sheet.id)
+    const existing = tabs.find((t: any) => t.data?.viewId === view.id)
     
     if (existing) {
         workspaceStore.setActiveTab(existing.id)
@@ -693,13 +651,18 @@ const handleSelectSheet = (sheet: any) => {
         return
     }
     
-    workspaceStore.createTab('spreadsheet', {
-        sheetId: sheet.id,
-        label: sheet.name,
-        engineState: sheet.data,
-        isLocalSheet: true
+    workspaceStore.createTab('dataview', {
+        viewId: view.id,
+        label: view.name,
+        // For now, load existing data view state
+        isExcelSource: view.data?.isExcelSource,
+        isSavedView: view.data?.isSavedView
     })
-    mode.value = 'spreadsheet'
+}
+
+const handleAddDataView = async () => {
+    // This is handled by Explorer internal logic mostly
+    // But we might want to trigger it from Chat perspective too
 }
 
 // Note toolbar handlers

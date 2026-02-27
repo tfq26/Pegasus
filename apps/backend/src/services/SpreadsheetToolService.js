@@ -574,9 +574,37 @@ export class SpreadsheetToolService {
                     // Pass the full context (including schema/mappings) to compile
                     const sqlOrSqls = compiler.compile(intent, context);
 
+                    const executeWithHealing = async (sql, currentIntent) => {
+                        try {
+                            return await context.adapter.query(sql);
+                        } catch (error) {
+                            console.warn(`[SpreadsheetToolService] Query failed: ${error.message}. Attempting autonomous healing...`);
+
+                            const { queryHealingService } = await import('./QueryHealingService.js');
+                            const healResult = await queryHealingService.healQuery(
+                                sql,
+                                context.dialect || 'postgres',
+                                error.message,
+                                {
+                                    originalSql: sql,
+                                    intent: currentIntent,
+                                    schema: context.schema
+                                }
+                            );
+
+                            if (healResult && healResult.healedSql) {
+                                console.log(`[SpreadsheetToolService] Retrying with healed SQL: ${healResult.healedSql}`);
+                                return await context.adapter.query(healResult.healedSql);
+                            }
+
+                            // If healing fails or confidence is low, rethrow original error
+                            throw error;
+                        }
+                    };
+
                     if (Array.isArray(sqlOrSqls)) {
                         // Handle Compound Intent (Multiple Queries)
-                        const results = await Promise.all(sqlOrSqls.map(sql => context.adapter.query(sql)));
+                        const results = await Promise.all(sqlOrSqls.map((sql, i) => executeWithHealing(sql, intent[i])));
                         return {
                             type: "data_response",
                             isCompound: true,
@@ -588,7 +616,7 @@ export class SpreadsheetToolService {
                         };
                     } else {
                         // Handle Single Intent
-                        const result = await context.adapter.query(sqlOrSqls);
+                        const result = await executeWithHealing(sqlOrSqls, intent);
 
                         return {
                             type: "data_response",

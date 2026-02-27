@@ -33,7 +33,20 @@ const getIcon = (type: string) => {
 }
 
 const parsedContent = computed(() => {
-  const content = props.content
+  let content = props.content
+  
+  // NEW: Detect if the content itself is a JSON-stringified structured response
+  if (typeof content === 'string' && content.startsWith('{') && content.endsWith('}')) {
+    try {
+      const outerParsed = JSON.parse(content)
+      if (outerParsed.message || outerParsed.analysis || outerParsed.text) {
+        content = outerParsed.message || outerParsed.analysis || outerParsed.text
+      }
+    } catch (e) {
+      // Not a valid JSON or not a structured response we recognize, continue with original content
+    }
+  }
+
   const lowerContent = content.toLowerCase()
   
   // Find the best marker for JSON results
@@ -193,7 +206,7 @@ const formatValue = (val: any) => {
     <div v-if="meta?.needsDisclaimer" class="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 flex gap-3 text-xs leading-normal text-amber-800 dark:text-amber-200/80 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
       <AlertTriangle class="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
       <div class="space-y-1">
-        <p class="font-bold uppercase tracking-wider text-[10px]">Investment Disclaimer</p>
+        <p class="font-bold  tracking-wider text-[10px]">Investment Disclaimer</p>
         <p>This information is for informational purposes only and does not constitute financial, investment, or legal advice. All investments carry risk. Please consult with a professional advisor before making any financial decisions.</p>
       </div>
     </div>

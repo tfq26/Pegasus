@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { 
   FileSpreadsheet, Database, FileText, StickyNote, X, 
   Loader2, Sparkles, CheckCircle2, AlertCircle, ChevronDown
@@ -23,6 +24,9 @@ interface FileSuggestion {
   reasoning: string
   options: any
   status?: 'pending' | 'processing' | 'success' | 'error'
+  exists?: boolean
+  existingId?: string | null
+  selected?: boolean
 }
 
 const props = defineProps<{
@@ -43,7 +47,8 @@ const analyzeFiles = async () => {
     if (props.files && props.files.length > 0 && (props.files[0] as any).suggested_action) {
         suggestions.value = props.files.map((s: any) => ({
             ...s,
-            status: 'pending'
+            status: 'pending',
+            selected: true
         }))
         isLoading.value = false
         return
@@ -59,7 +64,8 @@ const analyzeFiles = async () => {
             ...s,
             key: props.files.find(f => f.name === s.filename)?.key || '',
             size: props.files.find(f => f.name === s.filename)?.size || 0,
-            status: 'pending'
+            status: 'pending',
+            selected: s.selected !== undefined ? s.selected : true
         }))
     } catch (e) {
         toast.error('Failed to analyze files')
@@ -72,14 +78,25 @@ const analyzeFiles = async () => {
 const handleImport = async () => {
   isImporting.value = true
   try {
-    const res = await api.post<any>('/import/execute', {
-      actions: suggestions.value.map(s => ({
+    const actionsToExecute = suggestions.value
+      .filter(s => s.selected !== false && s.suggested_action !== 'skip')
+      .map(s => ({
         type: s.suggested_action,
         filename: s.filename,
         key: s.key,
         size: s.size,
-        options: s.options
-      })),
+        options: s.options,
+        existingId: s.existingId
+      }));
+
+    if (actionsToExecute.length === 0) {
+      toast.error('No items selected for import')
+      isImporting.value = false
+      return
+    }
+
+    const res = await api.post<any>('/import/execute', {
+      actions: actionsToExecute,
       spaceId: props.spaceId
     })
     
@@ -154,22 +171,29 @@ onMounted(() => {
           <div 
             v-for="(s, i) in suggestions" 
             :key="i"
-            class="group relative flex flex-col p-4 rounded-xl border border-border bg-muted/30 hover:bg-muted/50 transition-all"
+            :class="['group relative flex flex-col p-4 rounded-xl border transition-all', s.selected === false ? 'border-dashed bg-transparent opacity-60' : 'border-border bg-muted/30 hover:bg-muted/50']"
           >
             <div class="flex items-start justify-between gap-4">
-              <div class="flex items-start gap-3 flex-1">
-                <div :class="['p-2 rounded-lg border', getActionColor(s.suggested_action)]">
+              <div class="flex items-start gap-3 flex-1 min-w-0">
+                <Checkbox v-model:checked="s.selected" class="mt-2 shrink-0" />
+                <div :class="['p-2 rounded-lg border shrink-0', getActionColor(s.suggested_action)]">
                   <component :is="getIcon(s.suggested_action)" class="w-5 h-5" />
                 </div>
-                <div class="space-y-1">
-                  <p class="text-sm font-semibold truncate">{{ s.filename }}</p>
-                  <p class="text-xs text-muted-foreground leading-relaxed">{{ s.reasoning }}</p>
+                <div class="space-y-1 min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <p class="text-sm font-semibold truncate" :title="s.filename">{{ s.filename }}</p>
+                    <span v-if="s.exists" class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+                      <AlertCircle class="w-3 h-3" />
+                      Exists (Will Replace)
+                    </span>
+                  </div>
+                  <p class="text-xs text-muted-foreground leading-relaxed truncate" :title="s.reasoning">{{ s.reasoning }}</p>
                 </div>
               </div>
 
-              <div class="flex flex-col items-end gap-2">
+              <div class="flex flex-col items-end gap-2 shrink-0">
                 <Select v-model="s.suggested_action">
-                  <SelectTrigger class="w-[140px] h-8 text-xs">
+                  <SelectTrigger class="w-[140px] h-8 text-xs shrink-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -186,15 +210,15 @@ onMounted(() => {
             <!-- Action Specific Options -->
             <div v-if="s.suggested_action !== 'skip'" class="mt-4 pt-4 border-t border-border/50 grid grid-cols-2 gap-4">
               <div v-if="s.suggested_action === 'spreadsheet'" class="space-y-1.5">
-                <label class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Table Name</label>
+                <label class="text-[10px] font-bold  tracking-wider text-muted-foreground">Table Name</label>
                 <Input v-model="s.options.tableName" class="h-8 text-xs bg-background" placeholder="table_name" />
               </div>
               <div v-if="s.suggested_action === 'note' || s.suggested_action === 'file'" class="space-y-1.5 col-span-2">
-                <label class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Display Title</label>
+                <label class="text-[10px] font-bold  tracking-wider text-muted-foreground">Display Title</label>
                 <Input v-model="s.options.title" class="h-8 text-xs bg-background" placeholder="Enter title" />
               </div>
               <div v-if="s.suggested_action === 'database'" class="space-y-1.5">
-                <label class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nickname</label>
+                <label class="text-[10px] font-bold  tracking-wider text-muted-foreground">Nickname</label>
                 <Input v-model="s.options.nickname" class="h-8 text-xs bg-background" placeholder="My Database" />
               </div>
             </div>
@@ -204,7 +228,7 @@ onMounted(() => {
 
       <DialogFooter class="p-6 pt-2 border-t border-border flex items-center justify-between">
         <p class="text-xs text-muted-foreground">
-          Ready to import <span class="font-bold text-foreground">{{ suggestions.filter(s => s.suggested_action !== 'skip').length }}</span> items.
+          Ready to import <span class="font-bold text-foreground">{{ suggestions.filter(s => s.selected !== false && s.suggested_action !== 'skip').length }}</span> items.
         </p>
         <div class="flex gap-3">
           <Button variant="ghost" @click="emit('update:open', false)" :disabled="isImporting">Cancel</Button>

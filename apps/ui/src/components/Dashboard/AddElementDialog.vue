@@ -68,7 +68,7 @@
 
       <!-- API Widgets Section -->
       <div class="border-t pt-4 mt-2">
-        <h3 class="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">API Widgets</h3>
+        <h3 class="text-sm font-semibold mb-3 text-muted-foreground  tracking-wide">API Widgets</h3>
         <div class="grid grid-cols-2 gap-4">
           <!-- Weather Widget -->
           <button

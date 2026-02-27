@@ -27,7 +27,7 @@ const regions = [
   <div class="space-y-4">
     <div class="grid grid-cols-2 gap-4">
         <div class="space-y-2">
-          <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AWS Region</label>
+          <label class="text-xs font-semibold  tracking-wider text-muted-foreground">AWS Region</label>
           <select 
             v-model="props.connectionForm.dynamodb.region"
             class="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground focus:border-primary focus:ring-1 focus:ring-primary transition-colors cursor-pointer"
@@ -37,7 +37,7 @@ const regions = [
         </div>
         
         <div class="space-y-2">
-            <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Endpoint URL (Optional)</label>
+            <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Endpoint URL (Optional)</label>
             <input
               v-model="props.connectionForm.dynamodb.endpoint"
               type="text"
@@ -49,7 +49,7 @@ const regions = [
     </div>
 
     <div class="space-y-2">
-      <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Access Key ID</label>
+      <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Access Key ID</label>
       <input
         v-model="props.connectionForm.dynamodb.accessKeyId"
         type="text"
@@ -59,7 +59,7 @@ const regions = [
     </div>
 
     <div class="space-y-2">
-      <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Secret Access Key</label>
+      <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Secret Access Key</label>
       <div class="relative">
         <input
           v-model="props.connectionForm.dynamodb.secretAccessKey"
@@ -89,7 +89,7 @@ const regions = [
         
         <div v-if="props.connectionForm.dynamodb.enableLiveCache" class="space-y-3">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
+                <label class="text-[10px]  tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
                 <input 
                     v-model.number="props.connectionForm.dynamodb.pollingInterval" 
                     type="number"

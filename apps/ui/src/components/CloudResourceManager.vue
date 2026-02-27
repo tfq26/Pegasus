@@ -265,7 +265,7 @@ onMounted(() => {
                 </div>
                 <div>
                     <h3 class="font-semibold text-lg">Resource Manager</h3>
-                    <p class="text-xs text-muted-foreground hidden sm:block">Manage your {{ providerId.toUpperCase() }} cloud resources</p>
+                    <p class="text-xs text-muted-foreground hidden sm:block">Manage your {{ providerId.to() }} cloud resources</p>
                 </div>
             </div>
             <button @click="$emit('close')" class="p-2 hover:bg-muted rounded-full transition-colors">
@@ -277,7 +277,7 @@ onMounted(() => {
             <!-- Controls -->
             <div class="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
                 <div class="flex flex-col gap-1.5 w-full sm:w-auto">
-                    <label class="text-xs font-medium text-muted-foreground uppercase">Resource Group</label>
+                    <label class="text-xs font-medium text-muted-foreground ">Resource Group</label>
                      <div class="relative w-full sm:w-64">
                         <Select v-model="selectedRg" :disabled="loading">
                             <SelectTrigger class="w-full h-10 bg-background/50 border-input">
@@ -333,7 +333,7 @@ onMounted(() => {
 
                 <div v-else class="divide-y">
                      <!-- Header -->
-                    <div class="grid grid-cols-12 gap-4 p-3 text-xs font-medium text-muted-foreground bg-muted/30 uppercase tracking-wider">
+                    <div class="grid grid-cols-12 gap-4 p-3 text-xs font-medium text-muted-foreground bg-muted/30  tracking-wider">
                         <div class="col-span-5">Name / Type</div>
                         <div class="col-span-3">Location</div>
                         <div class="col-span-4 text-right">Actions</div>
@@ -344,7 +344,7 @@ onMounted(() => {
                         <div class="col-span-5 overflow-hidden">
                             <div class="font-medium truncate flex items-center gap-2">
                                 {{ res.name }}
-                                <span v-if="currentStorageBucket === res.name" class="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 font-bold uppercase tracking-wider">
+                                <span v-if="currentStorageBucket === res.name" class="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20 font-bold  tracking-wider">
                                     Active Storage
                                 </span>
                             </div>
@@ -368,7 +368,7 @@ onMounted(() => {
                              <button 
                                 @click="openInPortal(res)"
                                 class="p-1.5 hover:bg-sky-100 hover:text-sky-600 dark:hover:bg-sky-900/30 rounded-md transition-colors"
-                                :title="`Open in ${providerId.toUpperCase()} Portal`"
+                                :title="`Open in ${providerId.to()} Portal`"
                             >
                                 <ExternalLink class="w-4 h-4" />
                             </button>

@@ -1,6 +1,6 @@
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { usePisces } from '@/composables/usePisces';
 import { 
 
@@ -18,6 +18,7 @@ import {
 import { toast } from '@/composables/useNotifications'
 
 const isEnabled = import.meta.env.DEV;
+const isVisible = computed(() => isEnabled || !!autoReportError.value);
 const { reportBug, isReporting, autoReportError, lastReport: globalLastReport } = usePisces();
 const isOpen = ref(false);
 const userNotes = ref('');
@@ -80,7 +81,7 @@ const close = () => {
 </script>
 
 <template>
-  <div v-if="isEnabled" class="fixed bottom-6 right-6 z-50">
+  <div v-if="isVisible" class="fixed bottom-6 right-6 z-50">
     <!-- Trigger Button -->
     <button 
       @click="isOpen = true"
@@ -181,7 +182,7 @@ const close = () => {
             <!-- Severity & Category -->
             <div class="flex gap-4">
               <div class="flex-1 rounded-2xl bg-white/5 p-4 border border-white/5">
-                <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Severity</div>
+                <div class="text-[10px]  tracking-wider text-zinc-500 mb-1">Severity</div>
                 <div class="flex items-center gap-2 font-medium" :class="{
                   'text-red-400': result.severity === 'Critical' || result.severity === 'High',
                   'text-yellow-400': result.severity === 'Medium',
@@ -192,7 +193,7 @@ const close = () => {
                 </div>
               </div>
               <div class="flex-1 rounded-2xl bg-white/5 p-4 border border-white/5">
-                <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Category</div>
+                <div class="text-[10px]  tracking-wider text-zinc-500 mb-1">Category</div>
                 <div class="flex items-center gap-2 font-medium text-white">
                   <Cpu class="h-4 w-4 text-indigo-400" />
                   {{ result.category }}
@@ -223,7 +224,7 @@ const close = () => {
             </div>
 
             <div class="flex items-center justify-center pt-4">
-              <div class="text-[10px] text-zinc-600 uppercase tracking-widest">Analysis Confidence: {{ (result.confidence * 100).toFixed(0) }}%</div>
+              <div class="text-[10px] text-zinc-600  tracking-widest">Analysis Confidence: {{ (result.confidence * 100).toFixed(0) }}%</div>
             </div>
           </div>
         </div>

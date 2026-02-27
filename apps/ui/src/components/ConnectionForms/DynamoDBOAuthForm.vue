@@ -206,7 +206,7 @@ onMounted(() => {
 
       <!-- Region Selection -->
       <div class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AWS Region</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">AWS Region</label>
         <Select v-model="selectedRegion">
           <SelectTrigger class="w-full">
             <SelectValue placeholder="Select region" />
@@ -221,7 +221,7 @@ onMounted(() => {
 
       <!-- DynamoDB Table Selection -->
       <div v-if="selectedRegion" class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">DynamoDB Table (Optional)</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">DynamoDB Table (Optional)</label>
         <div v-if="loadingTables" class="flex items-center justify-center py-4">
           <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
         </div>

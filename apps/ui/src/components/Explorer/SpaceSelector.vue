@@ -138,7 +138,7 @@ onUnmounted(() => {
               {{ activeSpace ? activeSpace.name : 'Select Space' }}
             </h4>
             <div class="flex items-center gap-1.5 opacity-60">
-              <span class="text-[9px] uppercase tracking-[0.2em] font-black pointer-events-none">Data Space</span>
+              <span class="text-[9px]  tracking-[0.2em] font-black pointer-events-none">Data Space</span>
             </div>
           </div>
           <ChevronDown class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors mr-1" />
@@ -146,7 +146,7 @@ onUnmounted(() => {
       </DropdownMenuTrigger>
       
       <DropdownMenuContent class="w-64 bg-popover/95 backdrop-blur-xl border-border shadow-2xl rounded-2xl z-[100] p-1.5" align="start" :side-offset="8">
-        <div class="text-[10px] uppercase tracking-[0.25em] font-black text-muted-foreground/60 px-4 py-3 select-none">
+        <div class="text-[10px]  tracking-[0.25em] font-black text-muted-foreground/60 px-4 py-3 select-none">
           Your Spaces
         </div>
         

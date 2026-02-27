@@ -4,12 +4,14 @@ import { connections, dashboards, users } from "../src/db/schema.js";
 // Tier-based limits and validation
 // Centralized configuration for subscription tier restrictions
 
+export const FREE_ONLY_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
+
 export const TIER_LIMITS = {
     free: {
         connections: 4,
         tables: 20,
         dashboards: 1,
-        models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gpt-5.1-mini'],
+        models: [...FREE_ONLY_MODELS, 'gpt-5.1-mini'],
         storage: 100 * 1024 * 1024, // 100 MB
         tokens: 60000
     },
@@ -153,19 +155,31 @@ export async function canCreateDashboard(db, userId, tier = 'free') {
 export function filterModelsByTier(allModels, tier = 'free') {
     const limits = getTierLimits(tier)
 
-    // Pro+ gets all models
-    if (limits.models === null) {
-        return allModels
+    let filtered = allModels;
+
+    // Filter to allowed models if tier has specific list
+    if (limits.models !== null) {
+        filtered = allModels.filter(model => limits.models.includes(model.id))
     }
 
-    // Filter to allowed models
-    return allModels.filter(model => limits.models.includes(model.id))
+    // EXCEPTION: Explicitly remove Gemini 2.5 models for Free users only
+    // If user is NOT on free tier, remove Gemini 2.5 models even if they have "all access" (null)
+    if (tier !== 'free') {
+        filtered = filtered.filter(model => !FREE_ONLY_MODELS.includes(model.id))
+    }
+
+    return filtered
 }
 
 /**
  * Check if a specific model is allowed for tier
  */
 export function isModelAllowed(modelId, tier = 'free') {
+    // Free models restriction
+    if (tier !== 'free' && FREE_ONLY_MODELS.includes(modelId)) {
+        return false;
+    }
+
     const limits = getTierLimits(tier)
 
     if (limits.models === null) {

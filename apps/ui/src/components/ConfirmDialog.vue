@@ -9,7 +9,7 @@
       </DialogHeader>
       
       <div v-if="showInput" class="py-6">
-        <label v-if="inputLabel" class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
+        <label v-if="inputLabel" class="text-xs font-medium text-muted-foreground  tracking-wider mb-2 block">
           {{ inputLabel }}
         </label>
         <input 

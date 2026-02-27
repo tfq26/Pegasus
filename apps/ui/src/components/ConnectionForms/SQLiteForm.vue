@@ -12,7 +12,7 @@ defineProps<{
 <template>
   <div class="space-y-4">
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database Path or URL</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Database Path or URL</label>
       <input 
         v-model="connectionForm.sqlite.path" 
         placeholder="/path/to/db.sqlite or https://...turso.io" 
@@ -22,7 +22,7 @@ defineProps<{
     </div>
 
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Auth Token (Optional)</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Auth Token (Optional)</label>
       <input 
         v-model="connectionForm.sqlite.authToken" 
         type="password"
@@ -64,7 +64,7 @@ defineProps<{
         
         <div v-if="connectionForm.sqlite.enableLiveCache" class="space-y-3">
               <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
+                <label class="text-[10px]  tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
                 <input 
                     v-model.number="connectionForm.sqlite.pollingInterval" 
                     type="number"

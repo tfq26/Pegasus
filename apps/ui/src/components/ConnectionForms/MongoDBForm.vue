@@ -97,7 +97,7 @@ const formatRow = (row: Record<string, unknown>) => {
 <template>
   <div class="space-y-4">
     <div class="space-y-1.5">
-      <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Connection String (URI)</label>
+      <label class="text-[10px]  tracking-wide text-muted-foreground">Connection String (URI)</label>
       <div class="relative">
         <input 
           v-model="connectionForm.mongodb.url" 
@@ -186,7 +186,7 @@ const formatRow = (row: Record<string, unknown>) => {
     <!-- Manual Database/Collection Input -->
     <div class="grid gap-4 md:grid-cols-2 mt-4">
       <div class="space-y-1.5">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database (Optional)</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Database (Optional)</label>
         <input 
           v-model="connectionForm.mongodb.database" 
           placeholder="e.g. myDatabase" 
@@ -195,7 +195,7 @@ const formatRow = (row: Record<string, unknown>) => {
         <p class="text-[10px] text-muted-foreground">Leave empty to list all databases</p>
       </div>
       <div class="space-y-1.5">
-        <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Collection (Optional)</label>
+        <label class="text-[10px]  tracking-wide text-muted-foreground">Collection (Optional)</label>
         <input 
           v-model="connectionForm.mongodb.collection" 
           placeholder="e.g. users" 
@@ -217,7 +217,7 @@ const formatRow = (row: Record<string, unknown>) => {
         
         <div v-if="connectionForm.mongodb.enableLiveCache" class="space-y-3">
              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
+                <label class="text-[10px]  tracking-wide text-muted-foreground">Polling Interval (seconds)</label>
                 <input 
                     v-model.number="connectionForm.mongodb.pollingInterval" 
                     type="number"

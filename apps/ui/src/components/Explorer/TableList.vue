@@ -158,16 +158,16 @@ function formatTableName(tableName: string): string {
 
       <!-- Footer / Load More -->
       <div v-if="filteredTables.length === 0" class="py-12 text-center">
-        <p class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No tables found</p>
+        <p class="text-[10px] font-bold  tracking-widest text-muted-foreground">No tables found</p>
       </div>
       
       <div v-if="hasMore" class="p-2 pt-4 flex flex-col items-center gap-2">
-        <p class="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+        <p class="text-[9px] font-bold  tracking-[0.2em] text-muted-foreground">
           Showing {{ displayLimit }} of {{ filteredTables.length }}
         </p>
         <button 
           @click="displayLimit += 100"
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted border border-border text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-purple-500 hover:bg-muted/80 transition-all active:scale-95"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted border border-border text-[10px] font-bold  tracking-widest text-muted-foreground hover:text-purple-500 hover:bg-muted/80 transition-all active:scale-95"
         >
            Load More
            <ChevronDown class="w-3 h-3" />

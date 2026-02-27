@@ -200,10 +200,10 @@ onUnmounted(() => {
         <router-view v-else class="w-full" />
       </main>
     </div>
-
-    <!-- Smart BugSage Reporting -->
-    <PiscesDialog />
   </div>
+
+  <!-- Smart BugSage Reporting -->
+  <PiscesDialog />
 </template>
 
 <style>

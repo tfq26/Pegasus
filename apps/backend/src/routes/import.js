@@ -3,7 +3,7 @@ import { getAuthToken } from "../../lib/auth.js"
 import { verify } from "hono/jwt"
 import { db } from "../db/index.js"
 import { dataSpaces, spaceFiles, spaceNotes, connections } from "../db/schema.js"
-import { eq, and } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 import { classifyFiles } from "../../ai/classifier.js"
 import { ConfigService } from "../services/ConfigService.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
@@ -16,6 +16,41 @@ import crypto from "node:crypto"
 
 const importRouter = new Hono()
 const jwtSecret = ConfigService.getJwtSecret()
+
+async function enrichWithExists(suggestions, userId, spaceId) {
+    const rawSpaceId = spaceId && spaceId.includes(':') ? spaceId.split(':')[1] : (spaceId || null);
+
+    return await Promise.all(suggestions.map(async (s) => {
+        let exists = false;
+        let existingId = null;
+
+        const spaceCondition = rawSpaceId ? eq(dataSpaces.id, rawSpaceId) : isNull(dataSpaces.id);
+
+        if (s.suggested_action === 'spreadsheet') {
+            const existing = await db.query.connections.findFirst({
+                where: and(eq(connections.userId, userId), rawSpaceId ? eq(connections.spaceId, rawSpaceId) : isNull(connections.spaceId), eq(connections.name, s.options.tableName || s.filename), eq(connections.type, 'duckdb'))
+            });
+            if (existing) { exists = true; existingId = existing.id; }
+        } else if (s.suggested_action === 'database') {
+            const existing = await db.query.connections.findFirst({
+                where: and(eq(connections.userId, userId), rawSpaceId ? eq(connections.spaceId, rawSpaceId) : isNull(connections.spaceId), eq(connections.name, s.options.nickname || s.filename))
+            });
+            if (existing) { exists = true; existingId = existing.id; }
+        } else if (s.suggested_action === 'note') {
+            const existing = await db.query.spaceNotes.findFirst({
+                where: and(rawSpaceId ? eq(spaceNotes.spaceId, rawSpaceId) : isNull(spaceNotes.spaceId), eq(spaceNotes.title, s.options.title || s.filename))
+            });
+            if (existing) { exists = true; existingId = existing.id; }
+        } else if (s.suggested_action === 'file') {
+            const existing = await db.query.spaceFiles.findFirst({
+                where: and(rawSpaceId ? eq(spaceFiles.spaceId, rawSpaceId) : isNull(spaceFiles.spaceId), eq(spaceFiles.filename, s.filename))
+            });
+            if (existing) { exists = true; existingId = existing.id; }
+        }
+
+        return { ...s, exists, existingId, selected: true };
+    }));
+}
 
 /**
  * POST /analyze
@@ -40,7 +75,8 @@ importRouter.post("/analyze", async (c) => {
             if (space) spaceName = space.name
         }
 
-        const suggestions = await classifyFiles(files, { spaceName })
+        let suggestions = await classifyFiles(files, { spaceName })
+        suggestions = await enrichWithExists(suggestions, userId, spaceId)
         return c.json({ suggestions });
     } catch (e) {
         console.error("[Import Analyze] Error:", e)
@@ -119,7 +155,7 @@ importRouter.post("/upload-zip", async (c) => {
         const suggestions = await classifyFiles(filesToProcess, { spaceName })
 
         // Match suggestions with storage keys
-        const enrichedSuggestions = suggestions.map(s => {
+        let enrichedSuggestions = suggestions.map(s => {
             const fileInfo = filesToProcess.find(f => f.name === s.filename)
             return {
                 ...s,
@@ -127,6 +163,7 @@ importRouter.post("/upload-zip", async (c) => {
                 size: fileInfo?.size
             }
         })
+        enrichedSuggestions = await enrichWithExists(enrichedSuggestions, userId, spaceId)
 
         return c.json({ suggestions: enrichedSuggestions });
 
@@ -154,20 +191,29 @@ importRouter.post("/execute", async (c) => {
         const results = []
 
         for (const action of actions) {
-            const { type, filename, key, size, options } = action
+            const { type, filename, key, size, options, existingId } = action
 
             try {
                 if (type === 'spreadsheet') {
                     // Create DuckDB connection
-                    const [conn] = await db.insert(connections).values({
-                        userId,
-                        spaceId: rawSpaceId || null,
-                        type: 'duckdb',
-                        name: options.tableName || filename,
-                        config: { path: key }, // Storage key is the path for DuckDB provider
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    }).returning()
+                    let conn;
+                    if (existingId) {
+                        [conn] = await db.update(connections).set({
+                            name: options.tableName || filename,
+                            config: { path: key },
+                            updatedAt: new Date()
+                        }).where(eq(connections.id, existingId)).returning()
+                    } else {
+                        [conn] = await db.insert(connections).values({
+                            userId,
+                            spaceId: rawSpaceId || null,
+                            type: 'duckdb',
+                            name: options.tableName || filename,
+                            config: { path: key }, // Storage key is the path for DuckDB provider
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }).returning()
+                    }
                     results.push({ filename, status: 'success', type: 'spreadsheet', id: conn.id })
                 }
                 else if (type === 'database') {
@@ -176,15 +222,25 @@ importRouter.post("/execute", async (c) => {
                     const ext = filename.split('.').pop().toLowerCase()
                     const provider = ext === 'duckdb' ? 'duckdb' : 'sqlite'
 
-                    const [conn] = await db.insert(connections).values({
-                        userId,
-                        spaceId: rawSpaceId || null,
-                        type: provider,
-                        name: options.nickname || filename,
-                        config: { path: key },
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    }).returning()
+                    let conn;
+                    if (existingId) {
+                        [conn] = await db.update(connections).set({
+                            type: provider,
+                            name: options.nickname || filename,
+                            config: { path: key },
+                            updatedAt: new Date()
+                        }).where(eq(connections.id, existingId)).returning()
+                    } else {
+                        [conn] = await db.insert(connections).values({
+                            userId,
+                            spaceId: rawSpaceId || null,
+                            type: provider,
+                            name: options.nickname || filename,
+                            config: { path: key },
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }).returning()
+                    }
                     results.push({ filename, status: 'success', type: 'database', id: conn.id })
                 }
                 else if (type === 'note') {
@@ -194,29 +250,48 @@ importRouter.post("/execute", async (c) => {
                     const content = await provider.read(key)
                     const text = content.toString('utf-8')
 
-                    const [note] = await db.insert(spaceNotes).values({
-                        userId,
-                        spaceId: rawSpaceId,
-                        title: options.title || filename,
-                        content: text,
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    }).returning()
+                    let note;
+                    if (existingId) {
+                        [note] = await db.update(spaceNotes).set({
+                            title: options.title || filename,
+                            content: text,
+                            updatedAt: new Date()
+                        }).where(eq(spaceNotes.id, existingId)).returning()
+                    } else {
+                        [note] = await db.insert(spaceNotes).values({
+                            userId,
+                            spaceId: rawSpaceId || null, // Allow null here for general space equivalent
+                            title: options.title || filename,
+                            content: text,
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }).returning()
+                    }
                     results.push({ filename, status: 'success', type: 'note', id: note.id })
                 }
                 else if (type === 'file') {
                     // Add as File
-                    const [file] = await db.insert(spaceFiles).values({
-                        id: crypto.randomUUID(),
-                        userId,
-                        spaceId: rawSpaceId,
-                        filename: filename,
-                        fileType: filename.split('.').pop(),
-                        storagePath: key,
-                        fileSizeBytes: size || 0,
-                        createdAt: new Date(),
-                        updatedAt: new Date()
-                    }).returning()
+                    let file;
+                    if (existingId) {
+                        [file] = await db.update(spaceFiles).set({
+                            filename: filename,
+                            storagePath: key,
+                            fileSizeBytes: size || 0,
+                            updatedAt: new Date()
+                        }).where(eq(spaceFiles.id, existingId)).returning()
+                    } else {
+                        [file] = await db.insert(spaceFiles).values({
+                            id: crypto.randomUUID(),
+                            userId,
+                            spaceId: rawSpaceId || null,
+                            filename: filename,
+                            fileType: filename.split('.').pop(),
+                            storagePath: key,
+                            fileSizeBytes: size || 0,
+                            createdAt: new Date(),
+                            updatedAt: new Date()
+                        }).returning()
+                    }
 
                     // Trigger RAG indexing (background - don't await to avoid UI hang)
                     RAGService.indexFileFromStorage(key, filename, userId).catch(idxErr => {

@@ -2,7 +2,7 @@
 import { ref, computed, watch, defineAsyncComponent, unref } from 'vue'
 import { X, Maximize2, Minimize2, PanelBottom, PanelRight, LayoutDashboard, Table, Loader2, Sparkles, Brain, GitBranch, Check, AlertCircle, Copy, Info, Database, ArrowRight, Clock } from 'lucide-vue-next'
 import JsonViewer from '@/components/JsonViewer.vue'
-import ResultsTable from './ResultsTable.vue'
+const ResultsTable = defineAsyncComponent(() => import('./ResultsTable.vue'))
 import { toast } from '@/composables/useNotifications'
 import { useLocalStorage } from '@vueuse/core'
 import MarkdownIt from 'markdown-it'
@@ -182,7 +182,7 @@ const copyToClipboard = async (text: string) => {
             <div class="flex items-center p-1 rounded-full bg-muted/40 border border-border/40">
                  <button 
                     @click="activeTab = 'output'"
-                    class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
+                    class="px-3 py-1 text-[10px] font-bold  tracking-wider rounded-full transition-all flex items-center gap-2"
                     :class="activeTab === 'output' ? 'bg-background shadow-md text-foreground scale-105' : 'text-muted-foreground hover:text-foreground'"
                  >
                     <Table class="w-3.5 h-3.5" />
@@ -193,7 +193,7 @@ const copyToClipboard = async (text: string) => {
                  </button>
                  <button 
                     @click="activeTab = 'thinking'"
-                    class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
+                    class="px-3 py-1 text-[10px] font-bold  tracking-wider rounded-full transition-all flex items-center gap-2"
                     :class="activeTab === 'thinking' ? 'bg-background shadow-md text-violet-500 scale-105' : 'text-muted-foreground hover:text-foreground'"
                  >
                     <div class="relative">
@@ -205,7 +205,7 @@ const copyToClipboard = async (text: string) => {
                  <button 
                     v-if="props.analysis?.prediction"
                     @click="activeTab = 'insights'"
-                    class="px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-full transition-all flex items-center gap-2"
+                    class="px-4 py-1.5 text-[11px] font-bold  tracking-wider rounded-full transition-all flex items-center gap-2"
                     :class="activeTab === 'insights' ? 'bg-background shadow-md text-emerald-500 scale-105' : 'text-muted-foreground hover:text-foreground'"
                  >
                     <Sparkles class="w-3.5 h-3.5" />
@@ -265,7 +265,7 @@ const copyToClipboard = async (text: string) => {
                 <AlertCircle class="w-5 h-5" />
              </div>
              <div class="flex-1">
-                <h4 class="text-xs font-bold uppercase tracking-wider text-rose-500 mb-2">Execution Error</h4>
+                <h4 class="text-xs font-bold  tracking-wider text-rose-500 mb-2">Execution Error</h4>
                 <p class="text-sm font-mono text-foreground/80 leading-relaxed">{{ error }}</p>
              </div>
              <button @click="copyToClipboard(error)" class="text-muted-foreground hover:text-foreground"><Copy class="w-4 h-4" /></button>
@@ -304,7 +304,7 @@ const copyToClipboard = async (text: string) => {
 
             <!-- Execution Timeline -->
             <div class="space-y-4">
-                <h4 class="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <h4 class="text-xs font-bold  tracking-widest text-muted-foreground flex items-center gap-2">
                     <Brain class="w-3.5 h-3.5" />
                     Thinking Process
                 </h4>
@@ -336,7 +336,7 @@ const copyToClipboard = async (text: string) => {
 
             <!-- SQL Query (Simplified) -->
             <div v-if="props.lastQuery" class="space-y-4">
-                <h4 class="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <h4 class="text-xs font-bold  tracking-widest text-muted-foreground flex items-center gap-2">
                     <ArrowRight class="w-3.5 h-3.5" />
                     Generated Query
                 </h4>
@@ -359,7 +359,7 @@ const copyToClipboard = async (text: string) => {
                 <div class="p-6 rounded-[32px] bg-gradient-to-br from-stone-900 to-stone-950 border border-white/5 relative overflow-hidden">
                     <div class="relative z-10 flex items-center justify-between">
                         <div>
-                            <div class="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-2">Confidence Score</div>
+                            <div class="text-[10px] font-black  tracking-widest text-stone-500 mb-2">Confidence Score</div>
                             <div class="text-4xl font-light text-white tracking-tight">
                                 {{ (props.analysis.prediction.confidence * 100).toFixed(0) }}<span class="text-lg text-stone-600">%</span>
                             </div>

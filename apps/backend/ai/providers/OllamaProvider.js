@@ -77,8 +77,12 @@ export class OllamaProvider extends AIProvider {
     }
 
     async listModels() {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
         try {
-            const response = await fetch(`${this.baseUrl}/tags`)
+            const response = await fetch(`${this.baseUrl}/tags`, { signal: controller.signal });
+            clearTimeout(timeoutId);
             if (!response.ok) return []
 
             const data = await response.json()
@@ -87,11 +91,17 @@ export class OllamaProvider extends AIProvider {
                 name: m.name,
                 provider: 'local',
                 description: `Local model: ${m.name} (${(m.size / 1e9).toFixed(1)} GB)`,
-                contextWindow: 8192, // Default for many Ollama models
+                contextWindow: 8192,
             }))
         } catch (e) {
-            console.warn('[Ollama] Failed to list models:', e.message)
+            if (e.name === 'AbortError') {
+                console.warn('[Ollama] Model listing timed out');
+            } else {
+                console.warn('[Ollama] Failed to list models:', e.message);
+            }
             return []
+        } finally {
+            clearTimeout(timeoutId);
         }
     }
 }

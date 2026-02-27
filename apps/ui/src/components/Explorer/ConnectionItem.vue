@@ -47,7 +47,7 @@ const handleHealthCheck = async () => {
     
     if (res.status) {
       const type = res.status === 'healthy' ? 'success' : (res.status === 'critical' ? 'error' : 'warning')
-      toast[type](`Health: ${res.status.toUpperCase()}`, {
+      toast[type](`Health: ${res.status.to()}`, {
         description: `${res.summary}\n${res.recommendations?.join('\n') || ''}`,
         duration: 8000
       })
@@ -92,10 +92,10 @@ function statusLabel(state?: ConnectionSchemaState) {
   if (state?.status === 'error') return 'Error'
   
   if (props.connection.provider === 'ai_provider') {
-    return props.connection.ai_provider?.service ? props.connection.ai_provider.service.replace('_', ' ').toUpperCase() : 'AI'
+    return props.connection.ai_provider?.service ? props.connection.ai_provider.service.replace('_', ' ').to() : 'AI'
   }
   if (props.connection.provider === 'cloud_storage') {
-     return props.connection.cloud_storage?.service ? props.connection.cloud_storage.service.replace('_', ' ').toUpperCase() : 'STORAGE'
+     return props.connection.cloud_storage?.service ? props.connection.cloud_storage.service.replace('_', ' ').to() : 'STORAGE'
   }
 
   return `${state?.tables?.length || 0} Tables`
@@ -141,9 +141,9 @@ function statusLabel(state?: ConnectionSchemaState) {
               <Lock v-if="connection.isLocked" class="w-3 h-3 text-amber-500/80 shrink-0" />
             </div>
             <div class="flex items-center gap-2 mt-0.5">
-              <span class="text-[9px] font-bold uppercase tracking-widest text-muted-foreground truncate">{{ connection.provider }}</span>
+              <span class="text-[9px] font-bold  tracking-widest text-muted-foreground truncate">{{ connection.provider }}</span>
               <div class="w-1 h-1 rounded-full bg-border shrink-0"></div>
-              <div class="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest truncate" :class="schema?.status === 'error' ? 'text-rose-500' : 'text-muted-foreground'">
+              <div class="flex items-center gap-1.5 text-[9px] font-bold  tracking-widest truncate" :class="schema?.status === 'error' ? 'text-rose-500' : 'text-muted-foreground'">
                 <span :class="['h-1.5 w-1.5 rounded-full shrink-0', statusDotClasses(schema?.status)]"></span>
                 {{ statusLabel(schema) }}
               </div>
@@ -234,7 +234,7 @@ function statusLabel(state?: ConnectionSchemaState) {
       <div v-if="selected" class="px-1 mt-3 mb-1 flex items-center bg-muted/40 p-1 rounded-lg border border-border/50" @click.stop>
         <button 
           @click.stop="viewMode = 'tables'"
-          class="flex-1 text-[10px] font-bold uppercase tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
+          class="flex-1 text-[10px] font-bold  tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
           :class="viewMode === 'tables' ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
         >
           <div class="relative w-3 h-3 shrink-0">
@@ -245,7 +245,7 @@ function statusLabel(state?: ConnectionSchemaState) {
         </button>
         <button 
           @click.stop="viewMode = 'tabs'"
-          class="flex-1 text-[10px] font-bold uppercase tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
+          class="flex-1 text-[10px] font-bold  tracking-widest py-1.5 rounded-md transition-all flex items-center justify-center gap-1.5"
           :class="viewMode === 'tabs' ? 'bg-background text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'"
         >
           <Layers class="w-3 h-3" />

@@ -7,6 +7,7 @@ import { DuckDBAdapter } from "./duckdbAdapter.js"
 import { CosmosAdapter } from "./cosmosAdapter.js"
 import { StorageManager } from "../src/services/storage/StorageManager.js"
 import { AzureAuthService } from "../src/services/AzureAuthService.js"
+import { resolveDatabasePath } from "../src/utils/resolveDatabasePath.js"
 
 export const adapters = {
   mongodb: MongoAdapter,
@@ -34,7 +35,7 @@ export async function createAdapter(provider, connection, userId) {
     const rawPath = config.path || config.database || ':memory:';
     if (rawPath && typeof rawPath === 'string' && rawPath !== ':memory:') {
       try {
-        const resolvedPath = await StorageManager.getLocalPath(userId, rawPath);
+        const resolvedPath = await resolveDatabasePath(rawPath, userId);
         config.path = resolvedPath;
         config.database = resolvedPath;
       } catch (e) {

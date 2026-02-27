@@ -74,7 +74,7 @@ export class RealtimeSync {
             // 3. Heartbeat / Push loop
             this.updateInterval = setInterval(() => {
                 this.pushUpdate();
-            }, 100); // 100ms throttle
+            }, 500); // 500ms throttle
 
         } catch (e) {
             console.error("[Realtime] Sync init failed", e);

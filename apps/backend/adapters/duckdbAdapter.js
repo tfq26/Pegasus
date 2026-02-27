@@ -310,25 +310,58 @@ export class DuckDBAdapter {
                     }
 
                     if (query) {
-                        console.log(`[DuckDB] Executing view creation query: ${query.substring(0, 100)}...`);
-                        this.connection.exec(query, async (err) => {
-                            if (err) {
-                                console.error(`[DuckDB] Failed to register data file table: ${err.message}`);
-                                console.error(`[DuckDB] Query was: ${query}`);
-                                reject(err);
-                            } else {
-                                console.log(`[DuckDB] Successfully registered data file as table: ${tableName}`);
+                        const executeRegistration = (registrationQuery) => {
+                            return new Promise((resolveExec, rejectExec) => {
+                                console.log(`[DuckDB] Executing view creation query: ${registrationQuery.substring(0, 100)}...`);
+                                this.connection.exec(registrationQuery, async (err) => {
+                                    if (err) {
+                                        console.error(`[DuckDB] Failed to register data file table: ${err.message}`);
+                                        rejectExec(err);
+                                    } else {
+                                        console.log(`[DuckDB] Successfully registered data file as table: ${tableName}`);
+                                        try {
+                                            await this._fixColumnTypes(tableName);
+                                        } catch (fixErr) {
+                                            console.warn(`[DuckDB] Type auto-correction failed (non-fatal):`, fixErr);
+                                        }
+                                        resolveExec();
+                                    }
+                                });
+                            });
+                        };
 
-                                // Auto-Correction: Fix formatted numbers (Currency/Commas) being detected as VARCHAR
+                        try {
+                            await executeRegistration(query);
+                            resolve();
+                        } catch (err) {
+                            // IF Zero-Copy failed (HTTP Error), try falling back to local download
+                            if (this.isZeroCopy) {
+                                console.warn(`[DuckDB] Zero-Copy registration failed. Falling back to local download and retry...`);
                                 try {
-                                    await this._fixColumnTypes(tableName);
-                                } catch (fixErr) {
-                                    console.warn(`[DuckDB] Type auto-correction failed (non-fatal):`, fixErr);
-                                }
+                                    const localPath = await resolveDatabasePath(this.rawPath, this.userId, { preferSignedUrl: false });
+                                    this.dataFileSource = localPath;
+                                    this.isZeroCopy = false;
 
-                                resolve();
+                                    // Update query with local path
+                                    if (ext === '.csv') {
+                                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_csv_auto('${localPath}', header=True, normalize_names=True, sample_size=20000)`;
+                                    } else if (ext === '.parquet') {
+                                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_parquet('${localPath}')`;
+                                    } else if (ext === '.json') {
+                                        query = `CREATE OR REPLACE VIEW "${tableName}" AS SELECT * FROM read_json_auto('${localPath}')`;
+                                    }
+
+                                    console.log(`[DuckDB] Retrying registration with local path: ${localPath}`);
+                                    await executeRegistration(query);
+                                    resolve();
+                                } catch (retryErr) {
+                                    console.error(`[DuckDB] Local fallback retry failed: ${retryErr.message}`);
+                                    reject(retryErr);
+                                }
+                            } else {
+                                reject(err);
                             }
-                        });
+                        }
                         return;
                     }
                 }

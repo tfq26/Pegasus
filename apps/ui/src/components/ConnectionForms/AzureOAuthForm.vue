@@ -443,7 +443,7 @@ const startPollingStatus = () => {
 
       <!-- Subscription Selection -->
       <div class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subscription</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Subscription</label>
         <Select v-model="selectedSubscription" :disabled="loadingSubscriptions">
           <SelectTrigger class="w-full">
             <SelectValue placeholder="Select subscription" />
@@ -458,7 +458,7 @@ const startPollingStatus = () => {
 
       <!-- Resource Group Selection -->
       <div v-if="selectedSubscription" class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resource Group</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Resource Group</label>
         <Select v-model="selectedResourceGroup" :disabled="loadingResourceGroups">
           <SelectTrigger class="w-full">
             <SelectValue placeholder="Select resource group" />
@@ -473,7 +473,7 @@ const startPollingStatus = () => {
 
       <!-- Kusto Cluster Selection -->
       <div v-if="selectedResourceGroup && resourceType === 'kusto'" class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Kusto Cluster</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Kusto Cluster</label>
         <div v-if="loadingClusters" class="flex items-center justify-center py-4">
           <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
         </div>
@@ -517,7 +517,7 @@ const startPollingStatus = () => {
 
       <!-- Cosmos Account Selection -->
       <div v-if="selectedResourceGroup && resourceType === 'cosmosdb'" class="space-y-2">
-        <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cosmos DB Account</label>
+        <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Cosmos DB Account</label>
         <div v-if="loadingCosmosAccounts" class="flex items-center justify-center py-4">
           <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
         </div>
@@ -539,7 +539,7 @@ const startPollingStatus = () => {
       <!-- Common Final Steps -->
       <div v-if="selectedCluster || selectedCosmosAccount" class="space-y-4">
         <div class="space-y-2">
-          <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Database Name</label>
+          <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Database Name</label>
           <input
             v-if="resourceType === 'kusto'" 
             v-model="props.connectionForm.kusto.database"
@@ -557,7 +557,7 @@ const startPollingStatus = () => {
         </div>
 
         <div v-if="resourceType === 'cosmosdb'" class="space-y-2">
-          <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Account Key</label>
+          <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Account Key</label>
           <div class="relative">
             <input 
               :value="fetchingCosmosKeys ? 'Fetching keys...' : props.connectionForm.cosmosdb.key"
@@ -575,7 +575,7 @@ const startPollingStatus = () => {
         </div>
 
         <div v-if="resourceType === 'cosmosdb'" class="space-y-2">
-          <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Container (Optional)</label>
+          <label class="text-xs font-semibold  tracking-wider text-muted-foreground">Container (Optional)</label>
           <input 
             v-model="props.connectionForm.cosmosdb.container"
             type="text"
@@ -585,7 +585,7 @@ const startPollingStatus = () => {
         </div>
 
         <div class="space-y-2">
-          <label class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <label class="text-xs font-semibold  tracking-wider text-muted-foreground">
             {{ resourceType === 'kusto' ? 'Cluster URL' : 'Endpoint' }}
           </label>
           <input

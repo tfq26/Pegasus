@@ -68,7 +68,7 @@
                 <div class="flex items-center gap-3">
                    <div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-xs font-bold text-primary overflow-hidden border border-primary/30">
                       <img v-if="owner.profile_picture_url" :src="owner.profile_picture_url" class="w-full h-full object-cover">
-                      <span v-else>{{ (owner.first_name?.[0] || owner.email?.[0] || 'O').toUpperCase() }}</span>
+                      <span v-else>{{ (owner.first_name?.[0] || owner.email?.[0] || 'O').to() }}</span>
                    </div>
                    <div class="flex flex-col">
                       <span class="font-medium">
@@ -90,7 +90,7 @@
                 <div class="flex items-center gap-3 overflow-hidden">
                    <div class="w-8 h-8 min-w-[2rem] rounded-lg bg-primary/10 flex items-center justify-center text-xs font-bold text-primary border border-primary/20 overflow-hidden">
                      <img v-if="perm.profile_picture_url" :src="perm.profile_picture_url" class="w-full h-full object-cover">
-                     <span v-else>{{ (perm.first_name?.[0] || perm.email?.[0] || 'U').toUpperCase() }}</span>
+                     <span v-else>{{ (perm.first_name?.[0] || perm.email?.[0] || 'U').to() }}</span>
                    </div>
                    <div class="flex flex-col overflow-hidden">
                      <span class="font-medium truncate">
@@ -135,7 +135,7 @@
                  <div class="flex items-center gap-3 overflow-hidden">
                    <div class="w-8 h-8 min-w-[2rem] rounded-lg bg-green-500/20 flex items-center justify-center text-xs font-bold text-green-500 border border-green-500/30 overflow-hidden relative">
                      <img v-if="collab.user?.profilePictureUrl" :src="collab.user.profilePictureUrl" class="w-full h-full object-cover">
-                     <span v-else>{{ (collab.user?.firstName?.[0] || collab.user?.email?.[0] || 'U').toUpperCase() }}</span>
+                     <span v-else>{{ (collab.user?.firstName?.[0] || collab.user?.email?.[0] || 'U').to() }}</span>
                      <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-background"></span>
                    </div>
                    <div class="flex flex-col overflow-hidden">

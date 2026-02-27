@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useSettingsStore } from '@/stores/settings'
-import { storeToRefs } from 'pinia'
 
 const props = defineProps<{
   themeMode: any
@@ -10,8 +10,23 @@ const props = defineProps<{
 }>()
 
 const settingsStore = useSettingsStore()
-import { unref, computed } from 'vue'
+import { unref } from 'vue'
 const settings = computed(() => unref(settingsStore.settings))
+
+// File System Access API — available in Chromium-based browsers only
+const supportsFilePicker = typeof (window as any).showDirectoryPicker === 'function'
+
+const pickFolder = async () => {
+  try {
+    const handle = await (window as any).showDirectoryPicker({ mode: 'read' })
+    if (handle?.name) {
+      settings.value.downloadsFolder = handle.name
+    }
+  } catch (e: any) {
+    // User cancelled or API not available
+    if (e?.name !== 'AbortError') console.warn('[GeneralTab] Folder picker error:', e)
+  }
+}
 </script>
 
 <template>
@@ -103,6 +118,37 @@ const settings = computed(() => unref(settingsStore.settings))
           <p class="text-muted-foreground text-sm">Ask before deleting items.</p>
         </div>
         <Switch v-model:checked="settings.confirmDestructive" class="accent-violet-600" />
+      </div>
+
+      <!-- Downloads Folder -->
+      <div class="space-y-3 pt-2 border-t border-border/50">
+        <div>
+          <h3 class="text-foreground font-medium">Downloads Folder</h3>
+          <p class="text-muted-foreground text-sm">
+            Subfolder name appended to all exported files (e.g. <code class="text-[11px] bg-muted px-1 rounded">Pegasus/Exports</code>).
+            Files still land in your browser's default Downloads directory, but this keeps them organised with a consistent prefix.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input
+            v-model="settings.downloadsFolder"
+            type="text"
+            placeholder="e.g. Pegasus/Exports"
+            class="flex-1 h-9 rounded-lg border border-border bg-muted/40 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+          />
+          <button
+            v-if="supportsFilePicker"
+            @click="pickFolder"
+            type="button"
+            class="h-9 px-3 rounded-lg border border-border bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted text-xs font-medium transition whitespace-nowrap"
+            title="Choose a folder from your file system (Chromium only)"
+          >
+            Browse…
+          </button>
+        </div>
+        <p v-if="settings.downloadsFolder" class="text-[11px] text-violet-400/70">
+          Files will be named: <code class="font-mono">{{ settings.downloadsFolder.replace(/\/$/, '') }}/&lt;filename&gt;</code>
+        </p>
       </div>
     </div>
   </div>

@@ -8,11 +8,16 @@ import { eq, and, sql, lte, or, isNull } from 'drizzle-orm';
  * Polling Service
  * Periodically checks for data sources that need to be refreshed.
  */
+import { activityService } from './ActivityService.js';
+
 export const startPollingService = () => {
     console.log('[PollingService] Initializing background polling worker (Every 1m check)...');
 
-    // Check every minute for due tasks
-    cron.schedule('* * * * *', async () => {
+    // Check every 5 minutes for due tasks
+    cron.schedule('*/5 * * * *', async () => {
+        if (activityService.isIdle()) {
+            return;
+        }
         try {
             // Find active data sources that are due for a refresh
             // Logic: last_fetched is NULL OR (last_fetched + polling_interval) <= NOW

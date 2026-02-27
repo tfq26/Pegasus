@@ -255,7 +255,7 @@ const copyCellValue = async (value: any) => {
                 <th
                   v-for="col in columns"
                   :key="col"
-                  class="px-5 py-2 font-black uppercase tracking-[0.1em] text-[10px] text-stone-500 border-b border-stone-800/50 whitespace-nowrap first:pl-6"
+                  class="px-5 py-2 font-black  tracking-[0.1em] text-[10px] text-stone-500 border-b border-stone-800/50 whitespace-nowrap first:pl-6"
                 >
                   {{ col }}
                 </th>
@@ -281,7 +281,7 @@ const copyCellValue = async (value: any) => {
                   <button 
                     v-if="isObject(row[col])"
                     @click.stop="openJsonModal(row[col])"
-                    class="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-800 group-hover/row:border-stone-700 text-stone-500 hover:text-stone-100 transition-all text-[10px] font-bold uppercase tracking-wider"
+                    class="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-stone-900 border border-stone-800 group-hover/row:border-stone-700 text-stone-500 hover:text-stone-100 transition-all text-[10px] font-bold  tracking-wider"
                   >
                     <Braces class="w-3 h-3 text-violet-400" />
                     <span>View Object</span>
@@ -316,7 +316,7 @@ const copyCellValue = async (value: any) => {
     <!-- Analytical Footer -->
     <div v-if="settings?.showRowCount" class="flex items-center justify-between px-4 py-2 border-t border-stone-800/50 text-[9px] bg-stone-900/20 mt-auto shrink-0">
       <div class="flex items-center gap-4">
-        <div v-if="selectedRows.size > 0" class="flex items-center gap-2 px-2 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 font-bold uppercase tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
+        <div v-if="selectedRows.size > 0" class="flex items-center gap-2 px-2 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-400 font-bold  tracking-widest animate-in fade-in slide-in-from-left-2 transition-all">
            <div class="w-1 h-1 rounded-full bg-violet-400 shadow-[0_0_8px_theme(colors.violet.400)]"></div>
            {{ selectedRows.size }} selected
         </div>
@@ -348,7 +348,7 @@ const copyCellValue = async (value: any) => {
         
         <select 
           v-model="pageSize" 
-          class="bg-stone-950 border border-stone-800 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-stone-400 focus:ring-0 cursor-pointer hover:border-stone-700 transition-all outline-none"
+          class="bg-stone-950 border border-stone-800 rounded-lg px-3 py-1.5 text-[10px] font-black  tracking-widest text-stone-400 focus:ring-0 cursor-pointer hover:border-stone-700 transition-all outline-none"
         >
           <option :value="10">10 PER PAGE</option>
           <option :value="50">50 PER PAGE</option>
@@ -365,7 +365,7 @@ const copyCellValue = async (value: any) => {
               <div class="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-400">
                  <Braces class="w-6 h-6" />
               </div>
-              <h3 class="text-lg font-black uppercase tracking-wider">Object Inspector</h3>
+              <h3 class="text-lg font-black  tracking-wider">Object Inspector</h3>
            </div>
            
            <div class="flex items-center gap-4">

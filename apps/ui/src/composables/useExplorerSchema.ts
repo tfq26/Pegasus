@@ -1,6 +1,7 @@
 import { ref, watch } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 import type { ConnectionEntry } from '@/lib/db-connections'
-import { fetchConnectionSchema, fetchDatabaseTables } from '@/lib/api'
+import { fetchConnectionSchema, fetchDatabaseTables, fetchTableDetails } from '@/lib/api'
 
 export interface ConnectionSchemaState {
     status: 'loading' | 'success' | 'error' | 'idle'
@@ -11,6 +12,7 @@ export interface ConnectionSchemaState {
 
 const connectionSchemas = ref<Record<string, ConnectionSchemaState>>({})
 const dbTablesCache = ref<Record<string, Record<string, string[]>>>({})
+const tableDetails = ref<Record<string, Record<string, any>>>({}) // connectionId -> tableName -> details
 
 export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
     const schemaFor = (id: string) => connectionSchemas.value[id] || { status: 'idle', tables: [] }
@@ -54,6 +56,8 @@ export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
         }
     }
 
+    const debouncedRefresh = useDebounceFn((force = false) => refreshSchemas(force), 2000)
+
     // Helper to fetch tables for a specific database (SurrealDB/Postgres etc)
     const getTablesForDb = async (conn: ConnectionEntry, dbName: string) => {
         // Check cache first
@@ -78,7 +82,29 @@ export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
         }
     }
 
-    watch(() => connections.value, () => refreshSchemas(false), { deep: true, immediate: true })
+    const getTableDetails = async (conn: ConnectionEntry, tableName: string) => {
+        const connCache = tableDetails.value[conn.id]
+        if (connCache?.[tableName]) {
+            return connCache[tableName]
+        }
+
+        try {
+            const details = await fetchTableDetails(conn, tableName)
+
+            if (!tableDetails.value[conn.id]) tableDetails.value[conn.id] = {}
+            const targetCache = tableDetails.value[conn.id]
+            if (targetCache) {
+                targetCache[tableName] = details
+            }
+
+            return details
+        } catch (err) {
+            console.error(`[ExplorerSchema] Failed to fetch details for ${tableName}:`, err)
+            return null
+        }
+    }
+
+    watch(() => connections.value, () => debouncedRefresh(false), { deep: true, immediate: true })
 
     return {
         connectionSchemas,
@@ -86,6 +112,7 @@ export function useExplorerSchema(connections: { value: ConnectionEntry[] }) {
         schemaFor,
         refreshSchemas,
         refreshConnectionSchema,
-        getTablesForDb
+        getTablesForDb,
+        getTableDetails
     }
 }

@@ -56,8 +56,9 @@ onMounted(async () => {
       localModels.value = status.models
       if (aiProvider.value === 'local' && !currentModel.value) {
         // Preferred: User's default local model
-        if (settings.value.localModel && status.models.includes(settings.value.localModel)) {
-          currentModel.value = settings.value.localModel
+        const s = settings.value as any
+        if (s.localModel && status.models.includes(s.localModel)) {
+          currentModel.value = s.localModel
         } else {
           // Fallback: First available
           currentModel.value = status.models[0] || ''

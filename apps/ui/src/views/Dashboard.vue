@@ -707,10 +707,10 @@
       :element="editingElementForModal"
       @save="handleSaveElement"
     />
-  </div>
-    </template>
-  </div>
-</template>
+  </div> <!-- closes line 372 -->
+  </template> <!-- closes line 10 -->
+</div> <!-- closes line 2 -->
+</template> <!-- closes line 1 -->
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, onBeforeUnmount, nextTick } from 'vue'
@@ -734,10 +734,15 @@ import DashboardInsights from '@/components/Dashboard/DashboardInsights.vue'
 import DashboardFilters from '@/components/Dashboard/DashboardFilters.vue'
 import { useDashboardAnalysis } from '@/composables/useDashboardAnalysis'
 import { useCollaboration } from '@/composables/useCollaboration'
+import { useDashboardPage } from '@/composables/useDashboardPage'
+import { useDashboardCollaboration } from '@/composables/useDashboardCollaboration'
+import { useDashboardModals } from '@/composables/useDashboardModals'
 import { identityService } from '@/services/identityService'
 import { uploadDashboardFile, getFileDownloadUrl, updateDashboardPrivacy, trackDashboardAccess, api } from '@/lib/api'
 import { toast } from '@/composables/useNotifications'
 import { exportElementAsImage } from '@/lib/exportImage'
+import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke, useBreakpoints, breakpointsTailwind, useDraggable } from '@vueuse/core'
+import { usePlatform } from '@/composables/usePlatform'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -783,511 +788,134 @@ defineOptions({ name: 'DashboardPage' })
 const router = useRouter()
 const route = useRoute()
 const store = useDashboardStore()
+const settingsStore = useSettingsStore()
+const settings = computed(() => settingsStore.settings)
 const dashboards = computed((): any[] => store.dashboards as any)
 const currentDashboard = computed((): any => store.currentDashboard as any)
 const isLoading = computed(() => store.isLoading)
 const undoStack = computed(() => store.undoStack as unknown as any[])
 const redoStack = computed(() => store.redoStack as unknown as any[])
 const isInitializing = ref(true)
-
-// Multi-page Support
-// Multi-page Support
-const activePageId = computed({
-  get: () => store.activePageId as unknown as string | null,
-  set: (val) => (store.activePageId as any) = val
-})
-
-// Force cast to avoid Ref<Ref> inference issues
-const activePage = computed(() => store.activePage as any as DashboardPage | undefined)
-
-const sortedPages = computed(() => {
-  if (!currentDashboard.value?.data?.pages) return []
-  return [...currentDashboard.value.data.pages].sort((a, b) => a.order - b.order)
-})
-
-const activeLayout = computed({
-  get: () => activePage.value?.layout || [],
-  set: (newLayout) => {
-    if (activePage.value) {
-      activePage.value.layout = newLayout
-      // Trigger save if needed, though DraggableGrid emits layout-updated
-    }
-  }
-})
-
-// Page Actions
-const handleAddPage = async () => {
-  await store.addPage(`Page ${sortedPages.value.length + 1}`)
-}
-
-const switchPage = (pageId: string) => {
-  activePageId.value = pageId
-}
-
-const confirmDeletePage = (page: any) => {
-  pageToDelete.value = page
-  showDeletePageModal.value = true
-}
-
-const processDeletePage = async () => {
-    if (!pageToDelete.value) return
-    try {
-        await store.removePage(pageToDelete.value.id)
-        toast.success(`Page "${pageToDelete.value.title}" deleted`)
-        showDeletePageModal.value = false
-        pageToDelete.value = null
-    } catch (e: any) {
-        toast.error(e.message || 'Failed to delete page')
-    }
-}
-
-// Renaming State
-const pageToRename = ref<any>(null)
-const newPageTitle = ref('')
-const renamingInput = ref<any>(null)
-
-const startRenamingPage = (page: any) => {
-  if (isShared.value) return
-  pageToRename.value = page
-  newPageTitle.value = page.title
-  nextTick(() => {
-    // Handle Vue 3 ref-in-v-for which returns an array
-    const target = Array.isArray(renamingInput.value) ? renamingInput.value[0] : renamingInput.value
-    if (target) {
-      if ('focus' in target) {
-        target.focus()
-      }
-      if ('select' in target) {
-        target.select()
-      }
-    }
-  })
-}
-
-const cancelRename = () => {
-  pageToRename.value = null
-  newPageTitle.value = ''
-}
-
-const processRenamePage = async () => {
-  if (!pageToRename.value) return
-  const targetPage = pageToRename.value
-  const newTitle = newPageTitle.value.trim()
-  
-  // Clear state immediately to avoid double firing
-  pageToRename.value = null
-  
-  if (newTitle && newTitle !== targetPage.title) {
-    try {
-      await store.renamePage(targetPage.id, newTitle)
-      toast.success(`Page renamed to "${newTitle}"`)
-    } catch (e: any) {
-      toast.error('Failed to rename page')
-    }
-  }
-}
-
-// Helper to get element from active page
-const getElement = (id: string) => {
-  return activePage.value?.elements.find((el: any) => el.id === id)
-}
-
-import Navbar from '@/components/Navbar.vue'
-import { useMediaQuery, useThrottleFn, onClickOutside, onKeyStroke, useBreakpoints, breakpointsTailwind, useDraggable } from '@vueuse/core'
-import { usePlatform } from '@/composables/usePlatform'
+const isDeveloping = ref(import.meta.env.DEV)
+const isShared = computed(() => route.path.includes('/shared/'))
 
 const { isPhone, isTablet } = usePlatform()
 const isDesktop = useMediaQuery('(min-width: 640px)')
 const breakpoints = useBreakpoints(breakpointsTailwind)
 const showFullToolbar = breakpoints.greaterOrEqual('md')
+const isCtrlPressed = ref(false)
 
-const { 
-  joinDashboard, 
-  leaveDashboard, 
-  emitCursorMove, 
-  sendChatMessage,
+// -------- Composables -----------------------------------------------
+
+// 1. Page Management
+const {
+  activePageId,
+  activePage,
+  sortedPages,
+  activeLayout,
+  handleAddPage,
+  switchPage,
+  confirmDeletePage,
+  processDeletePage,
+  pageToRename,
+  newPageTitle,
+  renamingInput,
+  startRenamingPage,
+  cancelRename,
+  processRenamePage,
+  getElement,
+  showDeletePageModal,
+  pageToDelete
+} = useDashboardPage(currentDashboard, store, isShared)
+
+// 2. Collaboration & Chat
+const {
   collaborators,
   cursors,
   chatMessages,
-  emitPegasusQuery,
   isAIThinking,
+  typingUsers,
+  hasUnreadMessages,
+  showChat,
+  showActivityFeed,
+  chatSidebarRef,
+  chatToggleRef,
+  dashboardContainer,
+  dashboardChatRef,
+  isChatDetached,
+  joinDashboard,
+  leaveDashboard,
+  emitCursorMove,
+  sendChatMessage,
+  emitPegasusQuery,
   editChatMessage,
   deleteChatMessage,
-  typingUsers,
   emitTypingStart,
   emitTypingEnd,
   emitDashboardUpdate,
-  socket // Assuming socket is exposed by useCollaboration
-} = useCollaboration()
+  onMouseMove,
+  onMouseLeave,
+  handleSendMessage,
+  handlePegasusQuery,
+  handleEditMessage,
+  handleDeleteMessage,
+  handleTypingStart,
+  handleTypingStop,
+  style
+} = useDashboardCollaboration(currentDashboard, store, activePage)
+
+// 3. Modals & Actions
+const {
+  showQueryModal,
+  showAddElementDialog,
+  showTextDialog,
+  showFileDialog,
+  editingElement,
+  editingQuery,
+  showEditModal,
+  editingElementForModal,
+  showShareModal,
+  shareUrl,
+  copied,
+  showPrivacyDialog,
+  showRenameModal,
+  renameTitle,
+  showDeleteModal,
+  handleDashboardChange,
+  handleCreateDashboard,
+  handleSave,
+  handleDeleteDashboard,
+  handleExportImage,
+  confirmDelete,
+  handleRename,
+  confirmRename,
+  confirmPrivacyChange,
+  openFullscreen,
+  handleShare,
+  copyShareLink,
+  removeElement,
+  handleEditQuery,
+  handleViewQuery,
+  saveQueryChanges,
+  handleEditElement,
+  handleAddElementSelect,
+  handleAddWidget,
+  handleAddTextElement,
+  handleAddFileElement,
+  handleSaveElement
+} = useDashboardModals(
+  currentDashboard,
+  dashboards,
+  activePage,
+  store,
+  async () => { await store.saveCurrentDashboard() },
+  router,
+  isShared
+)
 
 const { isAnalyzing, generateDashboardSummary } = useDashboardAnalysis()
 
-const hasUnreadMessages = ref(false)
-const showChat = ref(false)
-const showActivityFeed = ref(false)
-const chatSidebarRef = ref<HTMLElement | null>(null)
-const chatToggleRef = ref<HTMLElement | null>(null)
-const dashboardContainer = ref<HTMLElement | null>(null)
-const dashboardChatRef = ref<any>(null)
-const isChatDetached = ref(false)
-
-// Watch chat state to clear unread
-watch(showChat, (val) => {
-  if (val) {
-    hasUnreadMessages.value = false
-  }
-})
-
-// Listen for new messages to toggle unread
-watch(() => socket.value, (s) => {
-  if (s) {
-    s.on('new_message', () => {
-      if (!showChat.value) {
-        hasUnreadMessages.value = true
-        // Also play sound?
-      }
-    })
-
-    s.on('dashboard_updated', async (data: any) => {
-      if (data.dashboardId === currentDashboard.value?.id) {
-        if (data.type === 'layout' && data.layout) {
-          // Live optimistic layout update
-          activeLayout.value = data.layout
-        } else {
-          // Full refresh for content changes
-          await store.selectDashboard(currentDashboard.value.id)
-        }
-      }
-    })
-
-    s.on('element_updated', (data: any) => {
-      if (data.dashboardId !== currentDashboard.value?.id) return
-      // Find and update ONLY the specific element
-      currentDashboard.value.data.pages?.forEach((page: any) => {
-        const el = page.elements.find((e: any) => e.id === data.elementId)
-        if (el) {
-          console.log('[Dashboard] Live update for element:', data.elementId, data.changes)
-          Object.assign(el, data.changes)
-
-          // Log to activity feed
-          store.addActivityLog({
-            type: 'update',
-            elementId: data.elementId,
-            elementTitle: el.title,
-            userId: data.userId || 'unknown',
-            userName: data.userName || 'Collaborator',
-            userProfilePicture: data.userProfilePicture,
-            changes: data.changes
-          })
-        }
-      })
-    })
-
-    s.on('element_added', (data: any) => {
-      if (data.dashboardId !== currentDashboard.value?.id) return
-      const page = currentDashboard.value.data.pages?.find((p: any) => p.id === data.pageId)
-      if (page) {
-        console.log('[Dashboard] Live add element:', data.elementId)
-        page.elements.push(data.element)
-        page.layout.push(data.layoutItem)
-
-        // Log to activity feed
-        store.addActivityLog({
-          type: 'add',
-          elementId: data.elementId,
-          elementTitle: data.element.title,
-          userId: data.userId || 'unknown',
-          userName: data.userName || 'Collaborator',
-          userProfilePicture: data.userProfilePicture
-        })
-      }
-    })
-
-    s.on('element_removed', (data: any) => {
-      if (data.dashboardId !== currentDashboard.value?.id) return
-      currentDashboard.value.data.pages?.forEach((page: any) => {
-        const el = page.elements.find((e: any) => e.id === data.elementId)
-        if (el) {
-          console.log('[Dashboard] Live remove element:', data.elementId)
-          page.elements = page.elements.filter((e: any) => e.id !== data.elementId)
-          page.layout = page.layout.filter((l: any) => l.i !== data.elementId)
-
-          // Log to activity feed
-          store.addActivityLog({
-            type: 'remove',
-            elementId: data.elementId,
-            elementTitle: el.title,
-            userId: data.userId || 'unknown',
-            userName: data.userName || 'Collaborator',
-            userProfilePicture: data.userProfilePicture
-          })
-        }
-      })
-    })
-
-    s.on('element_data_refreshed', (data: any) => {
-      if (data.dashboardId !== currentDashboard.value?.id) return
-      currentDashboard.value.data.pages?.forEach((page: any) => {
-        const el = page.elements.find((e: any) => e.id === data.elementId)
-        if (el) {
-          console.log('[Dashboard] Live data refresh for element:', data.elementId)
-          if (el.config) el.config.data = data.data
-          
-          // Log to activity feed
-          store.addActivityLog({
-            type: 'refresh',
-            elementId: data.elementId,
-            elementTitle: el.title,
-            userId: data.userId || 'unknown',
-            userName: data.userName || 'Collaborator',
-            userProfilePicture: data.userProfilePicture
-          })
-        }
-      })
-    })
-
-    s.on('element_data_refreshed', (data: any) => {
-      if (data.dashboardId !== currentDashboard.value?.id) return
-      currentDashboard.value.data.pages?.forEach((page: any) => {
-        const el = page.elements.find((e: any) => e.id === data.elementId)
-        if (el) {
-          console.log('[Dashboard] Live data refresh for element:', data.elementId)
-          el.lastResult = data.newData
-        }
-      })
-    })
-
-    s.on('cell_binding_updated', async (data: any) => {
-      // data: { cellId, value, spreadsheetId, dataSourceId }
-      if (!currentDashboard.value) return
-
-      const elementsToRefresh: string[] = []
-      currentDashboard.value.data.pages?.forEach((page: any) => {
-        page.elements.forEach((el: any) => {
-          // If query mentions the spreadsheet (table name) or if connection directly matches
-          const usesSpreadsheet = el.connectionId === data.spreadsheetId || 
-                                 (el.query && el.query.includes(data.spreadsheetId))
-          
-          if (usesSpreadsheet) {
-            elementsToRefresh.push(el.id)
-          }
-        })
-      })
-
-      if (elementsToRefresh.length > 0) {
-        console.log(`[Dashboard] Auto-refreshing ${elementsToRefresh.length} elements due to live data update`)
-        for (const elId of elementsToRefresh) {
-            store.executeElementQuery(elId, true)
-        }
-      }
-    })
-  }
-}, { immediate: true })
-
-const chatDragHandle = computed(() => dashboardChatRef.value?.headerRef)
-
-// Make Chat Draggable
-const { x, y, style } = useDraggable(chatSidebarRef as any, {
-  initialValue: { x: window.innerWidth - 370, y: 80 },
-  handle: chatDragHandle as any
-})
-
-// Click outside to close chat
-onClickOutside(chatSidebarRef as any, () => {
-  if (showChat.value) {
-    showChat.value = false
-  }
-}, { ignore: [chatToggleRef as any, '.group'] })
-
-// Keyboard Shortcuts
-onKeyStroke(['s', 'S'], (e) => {
-  // Cmd/Ctrl + S = Save
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
-    e.preventDefault()
-    handleSave()
-  }
-  // Alt/Option + S or Cmd + Shift + S = Share
-  if (e.altKey || (e.metaKey && e.shiftKey)) {
-    e.preventDefault()
-    handleShare()
-  }
-})
-
-onKeyStroke(['z', 'Z'], (e) => {
-  // Undo: Option/Alt + Shift + Z
-  if (e.altKey && e.shiftKey) {
-    e.preventDefault()
-    store.undo()
-  }
-})
-
-onKeyStroke(['y', 'Y'], (e) => {
-  // Redo: Option/Alt + Shift + Y
-  if (e.altKey && e.shiftKey) {
-    e.preventDefault()
-    store.redo()
-  }
-})
-
-onKeyStroke(['c', 'C'], (e) => {
-  // Alt/Option + C or Cmd + Shift + C = Toggle Chat
-  if (e.altKey || (e.metaKey && e.shiftKey)) {
-     e.preventDefault()
-     showChat.value = !showChat.value
-  }
-})
-
-onKeyStroke(['a', 'A', 'e', 'E'], (e) => {
-  // Alt/Option + E/A or Cmd + Shift + E/A = Add Element
-  if (e.altKey || (e.metaKey && e.shiftKey)) {
-    e.preventDefault()
-    showAddElementDialog.value = true
-  }
-})
-
-onKeyStroke(['i', 'I'], (e) => {
-  // Alt/Option + I or Cmd + Shift + I = Generate Insights
-  if (e.altKey || (e.metaKey && e.shiftKey)) {
-    e.preventDefault()
-    generateDashboardSummary()
-  }
-})
-
-// Watch for dashboard changes to join/leave rooms and save last viewed
-watch(() => currentDashboard.value?.id, (newId, oldId) => {
-  if (oldId) leaveDashboard(oldId)
-  if (newId) {
-    joinDashboard(newId)
-    trackDashboardAccess(newId).catch(console.error)
-    // Save as last viewed dashboard for navbar navigation
-    // localStorage.setItem('pegasus-last-dashboard', newId)
-  }
-}, { immediate: true })
-
-let autoSaveInterval: ReturnType<typeof setInterval> | null = null
-let debouncedSaveTimeout: ReturnType<typeof setTimeout> | null = null
-const DEBOUNCE_DELAY = 2000 // 2 seconds after last change
-
-// Debounced save function - saves 2 seconds after last change
-const debouncedSave = () => {
-  // Clear any existing timeout
-  if (debouncedSaveTimeout) {
-    clearTimeout(debouncedSaveTimeout)
-  }
-  
-  // Set new timeout
-  debouncedSaveTimeout = setTimeout(async () => {
-    if (currentDashboard.value && !store.isSaving) {
-      console.log('[Dashboard] Triggering debounced auto-save')
-      try {
-        await store.saveCurrentDashboard()
-        console.log('[Dashboard] Auto-saved successfully')
-      } catch (err) {
-        console.error('[Dashboard] Auto-save failed:', err)
-      }
-    }
-  }, DEBOUNCE_DELAY)
-}
-
-onMounted(() => {
-  // Auto-save every 5 minutes (backup save)
-  autoSaveInterval = setInterval(() => {
-    if (currentDashboard.value && !store.isSaving) {
-      console.log('[Dashboard] Triggering 5-minute backup save')
-      store.saveCurrentDashboard().catch(err => {
-        console.error('[Dashboard] Backup save failed:', err)
-      })
-    }
-  }, 5 * 60 * 1000)
-})
-
-onBeforeUnmount(() => {
-  if (currentDashboard.value?.id) {
-    leaveDashboard(currentDashboard.value.id)
-  }
-  if (autoSaveInterval) {
-    clearInterval(autoSaveInterval)
-  }
-  if (debouncedSaveTimeout) {
-    clearTimeout(debouncedSaveTimeout)
-  }
-})
-
-// Cursor Handling - Throttled to 30Hz (33ms) for performance
-const onMouseMove = useThrottleFn((e: MouseEvent) => {
-  if (!dashboardContainer.value || !currentDashboard.value) return
-  
-  const rect = dashboardContainer.value.getBoundingClientRect()
-  const x = e.clientX - rect.left + dashboardContainer.value.scrollLeft
-  const y = e.clientY - rect.top + dashboardContainer.value.scrollTop
-  
-  emitCursorMove(currentDashboard.value.id, x, y)
-}, 33)
-
-const onMouseLeave = () => {
-    // Optionally signal cursor left
-}
-
-const handleSendMessage = (messageData: any) => {
-  if (currentDashboard.value) {
-    sendChatMessage(currentDashboard.value.id, messageData)
-  }
-}
-
-const handlePegasusQuery = (query: string, messageData: any) => {
-  if (currentDashboard.value) {
-    const elements = activePage.value?.elements || []
-    const dataSnapshot = elements.map((el: any) => ({
-      title: el.title,
-      type: el.type,
-      results: el.lastResult || el.config?.data
-    }))
-    emitPegasusQuery(currentDashboard.value.id, query, messageData.parentId, dataSnapshot)
-  }
-}
-
-const handleEditMessage = (messageId: string, content: string) => {
-  if (currentDashboard.value) {
-    editChatMessage(currentDashboard.value.id, messageId, content)
-  }
-}
-
-const handleDeleteMessage = (messageId: string) => {
-  if (currentDashboard.value) {
-    deleteChatMessage(currentDashboard.value.id, messageId)
-  }
-}
-
-const handleTypingStart = () => {
-  if (currentDashboard.value) {
-    emitTypingStart(currentDashboard.value.id)
-  }
-}
-
-const handleTypingStop = () => {
-  if (currentDashboard.value) {
-    emitTypingEnd(currentDashboard.value.id)
-  }
-}
-
-
-
-const downloadFile = (element: any) => {
-  if (!element.config?.fileId) {
-    toast.error('File not found')
-    return
-  }
-  toast.info(`Downloading ${element.config.fileName}...`)
-  const url = getFileDownloadUrl(element.config.fileId)
-  window.open(url, '_blank')
-}
-
-// Layout State
-import { unref } from 'vue'
-
-const settingsStore = useSettingsStore()
-const settings = computed(() => unref(settingsStore.settings))
-const isShared = computed(() => route.path.includes('/shared/'))
+// -------- Computed & Helpers ----------------------------------------
 
 const isCompact = computed({
   get: () => currentDashboard.value?.data?.settings?.compactMode ?? false,
@@ -1307,7 +935,7 @@ const showGrid = computed({
     if (!currentDashboard.value.data) currentDashboard.value.data = { pages: [] }
     if (!currentDashboard.value.data.settings) currentDashboard.value.data.settings = {}
     currentDashboard.value.data.settings.showGrid = val
-    handleSave()
+    store.saveCurrentDashboard()
   }
 })
 
@@ -1318,46 +946,10 @@ const isLocked = computed({
     if (!currentDashboard.value.data) currentDashboard.value.data = { pages: [] }
     if (!currentDashboard.value.data.settings) currentDashboard.value.data.settings = {}
     currentDashboard.value.data.settings.locked = val
-    handleSave()
+    store.saveCurrentDashboard()
   }
 })
 
-// Lock layout automatically if shared
-watch(isShared, (shared) => {
-  if (shared) isLocked.value = true
-}, { immediate: true })
-
-// Query Modal State
-const showQueryModal = ref(false)
-const showAddElementDialog = ref(false)
-const showTextDialog = ref(false)
-const showFileDialog = ref(false)
-const editingElement = ref<any>(null)
-const editingQuery = ref('')
-
-// Element Editor Modal State
-const showEditModal = ref(false)
-const editingElementForModal = ref<any>(null)
-
-// Share Modal State
-const showShareModal = ref(false)
-const shareUrl = ref('')
-const copied = ref(false)
-
-// Privacy Dialog State
-const showPrivacyDialog = ref(false)
-
-// Rename Modal State
-const showRenameModal = ref(false)
-const renameTitle = ref('')
-
-// Delete Modal State
-const showDeleteModal = ref(false)
-// Page Delete Modal State
-const showDeletePageModal = ref(false)
-const pageToDelete = ref<any>(null)
-
-// User Role - determine if user is owner
 const userRole = computed<'owner' | 'editor' | 'viewer' | null>(() => {
   if (!currentDashboard.value) return null
   const role = currentDashboard.value.access_level
@@ -1365,7 +957,6 @@ const userRole = computed<'owner' | 'editor' | 'viewer' | null>(() => {
   return role as 'owner' | 'editor' | 'viewer'
 })
 
-// Computed grid style for background pattern
 const gridStyle = computed(() => {
   if (!showGrid.value) return {}
   return {
@@ -1378,416 +969,86 @@ const gridStyle = computed(() => {
   }
 })
 
+// -------- Event Handlers --------------------------------------------
+
 const onLayoutUpdated = () => {
-  // Push to history for undo/redo
   store.pushToHistory()
-
-  // Emit live layout update for collaboration
   if (currentDashboard.value) {
-      emitDashboardUpdate(currentDashboard.value.id, { 
-          type: 'layout', 
-          layout: activeLayout.value 
-      })
-  }
-
-  // Trigger debounced save - will save 2 seconds after last change
-  debouncedSave()
-}
-
-const handleDashboardChange = (id: string) => {
-  router.push(`/dashboard/${id}`)
-}
-
-const handleCreateDashboard = async () => {
-  const title = prompt('Enter dashboard title:', 'New Dashboard')
-  if (title) {
-    try {
-      const id = await store.createNewDashboard(title)
-      router.push(`/dashboard/${id}`)
-      toast.success('Dashboard created')
-    } catch (e) {
-      toast.error('Failed to create dashboard')
-    }
-  }
-}
-
-const handleSave = async () => {
-  try {
-    await store.saveCurrentDashboard()
-    if (currentDashboard.value) {
-      emitDashboardUpdate(currentDashboard.value.id, { type: 'refresh' })
-    }
-    toast.success('Dashboard saved')
-  } catch (e) {
-    toast.error('Failed to save dashboard')
-  }
-}
-
-const handleDeleteDashboard = async () => {
-  if (!currentDashboard.value) return
-  
-  if (settings.value.confirmDestructive) {
-    showDeleteModal.value = true
-  } else {
-    await confirmDelete()
-  }
-}
-
-const handleExportImage = async () => {
-  if (!dashboardContainer.value || !currentDashboard.value) return
-  await exportElementAsImage(
-    dashboardContainer.value, 
-    currentDashboard.value.title || 'dashboard',
-    'png'
-  )
-}
-
-const confirmDelete = async () => {
-  if (!currentDashboard.value) return
-  
-  try {
-    await store.removeDashboard(currentDashboard.value.id)
-    toast.success('Dashboard deleted successfully')
-    showDeleteModal.value = false
-    
-    // Navigate to another dashboard or home
-    if (dashboards.value.length > 0) {
-      router.push(`/dashboard/${dashboards.value[0]!.id}`)
-    } else {
-      router.push('/dashboard')
-    }
-  } catch (e) {
-    toast.error('Failed to delete dashboard')
-  }
-}
-
-const handleRename = () => {
-  if (!currentDashboard.value) return
-  renameTitle.value = currentDashboard.value.title
-  showRenameModal.value = true
-}
-
-const confirmRename = async () => {
-  if (!renameTitle.value.trim() || !currentDashboard.value) return
-  
-  currentDashboard.value.title = renameTitle.value.trim()
-  await handleSave()
-  toast.success('Dashboard renamed successfully')
-  showRenameModal.value = false
-}
-
-const confirmPrivacyChange = async () => {
-  if (!currentDashboard.value) return
-  
-  try {
-    const makingPrivate = currentDashboard.value.is_public
-    
-    // Update privacy via API
-    await updateDashboardPrivacy(currentDashboard.value.id, !currentDashboard.value.is_public)
-    
-    // Update local state
-    currentDashboard.value.is_public = !currentDashboard.value.is_public
-    
-    // Also remove share token if making private
-    if (makingPrivate) {
-      currentDashboard.value.share_token = null
-    }
-    
-    toast.success(makingPrivate ? 'Dashboard is now private' : 'Dashboard is now public')
-    showPrivacyDialog.value = false
-  } catch (e) {
-    console.error('Privacy change error:', e)
-    toast.error('Failed to update privacy settings')
+    emitDashboardUpdate(currentDashboard.value.id, { 
+      type: 'layout', 
+      layout: activeLayout.value 
+    })
   }
 }
 
 const handleDrillDown = async (data: any) => {
-  console.log('[Dashboard] Drill-down received:', data)
-  
-  // Try to find a parameter that matches the label or dataset label
   const params = store.parameters
   const keys = Object.keys(params)
-  
   let targetKey = keys.find(k => k.toLowerCase() === data.datasetLabel?.toLowerCase())
   if (!targetKey) {
     targetKey = keys.find(k => k.toLowerCase().includes('category') || k.toLowerCase().includes('name') || k.toLowerCase().includes('type'))
   }
-  
   if (targetKey) {
-    console.log(`[Dashboard] Updating parameter "${targetKey}" to "${data.label}"`)
     store.updateParameter(targetKey, data.label)
-    
-    // Automatically refresh
     toast.info(`Filtering by ${data.label}...`)
     await store.refreshDashboard(true)
-  } else {
-    console.log('[Dashboard] No matching parameter found for drill-down')
-    toast.info(`Clicked: ${data.label} (${data.value})`, {
-      description: 'Add a parameter with a matching name to enable automatic filtering.'
-    })
   }
 }
 
-// Open dashboard in fullscreen pop-out window
-const openFullscreen = () => {
-  if (!currentDashboard.value) return
-  const url = `/dashboard/${currentDashboard.value.id}/fullscreen`
-  window.open(url, `pegasus-dashboard-${currentDashboard.value.id}`, 'width=1400,height=900')
-}
-
-const handleShare = async () => {
-  if (!currentDashboard.value) return
-  try {
-    const token = await store.generateShareLink(currentDashboard.value.id)
-    shareUrl.value = `${window.location.origin}/shared/dashboard/${token}`
-    showShareModal.value = true
-    copied.value = false
-  } catch (e) {
-    toast.error('Failed to generate share link')
-  }
-}
-
-const copyShareLink = () => {
-  navigator.clipboard.writeText(shareUrl.value)
-  copied.value = true
-  setTimeout(() => copied.value = false, 2000)
-}
-
-// Element Actions
-const removeElement = async (id: string) => {
-  if (!activePage.value || !currentDashboard.value) return
-  const dashboardId = currentDashboard.value.id
-  
-  const el = activePage.value.elements.find((e: any) => e.id === id)
-  const elTitle = el?.title || 'Unknown Element'
-  
-  store.pushToHistory()
-
-  activePage.value.elements = activePage.value.elements.filter((el: any) => el.id !== id)
-  activePage.value.layout = activePage.value.layout.filter((item: any) => item.i !== id)
-  
-  // Emit removal to collaborators
-  const { emitElementRemove } = useCollaboration()
-  emitElementRemove(dashboardId, id)
-  
-  // Log locally
-  store.addActivityLog({
-    type: 'remove',
-    elementId: id,
-    elementTitle: elTitle,
-    userId: identityService.user?.id || 'me',
-    userName: identityService.user?.firstName || 'Me',
-    userProfilePicture: identityService.user?.profilePictureUrl
-  })
-  
-  await handleSave()
-}
-
-const handleEditQuery = (element: any) => {
-  if (!element.query) return
-  router.push({ 
-    path: '/query', 
-    query: { 
-      loadQuery: element.query,
-      mode: 'write',
-      connectionId: element.config.connectionId
-    } 
-  })
-}
-
-const handleViewQuery = (element: any) => {
-  editingElement.value = element
-  editingQuery.value = element.query || ''
-  showQueryModal.value = true
-}
-
-const saveQueryChanges = async () => {
-  if (!editingElement.value || !activePage.value) return
-  
-  const el = activePage.value.elements.find((e: any) => e.id === editingElement.value.id)
-  if (el) {
-    el.query = editingQuery.value
-    
-    // Emit update to collaborators
-    const { emitElementUpdate } = useCollaboration()
-    if (currentDashboard.value) {
-      emitElementUpdate(currentDashboard.value.id, el.id, { query: el.query })
-      
-      // Log locally
-      store.addActivityLog({
-        type: 'update',
-        elementId: el.id,
-        elementTitle: el.title,
-        userId: identityService.user?.id || 'me',
-        userName: identityService.user?.firstName || 'Me',
-        userProfilePicture: identityService.user?.profilePictureUrl,
-        changes: { query: el.query }
-      })
-    }
-    
-    showQueryModal.value = false
-    await handleSave()
-    toast.success('Query updated and saved.')
-  }
-}
-
-// Element Editor Handlers
-const handleEditElement = (element: any) => {
-  editingElementForModal.value = element
-  showEditModal.value = true
-}
-
-const handleAddElementSelect = (type: 'visualization' | 'table' | 'text' | 'file') => {
-  if (type === 'visualization' || type === 'table') {
-    // Redirect to query builder with return context
-    // We pass dashboardId so the query builder knows where to add the result
-    router.push({ 
-      path: '/query', 
-      query: { 
-        mode: 'write',
-        dashboardId: currentDashboard.value?.id 
-      } 
-    })
-  } else if (type === 'text') {
-    showTextDialog.value = true
-  } else if (type === 'file') {
-    showFileDialog.value = true
-  }
-}
-
-const handleAddWidget = async (widgetType: string, config: any) => {
-  if (!currentDashboard.value) return
-  
-  try {
-    console.log(`[Dashboard] Adding widget: ${widgetType}`, config)
-    
-    const response = await api.post(`/dashboards/${currentDashboard.value.id}/elements/widget`, {
-      widgetType,
-      config
-    })
-    
-    console.log('[Dashboard] Widget created:', response)
-    
-    // Reload dashboard to show new widget
-    await store.selectDashboard(currentDashboard.value.id)
-    
-    toast.success('Widget added successfully')
-  } catch (e: any) {
-    console.error('[Dashboard] Widget creation failed:', e)
-    toast.error(e.message || 'Failed to add widget')
-  }
-}
-
-const handleAddTextElement = async (data: { title: string, content: string }) => {
-  if (!currentDashboard.value) return
-  
-  const element = {
-    type: 'text',
-    title: data.title,
-    config: { content: data.content },
-    w: 6, h: 4 // default size
-  }
-
-  try {
-    await store.addElementToDashboard(currentDashboard.value.id, element)
-    toast.success('Text block added')
-  } catch (e) {
-    toast.error('Failed to add text block')
-  }
-}
-
-const handleAddFileElement = async (data: { file: File, title: string }) => {
-  if (!currentDashboard.value) return
-  
-  // Check 200MB limit
-  if (data.file.size > 200 * 1024 * 1024) {
-    toast.error('File exceeds 200MB limit')
+const downloadFile = (element: any) => {
+  if (!element.config?.fileId) {
+    toast.error('File not found')
     return
   }
-
-  try {
-    toast.info('Uploading file...')
-    
-    // Upload file to backend
-    const uploadResult = await uploadDashboardFile(currentDashboard.value.id, data.file)
-    
-    // Add element with file info
-    const element = {
-      type: 'file',
-      title: data.title || data.file.name,
-      config: {
-        fileId: uploadResult.fileId,
-        fileName: uploadResult.fileName,
-        fileSize: uploadResult.fileSize,
-        fileType: uploadResult.fileType
-      },
-      w: 4, h: 3
-    }
-    
-    await store.addElementToDashboard(currentDashboard.value.id, element)
-    toast.success('File uploaded successfully')
-  } catch (e) {
-    console.error('File upload error:', e)
-    toast.error('Failed to upload file')
-  }
+  toast.info(`Downloading ${element.config.fileName}...`)
+  const url = getFileDownloadUrl(element.config.fileId)
+  window.open(url, '_blank')
 }
 
-const handleSaveElement = async (updatedElement: any) => {
-  if (!activePage.value) return
-  
-  const elementIndex = activePage.value.elements.findIndex(
-    (el: any) => el.id === updatedElement.id
-  )
-  
-  if (elementIndex !== -1) {
-    activePage.value.elements[elementIndex] = updatedElement
-    
-    // Emit update to collaborators
-    const { emitElementUpdate } = useCollaboration()
-    if (currentDashboard.value) {
-      // Calculate changes - for simplicity send the whole updated element object 
-      // but filtered to what's likely to change (title, type, config, customization)
-      const { id, title, type, config, customization } = updatedElement
-      emitElementUpdate(currentDashboard.value.id, updatedElement.id, { 
-        title, type, config, customization 
-      })
+// -------- Shortcuts & Lifecycle -------------------------------------
 
-      // Log locally
-      store.addActivityLog({
-        type: 'update',
-        elementId: updatedElement.id,
-        elementTitle: updatedElement.title,
-        userId: identityService.user?.id || 'me',
-        userName: identityService.user?.firstName || 'Me',
-        userProfilePicture: identityService.user?.profilePictureUrl,
-        changes: { title, type }
-      })
-    }
-    
-    await handleSave()
-    toast.success('Element updated and saved.')
+onKeyStroke(['s', 'S'], (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+    e.preventDefault()
+    store.saveCurrentDashboard()
   }
-  
-  showEditModal.value = false
-}
+  if (e.altKey || (e.metaKey && e.shiftKey)) {
+    e.preventDefault()
+    handleShare()
+  }
+})
 
+onKeyStroke(['z', 'Z'], (e) => {
+  if (e.altKey && e.shiftKey) {
+    e.preventDefault()
+    store.undo()
+  }
+})
 
-// Initialization
+onKeyStroke(['y', 'Y'], (e) => {
+  if (e.altKey && e.shiftKey) {
+    e.preventDefault()
+    store.redo()
+  }
+})
+
+onKeyStroke(['c', 'C'], (e) => {
+  if (e.altKey || (e.metaKey && e.shiftKey)) {
+     e.preventDefault()
+     showChat.value = !showChat.value
+  }
+})
+
 onMounted(async () => {
   isInitializing.value = true
   try {
     await store.loadDashboards()
-    
     const id = route.params.id as string
     if (id) {
       await store.selectDashboard(id)
     } else if (dashboards.value.length > 0) {
-      // Auto-select first dashboard if none specified
       router.replace(`/dashboard/${dashboards.value[0]!.id}`)
     }
-    
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
   } catch (e) {
     console.error('[Dashboard] Initialization failed:', e)
   } finally {
@@ -1803,25 +1064,19 @@ watch(() => route.params.id, async (newId) => {
   }
 })
 
+watch(() => currentDashboard.value?.id, (newId, oldId) => {
+  if (oldId) leaveDashboard(oldId)
+  if (newId) {
+    joinDashboard(newId)
+    trackDashboardAccess(newId).catch(console.error)
+  }
+}, { immediate: true })
+
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeyDown)
-  window.removeEventListener('keyup', handleKeyUp)
+  if (currentDashboard.value?.id) {
+    leaveDashboard(currentDashboard.value.id)
+  }
 })
-
-// Track Control/Command key state
-const isCtrlPressed = ref(false)
-
-const handleKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Control' || e.key === 'Meta') {
-    isCtrlPressed.value = true
-  }
-}
-
-const handleKeyUp = (e: KeyboardEvent) => {
-  if (e.key === 'Control' || e.key === 'Meta') {
-    isCtrlPressed.value = false
-  }
-}
 </script>
 
 <style scoped>

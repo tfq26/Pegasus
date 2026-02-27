@@ -17,7 +17,12 @@ import {
   ScrollText,
   Code2,
   Notebook,
-  StickyNote
+  StickyNote,
+  LayoutGrid,
+  LayoutTemplate,
+  FileSpreadsheet,
+  FileJson,
+  FileCode
 } from 'lucide-vue-next'
 
 import { useColorMode } from '@vueuse/core'
@@ -46,7 +51,13 @@ const iconMap: Record<string, any> = {
   'message-square': MessageSquare,
   'scroll-text': ScrollText,
   'notebook': Notebook,
-  'sticky-note': StickyNote
+  'sticky-note': StickyNote,
+  'layout-grid': LayoutGrid,
+  'layout-template': LayoutTemplate,
+  'file-spreadsheet': FileSpreadsheet,
+  'file-json': FileJson,
+  'file-code': FileCode,
+  'table-2': Table2
 }
 
 // Map of special icon names to their SVG paths or themed objects
@@ -63,7 +74,14 @@ const svgIconMap: Record<string, string | { light: string, dark: string }> = {
   'lucide:sticky-note': {
     light: '/icons/note/note-svgrepo-com.svg',
     dark: '/icons/note/note-svgrepo-com-white.svg'
-  }
+  },
+  'logos:postgresql': '/icons/postgres/postgres.svg',
+  'logos:mysql': '/icons/mysql/mysql.svg',
+  'logos:sqlite': '/icons/sqlite/sqlite.svg',
+  'logos:mongodb-icon': '/icons/mongo/mongo-svgrepo-com.svg',
+  'logos:azure-icon': '/icons/microsoft/Azure/azure-2.svg',
+  'logos:google-cloud': '/icons/google/google-cloud-svgrepo-com.svg',
+  'logos:snowflake-icon': '/icons/snowflake/snowflake-svgrepo-com.svg'
 }
 
 const iconComponent = computed(() => {

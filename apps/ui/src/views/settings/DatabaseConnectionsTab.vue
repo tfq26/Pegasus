@@ -221,22 +221,22 @@ const openAddDialog = () => {
         <div class="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-stone-800 to-transparent group-hover:from-violet-500 transition-colors duration-300"></div>
 
         <div class="p-5 flex flex-col h-full">
-          <div class="flex items-start justify-between mb-4">
-            <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-muted border border-border group-hover:border-primary/30 group-hover:bg-primary/10 transition-colors">
+          <div class="flex items-start justify-between mb-4 gap-2">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="p-2 rounded-lg bg-muted border border-border group-hover:border-primary/30 group-hover:bg-primary/10 transition-colors shrink-0">
                 <Database v-if="conn.provider === 'mysql'" class="w-5 h-5 text-blue-400" />
                 <Server v-else-if="conn.provider === 'mongodb'" class="w-5 h-5 text-green-400" />
                 <Activity v-else class="w-5 h-5 text-orange-400" />
               </div>
-              <div>
-                <h3 class="font-semibold text-foreground text-base leading-tight" :title="conn.alias ? `Original: ${conn.nickname}` : conn.nickname">
+              <div class="min-w-0 flex-1">
+                <h3 class="font-semibold text-foreground text-base leading-tight truncate" :title="conn.alias ? `Original: ${conn.nickname}` : conn.nickname">
                   {{ conn.alias || conn.nickname }}
                 </h3>
-                <p class="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider">{{ conn.provider }}</p>
+                <p class="text-xs text-muted-foreground mt-1 font-mono uppercase tracking-wider truncate">{{ conn.provider }}</p>
               </div>
             </div>
 
-            <div class="flex items-center gap-1">
+            <div class="flex items-center gap-1 shrink-0">
               <button
                 @click="props.testConnection(conn)"
                 :disabled="props.connectionStatusFor(conn.id)?.status === 'loading'"

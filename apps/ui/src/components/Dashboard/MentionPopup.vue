@@ -91,9 +91,9 @@ const getInitials = (item: Mentionable) => {
     const first = parts[0]
     const second = parts[1]
     if (parts.length >= 2 && first && second && first[0] && second[0]) {
-      return (first[0] + second[0]).toUpperCase()
+      return (first[0] + second[0]).to()
     }
-    return item.name.substring(0, 2).toUpperCase()
+    return item.name.substring(0, 2).to()
   }
   return '??'
 }
@@ -106,7 +106,7 @@ const getInitials = (item: Mentionable) => {
     :style="{ bottom: '100%', left: `${position.left}px` }"
   >
     <div class="p-2 border-b border-border bg-muted/50">
-      <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <span class="text-[10px] font-bold  tracking-wider text-muted-foreground">
         Suggestions
       </span>
     </div>

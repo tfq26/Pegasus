@@ -76,7 +76,7 @@
     </div>
     
     <!-- Footer/Stats -->
-    <div class="p-2 border-t border-border bg-muted/30 text-[9px] text-center text-muted-foreground uppercase tracking-widest">
+    <div class="p-2 border-t border-border bg-muted/30 text-[9px] text-center text-muted-foreground  tracking-widest">
       Showing last 50 changes
     </div>
   </div>
@@ -99,9 +99,9 @@ const getInitials = (name: string) => {
   if (parts.length >= 2) {
     const first = parts[0]?.[0] || ''
     const last = parts[parts.length - 1]?.[0] || ''
-    return (first + last).toUpperCase()
+    return (first + last).to()
   }
-  return name.substring(0, 2).toUpperCase()
+  return name.substring(0, 2).to()
 }
 
 // Helper indices for initials logic safely

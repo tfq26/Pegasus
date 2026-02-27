@@ -14,6 +14,7 @@ import { ConfigService } from "../services/ConfigService.js"
 import { SyncService } from "../services/SyncService.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
 import { authMiddleware, requireUser } from '../middleware/auth.js'
+import { logger } from '../services/Logger.js'
 
 const table = new Hono()
 table.use('*', authMiddleware)
@@ -29,7 +30,8 @@ table.post("/rename-table", requireUser, async (c) => {
             provider = 'postgres';
         }
 
-        console.log(`[Rename] Received rename request:`, { oldTableName, newTableName, provider })
+        const requestId = c.get('requestId');
+        logger.info(`[Rename] Received rename request`, { oldTableName, newTableName, provider, requestId });
 
         let actualConnection = connection
         let extractedUploadId = null
@@ -98,7 +100,7 @@ table.post("/rename-table", requireUser, async (c) => {
             await adapter.disconnect()
             return c.json({ ok: true })
         } catch (error) {
-            console.error('[Rename] Error:', error)
+            logger.error('[Rename] Error', error, { requestId: c.get('requestId') });
             await adapter.disconnect().catch(() => { })
             return c.json({ error: error.message || 'Failed to rename table' }, 500)
         }
@@ -222,7 +224,7 @@ table.post("/save-table-data", async (c) => {
                         return c.json({ error: "Unauthorized - Not your upload" }, 403)
                     }
                 } catch (err) {
-                    console.error('[Save] Error verifying upload ownership:', err)
+                    logger.error('[Save] Error verifying upload ownership', err, { requestId: c.get('requestId') });
                     return c.json({ error: "Failed to verify upload ownership" }, 500)
                 }
             }
@@ -237,7 +239,8 @@ table.post("/save-table-data", async (c) => {
             // For DuckDB file uploads, map the requested table name to the actual table name
             let actualTableName = tableName
             if ((provider === 'duckdb' || provider === 'file')) {
-                console.log(`[Table Save] Mapping table. Requested: ${tableName}. Connection tables:`, connection?.tables ? JSON.stringify(connection.tables) : 'undefined');
+                const requestId = c.get('requestId');
+                logger.debug(`[Table Save] Mapping table. Requested: ${tableName}`, { connectionTables: connection?.tables, requestId });
 
                 if (connection && connection.tables && Array.isArray(connection.tables)) {
                     // Strategy 1: Fuzzy Match
@@ -251,12 +254,12 @@ table.post("/save-table-data", async (c) => {
 
                     if (matchedTable) {
                         actualTableName = matchedTable
-                        console.log(`[Table Save] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`)
+                        logger.debug(`[Table Save] Mapped table name via fuzzy match: ${tableName} -> ${actualTableName}`, { requestId });
                     }
                     // Strategy 2: Single Table Fallback
                     else if (connection.tables.length === 1) {
                         actualTableName = connection.tables[0]
-                        console.log(`[Table Save] Fallback to single available table: ${actualTableName}`)
+                        logger.debug(`[Table Save] Fallback to single available table: ${actualTableName}`, { requestId });
                     }
                 }
             }
@@ -351,12 +354,13 @@ table.post("/table/:tableName/schema", async (c) => {
         const tableName = c.req.param("tableName")
         let { connection, provider } = await c.req.json()
 
-        console.log('[Table Schema] Request:', { tableName, provider, hasConnection: !!connection })
+        const requestId = c.get('requestId');
+        logger.info('[Table Schema] Request', { tableName, provider, hasConnection: !!connection, requestId });
 
         // Fallback to 'duckdb' if provider is undefined (faster for uploaded files/spreadsheets)
         if (!provider) {
             provider = 'duckdb'
-            console.log('[Table Schema] Provider was undefined, defaulting to duckdb')
+            logger.debug('[Table Schema] Provider was undefined, defaulting to duckdb', { requestId: c.get('requestId') });
         }
 
         if (provider === 'surrealdb') provider = 'postgres';
@@ -794,13 +798,14 @@ table.delete("/:tableName/share/:email", async (c) => {
 table.post("/table/:tableName/load", async (c) => {
     try {
         const tableName = c.req.param("tableName")
-        let { connection, provider, limit = 2000, offset = 0 } = await c.req.json()
+        let { connection, provider, limit = 2000, offset = 0, sortBy, sortDir } = await c.req.json()
         if (provider === 'surrealdb' || (connection && connection.provider === 'surrealdb')) {
             provider = 'postgres';
         }
 
         // System Injection for OrionMetrics (Cosmos DB) - Load Endpoint
         if (provider === 'cosmosdb' && (tableName === 'OrionMetrics' || tableName === 'orionmetrics') && process.env.COSMOS_ENDPOINT) {
+
             if (!connection) connection = {};
             if (!connection.endpoint) connection.endpoint = process.env.COSMOS_ENDPOINT;
             if (!connection.key) connection.key = process.env.COSMOS_KEY;
@@ -861,21 +866,32 @@ table.post("/table/:tableName/load", async (c) => {
                 (async () => {
                     let sqlStr
                     if (provider === 'surrealdb') {
-                        sqlStr = `SELECT *, meta::id(id) as __id FROM ${actualTableName} ORDER BY _row_order LIMIT ${Number(limit)} START ${Number(offset)}`
+                        const order = sortBy ? `ORDER BY ${sortBy} ${sortDir === 'desc' ? 'DESC' : 'ASC'}` : `ORDER BY _row_order`
+                        sqlStr = `SELECT *, meta::id(id) as __id FROM ${actualTableName} ${order} LIMIT ${Number(limit)} START ${Number(offset)}`
                     } else if (provider === 'mongodb') {
                         sqlStr = { collection: actualTableName, limit: Number(limit), skip: Number(offset) }
+                        if (sortBy) sqlStr.sort = { [sortBy]: sortDir === 'desc' ? -1 : 1 }
                     } else if (provider === 'postgres' || provider === 'mysql') {
                         const q = provider === 'mysql' ? '`' : '"'
-                        sqlStr = `SELECT * FROM ${q}${actualTableName}${q} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                        const order = sortBy ? `ORDER BY ${q}${sortBy}${q} ${sortDir === 'desc' ? 'DESC' : 'ASC'}` : ''
+                        sqlStr = `SELECT * FROM ${q}${actualTableName}${q} ${order} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                    } else if (provider === 'cosmosdb') {
+                        const order = sortBy ? `ORDER BY c.${sortBy} ${sortDir === 'desc' ? 'DESC' : 'ASC'}` : 'ORDER BY c._ts DESC'
+                        if (Number(offset) > 0 || sortBy) {
+                            sqlStr = `SELECT * FROM c ${order} OFFSET ${Number(offset)} LIMIT ${Number(limit)}`
+                        } else {
+                            sqlStr = `SELECT TOP ${Number(limit)} * FROM c ${order}`
+                        }
                     } else {
                         // SQLite / Generic
+                        const order = sortBy ? `ORDER BY "${sortBy}" ${sortDir === 'desc' ? 'DESC' : 'ASC'}` : ''
                         try {
-                            sqlStr = `SELECT rowid as __id, * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                            sqlStr = `SELECT rowid as __id, * FROM "${actualTableName}" ${order} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
                             return await adapter.query(sqlStr)
                         } catch (e) {
                             if (e.message.includes('no such column: rowid')) {
                                 console.log(`[Table Load] Table ${actualTableName} has no rowid, falling back to simple SELECT`)
-                                sqlStr = `SELECT * FROM "${actualTableName}" LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+                                sqlStr = `SELECT * FROM "${actualTableName}" ${order} LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
                                 return await adapter.query(sqlStr)
                             }
                             throw e

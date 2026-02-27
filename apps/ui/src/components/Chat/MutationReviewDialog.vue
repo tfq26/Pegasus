@@ -42,7 +42,7 @@ const handleApply = () => {
             <AlertTriangle class="w-4 h-4" />
           </div>
           <div>
-            <DialogTitle class="text-[13px] font-black uppercase tracking-widest text-stone-100">Review Data Mutation</DialogTitle>
+            <DialogTitle class="text-[13px] font-black  tracking-widest text-stone-100">Review Data Mutation</DialogTitle>
             <DialogDescription class="text-[10px] text-stone-500 font-mono">SAFETY PROTOCOL ACTIVE</DialogDescription>
           </div>
         </div>
@@ -51,7 +51,7 @@ const handleApply = () => {
       <div class="p-6 space-y-6">
         <!-- Reasoning -->
         <div class="space-y-2">
-          <h4 class="text-[10px] font-black uppercase tracking-widest text-stone-500">AI Reasoning</h4>
+          <h4 class="text-[10px] font-black  tracking-widest text-stone-500">AI Reasoning</h4>
           <p class="text-[13px] text-stone-300 leading-relaxed">{{ mutation.reasoning }}</p>
         </div>
 
@@ -59,7 +59,7 @@ const handleApply = () => {
         <div v-if="mutation.example_formula" class="p-4 bg-violet-500/5 border border-violet-500/20 rounded-xl">
            <div class="flex items-center gap-2 mb-2">
              <Command class="w-3 h-3 text-violet-400" />
-             <span class="text-[9px] font-black uppercase tracking-widest text-violet-400">Transformation Logic</span>
+             <span class="text-[9px] font-black  tracking-widest text-violet-400">Transformation Logic</span>
            </div>
            <div class="text-[15px] font-mono font-bold text-stone-100">{{ mutation.example_formula }}</div>
         </div>
@@ -79,13 +79,13 @@ const handleApply = () => {
       <div class="px-6 py-4 border-t border-stone-800 bg-stone-900/30 flex justify-between items-center gap-3">
         <button 
           @click="emit('update:open', false)"
-          class="px-4 py-2 border border-stone-800 hover:bg-stone-800 text-stone-400 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all"
+          class="px-4 py-2 border border-stone-800 hover:bg-stone-800 text-stone-400 text-[10px] font-black  tracking-widest rounded-lg transition-all"
         >
           Decline
         </button>
         <button 
           @click="handleApply"
-          class="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-stone-100 text-stone-950 hover:bg-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-xl shadow-stone-950/20"
+          class="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-stone-100 text-stone-950 hover:bg-white text-[10px] font-black  tracking-widest rounded-lg transition-all shadow-xl shadow-stone-950/20"
         >
           <Play class="w-3 h-3 fill-current" />
           <span>Execute Mutation</span>

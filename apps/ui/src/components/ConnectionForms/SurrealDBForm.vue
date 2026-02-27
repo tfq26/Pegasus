@@ -32,7 +32,7 @@ const onProvisioned = (data: { nickname: string; config: any }) => {
          <CheckCircle2 class="w-4 h-4 text-emerald-500" />
       </div>
       <div>
-        <p class="text-xs font-bold text-emerald-500 uppercase tracking-tight">Managed Data Source</p>
+        <p class="text-xs font-bold text-emerald-500  tracking-tight">Managed Data Source</p>
         <p class="text-[10px] text-muted-foreground">This file is indexed in the internal SurrealDB engine for RAG and semantic search.</p>
       </div>
     </div>
@@ -54,7 +54,7 @@ const onProvisioned = (data: { nickname: string; config: any }) => {
                 <p class="text-[10px] text-muted-foreground">Provision a managed SurrealDB instance in one click.</p>
               </div>
             </div>
-            <button type="button" class="text-[10px] font-bold uppercase tracking-widest text-violet-500 bg-violet-500/10 px-3 py-1.5 rounded-lg hover:bg-violet-500 hover:text-white transition-colors">
+            <button type="button" class="text-[10px] font-bold  tracking-widest text-violet-500 bg-violet-500/10 px-3 py-1.5 rounded-lg hover:bg-violet-500 hover:text-white transition-colors">
               Provision Now
             </button>
           </div>
@@ -62,7 +62,7 @@ const onProvisioned = (data: { nickname: string; config: any }) => {
 
         <div class="grid gap-4 md:grid-cols-2">
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Protocol</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Protocol</label>
             <Select v-model="connectionForm.surrealdb.protocol">
               <SelectTrigger class="w-full rounded-lg border-input bg-background h-[38px]">
                 <SelectValue placeholder="Protocol" />
@@ -76,40 +76,40 @@ const onProvisioned = (data: { nickname: string; config: any }) => {
             </Select>
           </div>
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">URL (Optional - Overrides Host/Port)</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">URL (Optional - Overrides Host/Port)</label>
             <input v-model="connectionForm.surrealdb.url" placeholder="ws://localhost:8000/rpc" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors font-mono" />
           </div>
         </div>
 
         <div class="grid gap-4 md:grid-cols-3">
           <div class="space-y-1.5 md:col-span-2">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Host</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Host</label>
             <input v-model="connectionForm.surrealdb.host" placeholder="127.0.0.1" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
           </div>
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Port</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Port</label>
             <input v-model.number="connectionForm.surrealdb.port" type="number" placeholder="8000" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
           </div>
         </div>
 
         <div class="grid gap-4 md:grid-cols-2">
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Namespace</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Namespace</label>
             <input v-model="connectionForm.surrealdb.namespace" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
           </div>
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Database</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Database</label>
             <input v-model="connectionForm.surrealdb.database" placeholder="test" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
           </div>
         </div>
 
         <div class="grid gap-4 md:grid-cols-2">
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Username</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Username</label>
             <input v-model="connectionForm.surrealdb.username" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
           </div>
           <div class="space-y-1.5">
-            <label class="text-[10px] uppercase tracking-wide text-muted-foreground">Password</label>
+            <label class="text-[10px]  tracking-wide text-muted-foreground">Password</label>
             <input v-model="connectionForm.surrealdb.password" type="password" placeholder="root" class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary transition-colors" />
           </div>
         </div>
