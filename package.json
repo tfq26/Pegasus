@@ -5,6 +5,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "trustedDependencies": [
+    "duckdb",
+    "duckdb-async"
+  ],
   "workspaces": [
     "apps/*",
     "packages/*"
