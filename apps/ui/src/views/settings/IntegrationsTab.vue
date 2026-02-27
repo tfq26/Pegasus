@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useColorMode } from '@vueuse/core'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 import { useRouter } from 'vue-router'
 import { 
   ExternalLink, 
@@ -21,7 +21,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const mode = useColorMode()
+const mode = usePegasusTheme()
 const isDark = computed(() => mode.value === 'dark')
 
 const showAzureDetails = ref(false)

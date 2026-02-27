@@ -102,7 +102,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
-import { useColorMode } from '@vueuse/core'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 import { toast } from '@/composables/useNotifications'
 import GeneralTab from './GeneralTab.vue'
 import ProfileTab from './ProfileTab.vue'
@@ -160,13 +160,7 @@ watch(tabs, (newTabs) => {
   }
 })
 
-// --- Theme ---
-const mode = useColorMode({
-  emitAuto: true,
-  selector: 'html',
-  attribute: 'class',
-  storageKey: 'pegasus-theme',
-})
+const mode = usePegasusTheme()
 
 const isDark = computed(() => mode.value === 'dark')
 
@@ -179,6 +173,7 @@ const toggleTheme = () => {
     mode.value = 'auto'
   }
 }
+
 
 // --- Settings model ---
 const settingsStore = useSettingsStore()

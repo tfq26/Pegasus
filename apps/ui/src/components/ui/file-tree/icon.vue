@@ -25,14 +25,14 @@ import {
   FileCode
 } from 'lucide-vue-next'
 
-import { useColorMode } from '@vueuse/core'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 
 const props = defineProps<{
   name: string
   size?: number | string
 }>()
 
-const mode = useColorMode()
+const mode = usePegasusTheme()
 
 const iconMap: Record<string, any> = {
   'folder': Folder,

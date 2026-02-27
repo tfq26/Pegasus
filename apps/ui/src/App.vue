@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onErrorCaptured, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import Navbar from './components/Navbar.vue'
 import DesktopNavbar from './components/DesktopNavbar.vue'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 import { Toaster } from '@/components/ui/sonner'
 import { identityService } from '@/services/identityService'
 import { entitlementService } from '@/services/entitlementService'
@@ -82,11 +83,12 @@ const handleWindowError = (event: ErrorEvent) => {
 }
 
 // Routes that should be minimal (no navbar)
-const minimalRoutes = ['/auth/device', '/signin', '/local-auth', '/dashboard/']
+const minimalRoutes = ['/auth/device', '/signin', '/local-auth']
 const isMinimalRoute = computed(() => {
   // Check for fullscreen dashboard route specifically
   if (route.path.includes('/fullscreen')) return true
-  return minimalRoutes.some(r => route.path === r || (r !== '/dashboard/' && route.path.startsWith(r)))
+  // Check for exact matches and sub-routes of minimal screens
+  return minimalRoutes.some(r => route.path === r || route.path.startsWith(r + '/'))
 })
 
 // Enable McMaster-Carr style link prefetching
@@ -131,12 +133,7 @@ onMounted(async () => {
  * THEME MANAGEMENT (Centralized)
  * This ensures the theme class on <html> is maintained regardless of which navbar is mounted.
  */
-const themeMode = useColorMode({
-  emitAuto: true,
-  selector: 'html',
-  attribute: 'class',
-  storageKey: 'pegasus-theme',
-})
+const themeMode = usePegasusTheme()
 
 const toggleTheme = () => {
   if (themeMode.value === 'auto') {
@@ -147,6 +144,7 @@ const toggleTheme = () => {
     themeMode.value = 'auto'
   }
 }
+
 
 onUnmounted(() => {
     window.removeEventListener('unhandledrejection', handleUnhandledRejection)

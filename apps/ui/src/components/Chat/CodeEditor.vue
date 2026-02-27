@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
-import { useColorMode, usePreferredDark } from '@vueuse/core' // Optional if your app tracks dark/light
+import { usePreferredDark } from '@vueuse/core' // Optional if your app tracks dark/light
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 import MonacoEditor from 'monaco-editor-vue3'
 import * as monaco from 'monaco-editor'
 
@@ -12,12 +13,8 @@ const props = defineProps<{
 
 const emit = defineEmits(['update:modelValue', 'action'])
 const modelValue = ref(props.modelValue)
-const colorMode = useColorMode({
-  emitAuto: true,
-  selector: 'html',
-  attribute: 'class',
-  storageKey: 'pegasus-theme',
-})
+const colorMode = usePegasusTheme()
+
 const preferredDark = usePreferredDark()
 const isDark = computed(() => colorMode.value === 'dark' || (colorMode.value === 'auto' && preferredDark.value))
 

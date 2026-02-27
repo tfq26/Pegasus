@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import NumberFlow from "@number-flow/vue";
-import { useColorMode } from "@vueuse/core";
+import { usePegasusTheme } from "@/composables/usePegasusTheme";
 import { motion, MotionConfig, AnimatePresence } from "motion-v";
 import { computed, ref, watch } from "vue";
 import { useProgress } from "@/lib/progress";
@@ -38,7 +38,7 @@ watch(currentOp, (newOp, oldOp) => {
     }
 });
 
-const isDark = computed(() => useColorMode().value === "dark");
+const isDark = computed(() => usePegasusTheme().value === "dark");
 
 const handleCancel = (e: MouseEvent) => {
     e.stopPropagation();

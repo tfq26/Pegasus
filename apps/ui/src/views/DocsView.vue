@@ -180,13 +180,14 @@ import {
 } from 'lucide-vue-next'
 import MarkdownIt from 'markdown-it'
 import { api } from '@/lib/apiClient'
-import { useColorMode } from '@vueuse/core'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 
 const route = useRoute()
 const router = useRouter()
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
-const mode = useColorMode()
+const mode = usePegasusTheme()
 const isDark = computed(() => mode.value === 'dark')
+
 
 const formatTitle = (slug: string) => {
   const acronyms = ['aws', 'gcp', 'api', 'sql', 'db', 'ui', 'ux', 'ai', 'ml', 'cli', 'sdk', 'ci', 'cd']

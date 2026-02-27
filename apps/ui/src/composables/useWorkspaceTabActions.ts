@@ -249,7 +249,7 @@ export function useWorkspaceTabActions(
             return
         }
 
-        const tableName = prompt('Enter a name for your new table:', (tabs.value as any[]).find((t: any) => t.id === tabId)?.label || 'MySheet1')
+        const tableName = prompt('Enter a name for your new table:', (tabs.value as any[]).find((t: any) => t.id === tabId)?.label || 'MyDataView1')
         if (!tableName) return
 
         const progress = showProgressToast(`Persisting ${tableName}...`, 10)

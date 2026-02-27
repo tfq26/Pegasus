@@ -11,7 +11,7 @@ import { toast } from '@/composables/useNotifications';
 import { useSettingsStore } from '@/stores/settings';
 import { useDataViewStore } from '@/stores/dataView';
 import { useSpaceStore } from '@/stores/space';
-import { Plus, MessageSquare, Layout, FileCode, StickyNote, FileText } from 'lucide-vue-next';
+import { Plus, MessageSquare, Layout, FileCode, StickyNote, FileText, Sparkles } from 'lucide-vue-next';
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
 const FileViewer = defineAsyncComponent(() => import('./FileViewer.vue'));
 import Toolbar from './Toolbar.vue';
@@ -281,7 +281,7 @@ const handleSaveSheetLocal = async () => {
     const sheetId = currentTab?.data?.sheetId;
 
     if (sheetId) {
-      const progress = showProgressToast('Saving sheet...', 30);
+      const progress = showProgressToast('Saving data view...', 30);
       await dataViewStore.saveDataView({
         id: sheetId,
         data: state,
@@ -289,11 +289,11 @@ const handleSaveSheetLocal = async () => {
         updatedAt: new Date().toISOString(),
         spaceId: currentTab?.data?.spaceId || spaceStore.currentSpaceId || null,
       });
-      progress.success('Sheet saved');
+      progress.success('Data View saved');
     } else {
       const progress = showProgressToast('Saving to explorer...', 30);
       const newDataView = await dataViewStore.saveDataView({
-        name: currentTab?.label || 'New Spreadsheet',
+        name: currentTab?.label || 'New Data View',
         data: state,
         spaceId: unref(spaceStore.currentSpaceId) || null,
       });
@@ -666,8 +666,8 @@ defineExpose({
                   <span class="text-xs font-semibold">SQL</span>
                 </button>
                 <button @click="workspaceStore.updateTabData(tab.id, { type: 'dataview', label: 'Data View' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-emerald-500/40 transition-all group lg:aspect-square justify-center">
-                  <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><Plus class="w-5 h-5 text-emerald-500" /></div>
-                  <span class="text-xs font-semibold">Sheet</span>
+                  <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><Sparkles class="w-5 h-5 text-emerald-500" /></div>
+                  <span class="text-xs font-semibold">Data View</span>
                 </button>
                 <button @click="workspaceStore.updateTabData(tab.id, { type: 'note', label: 'New Note' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-orange-500/40 transition-all group lg:aspect-square justify-center">
                   <div class="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><StickyNote class="w-5 h-5 text-orange-500" /></div>
@@ -676,10 +676,6 @@ defineExpose({
                 <button @click="workspaceStore.updateTabData(tab.id, { type: 'file', label: 'New File' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-indigo-500/40 transition-all group lg:aspect-square justify-center">
                   <div class="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><FileText class="w-5 h-5 text-indigo-500" /></div>
                   <span class="text-xs font-semibold">File</span>
-                </button>
-                <button @click="workspaceStore.updateTab(tab.id, { type: 'dataview', label: 'Data Studio', data: { isExcelSource: true } })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-dashed border-purple-500/50 bg-purple-500/5 hover:bg-purple-500/10 transition-all group lg:aspect-square justify-center text-purple-600">
-                  <div class="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center group-hover:scale-110 transition-transform"><Sparkles class="w-5 h-5" /></div>
-                  <span class="text-xs font-bold">Data Studio</span>
                 </button>
               </div>
             </div>

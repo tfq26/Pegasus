@@ -378,15 +378,12 @@ import {
 import HaloSearch from '@/components/halo-search/Halo-Search.vue'
 import MarkdownIt from 'markdown-it'
 import { useAuth } from '@/composables/useAuth'
-import { useColorMode, usePreferredDark } from '@vueuse/core'
+import { usePreferredDark } from '@vueuse/core'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 
 const { user } = useAuth()
-const mode = useColorMode({
-  emitAuto: true,
-  selector: 'html',
-  attribute: 'class',
-  storageKey: 'pegasus-theme',
-})
+const mode = usePegasusTheme()
+
 const preferredDark = usePreferredDark()
 
 const pegasusLogo = computed(() => {

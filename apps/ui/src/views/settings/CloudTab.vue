@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useColorMode } from '@vueuse/core'
+import { usePegasusTheme } from '@/composables/usePegasusTheme'
 import { Cloud, CheckCircle2, AlertCircle, Loader2, ArrowRight, ExternalLink, ChevronDown, ChevronUp, Globe, ShieldCheck, Key } from 'lucide-vue-next'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
 import CloudProvisionWizard from '@/components/CloudProvisionWizard.vue'
@@ -36,7 +36,7 @@ const props = defineProps<{
 }>()
 
 // State
-const mode = useColorMode()
+const mode = usePegasusTheme()
 const isDark = computed(() => mode.value === 'dark')
 
 const isConnecting = ref<string | null>(null)
