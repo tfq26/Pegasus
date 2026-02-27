@@ -1967,517 +1967,523 @@ app.post("/schema", async (c) => {
         } finally {
             await adapter.disconnect()
         }
-        app.post("/schema/details", async (c) => {
-            try {
-                const body = await c.req.json()
-                let { provider, connection, table } = body
-                if (!table) return c.json({ error: "Table name required" }, 400)
+    } catch (err) {
+        console.error('[/schema] Fatal handler error:', err);
+        return c.json({ error: err.message }, 500);
+    }
+})
 
-                // Extract userId from JWT token
-                const token = getAuthToken(c)
-                let userId = null
-                if (token) {
+app.post("/schema/details", async (c) => {
+    try {
+        const body = await c.req.json()
+        let { provider, connection, table } = body
+        if (!table) return c.json({ error: "Table name required" }, 400)
+
+        // Extract userId from JWT token
+        const token = getAuthToken(c)
+        let userId = null
+        if (token) {
+            try {
+                const payload = await verify(token, jwtSecret)
+                userId = payload.sub
+            } catch (e) { }
+        }
+
+        const adapter = await createAdapter(provider, { ...connection, readOnly: true }, userId)
+        if (!adapter) return c.json({ error: `Provider '${provider}' not supported` }, 400)
+
+        try {
+            await adapter.connect()
+            const rows = await adapter.sampleCollection(table, 10)
+
+            // Try to get column types if adapter supports it
+            let columns = []
+            try {
+                // Some adapters might have a dedicated method, or we infer from rows
+                if (rows.length > 0) {
+                    columns = Object.keys(rows[0]).map(key => ({
+                        name: key,
+                        type: typeof rows[0][key]
+                    }))
+                }
+            } catch (e) { }
+
+            return c.json({
+                ok: true,
+                table,
+                rows,
+                columns
+            })
+        } catch (err) {
+            return c.json({ error: err.message }, 500)
+        } finally {
+            await adapter.disconnect()
+        }
+    } catch (err) {
+        return c.json({ error: err.message }, 500)
+    }
+})
+
+// AI Routes moved to src/routes/chat.js
+
+// Queries Routes
+// Queries Routes
+app.get("/queries", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        const spaceId = c.req.query("space_id")
+
+        // Only fetch queries with 'user' source - these are actual SQL queries
+        // AI usage logs (ai_generation, ai_spreadsheet, etc.) contain natural language prompts
+        // and should not be shown in the Queries tab
+        const conditions = [
+            eq(queryHistory.userId, userId),
+            eq(queryHistory.source, 'user')
+        ]
+
+        if (spaceId) {
+            conditions.push(eq(queryHistory.spaceId, spaceId))
+        } else {
+            // If no spaceId provided (legacy), verify behavior. 
+            // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
+            // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
+            // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
+        }
+
+        const results = await db.select()
+            .from(queryHistory)
+            .where(and(...conditions))
+            .orderBy(desc(queryHistory.createdAt))
+            .limit(50);
+
+        const mapped = results.map(q => ({
+            id: q.id,
+            query: q.query,
+            timestamp: q.createdAt.getTime(),
+            source: q.source,
+            model: q.model,
+            status: q.status,
+            connection_id: q.connectionId,
+            space_id: q.spaceId
+        }))
+
+        return c.json(mapped)
+    } catch (e) {
+        console.error("Fetch queries error:", e)
+        return c.json({ error: "Failed to fetch queries" }, 500)
+    }
+})
+
+app.post("/queries", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+        await upsertUser(payload)
+        const { query, source, status, connection_id, model, tokens_used, space_id } = await c.req.json()
+
+        // Create record
+        const [created] = await db.insert(queryHistory).values({
+            userId,
+            query,
+            source: source || 'user',
+            model: model || null,
+            status: status || 'success',
+            connectionId: connection_id || null,
+            tokensUsed: tokens_used || 0,
+            spaceId: space_id || null
+        }).returning();
+
+        return c.json({ id: created.id })
+    } catch (e) {
+        console.error("Save query error:", e)
+        return c.json({ error: "Failed to save query" }, 500)
+    }
+})
+
+app.delete("/queries/:id", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const { id } = c.req.param()
+
+        // User can only delete their own queries
+        await db.delete(queryHistory).where(and(eq(queryHistory.id, id), eq(queryHistory.userId, payload.sub)));
+
+        return c.json({ success: true })
+    } catch (e) {
+        console.error("Delete query error:", e)
+        return c.json({ error: "Failed to delete query" }, 500)
+    }
+})
+
+app.delete("/queries", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+
+        // Delete all queries for this user
+        await db.delete(queryHistory).where(eq(queryHistory.userId, payload.sub));
+
+        return c.json({ success: true })
+    } catch (e) {
+        console.error("Clear queries error:", e)
+        return c.json({ error: "Failed to clear queries" }, 500)
+    }
+})
+
+// Feedback endpoint
+app.post("/feedback", async (c) => {
+    try {
+        const { createFeedback } = await import("./src/services/feedback.js")
+        const { sendCriticalFeedbackEmail } = await import("./src/services/email.js")
+
+        const body = await c.req.json()
+        const feedbackData = {
+            userEmail: body.userEmail,
+            featureCategory: body.featureCategory,
+            customFeature: body.customFeature,
+            issueType: body.issueType,
+            description: body.description,
+            browserInfo: body.browserInfo,
+            isUrgent: body.isUrgent || false
+        }
+
+        // Validate required fields
+        if (!feedbackData.featureCategory || !feedbackData.issueType || !feedbackData.description) {
+            return c.json({ error: "Missing required fields" }, 400)
+        }
+
+        const { feedback, priority } = await createFeedback(feedbackData)
+
+        // Send immediate email for critical feedback
+        if (priority === "critical") {
+            await sendCriticalFeedbackEmail(feedback)
+        }
+
+        return c.json({
+            success: true,
+            message: "Feedback submitted successfully",
+            priority
+        })
+    } catch (e) {
+        console.error("Error submitting feedback:", e)
+        return c.json({ error: "Failed to submit feedback" }, 500)
+    }
+})
+
+
+
+app.get("/usage", async (c) => {
+    const token = getAuthToken(c)
+    if (!token) return c.json({ error: "Unauthorized" }, 401)
+
+    try {
+        const payload = await verify(token, jwtSecret)
+        const userId = payload.sub
+
+        // DEV MODE BYPASS
+        if (process.env.PEGASUS_DEV_MODE === 'true' && userId === 'dev_user') {
+            const mockUsage = {
+                tokens: 5000,
+                limit: 1000000,
+                tier: 'pro_plus',
+                purchasedTokens: 0,
+                purchasedStorage: 0,
+                storage: 1024 * 1024 * 100, // 100MB
+                storageLimit: 1024 * 1024 * 1024 * 10,
+                storageFormatted: '100 MB',
+                storageLimitFormatted: '10 GB',
+                tierUsage: {
+                    connections: { current: 1, limit: 100 },
+                    tables: { current: 5, limit: 1000 },
+                    dashboards: { current: 1, limit: 50 }
+                }
+            }
+            return c.json(mockUsage)
+        }
+
+
+        const {
+            tier,
+            tokenLimit: limit,
+            storageLimit,
+            purchasedTokens,
+            purchasedStorage
+        } = await calculateUserLimits(db, userId);
+
+        // Calculate start of current month
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        // Get total tokens used THIS MONTH
+        const result = await db.select({ total: sql`sum(${queryHistory.tokensUsed})` })
+            .from(queryHistory)
+            .where(and(
+                eq(queryHistory.userId, userId),
+                gte(queryHistory.createdAt, startOfMonth)
+            ));
+        const tokenResult = result[0]?.total || 0;
+        const totalTokens = Number(tokenResult);
+
+        // Get storage used (approximate size of uploaded DBs)
+        // Get storage used
+        const connResult = await db.select({ config: connections.config })
+            .from(connections)
+            .where(and(eq(connections.userId, userId), eq(connections.type, 'sqlite')));
+
+        let totalStorage = 0
+
+        // 1. Local SQLite storage (legacy)
+        for (const row of connResult) {
+            try {
+                const config = JSON.parse(row.config)
+                const sqliteConfig = config.sqlite
+
+                if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {
+                    const filePath = sqliteConfig.path.replace('file:', '')
                     try {
-                        const payload = await verify(token, jwtSecret)
-                        userId = payload.sub
-                    } catch (e) { }
-                }
-
-                const adapter = await createAdapter(provider, { ...connection, readOnly: true }, userId)
-                if (!adapter) return c.json({ error: `Provider '${provider}' not supported` }, 400)
-
-                try {
-                    await adapter.connect()
-                    const rows = await adapter.sampleCollection(table, 10)
-
-                    // Try to get column types if adapter supports it
-                    let columns = []
-                    try {
-                        // Some adapters might have a dedicated method, or we infer from rows
-                        if (rows.length > 0) {
-                            columns = Object.keys(rows[0]).map(key => ({
-                                name: key,
-                                type: typeof rows[0][key]
-                            }))
-                        }
-                    } catch (e) { }
-
-                    return c.json({
-                        ok: true,
-                        table,
-                        rows,
-                        columns
-                    })
-                } catch (err) {
-                    return c.json({ error: err.message }, 500)
-                } finally {
-                    await adapter.disconnect()
-                }
-            } catch (err) {
-                return c.json({ error: err.message }, 500)
-            }
-        })
-
-        // AI Routes moved to src/routes/chat.js
-
-        // Queries Routes
-        // Queries Routes
-        app.get("/queries", async (c) => {
-            const token = getAuthToken(c)
-            if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-            try {
-                const payload = await verify(token, jwtSecret)
-                const userId = payload.sub
-                const spaceId = c.req.query("space_id")
-
-                // Only fetch queries with 'user' source - these are actual SQL queries
-                // AI usage logs (ai_generation, ai_spreadsheet, etc.) contain natural language prompts
-                // and should not be shown in the Queries tab
-                const conditions = [
-                    eq(queryHistory.userId, userId),
-                    eq(queryHistory.source, 'user')
-                ]
-
-                if (spaceId) {
-                    conditions.push(eq(queryHistory.spaceId, spaceId))
-                } else {
-                    // If no spaceId provided (legacy), verify behavior. 
-                    // Ideally we only show global or personal space queries if we had that distinction clearly mapped.
-                    // For now, if no spaceId is passed, we might show all, BUT logical correctness implies we should filtering by space if the UI sends it.
-                    // If the UI sends space_id, we filter. If not, we return all (legacy behavior).
-                }
-
-                const results = await db.select()
-                    .from(queryHistory)
-                    .where(and(...conditions))
-                    .orderBy(desc(queryHistory.createdAt))
-                    .limit(50);
-
-                const mapped = results.map(q => ({
-                    id: q.id,
-                    query: q.query,
-                    timestamp: q.createdAt.getTime(),
-                    source: q.source,
-                    model: q.model,
-                    status: q.status,
-                    connection_id: q.connectionId,
-                    space_id: q.spaceId
-                }))
-
-                return c.json(mapped)
-            } catch (e) {
-                console.error("Fetch queries error:", e)
-                return c.json({ error: "Failed to fetch queries" }, 500)
-            }
-        })
-
-        app.post("/queries", async (c) => {
-            const token = getAuthToken(c)
-            if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-            try {
-                const payload = await verify(token, jwtSecret)
-                const userId = payload.sub
-                await upsertUser(payload)
-                const { query, source, status, connection_id, model, tokens_used, space_id } = await c.req.json()
-
-                // Create record
-                const [created] = await db.insert(queryHistory).values({
-                    userId,
-                    query,
-                    source: source || 'user',
-                    model: model || null,
-                    status: status || 'success',
-                    connectionId: connection_id || null,
-                    tokensUsed: tokens_used || 0,
-                    spaceId: space_id || null
-                }).returning();
-
-                return c.json({ id: created.id })
-            } catch (e) {
-                console.error("Save query error:", e)
-                return c.json({ error: "Failed to save query" }, 500)
-            }
-        })
-
-        app.delete("/queries/:id", async (c) => {
-            const token = getAuthToken(c)
-            if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-            try {
-                const payload = await verify(token, jwtSecret)
-                const { id } = c.req.param()
-
-                // User can only delete their own queries
-                await db.delete(queryHistory).where(and(eq(queryHistory.id, id), eq(queryHistory.userId, payload.sub)));
-
-                return c.json({ success: true })
-            } catch (e) {
-                console.error("Delete query error:", e)
-                return c.json({ error: "Failed to delete query" }, 500)
-            }
-        })
-
-        app.delete("/queries", async (c) => {
-            const token = getAuthToken(c)
-            if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-            try {
-                const payload = await verify(token, jwtSecret)
-
-                // Delete all queries for this user
-                await db.delete(queryHistory).where(eq(queryHistory.userId, payload.sub));
-
-                return c.json({ success: true })
-            } catch (e) {
-                console.error("Clear queries error:", e)
-                return c.json({ error: "Failed to clear queries" }, 500)
-            }
-        })
-
-        // Feedback endpoint
-        app.post("/feedback", async (c) => {
-            try {
-                const { createFeedback } = await import("./src/services/feedback.js")
-                const { sendCriticalFeedbackEmail } = await import("./src/services/email.js")
-
-                const body = await c.req.json()
-                const feedbackData = {
-                    userEmail: body.userEmail,
-                    featureCategory: body.featureCategory,
-                    customFeature: body.customFeature,
-                    issueType: body.issueType,
-                    description: body.description,
-                    browserInfo: body.browserInfo,
-                    isUrgent: body.isUrgent || false
-                }
-
-                // Validate required fields
-                if (!feedbackData.featureCategory || !feedbackData.issueType || !feedbackData.description) {
-                    return c.json({ error: "Missing required fields" }, 400)
-                }
-
-                const { feedback, priority } = await createFeedback(feedbackData)
-
-                // Send immediate email for critical feedback
-                if (priority === "critical") {
-                    await sendCriticalFeedbackEmail(feedback)
-                }
-
-                return c.json({
-                    success: true,
-                    message: "Feedback submitted successfully",
-                    priority
-                })
-            } catch (e) {
-                console.error("Error submitting feedback:", e)
-                return c.json({ error: "Failed to submit feedback" }, 500)
-            }
-        })
-
-
-
-        app.get("/usage", async (c) => {
-            const token = getAuthToken(c)
-            if (!token) return c.json({ error: "Unauthorized" }, 401)
-
-            try {
-                const payload = await verify(token, jwtSecret)
-                const userId = payload.sub
-
-                // DEV MODE BYPASS
-                if (process.env.PEGASUS_DEV_MODE === 'true' && userId === 'dev_user') {
-                    const mockUsage = {
-                        tokens: 5000,
-                        limit: 1000000,
-                        tier: 'pro_plus',
-                        purchasedTokens: 0,
-                        purchasedStorage: 0,
-                        storage: 1024 * 1024 * 100, // 100MB
-                        storageLimit: 1024 * 1024 * 1024 * 10,
-                        storageFormatted: '100 MB',
-                        storageLimitFormatted: '10 GB',
-                        tierUsage: {
-                            connections: { current: 1, limit: 100 },
-                            tables: { current: 5, limit: 1000 },
-                            dashboards: { current: 1, limit: 50 }
-                        }
-                    }
-                    return c.json(mockUsage)
-                }
-
-
-                const {
-                    tier,
-                    tokenLimit: limit,
-                    storageLimit,
-                    purchasedTokens,
-                    purchasedStorage
-                } = await calculateUserLimits(db, userId);
-
-                // Calculate start of current month
-                const startOfMonth = new Date();
-                startOfMonth.setDate(1);
-                startOfMonth.setHours(0, 0, 0, 0);
-
-                // Get total tokens used THIS MONTH
-                const result = await db.select({ total: sql`sum(${queryHistory.tokensUsed})` })
-                    .from(queryHistory)
-                    .where(and(
-                        eq(queryHistory.userId, userId),
-                        gte(queryHistory.createdAt, startOfMonth)
-                    ));
-                const tokenResult = result[0]?.total || 0;
-                const totalTokens = Number(tokenResult);
-
-                // Get storage used (approximate size of uploaded DBs)
-                // Get storage used
-                const connResult = await db.select({ config: connections.config })
-                    .from(connections)
-                    .where(and(eq(connections.userId, userId), eq(connections.type, 'sqlite')));
-
-                let totalStorage = 0
-
-                // 1. Local SQLite storage (legacy)
-                for (const row of connResult) {
-                    try {
-                        const config = JSON.parse(row.config)
-                        const sqliteConfig = config.sqlite
-
-                        if (sqliteConfig && sqliteConfig.path && sqliteConfig.path.startsWith('file:')) {
-                            const filePath = sqliteConfig.path.replace('file:', '')
+                        if (filePath.includes('/uploads/')) {
                             try {
-                                if (filePath.includes('/uploads/')) {
-                                    try {
-                                        const stats = await fs.stat(filePath)
-                                        totalStorage += stats.size
-                                    } catch (e) {
-                                        if (typeof Bun !== 'undefined') {
-                                            const file = Bun.file(filePath)
-                                            totalStorage += await file.size()
-                                        }
-                                    }
+                                const stats = await fs.stat(filePath)
+                                totalStorage += stats.size
+                            } catch (e) {
+                                if (typeof Bun !== 'undefined') {
+                                    const file = Bun.file(filePath)
+                                    totalStorage += await file.size()
                                 }
-                            } catch (e) { }
+                            }
                         }
                     } catch (e) { }
                 }
+            } catch (e) { }
+        }
 
-                // 2. Cloud Storage from 'files' table
-                const [fileResult] = await db.select({ total: sql`sum(${files.size})` })
-                    .from(files)
-                    .where(eq(files.userId, userId));
-                totalStorage += Number(fileResult?.total || 0);
+        // 2. Cloud Storage from 'files' table
+        const [fileResult] = await db.select({ total: sql`sum(${files.size})` })
+            .from(files)
+            .where(eq(files.userId, userId));
+        totalStorage += Number(fileResult?.total || 0);
 
-                // 3. Cloud Storage from 'spaceFiles' table
+        // 3. Cloud Storage from 'spaceFiles' table
 
-                const [spaceFileSum] = await db.select({ total: sql`sum(${spaceFiles.fileSizeBytes})` })
-                    .from(spaceFiles)
-                    .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
-                    .where(eq(dataSpaces.userId, userId));
+        const [spaceFileSum] = await db.select({ total: sql`sum(${spaceFiles.fileSizeBytes})` })
+            .from(spaceFiles)
+            .innerJoin(dataSpaces, eq(spaceFiles.spaceId, dataSpaces.id))
+            .where(eq(dataSpaces.userId, userId));
 
-                totalStorage += Number(spaceFileSum?.total || 0);
+        totalStorage += Number(spaceFileSum?.total || 0);
 
 
-                // Get tier-based usage summary
-                const tierUsage = await getUserUsageSummary(db, userId, tier)
+        // Get tier-based usage summary
+        const tierUsage = await getUserUsageSummary(db, userId, tier)
 
-                // Add tokens and storage to tierUsage for frontend compatibility
-                tierUsage.tokens = {
-                    current: totalTokens,
-                    limit: limit,
-                    purchased: purchasedTokens,
-                    percentage: limit > 0 ? Math.round((totalTokens / limit) * 100) : 0
-                }
+        // Add tokens and storage to tierUsage for frontend compatibility
+        tierUsage.tokens = {
+            current: totalTokens,
+            limit: limit,
+            purchased: purchasedTokens,
+            percentage: limit > 0 ? Math.round((totalTokens / limit) * 100) : 0
+        }
 
-                tierUsage.storage = {
-                    current: totalStorage,
-                    limit: storageLimit,
-                    purchased: purchasedStorage,
-                    currentFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
-                    limitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
-                    percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0
-                }
+        tierUsage.storage = {
+            current: totalStorage,
+            limit: storageLimit,
+            purchased: purchasedStorage,
+            currentFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
+            limitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
+            percentage: storageLimit > 0 ? Math.round((totalStorage / storageLimit) * 100) : 0
+        }
 
-                return c.json({
-                    tokens: totalTokens,
-                    limit: limit,
-                    tier: tier,
-                    purchasedTokens: purchasedTokens,
-                    purchasedStorage: purchasedStorage,
-                    storage: totalStorage, // in bytes
-                    storageLimit: storageLimit,
-                    storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
-                    storageLimitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
-                    tierUsage // Add tier-specific usage (connections, tables, dashboards, tokens, storage)
-                })
-            } catch (e) {
-                console.error("Fetch usage error:", e)
-                return c.json({ error: "Failed to fetch usage stats" }, 500)
-            }
+        return c.json({
+            tokens: totalTokens,
+            limit: limit,
+            tier: tier,
+            purchasedTokens: purchasedTokens,
+            purchasedStorage: purchasedStorage,
+            storage: totalStorage, // in bytes
+            storageLimit: storageLimit,
+            storageFormatted: (totalStorage / (1024 * 1024)).toFixed(2) + ' MB',
+            storageLimitFormatted: (storageLimit / (1024 * 1024)).toFixed(2) + ' MB',
+            tierUsage // Add tier-specific usage (connections, tables, dashboards, tokens, storage)
         })
+    } catch (e) {
+        console.error("Fetch usage error:", e)
+        return c.json({ error: "Failed to fetch usage stats" }, 500)
+    }
+})
 
-        // initialization block
-        const isBun = typeof Bun !== 'undefined';
-        // startServer logic moved to the bottom of the file to ensure instant port binding on Railway.
+// initialization block
+const isBun = typeof Bun !== 'undefined';
+// startServer logic moved to the bottom of the file to ensure instant port binding on Railway.
 
-        // Helper to create table and insert data (refactored to avoid duplication)
-        async function createTableAndInsertData(tableName, rows) {
-            if (!rows || rows.length === 0) return;
+// Helper to create table and insert data (refactored to avoid duplication)
+async function createTableAndInsertData(tableName, rows) {
+    if (!rows || rows.length === 0) return;
 
-            const columnNames = new Set();
-            rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)));
+    const columnNames = new Set();
+    rows.forEach(row => Object.keys(row).forEach(key => columnNames.add(key)));
 
-            // In Postgres, we'll create a table dynamically for user-uploaded data
-            // We'll use JSONB for simplicity since we don't know the schema ahead of time, 
-            // or we can try to guess types. For now, let's create a table with a 'data' jsonb column
-            // or dynamic columns.
+    // In Postgres, we'll create a table dynamically for user-uploaded data
+    // We'll use JSONB for simplicity since we don't know the schema ahead of time, 
+    // or we can try to guess types. For now, let's create a table with a 'data' jsonb column
+    // or dynamic columns.
 
-            const columnsSql = Array.from(columnNames).map(col => `"${col}" TEXT`).join(', ');
+    const columnsSql = Array.from(columnNames).map(col => `"${col}" TEXT`).join(', ');
 
-            try {
-                await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS "${tableName}" (
+    try {
+        await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS "${tableName}" (
       id SERIAL PRIMARY KEY,
       _row_order INTEGER,
       ${columnsSql}
     )`));
-                console.log(`[DB] Created dynamic table: ${tableName}`);
-            } catch (e) {
-                console.warn(`[DB] Table ${tableName} create warning:`, e.message);
+        console.log(`[DB] Created dynamic table: ${tableName}`);
+    } catch (e) {
+        console.warn(`[DB] Table ${tableName} create warning:`, e.message);
+    }
+
+    // Batch Insert
+    const chunkSize = 50;
+    const allKeys = Array.from(columnNames);
+    const keysStr = allKeys.map(k => `"${k}"`).join(', ');
+
+    for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize);
+        if (!chunk.length) continue;
+
+        try {
+            // Try Batch Insert
+            const valuesChunks = [];
+            for (let j = 0; j < chunk.length; j++) {
+                const row = chunk[j];
+                const rowParams = [];
+                // _row_order
+                rowParams.push(i + j);
+                allKeys.forEach(k => {
+                    rowParams.push(row[k] !== undefined ? row[k] : null);
+                });
+
+                const rowSql = sql`(${rowParams[0]}`;
+                for (let p = 1; p < rowParams.length; p++) {
+                    rowSql.append(sql`, ${rowParams[p]}`);
+                }
+                rowSql.append(sql`)`);
+                valuesChunks.push(rowSql);
             }
 
-            // Batch Insert
-            const chunkSize = 50;
-            const allKeys = Array.from(columnNames);
-            const keysStr = allKeys.map(k => `"${k}"`).join(', ');
+            if (valuesChunks.length > 0) {
+                const finalQuery = sql.raw(`INSERT INTO "${tableName}" (_row_order, ${keysStr}) VALUES `);
+                finalQuery.append(valuesChunks[0]);
+                for (let k = 1; k < valuesChunks.length; k++) {
+                    finalQuery.append(sql`, `);
+                    finalQuery.append(valuesChunks[k]);
+                }
+                await db.execute(finalQuery);
+            }
 
-            for (let i = 0; i < rows.length; i += chunkSize) {
-                const chunk = rows.slice(i, i + chunkSize);
-                if (!chunk.length) continue;
+        } catch (batchError) {
+            console.warn(`[DB] Batch insert failed for chunk ${i}, falling back to row-by-row. Error:`, batchError.message);
 
+            // Fallback: Row-by-Row
+            for (const row of chunk) {
+                const keys = Object.keys(row);
+                const values = keys.map(k => row[k]);
+                const rowKeysStr = keys.map(k => `"${k}"`).join(', ');
+                const placeholders = keys.map((_, idx) => `$${idx + 2}`).join(', ');
                 try {
-                    // Try Batch Insert
-                    const valuesChunks = [];
-                    for (let j = 0; j < chunk.length; j++) {
-                        const row = chunk[j];
-                        const rowParams = [];
-                        // _row_order
-                        rowParams.push(i + j);
-                        allKeys.forEach(k => {
-                            rowParams.push(row[k] !== undefined ? row[k] : null);
-                        });
-
-                        const rowSql = sql`(${rowParams[0]}`;
-                        for (let p = 1; p < rowParams.length; p++) {
-                            rowSql.append(sql`, ${rowParams[p]}`);
-                        }
-                        rowSql.append(sql`)`);
-                        valuesChunks.push(rowSql);
-                    }
-
-                    if (valuesChunks.length > 0) {
-                        const finalQuery = sql.raw(`INSERT INTO "${tableName}" (_row_order, ${keysStr}) VALUES `);
-                        finalQuery.append(valuesChunks[0]);
-                        for (let k = 1; k < valuesChunks.length; k++) {
-                            finalQuery.append(sql`, `);
-                            finalQuery.append(valuesChunks[k]);
-                        }
-                        await db.execute(finalQuery);
-                    }
-
-                } catch (batchError) {
-                    console.warn(`[DB] Batch insert failed for chunk ${i}, falling back to row-by-row. Error:`, batchError.message);
-
-                    // Fallback: Row-by-Row
-                    for (const row of chunk) {
-                        const keys = Object.keys(row);
-                        const values = keys.map(k => row[k]);
-                        const rowKeysStr = keys.map(k => `"${k}"`).join(', ');
-                        const placeholders = keys.map((_, idx) => `$${idx + 2}`).join(', ');
-                        try {
-                            await db.execute(sql.raw(`
+                    await db.execute(sql.raw(`
                   INSERT INTO "${tableName}" (_row_order, ${rowKeysStr})
                   VALUES ($1, ${placeholders})
                 `), [i + chunk.indexOf(row), ...values]);
-                        } catch (e) {
-                            console.error(`[DB] Single row insert failed:`, e.message);
-                        }
-                    }
+                } catch (e) {
+                    console.error(`[DB] Single row insert failed:`, e.message);
                 }
             }
         }
+    }
+}
 
-        // 1. Core Server Start
-        if (!isVercel) {
-            const numericPort = Number(port);
-            console.log(`[Railway] Booting instantly on 0.0.0.0:${numericPort}...`);
+// 1. Core Server Start
+if (!isVercel) {
+    const numericPort = Number(port);
+    console.log(`[Railway] Booting instantly on 0.0.0.0:${numericPort}...`);
 
-            // Basic health check registered BEFORE imports to be safe
-            app.get('/health', (c) => c.text('PEGASUS_OK'));
+    // Basic health check registered BEFORE imports to be safe
+    app.get('/health', (c) => c.text('PEGASUS_OK'));
 
-            const serverInstance = serve({
-                fetch: app.fetch.bind(app),
-                port: numericPort,
-                hostname: '0.0.0.0'
-            }, (info) => {
-                console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
+    const serverInstance = serve({
+        fetch: app.fetch.bind(app),
+        port: numericPort,
+        hostname: '0.0.0.0'
+    }, (info) => {
+        console.log(`🚀 [Main] Server listening on ${info.address}:${info.port} (Family: ${info.family})`);
 
-                // Ensure app.fetch is indeed the one being used
-                if (typeof app.fetch !== 'function') {
-                    console.error('❌ [Main] CRITICAL ERROR: app.fetch is not a function! Hono is misconfigured.');
-                }
-
-                // 2. Load routes and backend services only AFTER the port is bound
-                (async () => {
-                    const startInit = Date.now();
-                    console.log("[Main] Starting full initialization...");
-                    try {
-                        // Initialize Socket.io
-                        initSocketServer(serverInstance, allowedOrigins);
-                        console.log("[Main] Socket.io initialized");
-
-                        // Background Jobs
-                        startAllJobs();
-                        console.log("[Main] Background jobs scheduled");
-
-                        // Start Server-dependent services
-                        try {
-                            startPollingService();
-                            console.log("[Main] Polling service started");
-                        } catch (e) { console.error("[Main] Polling error:", e.message); }
-
-                        // Database connectivity check
-                        try {
-                            await db.select({ val: sql`1` });
-                            console.log('[Main] Database (Neon) active');
-                        } catch (e) {
-                            console.error('[Main] Warning: Database connectivity check failed:', e.message);
-                        }
-
-                        // DEV MODE: Setup test user
-                        if (process.env.PEGASUS_DEV_MODE === 'true') {
-                            console.log('🛠️  [DEV_MODE] Setting up dev user...');
-                            try {
-                                await db.insert(users).values({
-                                    id: 'dev_user',
-                                    email: 'dev@pegasus.ai',
-                                    firstName: 'Developer', subscriptionTier: 'pro_plus', updatedAt: new Date()
-                                }).onConflictDoUpdate({ target: users.id, set: { updatedAt: new Date() } });
-                            } catch (e) { console.error('🛠️  [DEV_MODE] Setup failed:', e.message); }
-                        }
-
-                        console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
-                    } catch (err) {
-                        console.error("❌ [Main] Initialization error:", err);
-                    }
-                })();
-            });
+        // Ensure app.fetch is indeed the one being used
+        if (typeof app.fetch !== 'function') {
+            console.error('❌ [Main] CRITICAL ERROR: app.fetch is not a function! Hono is misconfigured.');
         }
 
-        // Export for platforms
-        // On Vercel, we need the handler as default export
-        // On Bun, we export a dummy object to prevent Bun from auto-starting its own server
-        const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
-        export default defaultExport;
-        export { app };
+        // 2. Load routes and backend services only AFTER the port is bound
+        (async () => {
+            const startInit = Date.now();
+            console.log("[Main] Starting full initialization...");
+            try {
+                // Initialize Socket.io
+                initSocketServer(serverInstance, allowedOrigins);
+                console.log("[Main] Socket.io initialized");
+
+                // Background Jobs
+                startAllJobs();
+                console.log("[Main] Background jobs scheduled");
+
+                // Start Server-dependent services
+                try {
+                    startPollingService();
+                    console.log("[Main] Polling service started");
+                } catch (e) { console.error("[Main] Polling error:", e.message); }
+
+                // Database connectivity check
+                try {
+                    await db.select({ val: sql`1` });
+                    console.log('[Main] Database (Neon) active');
+                } catch (e) {
+                    console.error('[Main] Warning: Database connectivity check failed:', e.message);
+                }
+
+                // DEV MODE: Setup test user
+                if (process.env.PEGASUS_DEV_MODE === 'true') {
+                    console.log('🛠️  [DEV_MODE] Setting up dev user...');
+                    try {
+                        await db.insert(users).values({
+                            id: 'dev_user',
+                            email: 'dev@pegasus.ai',
+                            firstName: 'Developer', subscriptionTier: 'pro_plus', updatedAt: new Date()
+                        }).onConflictDoUpdate({ target: users.id, set: { updatedAt: new Date() } });
+                    } catch (e) { console.error('🛠️  [DEV_MODE] Setup failed:', e.message); }
+                }
+
+                console.log(`✅ [Main] Full initialization complete (${Date.now() - startInit}ms)`);
+            } catch (err) {
+                console.error("❌ [Main] Initialization error:", err);
+            }
+        })();
+    });
+}
+
+// Export for platforms
+// On Vercel, we need the handler as default export
+// On Bun, we export a dummy object to prevent Bun from auto-starting its own server
+const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
+export default defaultExport;
+export { app };
