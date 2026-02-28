@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted } from 'vue';
-import { useDataStudioAI } from '../../../composables/useDataStudioAI';
+import { useDataViewAI } from '../../../composables/useDataViewAI';
 import { inferColumnTypes } from '../../../lib/TypeInference';
 import { 
   Database, 
@@ -18,8 +18,39 @@ import {
   MoreVertical,
   ChevronRight,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Plus,
+  PlusCircle,
+  Columns,
+  Fingerprint,
+  ChevronDown,
 } from 'lucide-vue-next';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 
 // --- State ---
 const props = defineProps<{
@@ -48,21 +79,26 @@ const stagedChanges = ref<any[]>([]);
 const editingCell = ref<{ rowId: number, col: string } | null>(null);
 const editValue = ref('');
 const isAIProcessing = ref(false);
-const mockData = ref([
-  { id: 1, name: 'Alice Johnson', email: 'alice@example.com', role: 'admin', status: 'active', last_login: '2024-02-25' },
-  { id: 2, name: 'Bob Smith', email: 'bob@example.com', role: 'user', status: 'pending', last_login: '2024-02-20' },
-  { id: 3, name: 'Charlie Brown', email: 'charlie@example.com', role: 'user', status: 'active', last_login: '2024-02-26' },
-  { id: 4, name: 'Diana Prince', email: 'diana@example.com', role: 'moderator', status: 'active', last_login: '2024-02-24' },
-  { id: 5, name: 'Edward Elric', email: 'ed@example.com', role: 'user', status: 'active', last_login: '2024-01-15' },
-]);
+const mockData = ref<any[]>([]);
+const originalMockData: any[] = []; // For clearing filters
+const { executeDataViewCommand } = useDataViewAI();
 
-const originalMockData = [...mockData.value]; // For clearing filters
-const { executeDataStudioCommand } = useDataStudioAI();
+const namingHeader = ref<string | null>(null);
+const namingHeaderType = ref('string');
+
+const columnTypes = [
+  { value: 'string', label: 'String (Text)', icon: Type },
+  { value: 'int', label: 'Integer (Number)', icon: Hash },
+  { value: 'float', label: 'Float (Decimal)', icon: Hash },
+  { value: 'boolean', label: 'Boolean (True/False)', icon: Check },
+  { value: 'date', label: 'Date', icon: Calendar },
+  { value: 'uuid', label: 'UUID (ID)', icon: Fingerprint },
+];
 
 // --- Engine Integration ---
 const isRealData = computed(() => !!props.engine && (props.engine.sourceTable || props.engine.getNonEmptyRowCount() > 0 || (props.engine.columnNames && props.engine.columnNames.length > 0)));
 
-const displayDataRaw = shallowRef<any[]>([]);
+const displayDataRaw = ref<any[]>([]);
 const displayData = ref<any[]>([]);
 const currentHeaders = ref<any[]>([]);
 const sortState = ref<{ col: string | null, direction: 'asc' | 'desc' }>({ col: null, direction: 'asc' });
@@ -113,14 +149,7 @@ const syncDataFromEngine = async () => {
         if (cols.length > 0) {
            currentHeaders.value = inferColumnTypes(cols, displayDataRaw.value);
         } else {
-           currentHeaders.value = [
-             { name: 'id', type: 'int', icon: Hash },
-             { name: 'name', type: 'string', icon: Type },
-             { name: 'email', type: 'string', icon: Type },
-             { name: 'role', type: 'enum', icon: User },
-             { name: 'status', type: 'status', icon: Check },
-             { name: 'last_login', type: 'date', icon: Calendar }
-           ];
+           currentHeaders.value = [];
         }
         
         scrollTop.value = 0;
@@ -185,14 +214,7 @@ const syncDataFromEngine = async () => {
       // Mock data inference
       currentHeaders.value = inferColumnTypes(mockCols, displayDataRaw.value);
     } else {
-      currentHeaders.value = [
-        { name: 'id', type: 'int', icon: Hash },
-        { name: 'name', type: 'string', icon: Type },
-        { name: 'email', type: 'string', icon: Type },
-        { name: 'role', type: 'enum', icon: User },
-        { name: 'status', type: 'status', icon: Check },
-        { name: 'last_login', type: 'date', icon: Calendar }
-      ];
+      currentHeaders.value = [];
     }
     updateVisibleRows();
   }
@@ -248,6 +270,11 @@ onMounted(() => {
 
 
 const toggleSort = (colName: string) => {
+  // Don't sort if we are currently naming a column
+  if (currentHeaders.value.some(h => typeof h !== 'string' && h.isNaming && (h.name === colName || !h.name))) {
+    return;
+  }
+  
   if (sortState.value.col === colName) {
     if (sortState.value.direction === 'asc') {
       sortState.value.direction = 'desc';
@@ -270,21 +297,136 @@ onMounted(() => {
 // Watch for engine prop changes (if the entire engine instance is replaced)
 watch(() => props.engine, (newEngine, oldEngine) => {
   if (newEngine !== oldEngine) {
-    console.log('[DataStudio] Engine instance changed, syncing...');
+    console.log('[DataView] Engine instance changed, syncing...');
     syncDataFromEngine();
   }
 }, { deep: false });
+  
+// --- New Row/Col Methods ---
+const setColumnType = (header: any, type: string) => {
+  const typeInfo = (columnTypes.find(t => t.value === type) || columnTypes[0])!;
+  header.type = type;
+  header.icon = typeInfo.icon;
+};
+
+const addRow = () => {
+  const newId = (displayDataRaw.value.length > 0 
+    ? Math.max(...displayDataRaw.value.map(r => r.id || 0)) 
+    : 0) + 1;
+    
+  const newRow: any = { id: newId };
+  currentHeaders.value.forEach(h => {
+    const colName = typeof h === 'string' ? h : h.name;
+    if (colName && colName !== 'id') newRow[colName] = '';
+  });
+  
+  if (isRealData.value) {
+    displayDataRaw.value = [...displayDataRaw.value, newRow];
+  } else {
+    mockData.value.push(newRow);
+    displayDataRaw.value = [...mockData.value];
+  }
+  
+  stagedChanges.value.push({
+    id: Date.now() + Math.random(),
+    row: newId,
+    col: 'row',
+    old: null,
+    new: 'created',
+    type: 'create'
+  });
+  
+  // Force visible rows update
+  updateVisibleRows();
+  
+  // Scroll to bottom to show the new row
+  setTimeout(() => {
+    if (containerRef.value) {
+      containerRef.value.scrollTop = containerRef.value.scrollHeight;
+    }
+  }, 100);
+};
+
+const addColumn = () => {
+  const tempId = `new_col_${Date.now()}`;
+  currentHeaders.value = [
+    ...currentHeaders.value,
+    {
+      name: '',
+      rawName: '',
+      type: 'string',
+      icon: Type,
+      isNaming: true,
+      tempId
+    }
+  ];
+  namingHeader.value = tempId;
+  
+  // Focus the new input after render
+  setTimeout(() => {
+    const input = document.getElementById(`naming-input-${tempId}`);
+    if (input) input.focus();
+  }, 50);
+};
+
+const finishNamingColumn = (header: any, success: boolean) => {
+  if (!success || !header.name.trim()) {
+    currentHeaders.value = currentHeaders.value.filter(h => h.tempId !== header.tempId);
+    namingHeader.value = null;
+    return;
+  }
+  
+  const name = header.name.trim();
+  const exists = currentHeaders.value.some(h => h.tempId !== header.tempId && (typeof h === 'string' ? h : h.name).toLowerCase() === name.toLowerCase());
+  
+  if (exists) {
+    alert("Column already exists");
+    currentHeaders.value = currentHeaders.value.filter(h => h.tempId !== header.tempId);
+    namingHeader.value = null;
+    return;
+  }
+  
+  header.isNaming = false;
+  header.rawName = name;
+  namingHeader.value = null;
+  
+  stagedChanges.value.push({
+    id: Date.now() + Math.random(),
+    row: 0,
+    col: name,
+    old: null,
+    new: 'created',
+    type: 'add_column'
+  });
+};
+
+const deleteRow = (id: number) => {
+  const data = isRealData.value ? displayDataRaw : mockData;
+  const idx = data.value.findIndex(r => r.id === id);
+  if (idx !== -1) {
+    const row = data.value[idx];
+    stagedChanges.value.push({
+      id: Date.now() + Math.random(),
+      row: id,
+      col: 'row',
+      old: 'row',
+      new: 'deleted',
+      type: 'delete'
+    });
+    // For now we just mark as deleted in stagedChanges which triggers line-through in UI
+  }
+};
 
 // --- Methods ---
 const saveView = () => {
-  console.log('[DataStudio] saveView called');
+  console.log('[DataView] saveView called');
   let name = "New Data View";
   try {
     const userInput = prompt("Enter a name for this Data View:", "New Data View");
     if (userInput === null) return; // User cancelled
     name = userInput || "Untitled View";
   } catch (e) {
-    console.warn('[DataStudio] prompt failed, using default name');
+    console.warn('[DataView] prompt failed, using default name');
   }
   
   emit('save', {
@@ -387,10 +529,10 @@ const handleAICommand = async () => {
       
     const provider = props.engine?.sourceProvider || 'pegasus';
     
-    const result = await executeDataStudioCommand(cmd, '', columns, provider);
+    const result = await executeDataViewCommand(cmd, '', columns, provider);
     
     if (result.action === 'complex') {
-       alert("This task is too complex for the lightweight Data Studio assistant. Please open a new Chat tab to ask this question.");
+       alert("This task is too complex for the lightweight Data View assistant. Please open a new Chat tab to ask this question.");
     } else if (result.action === 'find') {
        const target = (result.findTarget || '').toLowerCase();
        if (target && !isRealData.value) {
@@ -637,7 +779,9 @@ onMounted(() => {
 defineExpose({
   handleAICommand,
   saveView,
-  showStaging
+  showStaging,
+  addRow,
+  addColumn
 });
 
 // Sync staged count to parent
@@ -648,7 +792,7 @@ watch(() => stagedChanges.value.length, (count) => {
 // Simulate loading data for a specific view
 watch(() => props.viewId, async (newId) => {
     if (newId) {
-        console.log(`[DataStudio] viewId changed: ${newId}`);
+        console.log(`[DataView] viewId changed: ${newId}`);
         scrollTop.value = 0; 
         if (containerRef.value) containerRef.value.scrollTop = 0;
         syncDataFromEngine();
@@ -670,8 +814,36 @@ watch(() => props.viewId, async (newId) => {
         </div>
       </div>
 
-      <!-- Data View Container (Scrollable) -->
+      <!-- Empty Canvas State (no columns at all) -->
       <div 
+        v-if="currentHeaders.length === 0 && displayDataRaw.length === 0"
+        class="flex-1 flex flex-col items-center justify-center p-8 bg-background"
+      >
+        <div class="max-w-sm w-full text-center space-y-6">
+          <div class="relative inline-flex items-center justify-center mb-2">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/5 to-emerald-500/5 border border-border flex items-center justify-center">
+              <Database class="w-8 h-8 text-muted-foreground/30" />
+            </div>
+          </div>
+          <div class="space-y-1">
+            <h3 class="text-lg font-semibold tracking-tight text-foreground">Start Building Your Table</h3>
+            <p class="text-sm text-muted-foreground/80 max-w-xs mx-auto">Add columns first, then create rows to populate your data.</p>
+          </div>
+          <div class="flex items-center justify-center gap-3 pt-2">
+            <button 
+              @click="addColumn" 
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 active:scale-95 transition-all shadow-lg shadow-primary/20"
+            >
+              <Columns class="w-4 h-4" />
+              Add Column
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data View Container (Scrollable) — only when we have columns -->
+      <div 
+        v-else
         ref="containerRef"
         class="flex-1 overflow-auto bg-muted/5 custom-scrollbar relative"
         @scroll="handleScroll"
@@ -682,35 +854,86 @@ watch(() => props.viewId, async (newId) => {
         ]">
           <thead class="sticky top-0 z-20 bg-background shadow-sm">
             <tr class="bg-muted/10 border-b">
+              <!-- Fixed Index Column -->
+              <th class="w-12 min-w-[48px] max-w-[48px] px-2 py-3 border-b border-r sticky left-0 z-30 bg-muted/20 text-center text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
+                #
+              </th>
+              
               <th 
-                v-for="(header, hIdx) in currentHeaders" 
-                :key="typeof header === 'string' ? header : header.name" 
+                v-for="header in currentHeaders" 
+                :key="typeof header === 'string' ? header : (header.tempId || header.name)" 
                 :class="[
-                  'px-4 py-3 border-b border-r text-left transition-all',
-                  isCompact ? 'py-1.5 px-2' : 'py-3 px-4',
-                  hIdx === 0 ? 'sticky left-0 z-30 bg-muted/20' : ''
+                  'px-4 border-b border-r text-left transition-all min-w-[150px]',
+                  isCompact ? 'py-1.5 px-2' : 'py-2.5 px-4',
                 ]"
               >
                 <div 
                   @click="toggleSort(typeof header === 'string' ? header : header.name)"
                   class="cursor-pointer group/header select-none"
                 >
-                  <div v-if="typeof header === 'string'" class="text-xs font-mono text-muted-foreground flex items-center justify-center">
+                  <div v-if="typeof header === 'string'" class="text-xs font-mono text-muted-foreground">
                     {{ header }}
                   </div>
-                  <div v-else class="flex flex-col gap-0.5">
-                    <div class="flex items-center gap-1.5">
-                      <component v-if="!isCompact" :is="header.icon" class="w-3.5 h-3.5 text-primary/60" />
-                      <span :class="['font-semibold tracking-tight group-hover/header:text-primary transition-colors', isCompact ? 'text-[11px] uppercase opacity-70' : 'text-sm']">
-                        {{ header.name }}
-                      </span>
-                      <ArrowUp v-if="sortState.col === header.name && sortState.direction === 'asc'" class="w-3 h-3 text-primary" />
-                      <ArrowDown v-if="sortState.col === header.name && sortState.direction === 'desc'" class="w-3 h-3 text-primary" />
-                    </div>
-                    <span v-if="!isCompact" class="text-[10px] font-mono text-muted-foreground uppercase opacity-60">{{ header.type }}</span>
+                  <div v-else-if="header.isNaming" @click.stop class="flex items-center gap-1 min-h-[24px] bg-background border border-primary/40 rounded px-1.5 py-0.5 ring-2 ring-primary/5 min-w-[200px]">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button class="flex items-center gap-1 px-1.5 py-1 hover:bg-muted rounded shrink-0 transition-colors group/type mr-1">
+                          <component :is="header.icon" class="w-3.5 h-3.5 text-primary" />
+                          <ChevronDown class="w-3 h-3 text-muted-foreground group-hover/type:text-primary transition-colors" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent class="bg-background border-border shadow-xl rounded-xl z-[60] min-w-[140px]">
+                        <DropdownMenuItem 
+                          v-for="t in columnTypes" 
+                          :key="t.value"
+                          @click="setColumnType(header, t.value)"
+                          class="flex items-center gap-2 py-2 px-3 focus:bg-muted cursor-pointer"
+                        >
+                          <component :is="t.icon" class="w-3.5 h-3.5 text-primary/60" />
+                          <span class="text-xs font-medium">{{ t.label }}</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <div class="w-px h-4 bg-border/50 mx-1 shrink-0"></div>
+
+                    <input 
+                      :id="`naming-input-${header.tempId}`"
+                      v-model="header.name"
+                      class="bg-transparent border-none text-xs font-semibold w-full outline-none py-1"
+                      placeholder="Column name..."
+                      @keydown.enter="finishNamingColumn(header, true)"
+                      @keydown.esc="finishNamingColumn(header, false)"
+                    />
+                  </div>
+                  <div v-else class="flex items-center gap-1.5 min-h-[24px]">
+                    <component :is="header.icon" class="w-3.5 h-3.5 text-primary/40 group-hover/header:text-primary transition-colors shrink-0" />
+                    <span :class="['font-semibold tracking-tight group-hover/header:text-primary transition-colors', isCompact ? 'text-[11px] uppercase opacity-70' : 'text-sm']">
+                      {{ header.name }}
+                    </span>
+                    <ArrowUp v-if="sortState.col === header.name && sortState.direction === 'asc'" class="w-3 h-3 text-primary shrink-0" />
+                    <ArrowDown v-if="sortState.col === header.name && sortState.direction === 'desc'" class="w-3 h-3 text-primary shrink-0" />
                   </div>
                 </div>
               </th>
+              <!-- Add Column Button Slot -->
+              <th class="w-10 min-w-[40px] max-w-[40px] border-b border-r bg-muted/5 group/addcol cursor-pointer hover:bg-muted/20 transition-colors" @click="addColumn">
+                <div class="flex items-center justify-center">
+                  <Plus class="w-3.5 h-3.5 text-muted-foreground/50 group-hover/addcol:text-primary transition-all group-hover/addcol:scale-110" />
+                </div>
+              </th>
+            </tr>
+            <!-- Sticky Add Row at the top -->
+            <tr class="group/addrow cursor-pointer bg-background/50 backdrop-blur-sm hover:bg-primary/5 transition-all sticky top-[49px] z-20 border-b shadow-sm" @click="addRow">
+              <td class="w-12 min-w-[48px] max-w-[48px] px-2 py-2 bg-muted/10 border-r text-center sticky left-0 z-30 bg-muted/20">
+                <Plus class="w-3 h-3 text-muted-foreground/40 group-hover/addrow:text-primary group-hover/addrow:rotate-90 transition-all mx-auto" />
+              </td>
+              <td :colspan="currentHeaders.length + 1" class="px-4 py-2 text-xs font-medium text-muted-foreground/40 group-hover/addrow:text-primary/60 transition-colors">
+                <div class="flex items-center gap-2">
+                  <span class="uppercase tracking-widest text-[9px] font-bold opacity-50">Row</span>
+                  <span class="italic text-[10px]">Click to insert a new row...</span>
+                </div>
+              </td>
             </tr>
           </thead>
           <tbody class="divide-y border-r">
@@ -719,24 +942,24 @@ watch(() => props.viewId, async (newId) => {
               <td colspan="999" class="p-0 border-none bg-muted/5"></td>
             </tr>
 
-            <tr v-for="row in displayData" :key="row.id" :class="[
+            <tr v-for="(row, idx) in displayData" :key="row.id" :class="[
               'transition-colors group text-foreground',
               stagedChanges.some(c => c.row === row.id && c.type === 'delete') ? 'bg-red-500/10 hover:bg-red-500/20 opacity-50 line-through' : 'hover:bg-muted/30',
               stagedChanges.some(c => c.row === row.id && c.type === 'highlight') ? 'bg-amber-500/20 hover:bg-amber-500/30' : ''
             ]">
               <td :class="[
-                'px-4 py-3 text-sm font-mono text-muted-foreground bg-muted/10 w-16 text-center border-b border-r sticky left-0 z-10 transition-colors',
-                isCompact ? 'py-1 px-2 text-[10px]' : 'py-3 px-4',
+                'w-12 min-w-[48px] max-w-[48px] px-2 py-2 text-xs font-mono text-muted-foreground/50 bg-muted/10 text-center border-b border-r sticky left-0 z-10 transition-colors',
+                isCompact ? 'py-1 px-2 text-[10px]' : '',
                 stagedChanges.some(c => c.row === row.id && c.type === 'delete') ? 'bg-red-500/20 text-red-700 dark:text-red-400' : ''
               ]">
-                {{ row.id }}
+                {{ idx + 1 }}
               </td>
               <td 
-                v-for="header in (currentHeaders.filter((h: any) => typeof h !== 'string' && h.name !== 'id'))" 
-                :key="typeof header === 'string' ? header : header.name"
+                v-for="header in currentHeaders" 
+                :key="typeof header === 'string' ? header : (header.tempId || header.name)"
                 :class="[
-                  'px-4 py-3 border-b border-r transition-all relative group/cell cursor-text',
-                  isCompact ? 'py-1 px-2 text-[11px]' : 'py-3 px-4',
+                  'px-4 border-b border-r transition-all relative group/cell cursor-text min-w-[150px]',
+                  isCompact ? 'py-1 px-2 text-[11px]' : 'py-2.5 px-4',
                   stagedChanges.some(c => c.row === row.id && c.col === (typeof header === 'string' ? header : header.name)) 
                     ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/50' 
                     : ''
@@ -756,23 +979,33 @@ watch(() => props.viewId, async (newId) => {
                 </div>
 
                 <!-- Cell Content -->
-                <div v-else class="flex items-center justify-between overflow-hidden">
-                  <div class="flex items-center gap-2 overflow-hidden">
-                    <div v-if="(header.name || '').toLowerCase() === 'status'" :class="['w-1.5 h-1.5 rounded-full shrink-0', String(getRowValue(row, header)).toLowerCase() === 'active' ? 'bg-emerald-500' : 'bg-amber-500']"></div>
-                    <span :class="[
-                      'truncate',
-                      (header.name || '').toLowerCase() === 'email' ? 'text-blue-500 underline decoration-blue-500/30' : '',
-                      (header.name || '').toLowerCase() === 'role' ? 'px-2 py-0.5 rounded-full bg-muted border text-[11px] font-medium' : '',
-                      (header.name || '').toLowerCase() === 'last_login' ? 'italic text-muted-foreground' : '',
-                      isCompact ? 'leading-none' : ''
-                    ]">
-                      {{ getRowValue(row, header) }}
-                    </span>
+                <div v-else class="flex items-center overflow-hidden min-h-[20px]">
+                  <span :class="[
+                    'truncate',
+                    isCompact ? 'leading-none' : ''
+                  ]">
+                    {{ getRowValue(row, header) }}
+                  </span>
+                </div>
+              </td>
+              <!-- Empty cell for the + column -->
+              <td class="w-10 min-w-[40px] max-w-[40px] border-b border-r"></td>
+            </tr>
+
+            <!-- Empty State (has columns but no rows) -->
+            <tr v-if="displayDataRaw.length === 0">
+              <td colspan="999" class="text-center py-20 text-muted-foreground/60 align-middle">
+                <div class="flex flex-col items-center gap-3">
+                  <div class="w-12 h-12 rounded-xl bg-muted/30 flex items-center justify-center">
+                    <Database class="w-6 h-6 opacity-30" />
                   </div>
-                  <ChevronRight v-if="(header.name || '').toLowerCase() === 'name'" class="w-3.5 h-3.5 opacity-0 group-hover/cell:opacity-40 transition-opacity" />
+                  <span class="text-sm font-medium">No rows yet</span>
+                  <p class="text-xs opacity-60">Click the row below or use the toolbar to add data</p>
                 </div>
               </td>
             </tr>
+
+
 
             <!-- Virtual Scroll Bottom Spacer -->
             <tr v-if="bottomSpacerHeight > 0" :style="{ height: `${bottomSpacerHeight}px` }">
@@ -800,7 +1033,7 @@ watch(() => props.viewId, async (newId) => {
       </div>
       
       <div 
-        v-if="stagedChanges.length > 0"
+        v-if="stagedChanges.length > 0 && false"
         class="fixed bottom-10 left-1/2 -translate-x-1/2 flex flex-col gap-3 min-w-[450px] max-w-[650px] z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 pointer-events-auto"
       >
         <!-- Changes List (Drawer Content) -->
@@ -876,6 +1109,7 @@ watch(() => props.viewId, async (newId) => {
         </div>
       </div>
     </div>
+
   </div>
 </template>
 

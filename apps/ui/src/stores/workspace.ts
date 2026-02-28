@@ -218,7 +218,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             note: 'Note',
             file: 'File',
             dataview: 'Data View',
-            mockup: 'Data Studio',
+            mockup: 'Data View',
             launcher: 'New Tab'
         }
 

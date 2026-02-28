@@ -13,7 +13,7 @@ export interface InferredHeader {
  * Automatically infers the data type of a column by sampling up to the first 100 rows.
  * @param columns Array of column names
  * @param rows Array of row data objects
- * @returns Array of fully formed header objects ready for DataStudio.vue
+ * @returns Array of fully formed header objects ready for DataView.vue
  */
 export function inferColumnTypes(columns: string[], rows: any[]): InferredHeader[] {
     const sampleSize = Math.min(100, rows.length);

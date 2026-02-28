@@ -2414,6 +2414,13 @@ async function createTableAndInsertData(tableName, rows) {
     }
 }
 
+// Export for platforms
+// On Vercel, we need the handler as default export
+// On Bun, we export a dummy object to prevent Bun from auto-starting its own server
+const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
+export default defaultExport;
+export { app };
+
 // 1. Core Server Start
 if (!isVercel) {
     const numericPort = Number(port);
@@ -2480,10 +2487,3 @@ if (!isVercel) {
         })();
     });
 }
-
-// Export for platforms
-// On Vercel, we need the handler as default export
-// On Bun, we export a dummy object to prevent Bun from auto-starting its own server
-const defaultExport = isVercel ? handle(app) : (isBun ? { name: "pegasus-backend" } : app);
-export default defaultExport;
-export { app };

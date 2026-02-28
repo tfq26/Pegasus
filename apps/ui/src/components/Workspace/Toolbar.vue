@@ -6,11 +6,10 @@ import {
 } from 'lucide-vue-next'
 import ToolbarChat from './Toolbars/ToolbarChat.vue'
 import ToolbarQuery from './Toolbars/ToolbarQuery.vue'
-import ToolbarSpreadsheet from './Toolbars/ToolbarSpreadsheet.vue'
-import ToolbarDataStudio from './Toolbars/ToolbarDataStudio.vue'
+import ToolbarDataView from './Toolbars/ToolbarDataView.vue'
 
 const props = defineProps<{
-  mode: 'chat' | 'write' | 'spreadsheet' | 'note' | 'file' | 'datastudio'
+  mode: 'chat' | 'write' | 'spreadsheet' | 'note' | 'file' | 'dataview'
   connections: any[]
   selectedConnectionId: string
   isExecuting: boolean
@@ -97,6 +96,8 @@ const emit = defineEmits<{
   'toggle-staging': []
   'delete': []
   'update:isCompact': [value: boolean]
+  'add-row': []
+  'add-column': []
 }>()
 
 const expanded = ref(false)
@@ -151,55 +152,13 @@ const models = computed(() => {
           @save="emit('save')"
         />
 
-        <!-- Spreadsheet Mode -->
-        <ToolbarSpreadsheet
-          v-if="mode === 'spreadsheet'"
-          :ai-mode="aiMode || false"
-          :private-mode="privateMode || false"
-          :live-mode="liveMode || false"
-          :collaborator-count="collaboratorCount"
-          :save-status="saveStatus"
-          :can-undo="canUndo"
-          :can-redo="canRedo"
-          :is-syncing="isSyncing"
-          :versions="versions"
-          :current-version="currentVersion"
-          :text-wrap="textWrap"
-          :show-gridlines="showGridlines"
-          :has-uncommitted-changes="hasUncommittedChanges"
-          :available-models="availableModels"
-          :zoom-level="zoomLevel"
-          :is-sheet="isSheet"
-          @toggle-ai-mode="emit('toggle-ai-mode')"
-          @format="(t, v) => emit('format', t, v)"
-          @visualize="emit('visualize')"
-          @sanitize="emit('sanitize')"
-          @update:private-mode="emit('update:private-mode', $event)"
-          @update:live-mode="emit('update:live-mode', $event)"
-          @share="emit('share')"
-          @merge="emit('merge')"
-          @export="(f) => emit('export', f)"
-          @refresh-table="emit('refresh-table')"
-          @undo="emit('undo')"
-          @redo="emit('redo')"
-          @toggle-find="emit('toggle-find')"
-          @commit="emit('save')"
-          @save-sheet="emit('save-sheet')"
-          @version-change="(v) => emit('version-change', v)"
-          @update:text-wrap="(v) => emit('update:text-wrap', v)"
-          @update:show-gridlines="(v) => emit('update:show-gridlines', v)"
-          @auto-fit="emit('format', 'auto-fit')"
-          @update:ai-options="emit('update:aiOptions', $event)"
-          @update:zoom-level="emit('update:zoom-level', $event)"
-        />
-
-        <!-- Data Studio Mode -->
-        <ToolbarDataStudio
-          v-if="mode === 'datastudio'"
+        <!-- Data View Mode -->
+        <ToolbarDataView
+          v-if="mode === 'dataview'"
           :ai-options="aiOptions"
           :available-models="models"
           :is-executing="isExecuting"
-          :title="studioTitle || 'Data Studio'"
+          :title="studioTitle || 'Data View'"
           :is-excel-source="isExcelSource || false"
           :is-saved-view="isSavedView || false"
           :staged-count="stagedCount || 0"
@@ -214,6 +173,8 @@ const models = computed(() => {
           @toggle-staging="emit('toggle-staging')"
           @delete="emit('delete')"
           @export="emit('export', 'xlsx')"
+          @add-row="emit('add-row')"
+          @add-column="emit('add-column')"
         />
 
         <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->

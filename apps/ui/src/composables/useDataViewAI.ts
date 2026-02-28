@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-export interface DataStudioAction {
+export interface DataViewAction {
     action: 'find' | 'sort' | 'calculate' | 'update' | 'format' | 'visibility' | 'delete' | 'highlight' | 'complex' | 'unknown';
     reasoning?: string;
     // For 'find'
@@ -21,21 +21,21 @@ export interface DataStudioAction {
     highlight?: { targetColumn?: string; conditionLogic: string; color?: string };
 }
 
-export function useDataStudioAI() {
+export function useDataViewAI() {
     const isProcessing = ref(false);
 
-    const executeDataStudioCommand = async (
+    const executeDataViewCommand = async (
         query: string,
         schemaUrl: string,
         columnNames: string[],
         provider: string
-    ): Promise<DataStudioAction> => {
+    ): Promise<DataViewAction> => {
         isProcessing.value = true;
         try {
             const baseUrl = import.meta.env.VITE_QUERY_API_URL;
 
             const prompt = `
-You are a Data Studio AI Assistant embedded in an application.
+You are a Data View AI Assistant embedded in an application.
 Your goal is to parse a user's natural language command regarding a dataset and convert it into a STRICT JSON format representing one of the designated lightweight operations, or determine if it's too complex.
 
 Available Columns: ${columnNames.join(', ')}
@@ -90,7 +90,7 @@ Respond ONLY with valid JSON matching this TypeScript interface:
             const jsonMatch = resultText.match(/```json\n([\s\S]*?)\n```/) || resultText.match(/{[\s\S]*}/);
             if (jsonMatch) {
                 const jsonStr = jsonMatch[1] || jsonMatch[0];
-                return JSON.parse(jsonStr) as DataStudioAction;
+                return JSON.parse(jsonStr) as DataViewAction;
             }
 
             throw new Error("Failed to parse AI response into JSON");
@@ -105,6 +105,6 @@ Respond ONLY with valid JSON matching this TypeScript interface:
 
     return {
         isProcessing,
-        executeDataStudioCommand
+        executeDataViewCommand
     };
 }

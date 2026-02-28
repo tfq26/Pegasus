@@ -6,7 +6,7 @@ import { AIProvider } from './AIProvider.js'
 export class OllamaProvider extends AIProvider {
     constructor(config = {}) {
         super(config)
-        this.baseUrl = config.baseUrl || 'http://localhost:11434/api'
+        this.baseUrl = process.env.OLLAMA_BASE_URL || config.baseUrl || 'http://localhost:11434/api'
         this.model = config.model || 'llama3'
     }
 

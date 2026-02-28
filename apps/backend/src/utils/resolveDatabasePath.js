@@ -33,6 +33,7 @@ export async function resolveDatabasePath(dbPath, userId = 'system', options = {
                 const projectRoot = path.resolve(process.cwd(), '..', '..');
                 const demoPath = path.resolve(projectRoot, 'demo-data', filename);
                 const localDemoPath = path.resolve(process.cwd(), 'demo-data', filename);
+                const testDemoPath = path.resolve(projectRoot, 'tests', 'fixtures', 'demo-data', filename);
 
                 try {
                     await access(demoPath);
@@ -42,7 +43,13 @@ export async function resolveDatabasePath(dbPath, userId = 'system', options = {
                     try {
                         await access(localDemoPath);
                         return localDemoPath;
-                    } catch (e2) { /* not in demo-data */ }
+                    } catch (e2) {
+                        try {
+                            await access(testDemoPath);
+                            console.log(`[resolveDatabasePath] Found ${filename} in tests/fixtures/demo-data.`);
+                            return testDemoPath;
+                        } catch (e3) { /* not in demo-data */ }
+                    }
                 }
 
                 const url = await StorageManager.getPublicUrl(userId, dbPath);
@@ -80,6 +87,7 @@ export async function resolveDatabasePath(dbPath, userId = 'system', options = {
             for (const f of [...new Set(possibleFilenames)]) {
                 const demoPath = path.resolve(projectRoot, 'demo-data', f);
                 const localDemoPath = path.resolve(process.cwd(), 'demo-data', f);
+                const testDemoPath = path.resolve(projectRoot, 'tests', 'fixtures', 'demo-data', f);
 
                 try {
                     await access(demoPath);
@@ -90,7 +98,13 @@ export async function resolveDatabasePath(dbPath, userId = 'system', options = {
                         await access(localDemoPath);
                         console.log(`[resolveDatabasePath] Fallback: Found ${f} in local demo-data.`);
                         return localDemoPath;
-                    } catch (e2) { /* keep trying */ }
+                    } catch (e2) {
+                        try {
+                            await access(testDemoPath);
+                            console.log(`[resolveDatabasePath] Fallback: Found ${f} in tests/fixtures/demo-data.`);
+                            return testDemoPath;
+                        } catch (e3) { /* keep trying */ }
+                    }
                 }
             }
 

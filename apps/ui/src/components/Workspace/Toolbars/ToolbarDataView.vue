@@ -8,7 +8,10 @@ import {
   Check,
   Trash2,
   Download,
-  MoreHorizontal
+  MoreHorizontal,
+  Plus,
+  PlusCircle,
+  Columns
 } from 'lucide-vue-next'
 import {
   Tooltip,
@@ -22,7 +25,7 @@ const props = defineProps<{
   availableModels: { id: string; name: string }[]
   isExecuting: boolean
   
-  // Data Studio Specific
+  // Data View Specific
   title: string
   isExcelSource: boolean
   isSavedView: boolean
@@ -41,6 +44,8 @@ const emit = defineEmits<{
   'delete': []
   'export': []
   'update:isCompact': [value: boolean]
+  'add-row': []
+  'add-column': []
 }>()
 
 const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
@@ -86,6 +91,37 @@ const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
 
     <!-- Right: Actions -->
     <div class="flex items-center gap-1 shrink-0">
+      <div class="flex items-center gap-0.5 mr-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button 
+                @click="emit('add-row')"
+                class="p-1.5 rounded-lg text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-500 transition-all active:scale-95"
+              >
+                <PlusCircle class="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" class="text-[10px] font-bold">Add Row</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button 
+                @click="emit('add-column')"
+                class="p-1.5 rounded-lg text-muted-foreground hover:bg-blue-500/10 hover:text-blue-500 transition-all active:scale-95"
+              >
+                <Columns class="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" class="text-[10px] font-bold">Add Column</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+
+      <div class="w-px h-4 bg-border mr-1"></div>
       <button 
         @click="emit('save-view')"
         :class="['px-3 py-1 rounded-lg text-xs font-black tracking-wider transition-all flex items-center gap-1.5 border shadow-sm active:scale-95', isSavedView ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-background hover:bg-muted text-foreground border-border']"

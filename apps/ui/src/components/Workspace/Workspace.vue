@@ -4,7 +4,7 @@ import TabsManager from './TabsManager.vue';
 import { useWorkspaceStore } from '@/stores/workspace';
 import type { Tab } from '@/stores/workspace';
 // import Grid from '../TableView/Grid/Grid.vue';
-const DataStudio = defineAsyncComponent(() => import('../TableView/DataView/DataStudio.vue'));
+const DataView = defineAsyncComponent(() => import('../TableView/DataView/DataView.vue'));
 import ChatEditor from '@/components/Chat/ChatEditor.vue';
 const QueryEditorView = defineAsyncComponent(() => import('./QueryEditorView.vue'));
 import { toast } from '@/composables/useNotifications';
@@ -230,6 +230,14 @@ const handleStudioToggleStaging = () => {
   if (studioRef.value) studioRef.value.showStaging = !studioRef.value.showStaging;
 };
 
+const handleStudioAddRow = () => {
+  if (studioRef.value) studioRef.value.addRow();
+};
+
+const handleStudioAddColumn = () => {
+  if (studioRef.value) studioRef.value.addColumn();
+};
+
 // -------- Sync chat history prop to active tab data -----------------
 watch(() => props.chatHistory, (newHistory) => {
   const currentTab = activeTab.value as any;
@@ -244,7 +252,7 @@ const toolbarMode = computed(() => {
   if (!currentTab) return 'chat';
   if (currentTab.type === 'note' || currentTab.type === 'file') return currentTab.type;
   if (currentTab.type === 'query') return 'write';
-  if (currentTab.type === 'table' || currentTab.type === 'spreadsheet' || currentTab.type === 'datastudio' || currentTab.type === 'dataview') return 'datastudio';
+  if (currentTab.type === 'table' || currentTab.type === 'spreadsheet' || currentTab.type === 'datastudio' || currentTab.type === 'dataview') return 'dataview';
   return 'chat';
 });
 
@@ -491,7 +499,7 @@ defineExpose({
       @delete-chat="() => handleDeleteChat(workspaceStore, activeTab)"
       @export-chat="(f: any) => handleExportChat(f)"
       
-      :studio-title="(activeTab as any)?.label || 'Data Studio'"
+      :studio-title="(activeTab as any)?.label || 'Data View'"
       :is-excel-source="true"
       :is-saved-view="studioIsSavedView"
       :staged-count="studioStagedCount"
@@ -503,6 +511,8 @@ defineExpose({
       @submit-ai-command="handleStudioAICommand"
       @save-view="handleStudioSaveView"
       @toggle-staging="handleStudioToggleStaging"
+      @add-row="handleStudioAddRow"
+      @add-column="handleStudioAddColumn"
     />
 
     <!-- Editor Content Area -->
@@ -555,8 +565,8 @@ defineExpose({
       <template v-for="tab in (tabs as any)" :key="tab.id">
         <div v-if="tab.id === activeTabId" class="w-full h-full flex flex-col overflow-hidden">
 
-          <!-- Data Studio (New Universal Data View) -->
-          <DataStudio 
+          <!-- Data View (Universal) -->
+          <DataView 
             v-if="['dataview', 'table', 'spreadsheet', 'datastudio'].includes(tab.type)"
             :ref="(el) => { if (tab.id === activeTabId) studioRef = el }"
             :engine="getEngineForTab(tab.id)"
@@ -657,24 +667,24 @@ defineExpose({
               </div>
 
               <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                <button @click="workspaceStore.updateTabData(tab.id, { type: 'chat', label: 'AI Chat' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-purple-500/40 transition-all group lg:aspect-square justify-center">
-                  <div class="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><MessageSquare class="w-5 h-5 text-purple-500" /></div>
+                <button @click="workspaceStore.updateTab(tab.id, { type: 'chat', label: 'AI Chat' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-purple-500/40 transition-all group lg:aspect-square justify-center">
+                  <div class="w-10 h-10 rounded-full bg-purple-500/10 cursor-pointer flex items-center justify-center group-hover:scale-110 transition-transform"><MessageSquare class="w-5 h-5 text-purple-500" /></div>
                   <span class="text-xs font-semibold">AI Chat</span>
                 </button>
-                <button @click="workspaceStore.updateTabData(tab.id, { type: 'query', label: 'SQL Query' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-blue-500/40 transition-all group lg:aspect-square justify-center">
-                  <div class="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><FileCode class="w-5 h-5 text-blue-500" /></div>
+                <button @click="workspaceStore.updateTab(tab.id, { type: 'query', label: 'SQL Query' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-blue-500/40 transition-all group lg:aspect-square justify-center">
+                  <div class="w-10 h-10 rounded-full bg-blue-500/10 cursor-pointer flex items-center justify-center group-hover:scale-110 transition-transform"><FileCode class="w-5 h-5 text-blue-500" /></div>
                   <span class="text-xs font-semibold">SQL</span>
                 </button>
-                <button @click="workspaceStore.updateTabData(tab.id, { type: 'dataview', label: 'Data View' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-emerald-500/40 transition-all group lg:aspect-square justify-center">
-                  <div class="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><Sparkles class="w-5 h-5 text-emerald-500" /></div>
+                <button @click="workspaceStore.updateTab(tab.id, { type: 'dataview', label: 'Data View' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-emerald-500/40 transition-all group lg:aspect-square justify-center">
+                  <div class="w-10 h-10 rounded-full bg-emerald-500/10 cursor-pointer flex items-center justify-center group-hover:scale-110 transition-transform"><Sparkles class="w-5 h-5 text-emerald-500" /></div>
                   <span class="text-xs font-semibold">Data View</span>
                 </button>
-                <button @click="workspaceStore.updateTabData(tab.id, { type: 'note', label: 'New Note' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-orange-500/40 transition-all group lg:aspect-square justify-center">
-                  <div class="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><StickyNote class="w-5 h-5 text-orange-500" /></div>
+                <button @click="workspaceStore.updateTab(tab.id, { type: 'note', label: 'New Note' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-orange-500/40 transition-all group lg:aspect-square justify-center">
+                  <div class="w-10 h-10 rounded-full bg-orange-500/10 cursor-pointer flex items-center justify-center group-hover:scale-110 transition-transform"><StickyNote class="w-5 h-5 text-orange-500" /></div>
                   <span class="text-xs font-semibold">Note</span>
                 </button>
-                <button @click="workspaceStore.updateTabData(tab.id, { type: 'file', label: 'New File' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-indigo-500/40 transition-all group lg:aspect-square justify-center">
-                  <div class="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center group-hover:scale-110 transition-transform"><FileText class="w-5 h-5 text-indigo-500" /></div>
+                <button @click="workspaceStore.updateTab(tab.id, { type: 'file', label: 'New File' })" class="flex flex-col items-center gap-3 p-5 rounded-xl border border-border bg-card/50 hover:bg-muted/80 hover:border-indigo-500/40 transition-all group lg:aspect-square justify-center">
+                  <div class="w-10 h-10 rounded-full bg-indigo-500/10 cursor-pointer flex items-center justify-center group-hover:scale-110 transition-transform"><FileText class="w-5 h-5 text-indigo-500" /></div>
                   <span class="text-xs font-semibold">File</span>
                 </button>
               </div>
