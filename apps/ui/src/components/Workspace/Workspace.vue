@@ -256,9 +256,9 @@ const toolbarMode = computed(() => {
   return 'chat';
 });
 
-const isSheet = computed(() => {
+const isDataView = computed(() => {
   const t = (activeTab as any).value;
-  return t?.type === 'spreadsheet' || t?.data?.isLocalSheet;
+  return ['spreadsheet', 'dataview', 'table', 'datastudio'].includes(t?.type) || t?.data?.viewId || t?.data?.isSavedView;
 });
 
 // -------- Toolbar handlers ------------------------------------------
@@ -275,41 +275,38 @@ const handleTabInputUpdate = (tabId: string, tabType: string, val: string) => {
   else emit('update:input', val);
 };
 
-// -------- Sheet save ------------------------------------------------
-const handleSaveSheetLocal = async () => {
+// -------- Data View save ------------------------------------------------
+const handleSaveDataViewLocal = async () => {
   const tabId = activeTabId.value as unknown as string;
   if (!tabId) return;
-
   const engineInst = engineCache.get(tabId);
   if (!engineInst) return;
-
   try {
     const state = engineInst.getState();
     const currentTab = (activeTab as any).value;
-    const sheetId = currentTab?.data?.sheetId;
-
-    if (sheetId) {
-      const progress = showProgressToast('Saving data view...', 30);
+    const viewId = currentTab?.data?.viewId || currentTab?.data?.sheetId;
+    if (viewId) {
+      const progress = showProgressToast('Updating Data View...', 30);
       await dataViewStore.saveDataView({
-        id: sheetId,
+        id: viewId,
         data: state,
         name: currentTab.label,
         updatedAt: new Date().toISOString(),
         spaceId: currentTab?.data?.spaceId || spaceStore.currentSpaceId || null,
       });
-      progress.success('Data View saved');
+      progress.success('Data View updated');
     } else {
-      const progress = showProgressToast('Saving to explorer...', 30);
+      const progress = showProgressToast('Saving as New Data View...', 30);
       const newDataView = await dataViewStore.saveDataView({
         name: currentTab?.label || 'New Data View',
         data: state,
         spaceId: unref(spaceStore.currentSpaceId) || null,
       });
-      workspaceStore.updateTabData(tabId, { viewId: newDataView.id, isLocalView: true });
+      workspaceStore.updateTabData(tabId, { viewId: newDataView.id, isLocalView: true, isSavedView: true });
       progress.success('Saved to explorer');
     }
   } catch (e: any) {
-    toast.error('Failed to save sheet', { description: e.message });
+    toast.error('Failed to save data view', { description: e.message });
   }
 };
 
@@ -484,8 +481,8 @@ defineExpose({
       @undo="handleUndo"
       @redo="handleRedo"
       @save="handleSaveCurrentTab"
-      @save-sheet="handleSaveSheetLocal"
-      :is-sheet="isSheet"
+      @save-data-view="handleSaveDataViewLocal"
+      :is-data-view="isDataView"
       @export="(f) => exportCurrentTable(f)"
       @version-change="(v: number) => handleVersionChange(activeTabId as any, v)"
       @update:text-wrap="(v: boolean) => toggleTextWrap(v)"

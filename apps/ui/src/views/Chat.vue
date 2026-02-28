@@ -226,7 +226,7 @@ import { QUERY_API_URL, fetchQueries, fetchQuerySessions, fetchSettings, getAIMo
 import { generateKey, decryptData } from '@/lib/crypto'
 import { db } from '@/lib/local-db'
 import { sanitizeAIResponse } from '@/lib/ai-response-sanitizer'
-import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration'
+import { useDataViewCollaboration } from '@/composables/useSpreadsheetCollaboration'
 import ShareResourceDialog from '@/components/shared/ShareResourceDialog.vue'
 
 // Stores
@@ -364,7 +364,7 @@ const {
     broadcastCellFocus,
     broadcastCellEdit,
     incomingCellEdit
-} = useSpreadsheetCollaboration(activeTableName, liveMode)
+} = useDataViewCollaboration(activeTableName, liveMode)
 
 const handleUpdateLiveMode = (val: boolean) => {
     liveMode.value = val

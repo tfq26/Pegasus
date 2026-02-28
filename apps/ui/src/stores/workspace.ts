@@ -213,8 +213,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         const labelMap: Record<string, string> = {
             chat: 'Query Editor',
             query: 'SQL Query',
-            table: 'Spreadsheet',
-            spreadsheet: 'Spreadsheet',
+            table: 'Data View',
+            spreadsheet: 'Data View',
             note: 'Note',
             file: 'File',
             dataview: 'Data View',

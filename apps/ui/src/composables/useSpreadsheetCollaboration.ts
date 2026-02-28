@@ -7,12 +7,12 @@ import { QUERY_API_URL } from '@/lib/api';
 const socket = ref<Socket | null>(null);
 const isConnected = ref(false);
 
-// Spreadsheet-specific state
+// Data View-specific state
 const collaborators = ref<any[]>([]);
 const activeCells = ref<Record<string, { row: number, col: number, user: any }>>({});
-const currentSpreadsheetId = ref<string | null>(null);
+const currentDataViewId = ref<string | null>(null);
 const incomingCellEdit = ref<{ row: number, col: number, value: string, user: any } | null>(null);
-const incomingBindingUpdate = ref<{ cellId: string, value: any, spreadsheetId: string, dataSourceId: string } | null>(null);
+const incomingBindingUpdate = ref<{ cellId: string, value: any, dataViewId: string, dataSourceId: string } | null>(null);
 
 export interface Collaborator {
     socketId: string;
@@ -27,15 +27,15 @@ export interface Collaborator {
 }
 
 /**
- * useSpreadsheetCollaboration
+ * useDataViewCollaboration
  * 
- * Handles Socket.io connection for real-time collaboration on spreadsheets.
+ * Handles Socket.io connection for real-time collaboration on data views.
  * 
- * @param spreadsheetId - Reactive ref to the current spreadsheet/table name
+ * @param dataViewId - Reactive ref to the current data view/table name
  * @param isLive - Reactive ref to whether collaboration (Live Mode) is enabled
  */
-export function useSpreadsheetCollaboration(
-    spreadsheetId: Ref<string | null>,
+export function useDataViewCollaboration(
+    dataViewId: Ref<string | null>,
     isLive: Ref<boolean>
 ) {
     const SERVER_URL = QUERY_API_URL;
@@ -45,7 +45,7 @@ export function useSpreadsheetCollaboration(
 
         const token = localStorage.getItem('auth_token');
         if (!token) {
-            console.warn('[SpreadsheetCollab] No auth token, cannot connect');
+            console.warn('[DataViewCollab] No auth token, cannot connect');
             return;
         }
 
@@ -58,17 +58,17 @@ export function useSpreadsheetCollaboration(
         });
 
         socket.value.on('connect', () => {
-            console.log('[SpreadsheetCollab] Socket connected');
+            console.log('[DataViewCollab] Socket connected');
             isConnected.value = true;
 
             // If we have an active ID and live is on, join immediately
-            if (spreadsheetId.value && isLive.value) {
-                joinSpreadsheet(spreadsheetId.value);
+            if (dataViewId.value && isLive.value) {
+                joinDataView(dataViewId.value);
             }
         });
 
         socket.value.on('disconnect', () => {
-            console.log('[SpreadsheetCollab] Socket disconnected');
+            console.log('[DataViewCollab] Socket disconnected');
             isConnected.value = false;
             collaborators.value = [];
             activeCells.value = {};
@@ -76,26 +76,26 @@ export function useSpreadsheetCollaboration(
 
         socket.value.on('connect_error', (err) => {
             if (isConnected.value) {
-                console.warn('[SpreadsheetCollab] Socket connection lost:', err.message);
+                console.warn('[DataViewCollab] Socket connection lost:', err.message);
             }
             isConnected.value = false;
         });
 
-        // Spreadsheet-specific event listeners
-        socket.value.on('spreadsheet_user_joined', (data) => {
+        // Data View-specific event listeners
+        socket.value.on('data_view_user_joined', (data) => {
             if (!collaborators.value.find(c => c.socketId === data.socketId)) {
                 collaborators.value.push(data);
             }
         });
 
-        socket.value.on('spreadsheet_user_left', (data) => {
+        socket.value.on('data_view_user_left', (data) => {
             collaborators.value = collaborators.value.filter(c => c.socketId !== data.socketId);
             if (activeCells.value[data.socketId]) {
                 delete activeCells.value[data.socketId];
             }
         });
 
-        socket.value.on('spreadsheet_current_users', (users) => {
+        socket.value.on('data_view_current_users', (users) => {
             collaborators.value = users;
             // Populate active cells
             users.forEach((u: any) => {
@@ -120,7 +120,7 @@ export function useSpreadsheetCollaboration(
         socket.value.on('cell_edit_update', (data) => {
             incomingCellEdit.value = data;
             // Also dispatch global event
-            window.dispatchEvent(new CustomEvent('spreadsheet:remote-edit', {
+            window.dispatchEvent(new CustomEvent('dataview:remote-edit', {
                 detail: data
             }));
 
@@ -133,7 +133,7 @@ export function useSpreadsheetCollaboration(
         socket.value.on('cell_binding_updated', (data) => {
             incomingBindingUpdate.value = data;
             // Dispatch global event
-            window.dispatchEvent(new CustomEvent('spreadsheet:binding-update', {
+            window.dispatchEvent(new CustomEvent('dataview:binding-update', {
                 detail: data
             }));
 
@@ -143,13 +143,13 @@ export function useSpreadsheetCollaboration(
             }, 100);
         });
 
-        socket.value.on('spreadsheet_kicked', (data) => {
-            console.log('[SpreadsheetCollab] Kicked:', data.reason);
+        socket.value.on('data_view_kicked', (data) => {
+            console.log('[DataViewCollab] Kicked:', data.reason);
             collaborators.value = [];
             activeCells.value = {};
-            currentSpreadsheetId.value = null;
+            currentDataViewId.value = null;
             isLive.value = false;
-            window.dispatchEvent(new CustomEvent('spreadsheet:kicked', { detail: data }));
+            window.dispatchEvent(new CustomEvent('dataview:kicked', { detail: data }));
         });
     };
 
@@ -161,13 +161,13 @@ export function useSpreadsheetCollaboration(
         }
     };
 
-    const joinSpreadsheet = (id: string) => {
+    const joinDataView = (id: string) => {
         if (!socket.value) connect();
-        currentSpreadsheetId.value = id;
+        currentDataViewId.value = id;
 
         const emit = () => {
-            console.log(`[SpreadsheetCollab] Joining room: ${id}`);
-            socket.value?.emit('join_spreadsheet', id);
+            console.log(`[DataViewCollab] Joining room: ${id}`);
+            socket.value?.emit('join_data_view', id);
         };
 
         if (socket.value?.connected) {
@@ -177,29 +177,29 @@ export function useSpreadsheetCollaboration(
         }
     };
 
-    const leaveSpreadsheet = () => {
-        if (!currentSpreadsheetId.value) return;
+    const leaveDataView = () => {
+        if (!currentDataViewId.value) return;
         if (socket.value?.connected) {
-            socket.value.emit('leave_spreadsheet', currentSpreadsheetId.value);
+            socket.value.emit('leave_data_view', currentDataViewId.value);
         }
-        currentSpreadsheetId.value = null;
+        currentDataViewId.value = null;
         collaborators.value = [];
         activeCells.value = {};
     };
 
     const broadcastCellFocus = (row: number, col: number) => {
-        if (!socket.value?.connected || !currentSpreadsheetId.value) return;
+        if (!socket.value?.connected || !currentDataViewId.value) return;
         socket.value.emit('cell_focus', {
-            spreadsheetId: currentSpreadsheetId.value,
+            dataViewId: currentDataViewId.value,
             row,
             col
         });
     };
 
     const broadcastCellEdit = (row: number, col: number, value: string) => {
-        if (!socket.value?.connected || !currentSpreadsheetId.value) return;
+        if (!socket.value?.connected || !currentDataViewId.value) return;
         socket.value.emit('cell_edit', {
-            spreadsheetId: currentSpreadsheetId.value,
+            dataViewId: currentDataViewId.value,
             row,
             col,
             value
@@ -207,17 +207,17 @@ export function useSpreadsheetCollaboration(
     };
 
     const kickAllCollaborators = () => {
-        if (!socket.value?.connected || !currentSpreadsheetId.value) return;
-        socket.value.emit('kick_all_collaborators', currentSpreadsheetId.value);
+        if (!socket.value?.connected || !currentDataViewId.value) return;
+        socket.value.emit('kick_all_collaborators', currentDataViewId.value);
     };
 
     // Auto-join/leave
-    watch([spreadsheetId, isLive], ([newId, newLive], [oldId, oldLive]) => {
+    watch([dataViewId, isLive], ([newId, newLive], [oldId, oldLive]) => {
         if (newId && newLive) {
-            joinSpreadsheet(newId);
+            joinDataView(newId);
         } else if (oldId && (newId !== oldId || !newLive)) {
-            leaveSpreadsheet();
-            if (newId && newLive) joinSpreadsheet(newId);
+            leaveDataView();
+            if (newId && newLive) joinDataView(newId);
         }
     }, { immediate: true });
 
@@ -230,11 +230,11 @@ export function useSpreadsheetCollaboration(
         activeCells,
         incomingCellEdit,
         incomingBindingUpdate,
-        currentSpreadsheetId,
+        currentDataViewId,
         connect,
         disconnect,
-        joinSpreadsheet,
-        leaveSpreadsheet,
+        joinDataView,
+        leaveDataView,
         broadcastCellFocus,
         broadcastCellEdit,
         kickAllCollaborators

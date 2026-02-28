@@ -3,8 +3,8 @@ import { ref } from 'vue'
 import { fetchDataViews, fetchDataView, apiSaveDataView, apiDeleteDataView } from '@/lib/api'
 
 /**
- * Interface for a DataView entity
- * Represents a spreadsheet or view managed by Pegasus
+ * Data View Store
+ * Represents a Data View or view managed by Pegasus
  */
 export interface DataView {
     id: string
@@ -81,18 +81,12 @@ export const useDataViewStore = defineStore('dataView', () => {
 
     return {
         dataViews,
-        sheets: dataViews, // Alias for backward compatibility during transition
         currentDataView,
         isLoading,
         loadDataViews,
-        loadSheets: loadDataViews, // Alias
         getAllDataViews,
-        getAllSheets: getAllDataViews, // Alias
         getDataView,
-        getSheet: getDataView, // Alias
         saveDataView,
-        saveSheet: saveDataView, // Alias
-        deleteDataView,
-        deleteSheet: deleteDataView // Alias
+        deleteDataView
     }
 })

@@ -46,7 +46,7 @@ import NoteThread from '../NoteThread.vue';
 import PresenceOverlay from '../PresenceOverlay.vue';
 import { connectToSurreal } from '@/lib/surreal';
 import { RealtimeSync } from '../Engine/RealtimeSync';
-import { useSpreadsheetCollaboration } from '@/composables/useSpreadsheetCollaboration';
+import { useDataViewCollaboration } from '@/composables/useSpreadsheetCollaboration';
 import { useFormulaBarAI } from '@/composables/grid/useFormulaBarAI';
 import AIActionPreviewDialog from '../AIActionPreviewDialog.vue';
 
@@ -153,7 +153,7 @@ const {
     incomingCellEdit,
     broadcastCellFocus: broadcastFocusSocket,
     broadcastCellEdit: broadcastEditSocket
-} = useSpreadsheetCollaboration(tableName, isLive);
+} = useDataViewCollaboration(tableName, isLive);
 
 // Sync remote presence to engine
 watch(activeCells, (newCells) => {

@@ -102,7 +102,7 @@ const favoriteItems = computed(() => {
     if (id.startsWith('view:') || id.startsWith('sheet:')) {
       const viewId = id.replace(/^(view|sheet):/, '');
       const view = props.dataViews?.find((v: any) => v.id === viewId);
-      if (view) return { type: 'sheet', id, name: view.name || 'Untitled View', icon: 'lucide:database' };
+      if (view) return { type: 'dataview', id, name: view.name || 'Untitled View', icon: 'lucide:database' };
     }
     
     return null;

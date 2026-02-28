@@ -113,7 +113,7 @@ const spaceStore = useSpaceStore()
 
 onMounted(() => {
   spaceStore.loadSpaces()
-  dataViewStore.loadSheets(unref(spaceStore.currentSpaceId) || '')
+  dataViewStore.loadDataViews(unref(spaceStore.currentSpaceId) || '')
   
   // Force refresh connections to ensure we have latest space assignments
   connectionStore.loadConnections(true)
@@ -172,7 +172,7 @@ const filteredConnections = computed(() => {
 
 const currentFiles = computed(() => spaceStore.currentSpaceFiles || [])
 const currentNotes = computed(() => spaceStore.currentSpaceNotes || [])
-const currentDataViews = computed(() => dataViewStore.getAllSheets())
+const currentDataViews = computed(() => dataViewStore.getAllDataViews())
 
 const {
   viewer,
@@ -221,7 +221,7 @@ const handleGlobalRefresh = async () => {
     await Promise.all([
       refreshSchemas(true),
       spaceStore.loadSpaces(),
-      dataViewStore.loadSheets(unref(spaceStore.currentSpaceId) || ''),
+      dataViewStore.loadDataViews(unref(spaceStore.currentSpaceId) || ''),
       connectionStore.loadConnections(true)
     ])
     toast.success('Refreshed', { description: 'All sources updated' })
@@ -695,7 +695,7 @@ const handleAddDataView = async () => {
     }
 
     try {
-        await dataViewStore.saveSheet({ // sheetStore still manages sheets, but we call them data views
+        await dataViewStore.saveDataView({ // useDataViewStore manages Data Views
             name: "New Data View",
             data: { cells: [], rowCount: 100, colCount: 26, version: 1 },
             spaceId: unref(spaceStore.currentSpaceId)
@@ -716,7 +716,7 @@ const handleDeleteDataView = async (view: any) => {
         loading: false,
         onConfirm: async () => {
              try {
-                await dataViewStore.deleteSheet(view.id) // sheetStore still manages sheets
+                await dataViewStore.deleteDataView(view.id) // useDataViewStore manages Data Views
                 toast.success('Data View deleted')
             } catch (e: any) {
                 toast.error('Delete failed', { description: e.message })

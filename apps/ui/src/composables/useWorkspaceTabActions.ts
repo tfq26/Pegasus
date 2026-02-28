@@ -44,7 +44,7 @@ export function useWorkspaceTabActions(
 
         if (existingTab) {
             workspaceStore.setActiveTab(existingTab.id)
-            emit('update:mode', 'spreadsheet')
+            emit('update:mode', 'dataview')
 
             const engine = getEngineForTab(existingTab.id)
             if (engine && engine.sourceTable) {
@@ -192,7 +192,7 @@ export function useWorkspaceTabActions(
             engine.setOriginalData(rows)
 
             progress.success(`Loaded ${formatTableName(tableName)}!`)
-            emit('update:mode', 'spreadsheet')
+            emit('update:mode', 'dataview')
 
             if (newId) dataLoadedTabs.add(newId)
         } catch (e: any) {
@@ -339,7 +339,7 @@ export function useWorkspaceTabActions(
         const label = labels[type as string] || 'New Tab'
         workspaceStore.createTab(type as any, { label })
 
-        if (type === 'table' || type === 'dataview') emit('update:mode', 'spreadsheet')
+        if (type === 'table' || type === 'dataview') emit('update:mode', 'dataview')
         else if (type !== 'default') emit('update:mode', type === 'query' ? 'write' : 'chat')
     }
 
@@ -404,7 +404,7 @@ export function useWorkspaceTabActions(
             }
         }
 
-        emit('update:mode', 'spreadsheet')
+        emit('update:mode', 'dataview')
     }
 
     return {

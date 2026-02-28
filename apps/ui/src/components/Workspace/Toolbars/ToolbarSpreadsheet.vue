@@ -70,7 +70,10 @@ const props = defineProps<{
   availableModels?: { id: string; name: string }[]
   aiOptions?: { model: string | null; temperature: number }
   zoomLevel?: number
-  isSheet?: boolean
+  isDataView?: boolean
+  studioTitle?: string
+  isExcelSource?: boolean
+  isSavedView?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -94,7 +97,7 @@ const emit = defineEmits<{
   'auto-fit': []
   'update:ai-options': [value: { model: string | null; temperature: number }]
   'update:zoom-level': [value: number]
-  'save-sheet': []
+  'save-data-view': []
 }>()
 
 const defaultModels = [
@@ -425,7 +428,7 @@ const updateOption = (key: 'model' | 'temperature', value: any) => {
 
       <!-- COMMIT BUTTON (DB) -->
       <button 
-        v-if="!isSheet && (privateMode || props.hasUncommittedChanges)"
+        v-if="!isDataView && (privateMode || props.hasUncommittedChanges)"
         @click="emit('commit')"
         class="flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-none text-xs font-medium disabled:opacity-50"
         :disabled="saveStatus === 'saving'"
@@ -434,10 +437,10 @@ const updateOption = (key: 'model' | 'temperature', value: any) => {
         <span class="hidden md:inline">Commit</span>
       </button>
 
-      <!-- SAVE BUTTON (Sheet) -->
+      <!-- SAVE BUTTON (Data View) -->
       <button 
-        v-if="isSheet"
-        @click="emit('save-sheet')"
+        v-if="isDataView"
+        @click="emit('save-data-view')"
         class="flex items-center gap-1.5 px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-none text-xs font-medium disabled:opacity-50"
         :disabled="saveStatus === 'saving'"
       >
@@ -502,7 +505,7 @@ const updateOption = (key: 'model' | 'temperature', value: any) => {
                 <!-- Share -->
                 <DropdownMenuItem @select="emit('share')" class="flex items-center gap-2 cursor-pointer">
                     <Share2 class="w-3.5 h-3.5 text-blue-500" />
-                    <span>Share Spreadsheet</span>
+                    <span>Share Data View</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />

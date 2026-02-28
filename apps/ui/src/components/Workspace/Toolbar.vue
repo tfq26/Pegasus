@@ -36,7 +36,7 @@ const props = defineProps<{
   noteFormatState?: { bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean }
   noteSaving?: boolean
   zoomLevel?: number
-  isSheet?: boolean
+  isDataView?: boolean
   chatName?: string
   
   // Data Studio Specific
@@ -67,7 +67,7 @@ const emit = defineEmits<{
   'toggle-ai-mode': []
   'visualize': []
   'sanitize': []
-  'load-table-to-sheet': []
+  'load-table-to-view': []
   'export': [format: 'csv' | 'xlsx' | 'pdf']
   'refresh-table': []
   'undo': []
@@ -89,7 +89,7 @@ const emit = defineEmits<{
   'note-share': []
   'note-download': []
   'update:zoom-level': [value: number]
-  'save-sheet': []
+  'save-data-view': []
   'update:aiCommand': [value: string]
   'submit-ai-command': []
   'save-view': []
@@ -160,6 +160,7 @@ const models = computed(() => {
           :is-executing="isExecuting"
           :title="studioTitle || 'Data View'"
           :is-excel-source="isExcelSource || false"
+          :is-data-view="isDataView"
           :is-saved-view="isSavedView || false"
           :staged-count="stagedCount || 0"
           :ai-command="aiCommand || ''"

@@ -78,12 +78,12 @@ export function useWorkspaceEngine(
         const isCreation = !engineCache.has(tabId)
         if (!isCreation) return engineCache.get(tabId)!
 
-        const engine = new Engine({ rowCount: 1000, colCount: 26 }, `spreadsheet-tab-${tabId}`)
+        const engine = new Engine({ rowCount: 1000, colCount: 26 }, `dataview-tab-${tabId}`)
         engineCache.set(tabId, engine)
 
         const tab = (tabs.value as Tab[])?.find((t: Tab) => t.id === tabId)
 
-        // Restore lightweight sheet state from Pinia (not for DB-backed tabs)
+        // Restore lightweight data view state from Pinia (not for DB-backed tabs)
         if (tab?.data?.engineState && !tab?.data?.tableName) {
             engine.loadState(tab.data.engineState)
         }
