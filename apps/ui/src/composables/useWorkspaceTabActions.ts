@@ -32,9 +32,14 @@ export function useWorkspaceTabActions(
 
     // ----- Find / Deduplicate -------------------------------------------
 
-    const findOrCreateDataViewTab = (tableName: string): boolean => {
+    const findOrCreateDataViewTab = (tableName?: string, viewId?: string): boolean => {
         const existingTab = (tabs.value as Tab[]).find(
-            (t: Tab) => (t.type === 'table' || t.type === 'dataview' || t.type === 'mockup') && t.data?.tableName === tableName
+            (t: Tab) => {
+                if (t.type !== 'table' && t.type !== 'dataview' && t.type !== 'mockup') return false
+                if (viewId && t.data?.viewId === viewId) return true
+                if (tableName && t.data?.tableName === tableName) return true
+                return false
+            }
         )
 
         if (existingTab) {

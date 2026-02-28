@@ -219,7 +219,7 @@ const handleStudioSave = async (payload: { name: string, data: any }) => {
       spaceId: unref(spaceStore.currentSpaceId) || null
     });
 
-    workspaceStore.updateTabData(tabId, { viewId: view.id, isLocalView: true, label: view.name });
+    workspaceStore.updateTabData(tabId, { viewId: view.id, isLocalView: true, label: view.name, isSavedView: true });
     progress.success('Data View saved');
   } catch (e: any) {
     toast.error('Failed to save Data View', { description: e.message });
@@ -398,7 +398,7 @@ watch(() => activeTabId.value, (newId) => {
   if (newId) {
     const tabId = newId as unknown as string;
     const tab = (tabs.value as Tab[]).find(t => t.id === tabId);
-    if (tab && (tab.type === 'table' || tab.type === 'spreadsheet')) {
+    if (tab && ['table', 'spreadsheet', 'dataview', 'datastudio'].includes(tab.type)) {
       if (!engineCache.has(tabId)) getEngineForTab(tabId);
       loadTabDataLazy(tabId);
     }

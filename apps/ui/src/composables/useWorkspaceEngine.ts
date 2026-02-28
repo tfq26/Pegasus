@@ -265,7 +265,33 @@ export function useWorkspaceEngine(
         if (loadingTabIds.value.has(tabId)) return
 
         const tab = (tabs.value as Tab[])?.find((t: Tab) => t.id === tabId)
-        if (!tab?.data?.tableName) return
+        if (!tab?.data) return
+
+        // Handle Saved Data Views
+        if (tab.data.viewId) {
+            loadingTabIds.value.add(tabId)
+            const progress = showProgressToast(`Loading data view...`, 20)
+            try {
+                const { fetchDataView } = await import('@/lib/api')
+                const view = await fetchDataView(tab.data.viewId)
+                if (view && view.data) {
+                    engine.loadState(view.data)
+                    dataLoadedTabs.add(tabId)
+                    progress.success('Data view loaded')
+                } else {
+                    progress.dismiss()
+                }
+            } catch (e: any) {
+                console.error('[Workspace] Failed to load data view:', e)
+                progress.error('Failed to load', e.message)
+            } finally {
+                loadingTabIds.value.delete(tabId)
+            }
+            return
+        }
+
+        // Handle Database Tables
+        if (!tab.data.tableName) return
 
         if (engine.getCells().size > 0) {
             dataLoadedTabs.add(tabId)

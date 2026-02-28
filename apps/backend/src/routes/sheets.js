@@ -5,6 +5,7 @@ import { sheets } from "../db/schema.js"
 import { eq, and } from "drizzle-orm"
 import { StorageManager } from "../services/storage/StorageManager.js"
 import { authMiddleware, requireUser } from '../middleware/auth.js'
+import zlib from "node:zlib"
 
 const sheetsRouter = new Hono()
 
@@ -56,8 +57,18 @@ sheetsRouter.get("/:id", requireUser, async (c) => {
                 const provider = await StorageManager.getProvider(userId)
                 const url = await provider.getPresignedUrl(sheet.storageId, 60)
                 const response = await fetch(url)
+
                 if (response.ok) {
-                    data = await response.json()
+                    const arrayBuffer = await response.arrayBuffer()
+                    const buffer = Buffer.from(arrayBuffer)
+
+                    // Check if gzipped (magic number 0x1f 0x8b)
+                    if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+                        const decompressed = zlib.gunzipSync(buffer)
+                        data = JSON.parse(decompressed.toString())
+                    } else {
+                        data = JSON.parse(buffer.toString())
+                    }
                 } else {
                     console.error(`[Sheets] Failed to fetch data: ${response.statusText}`)
                 }
@@ -82,9 +93,13 @@ sheetsRouter.post("/", requireUser, async (c) => {
         let storageId = null
         if (data) {
             const provider = await StorageManager.getProvider(userId)
-            const fileName = `sheets/${userId}/${id || crypto.randomUUID()}.json`
-            const content = Buffer.from(JSON.stringify(data))
-            const uploadRes = await provider.upload(fileName, content, 'application/json')
+            const fileName = `sheets/${userId}/${id || crypto.randomUUID()}.json.gz`
+
+            // Compress data for storage efficiency
+            const jsonStr = JSON.stringify(data)
+            const compressedContent = zlib.gzipSync(Buffer.from(jsonStr))
+
+            const uploadRes = await provider.upload(fileName, compressedContent, 'application/x-gzip')
             storageId = uploadRes.key
         }
 

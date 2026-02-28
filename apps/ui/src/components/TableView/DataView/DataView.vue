@@ -429,9 +429,13 @@ const saveView = () => {
     console.warn('[DataView] prompt failed, using default name');
   }
   
+  // Collect data from engine if available
+  const engineState = props.engine ? props.engine.getState() : {};
+  
   emit('save', {
     name,
     data: {
+      ...engineState,
       isExcelSource: isExcelSource.value,
       isSavedView: true,
       lastSave: new Date().toISOString()

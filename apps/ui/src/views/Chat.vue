@@ -655,8 +655,8 @@ const handleEditDataView = (view: any) => {
         viewId: view.id,
         label: view.name,
         // For now, load existing data view state
-        isExcelSource: view.data?.isExcelSource,
-        isSavedView: view.data?.isSavedView
+        isExcelSource: view.data?.isExcelSource || true,
+        isSavedView: true
     })
 }
 
