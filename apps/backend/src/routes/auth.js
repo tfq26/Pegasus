@@ -389,12 +389,20 @@ auth.get("/me", async (c) => {
         const userId = payload.sub
 
         // Fetch full user record for live stats (tier, tokens, etc)
-        const userRecord = await db.query.users.findFirst({
+        let userRecord = await db.query.users.findFirst({
             where: eq(users.id, userId)
         })
 
         if (!userRecord) {
-            return c.json({ error: "User not found" }, 404)
+            console.log(`[AUTH_TRACE] [/me] User record not found for ${userId}, upserting...`)
+            await upsertUser(payload, 'me-auto-upsert')
+            userRecord = await db.query.users.findFirst({
+                where: eq(users.id, userId)
+            })
+        }
+
+        if (!userRecord) {
+            return c.json({ error: "User not found after upsert" }, 404)
         }
 
         const featureFlags = await getUserFeatureFlags(db, userId)

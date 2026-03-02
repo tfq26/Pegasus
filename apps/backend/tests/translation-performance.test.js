@@ -58,14 +58,23 @@ const TEST_CASES = [
 const DIALECTS = ['cosmosdb', 'kusto'];
 
 async function benchmarkTranslation(testCase, dialect) {
+    console.log(`[DEBUG] Benchmarking ${testCase.name} for ${dialect}`);
     const startTime = performance.now();
 
     try {
-        const result = await QueryTranslationService.translateQuery(
-            testCase.sql,
-            dialect,
-            {} // Mock schema - can be enhanced
+        // Add timeout protection
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Translation timed out (15s)')), 15000)
         );
+
+        const result = await Promise.race([
+            queryTranslationService.translateQuery(
+                testCase.sql,
+                dialect,
+                {}
+            ),
+            timeoutPromise
+        ]);
 
         const endTime = performance.now();
         const duration = endTime - startTime;

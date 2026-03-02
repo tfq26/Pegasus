@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 bg-background text-foreground font-sans selection:bg-primary/30 flex flex-col items-center justify-center p-6 overflow-hidden">
+  <div class="fixed inset-0 bg-background text-foreground selection:bg-primary/30 flex flex-col items-center justify-center p-6 overflow-hidden">
     
     <!-- Premium Background Depth -->
     <div class="absolute inset-0 pointer-events-none">
@@ -7,120 +7,111 @@
       <div class="absolute -bottom-48 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px]"></div>
     </div>
 
-    <!-- Branding Section (Simplified) -->
-    <div class="mb-12 text-center relative z-10 animate-in fade-in slide-in-from-top-4 duration-1000">
-      <div class="relative inline-flex items-center justify-center group">
-        <img 
-          src="/logo_new_purple.svg" 
-          alt="Pegasus" 
-          class="w-16 h-16 relative z-10 drop-shadow-[0_0_20px_rgba(var(--primary),0.3)] group-hover:scale-105 transition-transform duration-700" 
-        />
-        <div class="absolute inset-0 bg-primary/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
-      </div>
-    </div>
+    <!-- Dynamic Content -->
+    <LoadingScreen 
+      v-if="isAuthenticated" 
+      class="relative z-20"
+      title="Identity Verified" 
+      message="" 
+    />
 
-    <!-- Auth Container -->
-    <div class="w-full max-w-[360px] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-150 p-8">
-      
-      <!-- Custom Auth Form -->
-      <form v-if="!isAuthenticated" @submit.prevent="handlePasswordLogin" class="space-y-6">
-        <div class="space-y-4">
-          <div class="space-y-1.5">
-            <label class="text-[10px] font-bold uppercase tracking-widest opacity-40 ml-1">Email</label>
-            <div class="relative">
-              <input 
-                v-model="email"
-                type="email" 
-                placeholder="name@company.com"
-                required
-                class="w-full bg-card/40 backdrop-blur-md border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:opacity-20 cursor-text"
-              />
-            </div>
-          </div>
-          
-          <div class="space-y-1.5">
-            <label class="text-[10px] font-bold uppercase tracking-widest opacity-40 ml-1">Password</label>
-            <div class="relative">
-              <input 
-                v-model="password"
-                type="password" 
-                placeholder="••••••••"
-                required
-                class="w-full bg-card/40 backdrop-blur-md border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:opacity-20 cursor-text"
-              />
-            </div>
-          </div>
-        </div>
-
-        <button 
-          type="submit"
-          :disabled="isLoggingIn"
-          class="w-full h-14 bg-primary text-primary-foreground text-xs font-bold uppercase tracking-[0.2em] rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-50 overflow-hidden relative group cursor-pointer"
-        >
-          <span class="relative z-10 flex items-center justify-center gap-2 pointer-events-none">
-            {{ isLoggingIn ? 'Synchronizing' : 'Sign In or Sign Up' }}
-            <Loader2 v-if="isLoggingIn" class="w-4 h-4 animate-spin" />
-          </span>
-          <div class="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-500 pointer-events-none"></div>
-        </button>
-
-        <!-- Social Providers -->
-        <div class="pt-2 space-y-4">
-          <div class="relative flex items-center justify-center">
-            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-border"></div></div>
-            <span class="relative bg-background px-3 text-[9px] font-bold uppercase tracking-widest opacity-30">or enter via</span>
-          </div>
-
-          <div class="grid grid-cols-3 gap-3">
-            <button 
-              v-for="provider in socialProviders"
-              :key="provider.id"
-              @click="handleSocialLogin(provider.id)"
-              type="button"
-              class="flex items-center justify-center h-12 border border-border bg-card/40 backdrop-blur-md rounded-xl hover:bg-primary/5 hover:border-primary/30 transition-all group relative overflow-hidden cursor-pointer"
-              :title="provider.name"
-            >
-              <img 
-                :src="provider.icon" 
-                :alt="provider.name"
-                class="w-5 h-5 opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all pointer-events-none filter brightness-100" 
-              />
-              <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-            </button>
-          </div>
-        </div>
-      </form>
-
-      <!-- Authenticated State -->
-      <div v-else class="text-center py-6 space-y-8">
-        <div class="relative inline-flex">
-          <div class="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse"></div>
-          <div class="w-20 h-20 bg-primary text-primary-foreground rounded-full flex items-center justify-center relative z-10 shadow-2xl animate-in zoom-in duration-700">
-            <Check class="w-10 h-10 stroke-[3]" />
-          </div>
-        </div>
-        <div class="space-y-3">
-          <h2 class="text-lg font-bold tracking-widest uppercase">Identity Verified</h2>
-          <div class="flex flex-col items-center gap-2">
-            <p class="text-xs opacity-40 font-mono tracking-tighter">Session sync in progress...</p>
-            <div class="w-24 h-1 bg-border rounded-full overflow-hidden">
-              <div class="h-full bg-primary w-full animate-progress"></div>
-            </div>
-          </div>
+    <template v-else>
+      <!-- Branding Section -->
+      <div class="mb-12 text-center relative z-10 animate-in fade-in slide-in-from-top-4 duration-1000">
+        <div class="relative inline-flex items-center justify-center group">
+          <img 
+            src="/logo_new_purple.svg" 
+            alt="Pegasus" 
+            class="w-16 h-16 relative z-10 drop-shadow-[0_0_20px_rgba(var(--primary),0.3)] group-hover:scale-105 transition-transform duration-700" 
+          />
+          <div class="absolute inset-0 bg-primary/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
         </div>
       </div>
 
-      <!-- Footer Action -->
-      <div class="mt-8 text-center animate-in fade-in duration-1000 delay-500">
-        <button 
-          @click="identityService.login()"
-          class="group text-[10px] font-bold uppercase tracking-widest text-white/40 hover:text-white transition-all flex items-center gap-2 mx-auto cursor-pointer"
-        >
-          <span class="border-b border-transparent group-hover:border-white/40 pb-0.5">Enterprise SSO</span>
-          <ArrowRight class="w-3 h-3 transition-transform group-hover:translate-x-1" />
-        </button>
+      <!-- Auth Container -->
+      <div class="w-full max-w-[360px] relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-150 p-8">
+        
+        <!-- Custom Auth Form -->
+        <form @submit.prevent="handlePasswordLogin" class="space-y-6">
+          <div class="space-y-4">
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-muted-foreground ml-1">Email</label>
+              <div class="relative">
+                <input 
+                  v-model="email"
+                  type="email" 
+                  placeholder="name@company.com"
+                  required
+                  class="w-full bg-card/40 backdrop-blur-md border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:opacity-20 cursor-text"
+                />
+              </div>
+            </div>
+            
+            <div class="space-y-1.5">
+              <label class="text-sm font-medium text-muted-foreground ml-1">Password</label>
+              <div class="relative">
+                <input 
+                  v-model="password"
+                  type="password" 
+                  placeholder="••••••••"
+                  required
+                  class="w-full bg-card/40 backdrop-blur-md border border-border rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all placeholder:opacity-20 cursor-text"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button 
+            type="submit"
+            :disabled="isLoggingIn"
+            class="w-full h-14 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-50 overflow-hidden relative group cursor-pointer"
+          >
+            <span class="relative z-10 flex items-center justify-center gap-2 pointer-events-none">
+              {{ isLoggingIn ? 'Synchronizing' : 'Sign In' }}
+              <Loader2 v-if="isLoggingIn" class="w-4 h-4 animate-spin" />
+            </span>
+            <div class="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-500 pointer-events-none"></div>
+          </button>
+
+          <!-- Social Providers -->
+          <div class="pt-2 space-y-4">
+            <div class="relative flex items-center justify-center">
+              <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-border"></div></div>
+              <span class="relative bg-background px-3 text-xs font-medium text-muted-foreground">or enter via</span>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3">
+              <button 
+                v-for="provider in socialProviders"
+                :key="provider.id"
+                @click="handleSocialLogin(provider.id)"
+                type="button"
+                class="flex items-center justify-center h-12 border border-border bg-card/40 backdrop-blur-md rounded-xl hover:bg-primary/5 hover:border-primary/30 transition-all group relative overflow-hidden cursor-pointer"
+                :title="provider.name"
+              >
+                <img 
+                  :src="provider.icon" 
+                  :alt="provider.name"
+                  class="w-5 h-5 opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all pointer-events-none filter brightness-100" 
+                />
+                <div class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Footer Action -->
+        <div class="mt-8 text-center animate-in fade-in duration-1000 delay-500">
+          <button 
+            @click="identityService.login()"
+            class="group text-xs font-medium text-muted-foreground hover:text-foreground transition-all flex items-center gap-2 mx-auto cursor-pointer"
+          >
+            <span class="border-b border-transparent group-hover:border-white/40 pb-0.5">Enterprise SSO</span>
+            <ArrowRight class="w-3 h-3 transition-transform group-hover:translate-x-1" />
+          </button>
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -132,6 +123,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useNotifications } from '@/composables/useNotifications'
 import { Check, Loader2, ArrowRight } from 'lucide-vue-next'
 import { useColorMode } from '@vueuse/core'
+import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 
 const router = useRouter()
 const { isAuthenticated } = useAuth()

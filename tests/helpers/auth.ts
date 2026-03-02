@@ -34,8 +34,13 @@ export async function login(page: Page) {
         expires: testUser.exp
     }]);
 
-    // Navigate to the app
+    // Navigate to the app first so we can set localStorage
     await page.goto('/');
+
+    // Set the localStorage token for the ApiClient
+    await page.evaluate((t) => {
+        localStorage.setItem('auth_token', t);
+    }, token);
 
     // Wait for the page to load
     await page.waitForLoadState('networkidle');

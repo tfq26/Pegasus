@@ -38,6 +38,14 @@ export const TIER_LIMITS = {
         models: null, // null = all models allowed
         storage: 10 * 1024 * 1024 * 1024, // 10 GB
         tokens: 600000
+    },
+    enterprise: {
+        connections: Infinity,
+        tables: Infinity,
+        dashboards: Infinity,
+        models: null,
+        storage: 100 * 1024 * 1024 * 1024, // 100 GB
+        tokens: 1000000
     }
 }
 

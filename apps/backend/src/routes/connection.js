@@ -10,52 +10,25 @@ import { ConfigService } from "../services/ConfigService.js"
 import { SyncService } from "../services/SyncService.js"
 import { RAGService } from "../services/ragService.js"
 
+import { authMiddleware, requireUser } from "../middleware/auth.js"
+
 const router = new Hono()
+router.use("*", authMiddleware)
+router.use("*", requireUser)
+
 const jwtSecret = ConfigService.getJwtSecret()
 
-// Helper
-const upsertUser = async (payload) => {
-    try {
-        const userId = payload.sub || payload.id;
-        const [user] = await db.insert(users)
-            .values({
-                id: userId,
-                email: payload.email,
-                firstName: payload.firstName || payload.first_name,
-                lastName: payload.lastName || payload.last_name,
-                profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
-                updatedAt: new Date()
-            })
-            .onConflictDoUpdate({
-                target: users.id,
-                set: {
-                    email: payload.email,
-                    firstName: payload.firstName || payload.first_name,
-                    lastName: payload.lastName || payload.last_name,
-                    profilePictureUrl: (payload.profilePictureUrl || payload.profile_picture_url) ?? null,
-                    updatedAt: new Date()
-                }
-            })
-            .returning();
-        return user.id;
-    } catch (e) {
-        console.error("[Connection] Failed to upsert user:", e)
-        return null;
-    }
-}
-
 router.get("/", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    const userId = c.get('userId')
+    const userResult = c.get('user')
+    console.log(`[Connection GET] Fetching for userId: ${userId}, hasUser: ${!!userResult}`);
 
     try {
-        const payload = await verify(token, jwtSecret)
-        const userId = payload.sub
-
         const results = await db.query.connections.findMany({
             where: eq(connections.userId, userId),
             orderBy: [desc(connections.createdAt)]
         });
+        console.log(`[Connection GET] Found ${results?.length || 0} connections`);
 
         const mapped = (results || []).map(row => {
             let config = {}
@@ -79,11 +52,8 @@ router.get("/", async (c) => {
         })
 
         // Fetch user config for hidden system connections
-        const user = await db.query.users.findFirst({
-            where: eq(users.id, userId),
-            columns: { config: true }
-        });
-        const hiddenSystemConnections = user?.config?.hiddenSystemConnections || [];
+        const userResult = c.get('user')
+        const hiddenSystemConnections = userResult?.config?.hiddenSystemConnections || [];
 
         // Inject System Metrics (Cosmos DB)
         if (process.env.COSMOS_ENDPOINT && !hiddenSystemConnections.includes('system:orion_metrics')) {
@@ -104,22 +74,16 @@ router.get("/", async (c) => {
 
         return c.json({ connections: mapped });
     } catch (e) {
+        console.error('[Connection GET] Error:', e)
         return c.json({ error: e.message }, 500);
     }
 });
 
 router.post("/", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    const userId = c.get('userId')
+    const userRow = c.get('user')
 
     try {
-        const payload = await verify(token, jwtSecret)
-        const userId = await upsertUser(payload)
-
-        const userRow = await db.query.users.findFirst({
-            where: eq(users.id, userId),
-            columns: { subscriptionTier: true }
-        });
         const tier = userRow?.subscriptionTier || 'free'
 
         const limitCheck = await canCreateConnection(db, userId, tier)
@@ -189,12 +153,10 @@ router.post("/", async (c) => {
 });
 
 router.put("/:id", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
+    const userId = c.get('userId')
     const id = c.req.param("id")
 
     try {
-        const payload = await verify(token, jwtSecret)
         const body = await c.req.json()
         const { type, provider, name, nickname, config, isLocked, ...rest } = body
         const spaceId = body.spaceId || body.space
@@ -212,7 +174,6 @@ router.put("/:id", async (c) => {
 
         const [updated] = await db.update(connections)
             .set({
-                // ... (rest remains same)
                 type: finalType,
                 name: finalName,
                 config: finalConfig,
@@ -220,7 +181,7 @@ router.put("/:id", async (c) => {
                 isVirtual: !!isLocked,
                 updatedAt: new Date()
             })
-            .where(and(eq(connections.id, id), eq(connections.userId, payload.sub)))
+            .where(and(eq(connections.id, id), eq(connections.userId, userId)))
             .returning();
 
         if (!updated) return c.json({ error: "Connection not found" }, 404)
@@ -238,7 +199,7 @@ router.put("/:id", async (c) => {
         const isNoSql = ['mongodb', 'kusto'].includes(mappedUpdated.provider);
 
         if (isSql && mappedUpdated.enableSync) {
-            SyncService.initialSync(mappedUpdated, payload.sub)
+            SyncService.initialSync(mappedUpdated, userId)
                 .catch(e => console.error('[Connection] Initial sync failed:', e));
         }
 
@@ -251,37 +212,29 @@ router.put("/:id", async (c) => {
         }
 
         // [RAG] Index Connection Metadata
-        RAGService.indexConnectionMetadata(mappedUpdated, payload.sub)
+        RAGService.indexConnectionMetadata(mappedUpdated, userId)
             .catch(e => console.error('[Connection] RAG Indexing failed:', e));
 
         return c.json(mappedUpdated);
     } catch (e) {
+        console.error('[Connection PUT] Error:', e)
         return c.json({ error: e.message }, 500);
     }
 });
 
 router.delete("/:id", async (c) => {
-    const token = getAuthToken(c)
-    if (!token) return c.json({ error: "Unauthorized" }, 401)
-
+    const userId = c.get('userId')
+    const userRow = c.get('user')
     let id = c.req.param("id")
 
     // Handle system/virtual connections
     if (id.startsWith('system:')) {
         console.log(`[Connection] Targeted system connection for removal: ${id}`);
         try {
-            const payload = await verify(token, jwtSecret)
-            const userId = payload.sub
-
-            // Fetch user config and update it to hide this system connection
-            const user = await db.query.users.findFirst({
-                where: eq(users.id, userId)
-            });
-
-            if (user) {
+            if (userRow) {
                 const updatedConfig = {
-                    ...(user.config || {}),
-                    hiddenSystemConnections: [...(user.config?.hiddenSystemConnections || [])]
+                    ...(userRow.config || {}),
+                    hiddenSystemConnections: [...(userRow.config?.hiddenSystemConnections || [])]
                 }
 
                 if (!updatedConfig.hiddenSystemConnections.includes(id)) {
@@ -307,8 +260,7 @@ router.delete("/:id", async (c) => {
     }
 
     try {
-        const payload = await verify(token, jwtSecret)
-        const result = await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, payload.sub)));
+        await db.delete(connections).where(and(eq(connections.id, rawId), eq(connections.userId, userId)));
         return c.json({ ok: true });
     } catch (e) {
         console.error("Delete connection error:", e)

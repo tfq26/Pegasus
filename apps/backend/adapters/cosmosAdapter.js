@@ -18,10 +18,10 @@ export class CosmosAdapter extends DatabaseAdapter {
             this.connection.endpoint = this.connection.endpoint.replace(/:443\/?$/, '').replace(/\/$/, '')
         }
 
-        const endpoint = this.connection.endpoint
-        const key = this.connection.key || this.connection.password
-        const databaseId = this.connection.database ? this.connection.database.trim() : null
-        const containerId = this.connection.container || this.connection.collection
+        const endpoint = this.connection.endpoint || process.env.COSMOS_ENDPOINT
+        const key = this.connection.key || this.connection.password || process.env.COSMOS_KEY
+        const databaseId = (this.connection.database || process.env.COSMOS_DATABASE)?.trim() || null
+        const containerId = this.connection.container || this.connection.collection || process.env.COSMOS_CONTAINER
 
         const logMsg = `[CosmosAdapter] Connecting with: endpoint=${endpoint}, db=${databaseId}, container=${containerId}, keyLen=${key ? key.length : 0}\n`
         try { fs.appendFileSync('/tmp/cosmos_debug.log', logMsg) } catch (e) { }
@@ -360,7 +360,8 @@ export class CosmosAdapter extends DatabaseAdapter {
             }
             return schema
         } catch (e) {
-            throw e
+            console.error('[CosmosAdapter] getSchema failed:', e.message)
+            return {}
         }
     }
 

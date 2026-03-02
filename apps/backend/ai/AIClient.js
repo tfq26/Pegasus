@@ -319,7 +319,7 @@ export class AIClient {
             // Standardized Batch-to-Sequential strategy
             if (Array.isArray(text)) {
                 try {
-                    const result = await provider.embed(text, { ...options, model: primaryModel });
+                    const result = await provider.embed(text, { ...options, model: resolvedModel });
                     if (result === null) throw new Error("Batch embedding returned null");
                     return result;
                 } catch (batchErr) {
@@ -336,7 +336,7 @@ export class AIClient {
             console.warn(`[AIClient] Embedding attempt failed for ${resolvedModel}: ${e.message}`);
             const fallbackModel = AIClient.EMBEDDING_FALLBACKS[resolvedModel];
             if (fallbackModel) {
-                console.log(`[AIClient] Triggering fallback: ${primaryModel} -> ${fallbackModel}`);
+                console.log(`[AIClient] Triggering fallback: ${resolvedModel} -> ${fallbackModel}`);
                 return this.generateEmbedding(text, fallbackModel, options);
             }
 

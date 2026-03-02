@@ -42,10 +42,8 @@ describe("SQLiteAdapter", () => {
         const adapter = new SQLiteAdapter({
             id: "test",
             provider: "sqlite",
-            sqlite: {
-                path: "https://test-db.turso.io",
-                authToken: "test-token"
-            }
+            path: "https://test-db.turso.io",
+            authToken: "test-token"
         })
 
         await adapter.connect()
@@ -60,10 +58,8 @@ describe("SQLiteAdapter", () => {
         const adapter = new SQLiteAdapter({
             id: "test",
             provider: "sqlite",
-            sqlite: {
-                path: "https://test-db.turso.io",
-                authToken: "test-token"
-            }
+            path: "https://test-db.turso.io",
+            authToken: "test-token"
         })
 
         await adapter.connect()
@@ -90,10 +86,8 @@ describe("SQLiteAdapter", () => {
         const adapter = new SQLiteAdapter({
             id: "test",
             provider: "sqlite",
-            sqlite: {
-                path: "https://test-db.turso.io",
-                authToken: "test-token"
-            }
+            path: "https://test-db.turso.io",
+            authToken: "test-token"
         })
 
         await adapter.connect()
@@ -114,6 +108,6 @@ describe("SQLiteAdapter", () => {
         expect(body.requests[0].stmt.sql).toContain("id = ?")
         // Args should be array
         expect(body.requests[0].stmt.args).toHaveLength(1)
-        expect(body.requests[0].stmt.args[0].value).toBe("123")
+        expect(body.requests[0].stmt.args[0].value).toBe(123)
     })
 })

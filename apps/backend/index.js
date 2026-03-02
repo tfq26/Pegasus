@@ -1960,12 +1960,12 @@ app.post("/schema", async (c) => {
             return c.json(responseData)
         } catch (err) {
             // Return a more structured error so the UI can show friendlier messages.
-            // Many driver errors include a 'code' or 'name' property; include that when present.
             const code = (err && (err.code || err.name)) || 'UNKNOWN_ERROR'
             const message = err && err.message ? err.message : 'An unknown error occurred while probing the schema'
-            return c.json({ error: message, code }, 500)
+            console.warn('[/schema] Schema discovery failed:', { message, code });
+            return c.json({ error: message, code }, 400)
         } finally {
-            await adapter.disconnect()
+            if (adapter) await adapter.disconnect()
         }
     } catch (err) {
         console.error('[/schema] Fatal handler error:', err);

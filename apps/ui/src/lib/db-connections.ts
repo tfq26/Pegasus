@@ -141,6 +141,7 @@ export type ConnectionEntry = {
   cloud_storage?: CloudStorageConfig
   cosmosdb?: CosmosConfig
   isLocked?: boolean
+  isVirtual?: boolean
 }
 
 export const CONNECTION_STORAGE_KEY = 'pegasus-db-connections'
