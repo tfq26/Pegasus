@@ -15,7 +15,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'load-query': [query: string]
+  'load-query': [query: string, connectionId?: string]
   'delete-query': [id: string]
   'share-query': [query: any]
   'clear-history': []
@@ -100,7 +100,7 @@ function copyToClipboard(text: string) {
               <ContextMenu>
                 <ContextMenuTrigger>
                   <div
-                    @click="emit('load-query', q.query)"
+                    @click="emit('load-query', q.query, q.connection_id || q.connectionId)"
                     class="group cursor-pointer p-3 rounded-xl bg-card/40 border border-border/80 hover:border-border hover:bg-muted/60 transition-all active:scale-[0.98]"
                   >
                     <div class="flex items-center gap-3">

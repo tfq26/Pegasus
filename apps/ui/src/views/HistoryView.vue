@@ -42,19 +42,17 @@ onMounted(() => {
 })
 
 const handleSelectChat = (id: string) => {
-    // Navigate to chat? Or open in sidebar?
-    // Since this is a full view, we might want to navigate to a chat page if it exists,
-    // or emit something if this view is used inside a layout.
-    // For now, let's assume we navigate to home with chat param? 
-    // Or maybe we just open it.
-    console.log('Open chat', id)
-    // TODO: Implement navigation
+    // Navigate to query view with chatId pre-selected
+    router.push({ path: '/query', query: { chatId: id } })
 }
 
-const handleLoadQuery = (query: string) => {
-    // Copy to clipboard or navigate to data view
+const handleLoadQuery = (query: string, cid?: string) => {
+    // Copy to clipboard for convenience
     navigator.clipboard.writeText(query)
-    // TODO: Navigate to Data view with query
+    // Navigate to query view with query and connection pre-filled
+    const queryParams: any = { q: query }
+    if (cid) queryParams.cid = cid
+    router.push({ path: '/query', query: queryParams })
 }
 
 </script>

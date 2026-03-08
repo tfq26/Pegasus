@@ -2,6 +2,9 @@
 import { ref, shallowRef, computed, watch, onMounted } from 'vue';
 import { useDataViewAI } from '../../../composables/useDataViewAI';
 import { inferColumnTypes } from '../../../lib/TypeInference';
+import ProfilingPanel from '../Profiling/ProfilingPanel.vue';
+import { api } from '@/lib/apiClient';
+import { toast } from '@/composables/useNotifications';
 import { 
   Database, 
   Grid, 
@@ -79,6 +82,8 @@ const stagedChanges = ref<any[]>([]);
 const editingCell = ref<{ rowId: number, col: string } | null>(null);
 const editValue = ref('');
 const isAIProcessing = ref(false);
+const profilingResult = ref<any>(null);
+const profilingLoading = ref(false);
 const mockData = ref<any[]>([]);
 const originalMockData: any[] = []; // For clearing filters
 const { executeDataViewCommand } = useDataViewAI();
@@ -101,6 +106,8 @@ const isRealData = computed(() => !!props.engine && (props.engine.sourceTable ||
 const displayDataRaw = ref<any[]>([]);
 const displayData = ref<any[]>([]);
 const currentHeaders = ref<any[]>([]);
+const engineDiff = computed(() => props.engine?.getDiff() || []);
+const stagedCount = computed(() => props.engine ? engineDiff.value.length : stagedChanges.value.length);
 const sortState = ref<{ col: string | null, direction: 'asc' | 'desc' }>({ col: null, direction: 'asc' });
 const containerRef = ref<HTMLElement | null>(null);
 
@@ -310,31 +317,42 @@ const setColumnType = (header: any, type: string) => {
 };
 
 const addRow = () => {
-  const newId = (displayDataRaw.value.length > 0 
-    ? Math.max(...displayDataRaw.value.map(r => r.id || 0)) 
-    : 0) + 1;
-    
-  const newRow: any = { id: newId };
-  currentHeaders.value.forEach(h => {
-    const colName = typeof h === 'string' ? h : h.name;
-    if (colName && colName !== 'id') newRow[colName] = '';
-  });
-  
-  if (isRealData.value) {
-    displayDataRaw.value = [...displayDataRaw.value, newRow];
+  let newId: number | null = null; // Declare newId with broader scope
+  if (props.engine) {
+    // Determine where to insert. For "Append", find the last logical row.
+    const lastRow = props.engine.getNonEmptyRowCount();
+    props.engine.insertRow(lastRow);
+    syncDataFromEngine();
   } else {
-    mockData.value.push(newRow);
-    displayDataRaw.value = [...mockData.value];
+    // Legacy/Mock fallback
+    newId = (displayDataRaw.value.length > 0 
+      ? Math.max(...displayDataRaw.value.map(r => r.id || 0)) 
+      : 0) + 1;
+      
+    const newRow: any = { id: newId };
+    currentHeaders.value.forEach(h => {
+      const colName = typeof h === 'string' ? h : h.name;
+      if (colName && colName !== 'id') newRow[colName] = '';
+    });
+    
+    if (isRealData.value) {
+      displayDataRaw.value = [...displayDataRaw.value, newRow];
+    } else {
+      mockData.value.push(newRow);
+      displayDataRaw.value = [...mockData.value];
+    }
   }
   
-  stagedChanges.value.push({
-    id: Date.now() + Math.random(),
-    row: newId,
-    col: 'row',
-    old: null,
-    new: 'created',
-    type: 'create'
-  });
+  if (newId !== null) { // Only push staged change if newId was generated (mock data case)
+    stagedChanges.value.push({
+      id: Date.now() + Math.random(),
+      row: newId,
+      col: 'row',
+      old: null,
+      new: 'created',
+      type: 'create'
+    });
+  }
   
   // Force visible rows update
   updateVisibleRows();
@@ -386,34 +404,58 @@ const finishNamingColumn = (header: any, success: boolean) => {
     return;
   }
   
-  header.isNaming = false;
+  if (props.engine) {
+    props.engine.addColumn(name);
+    syncDataFromEngine();
+  } else {
+    header.isNaming = false;
+    header.rawName = name;
+    namingHeader.value = null;
+    
+    stagedChanges.value.push({
+      id: Date.now() + Math.random(),
+      row: 0,
+      col: name,
+      old: null,
+      new: 'created',
+      type: 'add_column'
+    });
+  }
+  
+  header.isNaming = false; // Ensure this is set for both paths
   header.rawName = name;
   namingHeader.value = null;
-  
-  stagedChanges.value.push({
-    id: Date.now() + Math.random(),
-    row: 0,
-    col: name,
-    old: null,
-    new: 'created',
-    type: 'add_column'
-  });
 };
 
 const deleteRow = (id: number) => {
-  const data = isRealData.value ? displayDataRaw : mockData;
-  const idx = data.value.findIndex(r => r.id === id);
-  if (idx !== -1) {
-    const row = data.value[idx];
-    stagedChanges.value.push({
-      id: Date.now() + Math.random(),
-      row: id,
-      col: 'row',
-      old: 'row',
-      new: 'deleted',
-      type: 'delete'
-    });
-    // For now we just mark as deleted in stagedChanges which triggers line-through in UI
+  if (props.engine) {
+    // Find grid row index from DB ID
+    let gridRow = -1;
+    for (const [r, rowId] of props.engine.rowIdMap.entries()) {
+      if (rowId === id) {
+        gridRow = r;
+        break;
+      }
+    }
+    if (gridRow !== -1) {
+      props.engine.deleteRow(gridRow);
+      syncDataFromEngine();
+    }
+  } else {
+    const data = isRealData.value ? displayDataRaw : mockData;
+    const idx = data.value.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      const row = data.value[idx];
+      stagedChanges.value.push({
+        id: Date.now() + Math.random(),
+        row: id,
+        col: 'row',
+        old: 'row',
+        new: 'deleted',
+        type: 'delete'
+      });
+      // For now we just mark as deleted in stagedChanges which triggers line-through in UI
+    }
   }
 };
 
@@ -451,33 +493,48 @@ const startEdit = (rowId: number, col: string, currentVal: any) => {
 const saveEdit = () => {
   if (!editingCell.value) return;
   const { rowId, col } = editingCell.value;
-  const rowIdx = mockData.value.findIndex(r => r.id === rowId);
-  if (rowIdx === -1) return;
-
-  const oldVal = (mockData.value[rowIdx] as any)[col];
   const newVal = editValue.value;
 
-  if (oldVal !== newVal) {
-    // Update data locally in mockup
-    (mockData.value[rowIdx] as any)[col] = newVal;
+  if (props.engine) {
+    const colIndex = props.engine.columnNames.indexOf(col);
+    // Find grid row index from DB ID
+    let gridRow = -1;
+    for (const [r, id] of props.engine.rowIdMap.entries()) {
+      if (id === rowId) {
+        gridRow = r;
+        break;
+      }
+    }
 
-    // Add to staged changes
-    const existingIdx = stagedChanges.value.findIndex(c => c.row === rowId && c.col === col);
-    if (existingIdx !== -1) {
-      stagedChanges.value[existingIdx].new = newVal;
-    } else {
-      stagedChanges.value.push({
-        id: Date.now(),
-        row: rowId,
-        col: col,
-        old: oldVal,
-        new: newVal,
-        type: 'update'
-      });
+    if (gridRow !== -1 && colIndex !== -1) {
+      props.engine.setValue({ row: gridRow, col: colIndex }, newVal);
+      syncDataFromEngine();
+    }
+  } else {
+    // Legacy fallback (Mock Data)
+    const rowIdx = mockData.value.findIndex(r => r.id === rowId);
+    if (rowIdx !== -1) {
+      const oldVal = (mockData.value[rowIdx] as any)[col];
+      (mockData.value[rowIdx] as any)[col] = newVal;
+
+      const existingIdx = stagedChanges.value.findIndex(c => c.row === rowId && c.col === col);
+      if (existingIdx !== -1) {
+        stagedChanges.value[existingIdx].new = newVal;
+      } else {
+        stagedChanges.value.push({
+          id: Date.now() + Math.random(),
+          row: rowId,
+          col,
+          old: oldVal,
+          new: newVal,
+          type: 'update'
+        });
+      }
     }
   }
 
   editingCell.value = null;
+  updateVisibleRows();
 };
 
 const discardChange = (id: number) => {
@@ -491,13 +548,26 @@ const discardChange = (id: number) => {
   stagedChanges.value = stagedChanges.value.filter(c => c.id !== id);
 };
 
-const commitChanges = () => {
-  if (isExcelSource.value) {
-    alert(`Replacing source file/data for Data View ${props.viewId || 'Transient'} with ${stagedChanges.value.length} updates...`);
+const commitChanges = async () => {
+  if (props.engine) {
+    try {
+      isAIProcessing.value = true;
+      await props.engine.commit();
+      await syncDataFromEngine();
+      stagedChanges.value = [];
+    } catch (e: any) {
+      alert(e.message || "Failed to commit changes");
+    } finally {
+      isAIProcessing.value = false;
+    }
   } else {
-    alert(`Committing ${stagedChanges.value.length} changes to the database...`);
+    if (isExcelSource.value) {
+      alert(`Replacing source file/data for Data View ${props.viewId || 'Transient'} with ${stagedChanges.value.length} updates...`);
+    } else {
+      alert(`Committing ${stagedChanges.value.length} changes to the database...`);
+    }
+    stagedChanges.value = [];
   }
-  stagedChanges.value = [];
 };
 
 const getRowValue = (row: any, header: any) => {
@@ -770,7 +840,30 @@ const handleAICommand = async () => {
   } finally {
     isAIProcessing.value = false;
     emit('update:isAIProcessing', false);
-    emit('update:stagedCount', stagedChanges.value.length);
+    emit('update:stagedCount', stagedCount.value);
+  }
+};
+
+const profileTable = async () => {
+  if (!props.engine?.sourceTable) {
+    toast.info('Only database tables can be profiled in this mode');
+    return;
+  }
+
+  try {
+    profilingLoading.value = true;
+    const connection = props.engine.connection;
+    const result = await api.post<any>('/profile', {
+      tableName: props.engine.sourceTable,
+      connection,
+      provider: props.engine.sourceProvider
+    });
+    profilingResult.value = result;
+  } catch (e: any) {
+    console.error('[DataView] Profiling failed:', e);
+    toast.error('Data profiling failed', { description: e.message });
+  } finally {
+    profilingLoading.value = false;
   }
 };
 
@@ -785,11 +878,12 @@ defineExpose({
   saveView,
   showStaging,
   addRow,
-  addColumn
+  addColumn,
+  profileTable
 });
 
 // Sync staged count to parent
-watch(() => stagedChanges.value.length, (count) => {
+watch(stagedCount, (count) => {
   emit('update:stagedCount', count);
 });
 
@@ -1037,7 +1131,7 @@ watch(() => props.viewId, async (newId) => {
       </div>
       
       <div 
-        v-if="stagedChanges.length > 0 && false"
+        v-if="stagedCount > 0"
         class="fixed bottom-10 left-1/2 -translate-x-1/2 flex flex-col gap-3 min-w-[450px] max-w-[650px] z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 pointer-events-auto"
       >
         <!-- Changes List (Drawer Content) -->
@@ -1048,7 +1142,7 @@ watch(() => props.viewId, async (newId) => {
           <div class="flex items-center justify-between mb-4 px-1">
             <div class="flex items-center gap-2 font-bold text-sm tracking-tight text-foreground">
               <History class="w-4 h-4 text-primary" />
-              Staged Changes ({{ stagedChanges.length }})
+              Staged Changes ({{ stagedCount }})
             </div>
             <button @click="showStaging = false" class="p-1.5 hover:bg-muted rounded-full transition-colors text-muted-foreground">
               <X class="w-4 h-4" />
@@ -1056,23 +1150,53 @@ watch(() => props.viewId, async (newId) => {
           </div>
 
           <div class="flex-1 overflow-auto space-y-2 pr-1 custom-scrollbar pb-2">
-            <div v-for="change in stagedChanges" :key="change.id" class="p-3 bg-muted/40 border border-border/40 rounded-xl space-y-2 group hover:border-primary/20 transition-all shadow-sm">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border shadow-xs text-foreground">Row {{ change.row }}</span>
-                  <span class="text-[10px] font-bold uppercase tracking-widest text-primary/70">{{ change.col }}</span>
+            <!-- Engine Diffs -->
+            <template v-if="props.engine">
+              <div v-for="(diff, index) in engineDiff" :key="index" class="p-3 bg-muted/40 border border-border/40 rounded-xl space-y-2 group hover:border-primary/20 transition-all shadow-sm">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border shadow-xs text-foreground">Row {{ diff.row }}</span>
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-primary/70">{{ diff.type }}</span>
+                  </div>
                 </div>
-                <button @click="discardChange(change.id)" class="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-rose-500/10 text-rose-500 transition-all">
-                  <X class="w-3.5 h-3.5" />
-                </button>
+                
+                <div v-if="diff.type === 'update'" class="space-y-1">
+                  <div v-for="(change, col) in diff.changes" :key="col" class="flex items-center gap-2.5 text-xs">
+                    <span class="text-[10px] font-bold text-muted-foreground w-16 truncate">{{ col }}</span>
+                    <span class="text-muted-foreground line-through opacity-40 font-medium">{{ change.before }}</span>
+                    <ArrowRight class="w-3 h-3 text-muted-foreground/40" />
+                    <span class="font-bold text-primary underline underline-offset-4 decoration-primary/30 uppercase tracking-tight text-foreground">{{ change.after }}</span>
+                  </div>
+                </div>
+                <div v-else-if="diff.type === 'create'" class="text-[10px] text-muted-foreground italic">
+                  New row added to {{ props.engine.sourceTable }}
+                </div>
+                <div v-else-if="diff.type === 'delete'" class="text-[10px] text-rose-500 font-bold uppercase">
+                  Row marked for deletion
+                </div>
               </div>
-              
-              <div class="flex items-center gap-2.5 text-xs">
-                <span class="text-muted-foreground line-through opacity-40 font-medium">{{ change.old }}</span>
-                <ArrowRight class="w-3 h-3 text-muted-foreground/40" />
-                <span class="font-bold text-primary underline underline-offset-4 decoration-primary/30 uppercase tracking-tight text-foreground">{{ change.new }}</span>
+            </template>
+
+            <!-- Mock Diffs -->
+            <template v-else>
+              <div v-for="change in stagedChanges" :key="change.id" class="p-3 bg-muted/40 border border-border/40 rounded-xl space-y-2 group hover:border-primary/20 transition-all shadow-sm">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border shadow-xs text-foreground">Row {{ change.row }}</span>
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-primary/70">{{ change.col }}</span>
+                  </div>
+                  <button @click="discardChange(change.id)" class="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-rose-500/10 text-rose-500 transition-all">
+                    <X class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                
+                <div class="flex items-center gap-2.5 text-xs">
+                  <span class="text-muted-foreground line-through opacity-40 font-medium">{{ change.old }}</span>
+                  <ArrowRight class="w-3 h-3 text-muted-foreground/40" />
+                  <span class="font-bold text-primary underline underline-offset-4 decoration-primary/30 uppercase tracking-tight text-foreground">{{ change.new }}</span>
+                </div>
               </div>
-            </div>
+            </template>
           </div>
         </div>
 
@@ -1086,11 +1210,11 @@ watch(() => props.viewId, async (newId) => {
             >
               <History :class="['w-4.5 h-4.5 transition-transform duration-500', showStaging ? 'rotate-180' : '']" />
               <span v-if="!showStaging" class="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[10px] flex items-center justify-center rounded-full border-2 border-primary animate-bounce">
-                {{ stagedChanges.length }}
+                {{ stagedCount }}
               </span>
             </button>
             <div class="flex flex-col">
-              <span class="text-xs font-black tracking-tight leading-none uppercase">{{ stagedChanges.length }} Changes Staged</span>
+              <span class="text-xs font-black tracking-tight leading-none uppercase">{{ stagedCount }} Changes Staged</span>
               <span class="text-[10px] opacity-80 font-medium">Ready to sync with source</span>
             </div>
           </div>
@@ -1104,7 +1228,7 @@ watch(() => props.viewId, async (newId) => {
               Commit Now
             </button>
             <button 
-              @click="stagedChanges = []"
+              @click="stagedChanges = []; props.engine?.clearModifiedTracking()"
               class="px-4 py-2 hover:bg-white/10 rounded-full text-xs font-bold transition-all text-white/80 hover:text-white"
             >
               Discard All
@@ -1114,6 +1238,12 @@ watch(() => props.viewId, async (newId) => {
       </div>
     </div>
 
+    <!-- Profiling Modal -->
+    <ProfilingPanel 
+      v-model="profilingResult"
+      :profile="profilingResult" 
+      :loading="profilingLoading" 
+    />
   </div>
 </template>
 

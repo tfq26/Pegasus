@@ -43,7 +43,30 @@ export async function login(page: Page) {
     }, token);
 
     // Wait for the page to load
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
+
+    // Disable animations for stability
+    await disableAnimations(page);
+
+    // Wait for a core app element to be sure we're in
+    await page.waitForSelector('.pegasus-app-container, #app', { state: 'attached', timeout: 10000 });
+}
+
+/**
+ * Helper to disable CSS animations to improve test stability
+ */
+export async function disableAnimations(page: Page) {
+    await page.addStyleTag({
+        content: `
+            *, *::before, *::after {
+                transition-property: none !important;
+                transform: none !important;
+                animation: none !important;
+                transition-duration: 0s !important;
+                animation-duration: 0s !important;
+            }
+        `
+    }).catch(() => { }); // Ignore if page is already closed
 }
 
 /**
@@ -51,7 +74,8 @@ export async function login(page: Page) {
  */
 export async function navigateToSettings(page: Page) {
     await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
+    await disableAnimations(page);
 }
 
 /**

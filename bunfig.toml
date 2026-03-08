@@ -1,0 +1,14 @@
+[test]
+# Exclude Playwright E2E tests and other non-unit test directories
+exclude = [
+  "e2e/*.spec.ts",
+  "e2e/**/*.spec.ts",
+  "e2e/**",
+  "apps/ui/src/__tests__/**",
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/.next/**"
+]
+
+# Only include specific directories if needed, but excluding is often better for monorepos
+# rootDir = "."

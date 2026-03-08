@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
+import { cn } from '@/lib/utils'
 import {
   Sparkles,
   Database,
@@ -11,7 +12,9 @@ import {
   MoreHorizontal,
   Plus,
   PlusCircle,
-  Columns
+  Columns,
+  ChevronDown,
+  Dna
 } from 'lucide-vue-next'
 import {
   Tooltip,
@@ -19,6 +22,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu'
 
 const props = defineProps<{
   aiOptions: { model: string | null; temperature: number }
@@ -33,6 +43,8 @@ const props = defineProps<{
   aiCommand: string
   isAIProcessing: boolean
   isCompact?: boolean
+  versions?: { version: number; table: string; created_at: string; reason?: string }[]
+  currentVersion?: number
 }>()
 
 const emit = defineEmits<{
@@ -46,6 +58,8 @@ const emit = defineEmits<{
   'update:isCompact': [value: boolean]
   'add-row': []
   'add-column': []
+  'profile-table': []
+  'version-change': [version: number]
 }>()
 
 const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
@@ -72,6 +86,33 @@ const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
         >
           {{ title }}
         </span>
+
+        <!-- Version Selector -->
+        <DropdownMenu v-if="versions && versions.length > 0">
+          <DropdownMenuTrigger as-child>
+            <button class="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 hover:bg-muted text-[10px] font-bold text-muted-foreground/60 transition-colors">
+              <History class="w-3 h-3 text-primary/50" />
+              v{{ currentVersion ?? 0 }}
+              <ChevronDown class="w-2.5 h-2.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-48">
+            <DropdownMenuItem 
+              v-for="v in versions" 
+              :key="v.version"
+              @click="emit('version-change', v.version)"
+              :class="cn(v.version === currentVersion && 'bg-muted font-bold')"
+            >
+              <div class="flex flex-col gap-0.5">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs">Version {{ v.version === 0 ? 'Original' : v.version }}</span>
+                  <Check v-if="v.version === currentVersion" class="w-3 h-3 text-emerald-500" />
+                </div>
+                <span v-if="v.reason" class="text-[10px] text-muted-foreground italic truncate">{{ v.reason }}</span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <!-- Command Bar -->
@@ -103,6 +144,20 @@ const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" class="text-[10px] font-bold">Add Row</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button 
+                @click="emit('profile-table')"
+                class="p-1.5 rounded-lg text-muted-foreground hover:bg-violet-500/10 hover:text-violet-500 transition-all active:scale-95"
+              >
+                <Dna class="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" class="text-[10px] font-bold">Profile Table</TooltipContent>
           </Tooltip>
         </TooltipProvider>
 

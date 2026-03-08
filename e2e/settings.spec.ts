@@ -11,7 +11,7 @@ test.describe('Settings Page', () => {
         await expect(page.locator('h2:has-text("Settings")')).toBeVisible();
 
         // Check all tabs are present
-        const tabs = ['General', 'Pegasus AI', 'Queries', 'Data', 'Cloud', 'View', 'Integrations', 'Database Connections'];
+        const tabs = ['Profile', 'General', 'AI', 'Database Connections'];
 
         for (const tab of tabs) {
             await expect(page.locator(`button:has-text("${tab}")`)).toBeVisible();
@@ -20,25 +20,26 @@ test.describe('Settings Page', () => {
 
     test('should switch between tabs', async ({ page }) => {
         // Click on AI tab
-        await page.locator('button:has-text("Pegasus AI")').click();
-        await expect(page.locator('text=AI Detail Level')).toBeVisible();
-
-        // Click on Queries tab
-        await page.locator('button:has-text("Queries")').click();
-        await expect(page.locator('text=Auto-save Queries')).toBeVisible();
+        await page.locator('button:has-text("AI")').nth(0).click();
+        await expect(page.locator('text=Model Provider')).toBeVisible();
 
         // Click on Database Connections tab
         await page.locator('button:has-text("Database Connections")').click();
         await expect(page.locator('h2:has-text("Database Connections")')).toBeVisible();
+
+        // Click on Profile tab
+        await page.locator('button:has-text("Profile")').click();
+        await expect(page.locator('text=Transaction History').first()).toBeVisible();
     });
 
     test('should save settings', async ({ page }) => {
         // Make a change to a setting
         await page.locator('button:has-text("General")').click();
+        await expect(page.locator('h2:has-text("General")')).toBeVisible();
 
         // Toggle a switch or change a value
-        const compactModeToggle = page.locator('text=Compact Mode').locator('..').locator('button');
-        await compactModeToggle.click();
+        const destructiveToggle = page.locator('div.flex.justify-between', { hasText: 'Confirm Destructive Actions' }).getByRole('switch');
+        await destructiveToggle.click();
 
         // Click save
         await page.locator('button:has-text("Save Changes")').click();
@@ -49,13 +50,15 @@ test.describe('Settings Page', () => {
 
     test('should persist settings after reload', async ({ page }) => {
         await page.locator('button:has-text("General")').click();
+        await expect(page.locator('h2:has-text("General")')).toBeVisible();
 
         // Get current state of a toggle
-        const compactModeToggle = page.locator('text=Compact Mode').locator('..').locator('button');
-        const initialState = await compactModeToggle.getAttribute('aria-checked');
+        const toggleContainer = page.locator('div.flex.justify-between', { hasText: 'Confirm Destructive Actions' });
+        const toggle = toggleContainer.getByRole('switch');
+        const initialState = await toggle.getAttribute('data-state');
 
         // Toggle it
-        await compactModeToggle.click();
+        await toggle.click();
 
         // Save
         await page.locator('button:has-text("Save Changes")').click();
@@ -68,8 +71,11 @@ test.describe('Settings Page', () => {
         // Navigate back to settings
         await navigateToSettings(page);
 
+        // Go back to General tab
+        await page.locator('button:has-text("General")').click();
+
         // Check the state changed
-        const newState = await compactModeToggle.getAttribute('aria-checked');
+        const newState = await page.locator('div.flex.justify-between', { hasText: 'Confirm Destructive Actions' }).getByRole('switch').getAttribute('data-state');
         expect(newState).not.toBe(initialState);
     });
 });

@@ -99,29 +99,12 @@ exportRoute.get('/:tableName/csv', async (c) => {
 
             try {
                 // Determine query based on provider (SQL vs NoSQL)
-                // For now, assume SQL-like for the "SELECT *" safety check above
-                // If Mongo, query would be different.
-
                 let actualQuery = query;
                 if (provider === 'mongodb') {
-                    // Mongo adapter query() expects an object
                     actualQuery = { collection: tableName, limit: MAX_EXPORT_ROWS };
                 }
 
-                const rows = await adapter.query(actualQuery);
-
-                // Manually stream logic since we don't have a true cursor yet
-                // This mimics the ExportService logic but adapting to Hono's stream
-
-                if (Array.isArray(rows) && rows.length > 0) {
-                    const headers = Object.keys(rows[0]).map(ExportService.escapeCsv).join(',');
-                    await stream.write(headers + '\n');
-
-                    for (const row of rows) {
-                        const line = Object.values(row).map(ExportService.escapeCsv).join(',');
-                        await stream.write(line + '\n');
-                    }
-                }
+                await ExportService.streamCsv(adapter, actualQuery, writable);
             } catch (err) {
                 console.error('Export Stream Error:', err);
                 await stream.write(`\nError: ${err.message}\n`);

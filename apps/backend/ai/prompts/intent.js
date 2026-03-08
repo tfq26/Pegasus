@@ -42,7 +42,16 @@ export function classifyIntent(message, context = {}) {
         lower.includes('prediction') ||
         lower.includes('forecast');
 
-    // 3. Heuristic Classification
+    // 3. Out-of-Scope Detection (Jokes, General Knowledge, etc.)
+    const isOutOfScope = lower.includes('joke') ||
+        lower.includes('tell me a') ||
+        lower.includes('why did the') ||
+        lower.includes('capital of') ||
+        lower.includes('who is') ||
+        lower.includes('poem') ||
+        lower.includes('story');
+
+    // 4. Heuristic Classification
     if (hasVisualizationKeywords) {
         return { type: 'visualization' };
     }
@@ -57,6 +66,6 @@ export function classifyIntent(message, context = {}) {
         return { type: 'query' };
     }
 
-    // Fallback to chat if ambiguous
-    return { type: 'chat' };
+    // Fallback to chat if ambiguous or flagged as out-of-scope
+    return { type: 'chat', isOutOfScope };
 }

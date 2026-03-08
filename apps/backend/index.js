@@ -48,7 +48,7 @@ import { getAuthToken } from "./lib/auth.js"
 import { getPayments } from "./src/routes/payments.js"
 import adminFixTier from "./src/routes/admin-fix-tier.js"
 import { analyzeForSanitization, applySanitization } from "./ai/sanitizer.js"
-import { authMiddleware, requireUser } from "./src/middleware/auth.js"
+import { authMiddleware, requireUser, clearUserCache } from "./src/middleware/auth.js"
 import { storageRoutes } from "./src/routes/storage.js"
 import importRoutes from "./src/routes/import.js"
 import supportRoutes from "./src/routes/support.js"
@@ -1503,7 +1503,10 @@ app.post("/settings", authMiddleware, requireUser, async (c) => {
                 config: settings,
                 updatedAt: new Date()
             })
-            .where(eq(users.id, userId));
+            .where(eq(users.id, user.id));
+
+        // Invalidate cache
+        clearUserCache(user.id);
 
         return c.json({ ok: true })
     } catch (error) {

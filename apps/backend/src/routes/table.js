@@ -15,6 +15,8 @@ import { SyncService } from "../services/SyncService.js"
 import { StorageManager } from "../services/storage/StorageManager.js"
 import { authMiddleware, requireUser } from '../middleware/auth.js'
 import { logger } from '../services/Logger.js'
+import { ExportService } from '../services/ExportService.js'
+import { stream } from 'hono/streaming'
 
 const table = new Hono()
 table.use('*', authMiddleware)
@@ -565,28 +567,55 @@ table.post("/table/:tableName/operations", async (c) => {
             }
 
             const queries = []
-            if (provider === 'surrealdb') {
-                for (const op of operations) {
-                    if (op.type === 'full_replacement') {
-                        const rows = op.rows || []
-                        // Case: SurrealDB full replacement
+
+            for (const op of operations) {
+                if (op.type === 'full_replacement') {
+                    const rows = op.rows || []
+                    if (provider === 'surrealdb') {
                         queries.push(`DELETE ${tableName}`)
                         const batchSize = 1000
                         for (let i = 0; i < rows.length; i += batchSize) {
                             const batch = rows.slice(i, i + batchSize).map((row, idx) => {
-                                const { id, __id, ...cleanRow } = row;
-                                return { ...cleanRow, _row_order: i + idx };
+                                const { id, __id, ...cleanRow } = row
+                                return { ...cleanRow, _row_order: i + idx }
                             })
                             if (batch.length > 0) {
                                 queries.push(`INSERT INTO ${tableName} ${JSON.stringify(batch)}`)
                             }
                         }
+                    } else {
+                        // SQL fallback
+                        queries.push(`DELETE FROM "${tableName}"`)
+                        for (const row of rows) {
+                            const { id, __id, ...rowData } = row
+                            const keys = Object.keys(rowData)
+                            const cols = keys.map(k => `"${k}"`).join(', ')
+                            const vals = keys.map(k => rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`).join(', ')
+                            queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+                        }
                     }
-                }
-            } else {
-                // Simplified fallback for other providers
-                for (const op of operations) {
-                    // Logic for update, delete, create...
+                } else if (op.type === 'update') {
+                    const { id, changes } = op
+                    const setClause = Object.keys(changes)
+                        .map(k => `"${k}" = ${changes[k] === null ? 'NULL' : `'${String(changes[k]).replace(/'/g, "''")}'`}`)
+                        .join(', ')
+
+                    // Detect ID column from connection metadata or default to id/rowid
+                    const idCol = op.idColumn || 'id'
+                    queries.push(`UPDATE "${tableName}" SET ${setClause} WHERE "${idCol}" = '${String(id).replace(/'/g, "''")}'`)
+                } else if (op.type === 'create') {
+                    const { data } = op
+                    const keys = Object.keys(data).filter(k => k !== 'id' && k !== '__id')
+                    const cols = keys.map(k => `"${k}"`).join(', ')
+                    const vals = keys.map(k => data[k] === null ? 'NULL' : `'${String(data[k]).replace(/'/g, "''")}'`).join(', ')
+                    queries.push(`INSERT INTO "${tableName}" (${cols}) VALUES (${vals})`)
+                } else if (op.type === 'delete') {
+                    const idCol = op.idColumn || 'id'
+                    queries.push(`DELETE FROM "${tableName}" WHERE "${idCol}" = '${String(op.id).replace(/'/g, "''")}'`)
+                } else if (op.type === 'add_column') {
+                    queries.push(`ALTER TABLE "${tableName}" ADD COLUMN "${op.column}" TEXT`)
+                } else if (op.type === 'drop_column') {
+                    queries.push(`ALTER TABLE "${tableName}" DROP COLUMN "${op.column}"`)
                 }
             }
 
@@ -934,6 +963,37 @@ table.get("/:tableName/access", async (c) => {
     } catch (e) {
         console.error('[Access] Error:', e)
         return c.json({ error: e.message }, 500)
+    }
+})
+
+table.post("/export", requireUser, async (c) => {
+    try {
+        const { tableName, query, connection, provider, format = 'csv' } = await c.req.json()
+        const userId = c.get('userId')
+
+        const adapter = await createAdapter(provider || connection.provider, connection, userId)
+        if (!adapter) return c.json({ error: 'Unsupported provider' }, 400)
+
+        await adapter.connect()
+
+        const exportQuery = query || `SELECT * FROM "${tableName}"`
+        const filename = `${tableName || 'export'}_${Date.now()}.${format === 'csv' ? 'csv' : 'xlsx'}`
+        const contentType = format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+        c.header('Content-Disposition', `attachment; filename="${filename}"`)
+        c.header('Content-Type', contentType)
+
+        return stream(c, async (stream) => {
+            if (format === 'csv') {
+                await ExportService.streamCsv(adapter, exportQuery, stream)
+            } else {
+                await ExportService.streamXlsx(adapter, exportQuery, stream)
+            }
+            await adapter.disconnect()
+        })
+    } catch (e) {
+        console.error("[Export Error]", e)
+        return c.json({ error: "Export failed" }, 500)
     }
 })
 

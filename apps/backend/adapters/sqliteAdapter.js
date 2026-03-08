@@ -61,6 +61,23 @@ export class SQLiteAdapter extends DatabaseAdapter {
   }
 
   /**
+   * Provides an async iterator over query results.
+   * For SQLite, we currently fetch all then yield for simplicity, 
+   * but could be extended to use paged fetching for very large datasets.
+   */
+  async *queryStream(query) {
+    console.log(`[SQLite] Streaming query: ${query}`);
+    const rows = await this.query(query);
+    if (Array.isArray(rows)) {
+      for (const row of rows) {
+        yield row;
+      }
+    } else {
+      yield rows; // Synthetic result for mutations
+    }
+  }
+
+  /**
    * Apply a batch of atomic operations (Spreadsheet delta updates)
    */
   async applyOperations(tableName, operations) {
@@ -251,6 +268,62 @@ export class SQLiteAdapter extends DatabaseAdapter {
     } catch (e) {
       console.error('[SQLite] Batch failed:', e)
       throw e
+    }
+  }
+
+  async explain(query) {
+    console.log(`[SQLite] Explaining query: ${query.substring(0, 50)}...`);
+    try {
+      // libSQL / SQLite standard
+      const result = await this.db.execute(`EXPLAIN QUERY PLAN ${query}`);
+      return result.rows;
+    } catch (error) {
+      console.error(`[SQLite] Explain failed:`, error);
+      throw new Error(`SQLite explain error: ${error.message}`);
+    }
+  }
+
+  async getProfile(tableName) {
+    console.log(`[SQLite] Generating profile for table: ${tableName}`);
+    try {
+      const columns = await this.getOneTableSchema(tableName);
+      if (columns.length === 0) return { tableName, columns: [] };
+
+      const columnNames = columns.map(c => c.name);
+
+      let selectParts = ['COUNT(*) as total_count'];
+      columnNames.forEach(col => {
+        const escaped = `"${col}"`;
+        selectParts.push(`COUNT(${escaped}) as "${col}_non_null"`);
+        selectParts.push(`COUNT(DISTINCT ${escaped}) as "${col}_distinct"`);
+        selectParts.push(`MIN(${escaped}) as "${col}_min"`);
+        selectParts.push(`MAX(${escaped}) as "${col}_max"`);
+      });
+
+      const result = await this.db.execute(`SELECT ${selectParts.join(', ')} FROM "${tableName}"`);
+      const stats = result.rows[0];
+      const totalCount = Number(stats.total_count);
+
+      const profile = {
+        tableName,
+        rowCount: totalCount,
+        columns: columns.map(col => {
+          const name = col.name;
+          return {
+            name,
+            type: col.type,
+            nullCount: totalCount - Number(stats[`${name}_non_null`]),
+            distinctCount: Number(stats[`${name}_distinct`]),
+            min: stats[`${name}_min`],
+            max: stats[`${name}_max`]
+          };
+        })
+      };
+
+      return profile;
+    } catch (e) {
+      console.error(`[SQLite] Profile failed for ${tableName}:`, e.message);
+      throw e;
     }
   }
 }

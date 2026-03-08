@@ -29,7 +29,7 @@ test.describe('Database Connections', () => {
         const mongoConfig = {
             nickname: uniqueName,
             description: 'MongoDB Atlas test cluster',
-            url: process.env.TEST_MONGODB_URL || 'mongodb+srv://pegasus:pegasus@pegasus.mongodb.net/test'
+            url: process.env.TEST_MONGODB_URL || testConnections.mongodb.atlas.url
         };
 
         await page.click('button:has-text("Add Connection")');

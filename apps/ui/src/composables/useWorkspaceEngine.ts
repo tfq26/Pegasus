@@ -441,6 +441,27 @@ export function useWorkspaceEngine(
         }
     })
 
+    const analyzeQuery = async (query: string, connection: any, provider: string) => {
+        const baseUrl = import.meta.env.VITE_QUERY_API_URL
+        const res = await fetch(`${baseUrl}/api/query/analyze`, {
+            method: 'POST',
+            headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                query,
+                connection: buildConnectionPayload(connection),
+                provider
+            }),
+        })
+
+        const body = await res.json()
+        if (!res.ok) throw new Error(body.error || 'Failed to analyze query')
+        return body
+    }
+
     return {
         engineCache,
         privateEngines,
@@ -457,5 +478,6 @@ export function useWorkspaceEngine(
         saveChanges,
         loadTabDataLazy,
         preloadAllTabs,
+        analyzeQuery
     }
 }

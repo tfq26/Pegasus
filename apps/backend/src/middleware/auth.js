@@ -115,3 +115,10 @@ export const requireUser = async (c, next) => {
         return c.json({ error: "User session error" }, 500)
     }
 }
+
+/**
+ * Clear user cache for a specific user ID
+ */
+export const clearUserCache = (userId) => {
+    userCache.delete(userId);
+}

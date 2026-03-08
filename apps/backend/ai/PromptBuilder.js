@@ -21,6 +21,15 @@ export class PromptBuilder {
     let prompt = CORE_PERSONA;
 
     // 3. Delegation based on Intent
+    // If out-of-scope, force the strict guardrails and provide no tool context
+    if (intent?.isOutOfScope) {
+      prompt += `\n[ACTION: REJECT OUT-OF-SCOPE REQUEST]
+The user's current message is detected as OUT-OF-SCOPE. 
+You MUST apply the REFUSAL PROTOCOL defined in the CORE PERSONA.
+Do not call any tools. Do not provide the joke, poem, or info requested.`;
+      return prompt;
+    }
+
     // NOTE: Even for 'visualization' or 'analysis', we first need to FETCH data.
     // So we route everything through buildFetchingPrompt, which handles the "how to get data" logic.
     prompt += buildFetchingPrompt(context, settings, intent);

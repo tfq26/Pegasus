@@ -1,5 +1,7 @@
 import duckdb from "duckdb"
 import path from "node:path"
+import fs from "node:fs/promises"
+import os from "node:os"
 import ExcelJS from "exceljs";
 import { resolveDatabasePath } from "../src/utils/resolveDatabasePath.js";
 
@@ -440,6 +442,18 @@ export class DuckDBAdapter {
         });
     }
 
+    async *queryStream(sql, params = []) {
+        if (!this.connection) await this.connect();
+
+        console.log(`[DuckDB] Streaming query: ${sql.substring(0, 100)}...`);
+
+        // DuckDB .stream() returns a QueryResult that is an AsyncIterator
+        const stream = this.connection.stream(sql, ...params);
+        for await (const row of stream) {
+            yield row;
+        }
+    }
+
     async query(sql, params = []) {
         return new Promise((resolve, reject) => {
             if (!this.connection) {
@@ -659,6 +673,208 @@ export class DuckDBAdapter {
         } catch (e) {
             console.error(`[DuckDB] _fixColumnTypes error:`, e);
             throw e;
+        }
+    }
+
+    async applyOperations(tableName, operations) {
+        if (!this.connection) await this.connect();
+
+        const requestId = Math.random().toString(36).substring(7);
+        console.log(`[DuckDB Operations][${requestId}] Applying ${operations.length} operations to ${tableName}`);
+
+        // 1. Materialize to a temporary table to allow updates (views are read-only)
+        const materializedName = `_op_materialized_${tableName}_${requestId}`;
+        await this.execute(`CREATE TABLE "${materializedName}" AS SELECT * FROM "${tableName}"`);
+
+        try {
+            for (const op of operations) {
+                switch (op.type) {
+                    case 'full_replacement': {
+                        await this.execute(`DELETE FROM "${materializedName}"`);
+                        if (op.rows && op.rows.length > 0) {
+                            for (const row of op.rows) {
+                                const { id, _rowid_, __id, ...rowData } = row;
+                                const keys = Object.keys(rowData);
+                                const cols = keys.map(k => `"${k}"`).join(', ');
+                                const vals = keys.map(k => rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`).join(', ');
+                                await this.execute(`INSERT INTO "${materializedName}" (${cols}) VALUES (${vals})`);
+                            }
+                        }
+                        break;
+                    }
+                    case 'create': {
+                        const data = op.data || {};
+                        const { id, _rowid_, __id, ...rowData } = data;
+                        const keys = Object.keys(rowData);
+                        if (keys.length > 0) {
+                            const cols = keys.map(k => `"${k}"`).join(', ');
+                            const vals = keys.map(k => rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`).join(', ');
+                            await this.execute(`INSERT INTO "${materializedName}" (${cols}) VALUES (${vals})`);
+                        }
+                        break;
+                    }
+                    case 'update': {
+                        const { id, changes } = op;
+                        const keys = Object.keys(changes).filter(k => k !== '__id' && k !== '_rowid_');
+                        const setClause = keys.map(k => `"${k}" = ${changes[k] === null ? 'NULL' : `'${String(changes[k]).replace(/'/g, "''")}'`}`).join(', ');
+                        if (setClause && id) {
+                            const idValue = typeof id === 'number' ? id : `'${String(id).replace(/'/g, "''")}'`;
+                            const idCol = typeof id === 'number' ? 'rowid' : 'id';
+                            await this.execute(`UPDATE "${materializedName}" SET ${setClause} WHERE ${idCol} = ${idValue}`);
+                        }
+                        break;
+                    }
+                    case 'delete': {
+                        if (op.id) {
+                            const idValue = typeof op.id === 'number' ? op.id : `'${String(op.id).replace(/'/g, "''")}'`;
+                            const idCol = typeof op.id === 'number' ? 'rowid' : 'id';
+                            await this.execute(`DELETE FROM "${materializedName}" WHERE ${idCol} = ${idValue}`);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // 2. If it's a data file, export it back and overwrite original
+            if (this.isDataFile) {
+                const ext = path.extname(this.rawPath).toLowerCase();
+                const tempFile = path.join(os.tmpdir(), `pegasus-op-save-${Date.now()}${ext}`);
+
+                console.log(`[DuckDB Operations] Exporting changes to temp file: ${tempFile}`);
+
+                if (ext === '.csv') {
+                    await this.execute(`COPY (SELECT * FROM "${materializedName}") TO '${tempFile}' (FORMAT CSV, HEADER)`);
+                } else if (ext === '.parquet') {
+                    await this.execute(`COPY (SELECT * FROM "${materializedName}") TO '${tempFile}' (FORMAT PARQUET)`);
+                } else if (ext === '.xlsx' || ext === '.xls') {
+                    const rows = await this.query(`SELECT * FROM "${materializedName}"`);
+                    const workbook = new ExcelJS.Workbook();
+                    const worksheet = workbook.addWorksheet('Sheet1');
+                    if (rows.length > 0) {
+                        worksheet.columns = Object.keys(rows[0]).map(k => ({ header: k, key: k }));
+                        worksheet.addRows(rows);
+                    }
+                    await workbook.xlsx.writeFile(tempFile);
+                }
+
+                // Sync back to storage
+                const { StorageManager } = await import("../src/services/storage/StorageManager.js");
+                const provider = await StorageManager.getProvider(this.userId);
+                const buffer = await fs.readFile(tempFile);
+
+                console.log(`[DuckDB Operations] Syncing back to storage: ${this.rawPath}`);
+                await provider.write(this.rawPath, buffer);
+
+                // Cleanup temp file
+                await fs.unlink(tempFile).catch(() => { });
+            }
+
+        } finally {
+            await this.execute(`DROP TABLE IF EXISTS "${materializedName}"`);
+        }
+    }
+
+    async saveData(tableName, updates, deletedRowIds, deletedColumns) {
+        if (!this.connection) await this.connect();
+
+        const requestId = Math.random().toString(36).substring(7);
+        console.log(`[DuckDB Save][${requestId}] Saving changes to ${tableName}`, { updates: updates?.length, deletes: deletedRowIds?.length });
+
+        // 1. Materialize to a temporary table to allow updates (views are read-only)
+        const materializedName = `_save_materialized_${tableName}_${requestId}`;
+        await this.execute(`CREATE TABLE "${materializedName}" AS SELECT * FROM "${tableName}"`);
+
+        try {
+            // 2. Apply DELETES
+            for (const rowid of deletedRowIds) {
+                // If the table has a primary key or _rowid_, use it. 
+                // For file-backed views, we often don't have a stable rowid unless we added it.
+                // For now, satisfy generic SQL if possible or rely on data match.
+                // In Phase 1, we mostly handle simple row-based deletes if rowid is available.
+                if (rowid) {
+                    await this.execute(`DELETE FROM "${materializedName}" WHERE rowid = ${Number(rowid)}`).catch(e => {
+                        console.warn(`[DuckDB Save] Delete by rowid failed, table might not have it:`, e.message);
+                    });
+                }
+            }
+
+            // 3. Apply UPDATES/INSERTS
+            for (const update of updates) {
+                const rowData = update.data;
+                const originalData = update.original;
+                if (!rowData) continue;
+
+                const keys = Object.keys(rowData);
+                const idKey = keys.find(k => k === '_rowid_' || k.toLowerCase() === 'id');
+
+                if (idKey && rowData[idKey] !== undefined) {
+                    const setClause = keys.filter(k => k !== idKey)
+                        .map(k => `"${k}" = ${rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`}`)
+                        .join(', ');
+
+                    if (setClause) {
+                        await this.execute(`UPDATE "${materializedName}" SET ${setClause} WHERE "${idKey}" = '${String(rowData[idKey]).replace(/'/g, "''")}'`);
+                    }
+                } else if (originalData) {
+                    // Fallback to matching ALL original columns
+                    const setClause = keys.map(k => `"${k}" = ${rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`}`).join(', ');
+                    const whereClause = Object.keys(originalData)
+                        .map(k => `"${k}" ${originalData[k] === null ? 'IS NULL' : `= '${String(originalData[k]).replace(/'/g, "''")}'`}`)
+                        .join(' AND ');
+
+                    if (setClause && whereClause) {
+                        await this.execute(`UPDATE "${materializedName}" SET ${setClause} WHERE ${whereClause}`);
+                    }
+                } else {
+                    // INSERT
+                    const cols = keys.map(k => `"${k}"`).join(', ');
+                    const vals = keys.map(k => rowData[k] === null ? 'NULL' : `'${String(rowData[k]).replace(/'/g, "''")}'`).join(', ');
+                    await this.execute(`INSERT INTO "${materializedName}" (${cols}) VALUES (${vals})`);
+                }
+            }
+
+            // 4. If it's a data file, export it back and overwrite original
+            if (this.isDataFile) {
+                const ext = path.extname(this.rawPath).toLowerCase();
+                const tempFile = path.join(os.tmpdir(), `pegasus-save-${Date.now()}${ext}`);
+
+                console.log(`[DuckDB Save] Exporting changes to temp file: ${tempFile}`);
+
+                if (ext === '.csv') {
+                    await this.execute(`COPY (SELECT * FROM "${materializedName}") TO '${tempFile}' (FORMAT CSV, HEADER)`);
+                } else if (ext === '.parquet') {
+                    await this.execute(`COPY (SELECT * FROM "${materializedName}") TO '${tempFile}' (FORMAT PARQUET)`);
+                } else if (ext === '.xlsx' || ext === '.xls') {
+                    // For Excel, we use ExcelJS to write the buffer
+                    const rows = await this.query(`SELECT * FROM "${materializedName}"`);
+                    const workbook = new ExcelJS.Workbook();
+                    const worksheet = workbook.addWorksheet('Sheet1');
+
+                    if (rows.length > 0) {
+                        worksheet.columns = Object.keys(rows[0]).map(k => ({ header: k, key: k }));
+                        worksheet.addRows(rows);
+                    }
+                    await workbook.xlsx.writeFile(tempFile);
+                } else {
+                    throw new Error(`Persistence not supported for ${ext} files`);
+                }
+
+                // Sync back to storage
+                const { StorageManager } = await import("../src/services/storage/StorageManager.js");
+                const provider = await StorageManager.getProvider(this.userId);
+                const buffer = await fs.readFile(tempFile);
+
+                console.log(`[DuckDB Save] Syncing back to storage provider (${provider.providerType}): ${this.rawPath}`);
+                await provider.write(this.rawPath, buffer);
+
+                // Cleanup temp file
+                await fs.unlink(tempFile).catch(() => { });
+            }
+
+            console.log(`[DuckDB Save] Save completed successfully for ${tableName}`);
+        } finally {
+            // Cleanup materialized table
+            await this.execute(`DROP TABLE IF EXISTS "${materializedName}"`);
         }
     }
 }

@@ -5,6 +5,7 @@ import { AnthropicProvider } from "./providers/AnthropicProvider.js"
 import { AWSBedrockProvider } from "./providers/AWSBedrockProvider.js"
 import { AzureOpenAIProvider } from "./providers/AzureOpenAIProvider.js"
 import { GCPVertexProvider } from "./providers/GCPVertexProvider.js"
+import { MockProvider } from "./providers/MockProvider.js"
 import { secretService } from "../src/services/SecretService.js"
 
 export class AIClient {
@@ -27,6 +28,14 @@ export class AIClient {
         // Initialize Anthropic
         if (process.env.ANTHROPIC_API_KEY) {
             this.providers.set('anthropic', new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY }))
+        }
+
+        // Initialize Mock for Testing
+        if (process.env.PEGASUS_TEST_MODE === 'true') {
+            const mock = new MockProvider({ apiKey: 'mock-key' })
+            this.providers.set('mock', mock)
+            this.providers.set('gemini', mock) // Override standard for tests
+            this.providers.set('openai', mock)
         }
     }
 
@@ -166,6 +175,11 @@ export class AIClient {
     }
 
     getDefaultProvider() {
+        if (process.env.PEGASUS_TEST_MODE === 'true') {
+            const mock = this.providers.get('mock')
+            if (mock) return mock
+        }
+
         const gemini = this.providers.get('gemini')
         if (gemini) return gemini
 

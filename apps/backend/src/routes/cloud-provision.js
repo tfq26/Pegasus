@@ -2,8 +2,12 @@ import { Hono } from 'hono';
 import { secretService } from '../services/SecretService.js';
 import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
 import { Storage } from "@google-cloud/storage";
+import { authMiddleware } from '../middleware/auth.js';
 
 const cloudProvision = new Hono();
+
+// Apply auth middleware to all routes
+cloudProvision.use('*', authMiddleware);
 
 /**
  * List Azure Subscriptions
@@ -11,7 +15,7 @@ const cloudProvision = new Hono();
  */
 cloudProvision.get('/azure/subscriptions', async (c) => {
     try {
-        const userId = c.req.query('user_id'); // TODO: Get from auth
+        const userId = c.get('userId');
 
         if (!userId) {
             return c.json({ error: 'User ID required' }, 400);
@@ -70,7 +74,7 @@ cloudProvision.get('/azure/subscriptions', async (c) => {
  */
 cloudProvision.get('/azure/locations', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const subscriptionId = c.req.query('subscription_id');
 
         if (!userId || !subscriptionId) {
@@ -128,7 +132,7 @@ cloudProvision.get('/azure/locations', async (c) => {
  */
 cloudProvision.get('/azure/resource-groups', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const subscriptionId = c.req.query('subscription_id');
 
         if (!userId || !subscriptionId) {
@@ -174,7 +178,7 @@ cloudProvision.get('/azure/resource-groups', async (c) => {
  */
 cloudProvision.get('/azure/resources', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const subscriptionId = c.req.query('subscription_id');
         const resourceGroupName = c.req.query('resource_group_name');
 
@@ -223,7 +227,7 @@ cloudProvision.get('/azure/resources', async (c) => {
  */
 cloudProvision.get('/azure/cosmos/keys', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const subscriptionId = c.req.query('subscription_id');
         const resourceGroupName = c.req.query('resource_group_name');
         const accountName = c.req.query('account_name');
@@ -270,7 +274,7 @@ cloudProvision.get('/azure/cosmos/keys', async (c) => {
  */
 cloudProvision.delete('/azure/resource', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const resourceId = c.req.query('resource_id');
         const apiVersion = c.req.query('api_version') || '2021-04-01'; // Default, but should be specific to resource type
 
@@ -303,12 +307,18 @@ cloudProvision.delete('/azure/resource', async (c) => {
  */
 cloudProvision.post('/azure/resource/action', async (c) => {
     try {
-        const { user_id, resource_id, action, api_version } = await c.req.json();
+        const userId = c.get('userId');
+        const { resource_id, action, api_version } = await c.req.json();
         const apiVersion = api_version || '2021-04-01';
 
-        if (!user_id || !resource_id || !action) return c.json({ error: 'Missing parameters' }, 400);
+        if (!userId || !resource_id || !action) return c.json({ error: 'Missing parameters' }, 400);
 
-        const vaultKey = `secret/pegasus/users/${user_id}/cloud/azure/token`;
+        // Security: Ensure resource_id looks like a valid Azure resource path
+        if (!resource_id.startsWith('/subscriptions/')) {
+            return c.json({ error: 'Invalid resource ID' }, 400);
+        }
+
+        const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
         if (!tokenData) return c.json({ error: 'Not connected' }, 403);
         const tokens = JSON.parse(tokenData);
@@ -338,13 +348,14 @@ cloudProvision.post('/azure/resource/action', async (c) => {
  */
 cloudProvision.post('/azure/provision-kusto', async (c) => {
     try {
-        const { user_id, subscription_id, resource_group, location, cluster_name } = await c.req.json();
+        const userId = c.get('userId');
+        const { subscription_id, resource_group, location, cluster_name } = await c.req.json();
 
-        if (!user_id || !subscription_id || !resource_group || !cluster_name) {
+        if (!userId || !subscription_id || !resource_group || !cluster_name) {
             return c.json({ error: 'Missing parameters' }, 400);
         }
 
-        const vaultKey = `secret/pegasus/users/${user_id}/cloud/azure/token`;
+        const vaultKey = `secret/pegasus/users/${userId}/cloud/azure/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
         if (!tokenData) return c.json({ error: 'Not connected' }, 403);
         const tokens = JSON.parse(tokenData);
@@ -393,7 +404,7 @@ cloudProvision.post('/azure/provision-kusto', async (c) => {
  */
 cloudProvision.get('/azure/kusto/check-available', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const subscriptionId = c.req.query('subscription_id');
         const name = c.req.query('name');
         const location = c.req.query('location') || 'eastus';
@@ -447,7 +458,7 @@ cloudProvision.get('/azure/kusto/check-available', async (c) => {
 cloudProvision.post('/azure/provision', async (c) => {
     try {
         const body = await c.req.json();
-        const userId = c.req.query('user_id') || body.user_id;
+        const userId = c.get('userId');
 
         const { subscriptionId, location, resourceGroupName, resources } = body;
 
@@ -609,7 +620,7 @@ cloudProvision.post('/azure/provision', async (c) => {
  */
 cloudProvision.get('/azure/resource-group/check', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const subscriptionId = c.req.query('subscription_id');
         const name = c.req.query('name');
 
@@ -660,7 +671,7 @@ cloudProvision.get('/azure/resource-group/check', async (c) => {
 cloudProvision.get('/:provider/config', async (c) => {
     try {
         const provider = c.req.param('provider');
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         if (!userId) return c.json({ error: 'User ID required' }, 400);
 
         // We use SecretService to store config too, for simplicity and linkage
@@ -681,13 +692,14 @@ cloudProvision.get('/:provider/config', async (c) => {
 cloudProvision.post('/:provider/config', async (c) => {
     try {
         const provider = c.req.param('provider');
-        const { user_id, ...config } = await c.req.json();
-        if (!user_id) return c.json({ error: 'User ID required' }, 400);
+        const userId = c.get('userId');
+        const { ...config } = await c.req.json();
+        if (!userId) return c.json({ error: 'User ID required' }, 400);
 
-        const vaultKey = `secret/pegasus/users/${user_id}/cloud/${provider}/config`;
+        const vaultKey = `secret/pegasus/users/${userId}/cloud/${provider}/config`;
 
         // Store config
-        await secretService.storeSecret(user_id, vaultKey, JSON.stringify(config));
+        await secretService.storeSecret(userId, vaultKey, JSON.stringify(config));
         return c.json({ success: true });
     } catch (error) {
         console.error('[Cloud Config] Error setting config:', error);
@@ -714,7 +726,7 @@ cloudProvision.get('/aws/locations', async (c) => {
 
 cloudProvision.get('/aws/resources', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const vaultKey = `secret/pegasus/users/${userId}/cloud/aws/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 
@@ -785,7 +797,7 @@ cloudProvision.get('/gcp/locations', async (c) => {
 
 cloudProvision.get('/gcp/resources', async (c) => {
     try {
-        const userId = c.req.query('user_id');
+        const userId = c.get('userId');
         const vaultKey = `secret/pegasus/users/${userId}/cloud/gcp/token`;
         const tokenData = await secretService.resolveSecret(`vault://${vaultKey}`);
 

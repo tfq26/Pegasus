@@ -9,33 +9,82 @@ export class ExportService {
      * @param {string} format - The export format (csv, json, etc.). Currently only csv is supported.
      */
     static async streamCsv(adapter, query, resWritable) {
-        // Limitation: If the adapter doesn't support streams, we fall back to fetching all rows.
-        // This still helps client performance but not server memory.
-        // TODO: Implement getStream() in adapters for true streaming.
+        // Use queryStream if available for better performance
+        const rowSource = typeof adapter.queryStream === 'function'
+            ? adapter.queryStream(query)
+            : await adapter.query(query);
 
-        // For now, we fetch all rows (same as table/load) but stream the output to the client
-        // to prevent the client from crashing on large JSON payloads.
-        const rows = await adapter.query(query);
+        let firstRow = true;
 
-        if (!Array.isArray(rows)) {
-            resWritable.write('Error: Query returned no rows\n');
-            resWritable.end();
-            return;
-        }
+        if (typeof rowSource[Symbol.asyncIterator] === 'function') {
+            for await (const row of rowSource) {
+                if (firstRow) {
+                    const headers = Object.keys(row).map(ExportService.escapeCsv).join(',');
+                    resWritable.write(headers + '\n');
+                    firstRow = false;
+                }
+                const line = Object.values(row).map(ExportService.escapeCsv).join(',');
+                resWritable.write(line + '\n');
+            }
+        } else if (Array.isArray(rowSource)) {
+            if (rowSource.length > 0) {
+                const headers = Object.keys(rowSource[0]).map(ExportService.escapeCsv).join(',');
+                resWritable.write(headers + '\n');
 
-        // Write Header
-        if (rows.length > 0) {
-            const headers = Object.keys(rows[0]).map(ExportService.escapeCsv).join(',');
-            resWritable.write(headers + '\n');
-        }
-
-        // Write Rows
-        for (const row of rows) {
-            const line = Object.values(row).map(ExportService.escapeCsv).join(',');
-            resWritable.write(line + '\n');
+                for (const row of rowSource) {
+                    const line = Object.values(row).map(ExportService.escapeCsv).join(',');
+                    resWritable.write(line + '\n');
+                }
+            }
         }
 
         resWritable.end();
+    }
+
+    static async streamXlsx(adapter, query, resWritable) {
+        const ExcelJS = await import('exceljs');
+        // ExcelJS.default handles ESM wrapper if present
+        const WorkbookWriter = (ExcelJS.default || ExcelJS).stream?.xlsx?.WorkbookWriter;
+        if (!WorkbookWriter) {
+            // Fallback for different import versions
+            const rows = Array.isArray(await adapter.query(query)) ? await adapter.query(query) : [];
+            const workbook = new (ExcelJS.default || ExcelJS).Workbook();
+            const worksheet = workbook.addWorksheet('Export');
+            if (rows.length > 0) {
+                worksheet.columns = Object.keys(rows[0]).map(k => ({ header: k, key: k }));
+                worksheet.addRows(rows);
+            }
+            await workbook.xlsx.write(resWritable);
+            return;
+        }
+
+        const workbook = new WorkbookWriter({ stream: resWritable });
+        const worksheet = workbook.addWorksheet('Export');
+
+        const rowSource = typeof adapter.queryStream === 'function'
+            ? adapter.queryStream(query)
+            : await adapter.query(query);
+
+        let firstRow = true;
+
+        if (typeof rowSource[Symbol.asyncIterator] === 'function') {
+            for await (const row of rowSource) {
+                if (firstRow) {
+                    worksheet.columns = Object.keys(row).map(k => ({ header: k, key: k }));
+                    firstRow = false;
+                }
+                worksheet.addRow(row).commit();
+            }
+        } else if (Array.isArray(rowSource)) {
+            if (rowSource.length > 0) {
+                worksheet.columns = Object.keys(rowSource[0]).map(k => ({ header: k, key: k }));
+                for (const row of rowSource) {
+                    worksheet.addRow(row).commit();
+                }
+            }
+        }
+
+        await workbook.commit();
     }
 
     static escapeCsv(val) {

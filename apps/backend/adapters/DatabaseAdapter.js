@@ -95,4 +95,22 @@ export class DatabaseAdapter {
   async getEstimatedCount(collectionName) {
     return null
   }
+
+  /**
+   * Generates an execution plan for the given query.
+   * @param {string} query - The query to explain
+   * @returns {Promise<any>} The execution plan
+   */
+  async explain(query) {
+    throw new Error("explain() must be implemented by the provider adapter")
+  }
+
+  /**
+   * Retrieves statistical profile of a table (nulls, distinct values, etc.)
+   * @param {string} tableName - The name of the table to profile
+   * @returns {Promise<object>} Profiling data
+   */
+  async getProfile(tableName) {
+    throw new Error("getProfile() must be implemented by the provider adapter")
+  }
 }

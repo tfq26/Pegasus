@@ -208,4 +208,71 @@ export class PostgresAdapter extends DatabaseAdapter {
             return null;
         }
     }
+
+    async explain(query) {
+        if (!this.client) await this.connect();
+        console.log(`[Postgres] Explaining query: ${query.substring(0, 50)}...`);
+        try {
+            // Use EXPLAIN ANALYZE for actual performance data
+            const res = await this.client.query(`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`);
+            return res.rows[0]['QUERY PLAN'];
+        } catch (error) {
+            console.error(`[Postgres] Explain failed:`, error);
+            throw new Error(`Postgres explain error: ${error.message}`);
+        }
+    }
+
+    async getProfile(tableName) {
+        if (!this.client) await this.connect();
+        try {
+            // Get column info first
+            const columnsRes = await this.client.query(`
+                SELECT column_name, data_type 
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = $1
+                ORDER BY ordinal_position
+            `, [tableName]);
+
+            if (columnsRes.rows.length === 0) return { tableName, columns: [] };
+
+            const columnNames = columnsRes.rows.map(c => c.column_name);
+
+            // Build a massive aggregate query for efficiency
+            let selectParts = ['COUNT(*) as total_count'];
+            columnNames.forEach(col => {
+                const escaped = `"${col}"`;
+                selectParts.push(`COUNT(${escaped}) as "${col}_non_null"`);
+                selectParts.push(`COUNT(DISTINCT ${escaped}) as "${col}_distinct"`);
+                // Add min/max for non-binary types
+                selectParts.push(`MIN(${escaped})::text as "${col}_min"`);
+                selectParts.push(`MAX(${escaped})::text as "${col}_max"`);
+            });
+
+            const statsRes = await this.client.query(`SELECT ${selectParts.join(', ')} FROM "${tableName}"`);
+            const stats = statsRes.rows[0];
+            const totalCount = parseInt(stats.total_count);
+
+            const profile = {
+                tableName,
+                rowCount: totalCount,
+                columns: columnsRes.rows.map(col => {
+                    const name = col.column_name;
+                    return {
+                        name,
+                        type: col.data_type,
+                        nullCount: totalCount - parseInt(stats[`${name}_non_null`]),
+                        distinctCount: parseInt(stats[`${name}_distinct`]),
+                        min: stats[`${name}_min`],
+                        max: stats[`${name}_max`]
+                    };
+                })
+            };
+
+            return profile;
+        } catch (e) {
+            console.error(`[Postgres] Profile failed for ${tableName}:`, e.message);
+            throw e;
+        }
+    }
 }

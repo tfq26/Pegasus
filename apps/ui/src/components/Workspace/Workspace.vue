@@ -53,7 +53,7 @@ const emit = defineEmits<{
   (e: 'create-chat'): void;
   (e: 'add-to-dashboard', config: any): void;
   (e: 'explain-query', query: string): void;
-  (e: 'optimize-query', query: string): void;
+  (e: 'optimize-query', payload: { query: string; connection: any; provider: string }): void;
   (e: 'show-results'): void;
   (e: 'share'): void;
   (e: 'ai-respond', response: any): void;
@@ -236,6 +236,10 @@ const handleStudioAddRow = () => {
 
 const handleStudioAddColumn = () => {
   if (studioRef.value) studioRef.value.addColumn();
+};
+
+const handleStudioProfileTable = () => {
+  if (studioRef.value) studioRef.value.profileTable();
 };
 
 // -------- Sync chat history prop to active tab data -----------------
@@ -510,6 +514,7 @@ defineExpose({
       @toggle-staging="handleStudioToggleStaging"
       @add-row="handleStudioAddRow"
       @add-column="handleStudioAddColumn"
+      @profile-table="handleStudioProfileTable"
     />
 
     <!-- Editor Content Area -->
@@ -615,7 +620,7 @@ defineExpose({
             @submit="emit('submit')"
             @save="() => { /* handled by auto-save */ }"
             @explain-query="(q) => emit('explain-query', q)"
-            @optimize-query="(q) => emit('optimize-query', q)"
+            @optimize-query="(q) => emit('optimize-query', { query: q, connection: tab.data?.connection, provider: tab.data?.provider })"
           />
 
           <!-- Note Editor -->

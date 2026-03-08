@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { cn } from '@/lib/utils'
 import { 
   ChevronDown, 
   ChevronUp, 
@@ -166,6 +167,8 @@ const models = computed(() => {
           :ai-command="aiCommand || ''"
           :is-a-i-processing="isAIProcessing || false"
           :is-compact="isCompact"
+          :versions="versions"
+          :current-version="currentVersion"
           @update:ai-options="emit('update:aiOptions', $event)"
           @update:ai-command="emit('update:aiCommand', $event)"
           @update:is-compact="emit('update:isCompact', $event)"
@@ -176,6 +179,7 @@ const models = computed(() => {
           @export="emit('export', 'xlsx')"
           @add-row="emit('add-row')"
           @add-column="emit('add-column')"
+          @version-change="emit('version-change', $event)"
         />
 
         <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->

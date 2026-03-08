@@ -55,13 +55,9 @@ sheetsRouter.get("/:id", requireUser, async (c) => {
         if (sheet.storageId) {
             try {
                 const provider = await StorageManager.getProvider(userId)
-                const url = await provider.getPresignedUrl(sheet.storageId, 60)
-                const response = await fetch(url)
+                const buffer = await provider.read(sheet.storageId)
 
-                if (response.ok) {
-                    const arrayBuffer = await response.arrayBuffer()
-                    const buffer = Buffer.from(arrayBuffer)
-
+                if (buffer) {
                     // Check if gzipped (magic number 0x1f 0x8b)
                     if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
                         const decompressed = zlib.gunzipSync(buffer)
@@ -69,8 +65,6 @@ sheetsRouter.get("/:id", requireUser, async (c) => {
                     } else {
                         data = JSON.parse(buffer.toString())
                     }
-                } else {
-                    console.error(`[Sheets] Failed to fetch data: ${response.statusText}`)
                 }
             } catch (err) {
                 console.error(`[Sheets] Storage fetch error:`, err)

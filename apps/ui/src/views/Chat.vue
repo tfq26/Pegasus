@@ -181,6 +181,26 @@
         :resource-id="((mode as any) === 'dashboard' ? workspaceRef?.activeDashboardId : activeTableName)"
         :resource-type="(mode as any) === 'dashboard' ? 'dashboard' : 'spreadsheet'"
       />
+
+    <!-- AI Query Optimization Dialog -->
+    <Dialog v-model:open="optimizationDialogOpen">
+      <DialogContent class="max-w-2xl bg-background/80 backdrop-blur-xl border-border/50 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2">
+            <Zap class="w-5 h-5 text-primary animate-pulse" />
+            Pegasus AI Query Optimizer
+          </DialogTitle>
+          <DialogDescription>
+            Deep analysis of your SQL execution plan with performance recommendations.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <QueryOptimizationPanel 
+          :analysis="optimizationAnalysis" 
+          :loading="isOptimizing" 
+        />
+      </DialogContent>
+    </Dialog>
     </div>
     </template>
   </div>
@@ -188,6 +208,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick, type Ref, unref } from 'vue'
+import { Zap } from 'lucide-vue-next'
 import { useSpaceStore } from '@/stores/space'
 import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { useRoute } from 'vue-router'
@@ -205,6 +226,14 @@ import DiffView from '@/components/TableView/DiffView.vue'
 // PresenceCounter removed
 import UnsavedTabWarning from '@/components/Workspace/UnsavedTabWarning.vue'
 import UnsavedTabsDialog from '@/components/Workspace/UnsavedTabsDialog.vue'
+import QueryOptimizationPanel from '@/components/Query/QueryOptimizationPanel.vue'
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription
+} from '@/components/ui/dialog'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
 import { useCollaboration } from '@/composables/useCollaboration'
@@ -217,6 +246,7 @@ import { useChatSidebar } from '@/composables/useChatSidebar'
 import { useChatConnectionSwitch } from '@/composables/useChatConnectionSwitch'
 
 const spaceStore = useSpaceStore()
+const route = useRoute()
 import { useTableActions } from '@/composables/useTableActions'
 import { useProgress } from '@/lib/progress'
 import { getAuthHeaders, api } from '@/lib/apiClient'
@@ -301,6 +331,30 @@ const {
   sanitizeTable,
   openDashboardPreview,
 } = useChatDialogs()
+
+// Optimization state
+const optimizationAnalysis = ref<any>(null)
+const isOptimizing = ref(false)
+const optimizationDialogOpen = ref(false)
+
+const handleOptimizeQuery = async (payload: { query: string; connection: any; provider: string }) => {
+    isOptimizing.value = true
+    optimizationDialogOpen.value = true
+    optimizationAnalysis.value = null
+    try {
+        const { analyzeQuery } = workspaceRef.value
+        if (!analyzeQuery) throw new Error('Workspace engine not ready')
+        
+        const result = await analyzeQuery(payload.query, payload.connection, payload.provider)
+        optimizationAnalysis.value = result
+    } catch (e: any) {
+        console.error('[Chat] Optimization failed:', e)
+        toast.error('Query analysis failed')
+        optimizationDialogOpen.value = false
+    } finally {
+        isOptimizing.value = false
+    }
+}
 
 // Local State
 const mode = ref<'chat' | 'write' | 'spreadsheet'>('chat')
@@ -513,10 +567,6 @@ const handleExplainQuery = async (q?: string) => {
     await explainAction(query)
 }
 
-const handleOptimizeQuery = async (q?: string) => {
-    const query = typeof q === 'string' ? q : (mode.value === 'write' ? writeInput.value : lastQuery.value)
-    await optimizeAction(query)
-}
 
 const handleExportChat = () => {
     const content = chatHistory.value.map(m => `${m.role.toUpperCase()}:\n${m.content}\n`).join('\n---\n')
@@ -888,7 +938,16 @@ const handleContinueChat = async (id: string) => {
     }
 }
 
-const handleLoadQuery = async (query: string) => {
+const handleLoadQuery = async (query: string, connectionId?: string) => {
+    // Copy to clipboard for convenience
+    navigator.clipboard.writeText(query)
+    
+    // Auto-switch connection if metadata provided
+    if (connectionId && connectionId !== selectedConnectionId.value) {
+        console.log('[Chat] Auto-switching connection for query context:', connectionId)
+        await handleSelectConnection(connectionId)
+    }
+
     // Check if formula
     const isFormulaFormat = /^[^:]+:\s*=/.test(query) || query.trim().startsWith('=')
     // Formula logic
@@ -909,6 +968,7 @@ const handleLoadQuery = async (query: string) => {
         workspaceStore.createTab('query', { content: query, label: 'Query' })
         await nextTick()
         writeInput.value = query
+        mode.value = 'write'
         toast.success('Query loaded')
     }
 }
@@ -1061,7 +1121,7 @@ watch(
         if (!activeTabInfo) return
         
         // Map tab type to mode
-        if (activeTabInfo.type === 'table' || activeTabInfo.type === 'spreadsheet') {
+        if (['table', 'spreadsheet', 'dataview', 'datastudio'].includes(activeTabInfo.type)) {
             if (mode.value !== 'spreadsheet') {
                 mode.value = 'spreadsheet'
             }
@@ -1125,6 +1185,22 @@ onMounted(async () => {
         await handleSelectConnection(initialId)
     } else {
         await workspaceStore.loadWorkspace('temp')
+    }
+
+    // 5. Handle Deep Links (from History/Dashboard)
+    if (route.query.chatId) {
+        await selectChat(route.query.chatId as string)
+    } else if (route.query.q) {
+        const query = route.query.q as string
+        const cid = route.query.cid as string
+        
+        // Use handleLoadQuery to leverage its connection-switching and tab creation logic
+        await handleLoadQuery(query, cid)
+        
+        // Auto-execute if requested or if it's a simple query deep-link
+        nextTick(() => {
+            run()
+        })
     }
 
     window.addEventListener('pegasus:connections-updated', loadConnections)
