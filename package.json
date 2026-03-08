@@ -47,6 +47,7 @@
     "@azure/abort-controller": "^2.1.2",
     "@azure/arm-containerinstance": "^9.1.0",
     "@azure/identity": "^4.13.0",
+    "@dotenvx/dotenvx": "^1.54.1",
     "stripe": "^20.1.0",
     "surreal": "^0.3.7"
   }
