@@ -1,0 +1,199 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - generic [ref=e5]:
+          - link "Pegasus Logo Pegasus Beta" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Pegasus Logo" [ref=e7]
+            - generic [ref=e9]:
+              - generic [ref=e10]: Pegasus
+              - generic [ref=e11]: Beta
+          - generic [ref=e12]:
+            - link "Dashboards" [ref=e13] [cursor=pointer]:
+              - /url: /dashboard
+              - text: Dashboards
+            - link "Spaces" [ref=e14] [cursor=pointer]:
+              - /url: /query
+              - text: Spaces
+          - generic [ref=e15]:
+            - button [ref=e17]:
+              - img [ref=e18]
+            - button "History" [ref=e23] [cursor=pointer]:
+              - img [ref=e25]
+              - generic [ref=e30]: History
+              - img [ref=e31]
+            - button "Profile Taufeeq" [ref=e52]:
+              - img "Profile" [ref=e53]
+              - generic [ref=e54]: Taufeeq
+              - img [ref=e55]
+      - region "Notifications alt+T":
+        - list
+      - main [ref=e38]:
+        - generic [ref=e57]:
+          - complementary [ref=e58]:
+            - complementary [ref=e60]:
+              - generic [ref=e61]:
+                - generic [ref=e62]:
+                  - button "Personal Space Data Space" [ref=e65]:
+                    - generic [ref=e66]:
+                      - img
+                    - generic [ref=e67]:
+                      - heading "Personal Space" [level=4] [ref=e68]
+                      - generic [ref=e69]:
+                        - generic: Data Space
+                    - img [ref=e70]
+                  - button "Explorer Options" [ref=e72]:
+                    - img [ref=e73]
+                - generic [ref=e78]:
+                  - img [ref=e79]
+                  - textbox "Search this space..." [ref=e82]
+              - generic [ref=e90]:
+                - generic [ref=e92] [cursor=pointer]:
+                  - img [ref=e93]
+                  - img [ref=e95]
+                  - generic [ref=e100]:
+                    - generic [ref=e101]:
+                      - generic [ref=e102]: Databases
+                      - generic [ref=e103]: "1"
+                    - button "Add Connection" [ref=e104]:
+                      - img [ref=e105]
+                - generic [ref=e107] [cursor=pointer]:
+                  - img [ref=e108]
+                  - img [ref=e110]
+                  - generic [ref=e113]:
+                    - generic [ref=e114]:
+                      - generic [ref=e115]: Chats
+                      - generic [ref=e116]: "4"
+                    - button "New Chat" [ref=e117]:
+                      - img [ref=e118]
+                - generic [ref=e120] [cursor=pointer]:
+                  - img [ref=e121]
+                  - img [ref=e123]
+                  - generic [ref=e129]: Queries
+                - generic [ref=e131] [cursor=pointer]:
+                  - img [ref=e132]
+                  - img [ref=e134]
+                  - generic [ref=e137]:
+                    - generic [ref=e139]: Files
+                    - button "Upload File" [ref=e140]:
+                      - img [ref=e141]
+                - generic [ref=e145] [cursor=pointer]:
+                  - img [ref=e146]
+                  - img [ref=e148]
+                  - generic [ref=e151]:
+                    - generic [ref=e153]: Notes
+                    - button "New Note" [ref=e154]:
+                      - img [ref=e155]
+            - generic "Drag to resize • Double-click to close" [ref=e156]
+          - generic [ref=e158]:
+            - generic [ref=e160]:
+              - generic [ref=e161]:
+                - generic [ref=e163] [cursor=pointer]:
+                  - img [ref=e165]
+                  - generic [ref=e167]: Orion Metrics Table Summary
+                  - button [ref=e168]:
+                    - img [ref=e169]
+                - button "New Tab" [ref=e173]:
+                  - img [ref=e174]
+              - generic [ref=e178]:
+                - generic [ref=e179]:
+                  - generic [ref=e180]:
+                    - generic [ref=e181]: Model
+                    - combobox [ref=e182]:
+                      - option "Gemini 2.5 Pro"
+                      - option "Gemini 2.5 Flash" [selected]
+                      - option "Gemini 2.5 Flash-Lite"
+                  - generic [ref=e183]:
+                    - generic [ref=e184]: Temperature
+                    - 'slider "Temperature: 0.7" [ref=e185] [cursor=pointer]': "0.7"
+                    - generic [ref=e186]: "0.7"
+                  - generic [ref=e187]:
+                    - generic [ref=e188]: Context
+                    - generic [ref=e191]: 45%
+                - generic "Orion Metrics Table Summary" [ref=e287]
+                - generic [ref=e194]:
+                  - button [ref=e195]:
+                    - img [ref=e196]
+                  - button [ref=e200]:
+                    - img [ref=e201]
+                    - img [ref=e204]
+              - generic [ref=e208]:
+                - generic [ref=e224]:
+                  - generic [ref=e225]:
+                    - generic [ref=e226]:
+                      - img [ref=e228]
+                      - generic [ref=e229]: Taufeeq
+                      - generic [ref=e231]: 03:19 PM
+                    - generic [ref=e232]:
+                      - paragraph [ref=e238]: can you give me a summary of the orion metrics table please
+                      - generic [ref=e239]:
+                        - button "Copy" [ref=e240]:
+                          - img [ref=e241]
+                          - generic [ref=e244]: Copy
+                        - button "Retry" [ref=e245]:
+                          - img [ref=e246]
+                          - generic [ref=e251]: Retry
+                  - generic [ref=e252]:
+                    - generic [ref=e253]:
+                      - img "Pegasus" [ref=e256]
+                      - generic [ref=e257]: Pegasus
+                      - generic [ref=e259]: 03:19 PM
+                    - generic [ref=e260]:
+                      - generic [ref=e265]:
+                        - paragraph [ref=e266]: The 'orion_metrics' table tracks performance and status data for various servers, categorized as AppServer, RM (Resource Manager), and ComputeNode. It captures metrics including CPU and memory percentage, energy usage (watts), network throughput, disk IO operations, latency, and status. It also includes fields for server identification and timestamps, with an error message field for diagnostic information.
+                        - paragraph [ref=e267]: "Sources: pegasustestcosmos. Assumptions: The summary is based on the provided schema definitions and sample data rows.."
+                      - generic [ref=e268]:
+                        - button "Copy" [ref=e269]:
+                          - img [ref=e270]
+                          - generic [ref=e273]: Copy
+                        - button "Inspect Data" [ref=e274]:
+                          - img [ref=e275]
+                          - generic [ref=e280]: Inspect Data
+                - generic [ref=e217]:
+                  - generic [active] [ref=e218]: Type a message...
+                  - button [disabled] [ref=e220]:
+                    - img [ref=e221]
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - button "Data 25":
+                      - img
+                      - generic: Data
+                      - generic: "25"
+                    - button "Thinking":
+                      - generic:
+                        - img
+                      - generic: Thinking
+                - generic:
+                  - generic:
+                    - button "Visualize Data":
+                      - img
+                    - button:
+                      - img
+                    - button:
+                      - img
+                    - button:
+                      - img
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading "Thinking Process" [level=4]:
+                        - img
+                        - text: Thinking Process
+                    - generic:
+                      - heading "Generated Query" [level=4]:
+                        - img
+                        - text: Generated Query
+                      - generic:
+                        - generic: SELECT * FROM "OrionMetrics" LIMIT 25
+                        - button:
+                          - img
+    - text: //
+  - generic [ref=e39]:
+    - generic "Toggle devtools panel" [ref=e40] [cursor=pointer]:
+      - img [ref=e41]
+    - generic "Toggle Component Inspector" [ref=e46] [cursor=pointer]:
+      - img [ref=e47]

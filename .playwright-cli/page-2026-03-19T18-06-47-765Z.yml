@@ -1,0 +1,112 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - generic [ref=e5]:
+          - link "Pegasus Logo Pegasus Beta" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Pegasus Logo" [ref=e7]
+            - generic [ref=e9]:
+              - generic [ref=e10]: Pegasus
+              - generic [ref=e11]: Beta
+          - generic [ref=e12]:
+            - link "Dashboards" [ref=e13] [cursor=pointer]:
+              - /url: /dashboard
+              - text: Dashboards
+            - link "Spaces" [ref=e15] [cursor=pointer]:
+              - /url: /query
+              - text: Spaces
+          - generic [ref=e16]:
+            - button [ref=e18]:
+              - img [ref=e19]
+            - button "History" [ref=e23] [cursor=pointer]:
+              - img [ref=e25]
+              - generic [ref=e30]: History
+              - img [ref=e31]
+            - button "Profile Taufeeq" [ref=e34]:
+              - img "Profile" [ref=e35]
+              - generic [ref=e36]: Taufeeq
+              - img [ref=e37]
+      - region "Notifications alt+T":
+        - list
+      - main [ref=e40]:
+        - generic [ref=e43]:
+          - generic [ref=e46]:
+            - button "Blank Dashboard" [ref=e47]:
+              - img [ref=e50]
+              - generic [ref=e51]: Blank Dashboard
+            - button "TEMPLATE Titan Finance & Trading" [ref=e52] [cursor=pointer]:
+              - generic [ref=e53]:
+                - generic [ref=e55]: TEMPLATE
+                - img [ref=e58]
+              - generic [ref=e59]:
+                - generic [ref=e60]: Titan
+                - generic [ref=e61]: Finance & Trading
+            - button "TEMPLATE Europa DevOps & IT" [ref=e62] [cursor=pointer]:
+              - generic [ref=e63]:
+                - generic [ref=e65]: TEMPLATE
+                - img [ref=e68]
+              - generic [ref=e69]:
+                - generic [ref=e70]: Europa
+                - generic [ref=e71]: DevOps & IT
+            - button "TEMPLATE Ganymede Marketing & SaaS" [ref=e72] [cursor=pointer]:
+              - generic [ref=e73]:
+                - generic [ref=e75]: TEMPLATE
+                - img [ref=e78]
+              - generic [ref=e79]:
+                - generic [ref=e80]: Ganymede
+                - generic [ref=e81]: Marketing & SaaS
+            - button "TEMPLATE Callisto Security & Audit" [ref=e82] [cursor=pointer]:
+              - generic [ref=e83]:
+                - generic [ref=e85]: TEMPLATE
+                - img [ref=e88]
+              - generic [ref=e89]:
+                - generic [ref=e90]: Callisto
+                - generic [ref=e91]: Security & Audit
+            - button "TEMPLATE Enceladus Revenue & CRM" [ref=e92] [cursor=pointer]:
+              - generic [ref=e93]:
+                - generic [ref=e95]: TEMPLATE
+                - img [ref=e98]
+              - generic [ref=e99]:
+                - generic [ref=e100]: Enceladus
+                - generic [ref=e101]: Revenue & CRM
+            - button "TEMPLATE Io Agile & PM" [ref=e102] [cursor=pointer]:
+              - generic [ref=e103]:
+                - generic [ref=e105]: TEMPLATE
+                - img [ref=e108]
+              - generic [ref=e109]:
+                - generic [ref=e110]: Io
+                - generic [ref=e111]: Agile & PM
+          - generic [ref=e113]:
+            - generic [ref=e114]:
+              - generic [ref=e115]:
+                - generic [ref=e116]:
+                  - button "Recents" [ref=e117]
+                  - button "My Dashboards" [ref=e118]
+                  - button "Shared" [ref=e119]
+                - generic [ref=e120]:
+                  - img [ref=e121]
+                  - textbox "Search dashboards..." [ref=e124]
+              - generic [ref=e125]:
+                - combobox [ref=e127] [cursor=pointer]:
+                  - option "Last modified" [selected]
+                  - option "Name"
+                - button "Import" [ref=e130]:
+                  - img [ref=e131]
+                  - generic [ref=e134]: Import
+            - generic [ref=e136] [cursor=pointer]:
+              - generic [ref=e137]:
+                - generic [ref=e140]: Owner
+                - button [ref=e142]:
+                  - img [ref=e143]
+              - generic [ref=e147]:
+                - heading "My Portfolio" [level=3] [ref=e148]
+                - generic [ref=e149]:
+                  - img [ref=e150]
+                  - generic [ref=e155]: Accessed 3/18/2026
+    - text: //
+  - generic [ref=e156]:
+    - generic "Toggle devtools panel" [ref=e157] [cursor=pointer]:
+      - img [ref=e158]
+    - generic "Toggle Component Inspector" [ref=e163] [cursor=pointer]:
+      - img [ref=e164]

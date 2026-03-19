@@ -49,16 +49,21 @@ if (isDevMode) {
 
 console.log(`\n🚀 Starting Pegasus in ${mode.toUpperCase()} mode...\n`);
 
+const rootDir = import.meta.dir;
+
 // Load environment variables from backend .env file
+const envPath = join(rootDir, "apps", "backend", ".env");
 try {
-    const envPath = join(import.meta.dir, "apps", "backend", ".env");
     const envFile = readFileSync(envPath, "utf8");
     envFile.split("\n").forEach(line => {
         const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith("#")) {
-            const [key, ...valueParts] = trimmed.split("=");
-            if (key && valueParts.length > 0) {
-                process.env[key.trim()] = valueParts.join("=").trim();
+        if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
+            const index = trimmed.indexOf("=");
+            const k = trimmed.substring(0, index).trim();
+            const v = trimmed.substring(index + 1).trim();
+            if (k) {
+                // Strip quotes if present
+                process.env[k] = v.replace(/^(['"])(.*)\1$/, '$2');
             }
         }
     });
@@ -260,7 +265,7 @@ async function main() {
 
     // Start backend in background using Node (for Socket.io support)
     // Using --watch to auto-restart on file changes
-    runCommand("node", ["--watch", "--env-file=.env", "index.js"], backendDir, "Backend")
+    runCommand("node", ["--watch", "index.js"], backendDir, "Backend")
         .catch((err) => console.error("Backend error:", err));
 
     // Give backend a moment to connect to DB

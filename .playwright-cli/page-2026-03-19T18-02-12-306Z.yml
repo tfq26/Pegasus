@@ -1,0 +1,33 @@
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - img "Logo" [ref=e7]
+      - heading "Sign in" [level=1] [ref=e8]
+    - generic [ref=e9]:
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e15]: Email
+            - textbox "Email" [active] [ref=e17]:
+              - /placeholder: Your email address
+          - button "Continue" [ref=e18] [cursor=pointer]:
+            - generic [ref=e19]: Continue
+        - generic [ref=e20]: OR
+        - generic [ref=e22]:
+          - link [ref=e24] [cursor=pointer]:
+            - /url: api/login?provider=GoogleOAuth&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback&client_id=client_01K8FES8Q3BDPF3ZWSPGSRD10B&source=signin&authorization_session_id=01KM3M64XPSD0JDRVZVRH0BV78
+            - img [ref=e25]
+          - link [ref=e32] [cursor=pointer]:
+            - /url: api/login?provider=MicrosoftOAuth&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback&client_id=client_01K8FES8Q3BDPF3ZWSPGSRD10B&source=signin&authorization_session_id=01KM3M64XPSD0JDRVZVRH0BV78
+            - img [ref=e33]
+          - link [ref=e40] [cursor=pointer]:
+            - /url: api/login?provider=GitHubOAuth&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback&client_id=client_01K8FES8Q3BDPF3ZWSPGSRD10B&source=signin&authorization_session_id=01KM3M64XPSD0JDRVZVRH0BV78
+            - img [ref=e41]
+          - link [ref=e44] [cursor=pointer]:
+            - /url: api/login?provider=AppleOAuth&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback&client_id=client_01K8FES8Q3BDPF3ZWSPGSRD10B&source=signin&authorization_session_id=01KM3M64XPSD0JDRVZVRH0BV78
+            - img [ref=e45]
+      - paragraph [ref=e47]:
+        - text: Don't have an account?
+        - link "Sign up" [ref=e48] [cursor=pointer]:
+          - /url: /sign-up?redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback&authorization_session_id=01KM3M64XPSD0JDRVZVRH0BV78
+  - alert [ref=e49]

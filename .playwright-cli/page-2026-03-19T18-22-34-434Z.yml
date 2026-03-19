@@ -1,0 +1,330 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - generic [ref=e5]:
+          - link "Pegasus Logo Pegasus Beta" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Pegasus Logo" [ref=e7]
+            - generic [ref=e9]:
+              - generic [ref=e10]: Pegasus
+              - generic [ref=e11]: Beta
+          - generic [ref=e12]:
+            - link "Dashboards" [ref=e13] [cursor=pointer]:
+              - /url: /dashboard
+              - text: Dashboards
+            - link "Spaces" [ref=e15] [cursor=pointer]:
+              - /url: /query
+              - text: Spaces
+          - generic [ref=e16]:
+            - button [ref=e18]:
+              - img [ref=e19]
+            - button "History" [ref=e23] [cursor=pointer]:
+              - img [ref=e25]
+              - generic [ref=e30]: History
+              - img [ref=e31]
+            - button "Profile Taufeeq" [ref=e34]:
+              - img "Profile" [ref=e35]
+              - generic [ref=e36]: Taufeeq
+              - img [ref=e37]
+      - region "Notifications alt+T":
+        - list
+      - main [ref=e40]:
+        - generic [ref=e169]:
+          - complementary [ref=e170]:
+            - complementary [ref=e172]:
+              - generic [ref=e173]:
+                - generic [ref=e174]:
+                  - button "Personal Space Data Space" [ref=e177]:
+                    - generic [ref=e178]:
+                      - img
+                    - generic [ref=e179]:
+                      - heading "Personal Space" [level=4] [ref=e180]
+                      - generic [ref=e181]:
+                        - generic: Data Space
+                    - img [ref=e182]
+                  - button "Explorer Options" [ref=e184]:
+                    - img [ref=e185]
+                - generic [ref=e190]:
+                  - img [ref=e191]
+                  - textbox "Search this space..." [ref=e194]
+              - generic [ref=e202]:
+                - generic [ref=e204] [cursor=pointer]:
+                  - img [ref=e205]
+                  - img [ref=e207]
+                  - generic [ref=e212]:
+                    - generic [ref=e213]:
+                      - generic [ref=e214]: Databases
+                      - generic [ref=e215]: "1"
+                    - button "Add Connection" [ref=e216]:
+                      - img [ref=e217]
+                - generic [ref=e219] [cursor=pointer]:
+                  - img [ref=e220]
+                  - img [ref=e222]
+                  - generic [ref=e225]:
+                    - generic [ref=e226]:
+                      - generic [ref=e227]: Chats
+                      - generic [ref=e228]: "3"
+                    - button "New Chat" [ref=e229]:
+                      - img [ref=e230]
+                - generic [ref=e232] [cursor=pointer]:
+                  - img [ref=e233]
+                  - img [ref=e235]
+                  - generic [ref=e241]: Queries
+                - generic [ref=e243] [cursor=pointer]:
+                  - img [ref=e244]
+                  - img [ref=e246]
+                  - generic [ref=e249]:
+                    - generic [ref=e251]: Files
+                    - button "Upload File" [ref=e252]:
+                      - img [ref=e253]
+                - generic [ref=e257] [cursor=pointer]:
+                  - img [ref=e258]
+                  - img [ref=e260]
+                  - generic [ref=e263]:
+                    - generic [ref=e265]: Notes
+                    - button "New Note" [ref=e266]:
+                      - img [ref=e267]
+            - generic "Drag to resize • Double-click to close" [ref=e268]
+          - generic [ref=e270]:
+            - generic [ref=e272]:
+              - generic [ref=e273]:
+                - generic [ref=e315] [cursor=pointer]:
+                  - img [ref=e317]
+                  - generic [ref=e319]: Query Editor
+                  - button [ref=e320]:
+                    - img [ref=e321]
+                - button "New Tab" [ref=e275]:
+                  - img [ref=e276]
+              - generic [ref=e327]:
+                - generic [ref=e328]:
+                  - generic [ref=e329]:
+                    - generic [ref=e330]: Model
+                    - combobox [ref=e331]:
+                      - option "Gemini 2.5 Pro"
+                      - option "Gemini 2.5 Flash" [selected]
+                      - option "Gemini 2.5 Flash-Lite"
+                  - generic [ref=e332]:
+                    - generic [ref=e333]: Temperature
+                    - 'slider "Temperature: 0.7" [ref=e334] [cursor=pointer]': "0.7"
+                    - generic [ref=e335]: "0.7"
+                  - generic [ref=e336]:
+                    - generic [ref=e337]: Context
+                    - generic [ref=e340]: 45%
+                - generic "Query Editor" [ref=e342]
+                - generic [ref=e343]:
+                  - button [ref=e344]:
+                    - img [ref=e345]
+                  - button [ref=e349]:
+                    - img [ref=e350]
+                    - img [ref=e353]
+              - generic [ref=e356]:
+                - generic [ref=e372]:
+                  - generic [ref=e373]:
+                    - generic [ref=e374]:
+                      - img [ref=e376]
+                      - generic [ref=e377]: Taufeeq
+                      - generic [ref=e379]: 01:10 PM
+                    - generic [ref=e380]:
+                      - paragraph [ref=e386]: can you give me a summary of the orion metrics table please
+                      - generic [ref=e387]:
+                        - button "Copy" [ref=e388]:
+                          - img [ref=e389]
+                          - generic [ref=e392]: Copy
+                        - button "Retry" [ref=e393]:
+                          - img [ref=e394]
+                          - generic [ref=e399]: Retry
+                  - generic [ref=e400]:
+                    - generic [ref=e401]:
+                      - generic [ref=e403]: "?"
+                      - generic [ref=e404]: Pegasus is asking...
+                      - generic [ref=e406]: 01:11 PM
+                    - generic [ref=e407]:
+                      - generic [ref=e408]:
+                        - generic "AI confidence before asking this question" [ref=e410]: 60% confidence
+                        - paragraph [ref=e411]: I can see possible sources, but I cannot safely determine how to answer this request. Which source should I use?
+                        - button "pegasustestcosmos" [ref=e413]
+                      - button "Copy" [ref=e415]:
+                        - img [ref=e416]
+                        - generic [ref=e419]: Copy
+                  - generic [ref=e441]:
+                    - generic [ref=e442]:
+                      - img [ref=e444]
+                      - generic [ref=e445]: Taufeeq
+                      - generic [ref=e447]: 01:15 PM
+                    - generic [ref=e448]:
+                      - paragraph [ref=e454]: using pegasustestcosmos, how is the orion metrics data looking today?
+                      - generic [ref=e455]:
+                        - button "Copy" [ref=e456]:
+                          - img [ref=e457]
+                          - generic [ref=e460]: Copy
+                        - button "Retry" [ref=e461]:
+                          - img [ref=e462]
+                          - generic [ref=e467]: Retry
+                  - generic [ref=e468]:
+                    - generic [ref=e469]:
+                      - generic [ref=e471]: "?"
+                      - generic [ref=e472]: Pegasus is asking...
+                      - generic [ref=e474]: 01:16 PM
+                    - generic [ref=e475]:
+                      - generic [ref=e476]:
+                        - generic "AI confidence before asking this question" [ref=e478]: 60% confidence
+                        - paragraph [ref=e479]: I can see possible sources, but I cannot safely determine how to answer this request. Which source should I use?
+                        - button "pegasustestcosmos" [ref=e481]
+                      - button "Copy" [ref=e483]:
+                        - img [ref=e484]
+                        - generic [ref=e487]: Copy
+                  - generic [ref=e502]:
+                    - generic [ref=e503]:
+                      - img [ref=e505]
+                      - generic [ref=e506]: Taufeeq
+                      - generic [ref=e508]: 01:18 PM
+                    - generic [ref=e509]:
+                      - paragraph [ref=e515]: using pegasustestcosmos, summarize orion metrics over the last 7 days
+                      - generic [ref=e516]:
+                        - button "Copy" [ref=e517]:
+                          - img [ref=e518]
+                          - generic [ref=e521]: Copy
+                        - button "Retry" [ref=e522]:
+                          - img [ref=e523]
+                          - generic [ref=e528]: Retry
+                  - generic [ref=e529]:
+                    - generic [ref=e530]:
+                      - generic [ref=e532]: "?"
+                      - generic [ref=e533]: Pegasus is asking...
+                      - generic [ref=e535]: 01:18 PM
+                    - generic [ref=e536]:
+                      - generic [ref=e537]:
+                        - generic "AI confidence before asking this question" [ref=e539]: 60% confidence
+                        - paragraph [ref=e540]: I can see possible sources, but I cannot safely determine how to answer this request. Which source should I use?
+                        - button "pegasustestcosmos" [ref=e542]
+                      - button "Copy" [ref=e544]:
+                        - img [ref=e545]
+                        - generic [ref=e548]: Copy
+                  - generic [ref=e563]:
+                    - generic [ref=e564]:
+                      - img [ref=e566]
+                      - generic [ref=e567]: Taufeeq
+                      - generic [ref=e569]: 01:21 PM
+                    - generic [ref=e570]:
+                      - paragraph [ref=e576]: using pegasustestcosmos, summarize orion metrics over the last 30 days
+                      - generic [ref=e577]:
+                        - button "Copy" [ref=e578]:
+                          - img [ref=e579]
+                          - generic [ref=e582]: Copy
+                        - button "Retry" [ref=e583]:
+                          - img [ref=e584]
+                          - generic [ref=e589]: Retry
+                  - generic [ref=e590]:
+                    - generic [ref=e591]:
+                      - generic [ref=e593]: "?"
+                      - generic [ref=e594]: Pegasus is asking...
+                      - generic [ref=e596]: 01:21 PM
+                    - generic [ref=e597]:
+                      - generic [ref=e598]:
+                        - generic "AI confidence before asking this question" [ref=e600]: 60% confidence
+                        - paragraph [ref=e601]: I can see possible sources, but I cannot safely determine how to answer this request. Which source should I use?
+                        - button "pegasustestcosmos" [ref=e603]
+                      - button "Copy" [ref=e605]:
+                        - img [ref=e606]
+                        - generic [ref=e609]: Copy
+                  - generic [ref=e610]:
+                    - generic [ref=e611]:
+                      - img [ref=e613]
+                      - generic [ref=e614]: Taufeeq
+                      - generic [ref=e616]: 01:22 PM
+                    - generic [ref=e617]:
+                      - paragraph [ref=e623]: using pegasustestcosmos, which app server needs the most attention right now based on orion metrics, and why?
+                      - generic [ref=e624]:
+                        - button "Copy" [ref=e625]:
+                          - img [ref=e626]
+                          - generic [ref=e629]: Copy
+                        - button "Retry" [ref=e630]:
+                          - img [ref=e631]
+                          - generic [ref=e636]: Retry
+                  - generic [ref=e639]: Analyzing...
+                - generic [ref=e362]:
+                  - generic [ref=e640]:
+                    - generic [ref=e641]: AI QueryExecuting query_data...
+                    - generic [ref=e642]: 45%
+                  - generic [ref=e365]:
+                    - generic [active] [ref=e366]: Type a message...
+                    - button [disabled] [ref=e368]:
+                      - img [ref=e369]
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - button "Data":
+                      - img
+                      - generic: Data
+                    - button "Thinking":
+                      - generic:
+                        - img
+                      - generic: Thinking
+                - generic:
+                  - generic:
+                    - button:
+                      - img
+                    - button:
+                      - img
+                    - button:
+                      - img
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading "Thinking Process" [level=4]:
+                        - img
+                        - text: Thinking Process
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic: Starting resilient AI pipeline...
+                            - generic:
+                              - img
+                              - generic: 1:22:27 PM
+                              - generic: 10%
+                        - generic:
+                          - generic:
+                            - generic: Resolving candidate sources...
+                            - generic:
+                              - img
+                              - generic: 1:22:27 PM
+                              - generic: 10%
+                        - generic:
+                          - generic:
+                            - generic: Selecting the best sources...
+                            - generic:
+                              - img
+                              - generic: 1:22:30 PM
+                              - generic: 18%
+                        - generic:
+                          - generic:
+                            - generic: Building focused context...
+                            - generic:
+                              - img
+                              - generic: 1:22:30 PM
+                              - generic: 24%
+                        - generic:
+                          - generic:
+                            - generic: Planning execution...
+                            - generic:
+                              - img
+                              - generic: 1:22:31 PM
+                              - generic: 32%
+                        - generic:
+                          - generic:
+                            - generic: Executing query_data...
+                            - generic:
+                              - img
+                              - generic: 1:22:32 PM
+                              - generic: 45%
+                        - generic:
+                          - generic: Processing...
+    - text: //
+  - generic [ref=e156]:
+    - generic "Toggle devtools panel" [ref=e157] [cursor=pointer]:
+      - img [ref=e158]
+    - generic "Toggle Component Inspector" [ref=e163] [cursor=pointer]:
+      - img [ref=e164]

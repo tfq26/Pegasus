@@ -1,11 +1,18 @@
 {
     "releases": [
         {
+            "version": "0.9.3",
+            "title": "v0.9.3 - Advanced Scalability & Client Performance",
+            "description": "This release focuses on high-concurrency performance, introducing minute-based refresh logic, background activity suppression, and intensive code splitting. It also highlights the new Data View system for spreadsheet-native database interaction.",
+            "changelogFile": "v0.9.3.json",
+            "isLatest": true
+        },
+        {
             "version": "0.9.2",
             "title": "v0.9.2 - Graceful Entitlements & Unified Error Handling",
             "description": "This release focuses on user experience stability, introducing a graceful flow for experimental feature access, smarter entitlement checks, and a refactored API client for precise error handling.",
             "changelogFile": "v0.9.2.json",
-            "isLatest": true
+            "isLatest": false
         },
         {
             "version": "0.9.1",

@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-white font-sans antialiased;
+  }
+}
+
+.neon-border {
+  border: 1px solid rgba(0, 243, 255, 0.3);
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
+}
+
+.neon-border-purple {
+  border: 1px solid rgba(188, 19, 254, 0.3);
+  box-shadow: 0 0 10px rgba(188, 19, 254, 0.1);
+}
+
+.glass {
+  background: rgba(18, 18, 18, 0.7);
+  backdrop-filter: blur(10px);
+}

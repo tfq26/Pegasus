@@ -1,0 +1,34 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - generic [ref=e5]:
+          - link "Pegasus Logo Pegasus Beta" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Pegasus Logo" [ref=e7]
+            - generic [ref=e9]:
+              - generic [ref=e10]: Pegasus
+              - generic [ref=e11]: Beta
+          - generic [ref=e12]:
+            - link "Dashboards" [ref=e13] [cursor=pointer]:
+              - /url: /dashboard
+              - text: Dashboards
+            - link "Spaces" [ref=e14] [cursor=pointer]:
+              - /url: /query
+              - text: Spaces
+          - generic [ref=e15]:
+            - button [ref=e17]:
+              - img [ref=e18]
+            - button "History" [ref=e23] [cursor=pointer]:
+              - img [ref=e25]
+              - generic [ref=e30]: History
+              - img [ref=e31]
+      - region "Notifications alt+T":
+        - list
+      - main [ref=e38]
+    - text: //
+  - generic [ref=e39]:
+    - generic "Toggle devtools panel" [ref=e40] [cursor=pointer]:
+      - img [ref=e41]
+    - generic "Toggle Component Inspector" [ref=e46] [cursor=pointer]:
+      - img [ref=e47]
