@@ -38,10 +38,10 @@ function onClickHandler(event: MouseEvent) {
   <button
     type="button"
     :disabled="!isSelectable"
-    class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm duration-200 ease-out hover:bg-accent/40 group transition-all"
+    class="group flex w-full items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 text-[12px] duration-200 ease-out transition-all hover:border-border/60 hover:bg-accent/30"
     :class="[
       [
-        isSelected && isSelectable ? 'bg-accent/60 text-accent-foreground font-medium' : 'text-foreground/80',
+        isSelected && isSelectable ? 'border-border/70 bg-card text-accent-foreground shadow-[0_10px_24px_-20px_rgba(15,23,42,0.5)]' : 'text-foreground/80',
         isSelectable ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
         $props.class,
       ],
@@ -57,8 +57,8 @@ function onClickHandler(event: MouseEvent) {
     />
     <Icon
       :name="currentFileIcon"
-      :size="18"
-      class="shrink-0"
+      :size="16"
+      class="shrink-0 text-muted-foreground"
     />
     <slot>
       <span class="select-none truncate">{{ name }}</span>

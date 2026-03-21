@@ -58,17 +58,17 @@ function handleSelect(id: string, event?: MouseEvent) {
         name="Databases" 
         open-icon="lucide:database" 
         close-icon="lucide:database"
-        class="font-medium group"
+        class="group font-medium"
       >
         <template #label>
           <div class="flex items-center justify-between w-full">
             <div class="flex items-center gap-2">
               <span class="text-foreground">Databases</span>
-              <span v-if="filteredConnections.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{{ filteredConnections.length }}</span>
+              <span v-if="filteredConnections.length" class="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{{ filteredConnections.length }}</span>
             </div>
             <button 
               @click.stop.prevent="emit('add-connection')" 
-              class="mr-1 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+              class="mr-1 flex h-6 w-6 items-center justify-center rounded-lg border border-transparent text-muted-foreground opacity-0 transition-all hover:border-border/60 hover:bg-background hover:text-foreground group-hover:opacity-100"
               title="Add Connection"
             >
               <Plus class="w-4 h-4" />
@@ -76,12 +76,12 @@ function handleSelect(id: string, event?: MouseEvent) {
           </div>
         </template>
         
-        <div v-if="filteredConnections.length === 0" class="flex flex-col items-center justify-center py-6 px-4 text-center">
-          <Database class="w-10 h-10 text-muted-foreground/30 mb-2" />
-          <p class="text-xs text-muted-foreground mb-2">No database connections yet</p>
+        <div v-if="filteredConnections.length === 0" class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/45 px-4 py-7 text-center">
+          <Database class="mb-2 h-9 w-9 text-muted-foreground/35" />
+          <p class="mb-2 text-xs font-medium text-muted-foreground">No database connections yet</p>
           <button 
             @click="emit('add-connection')" 
-            class="text-xs text-primary hover:underline flex items-center gap-1"
+            class="flex items-center gap-1 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
           >
             <FolderPlus class="w-3.5 h-3.5" /> Add your first connection
           </button>
@@ -130,44 +130,44 @@ function handleSelect(id: string, event?: MouseEvent) {
                       </div>
                       <span 
                         v-if="getRowCount(conn.id, table) !== undefined"
-                        class="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground whitespace-nowrap ml-2"
+                        class="ml-2 whitespace-nowrap rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                       >
                         {{ formatRowCount(getRowCount(conn.id, table)) }}
                       </span>
                     </div>
                   </File>
                 </ContextMenuTrigger>
-                <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-                  <ContextMenuItem @select="emit('preview-table', conn, table)">
+                <ContextMenuContent class="w-52 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('preview-table', conn, table)">
                     <Eye class="w-3.5 h-3.5 mr-2" />
                     Preview Data
                   </ContextMenuItem>
-                  <ContextMenuItem @select="emit('select-table', conn, table)">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('select-table', conn, table)">
                     <Edit class="w-3.5 h-3.5 mr-2" />
                     Open in Editor
                   </ContextMenuItem>
-                  <ContextMenuItem @select="emit('toggle-favorite', getTableId(conn.id, table))" :class="isFavorite(getTableId(conn.id, table)) ? 'text-amber-600' : ''">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('toggle-favorite', getTableId(conn.id, table))" :class="isFavorite(getTableId(conn.id, table)) ? 'text-amber-600 focus:text-amber-600' : ''">
                     <Star class="w-3.5 h-3.5 mr-2" :class="isFavorite(getTableId(conn.id, table)) ? 'fill-amber-500 text-amber-500' : ''" />
                     {{ isFavorite(getTableId(conn.id, table)) ? 'Remove from Favorites' : 'Add to Favorites' }}
                   </ContextMenuItem>
                   <ContextMenuSeparator class="bg-border my-1" />
-                  <ContextMenuItem @select="emit('rename-table', conn, table)">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('rename-table', conn, table)">
                     Rename Table...
                   </ContextMenuItem>
-                  <ContextMenuItem @select="emit('explain-table', conn, table)">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('explain-table', conn, table)">
                     <Sparkles class="w-3.5 h-3.5 mr-2 text-purple-500" />
                     Explain Table (AI)
                   </ContextMenuItem>
-                  <ContextMenuItem @select="emit('generate-data', conn, table)">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('generate-data', conn, table)">
                     <Sparkles class="w-3.5 h-3.5 mr-2 text-indigo-500" />
                     Generate Test Data (AI)
                   </ContextMenuItem>
-                  <ContextMenuItem @select="emit('refresh-table-details', conn, table)">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('refresh-table-details', conn, table)">
                     <RefreshCw class="w-3.5 h-3.5 mr-2" />
                     Refresh Details
                   </ContextMenuItem>
                   <ContextMenuSeparator class="bg-border my-1" />
-                  <ContextMenuItem @select="emit('delete-table', conn, table)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+                  <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium text-rose-500 focus:bg-rose-500/10 focus:text-rose-500" @select="emit('delete-table', conn, table)">
                     <Trash class="w-3.5 h-3.5 mr-2" />
                     Delete Table
                   </ContextMenuItem>
@@ -176,18 +176,19 @@ function handleSelect(id: string, event?: MouseEvent) {
             </Folder>
           </ContextMenuTrigger>
 
-          <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-            <ContextMenuItem @select="emit('add-table', conn)">
+          <ContextMenuContent class="w-52 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+            <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('add-table', conn)">
               <Plus class="w-3.5 h-3.5 mr-2" />
               Add Table
             </ContextMenuItem>
             
             <ContextMenuSub v-if="spaces && spaces.length > 0">
-              <ContextMenuSubTrigger>Move to Space</ContextMenuSubTrigger>
-              <ContextMenuSubContent class="w-48 bg-popover border-border text-popover-foreground p-1">
+              <ContextMenuSubTrigger class="rounded-xl px-3 py-2 text-xs font-medium">Move to Space</ContextMenuSubTrigger>
+              <ContextMenuSubContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
                 <ContextMenuItem 
                   v-for="space in spaces" 
                   :key="space.id"
+                  class="rounded-xl px-3 py-2 text-xs font-medium"
                   @select="emit('move-connection', conn, space.id)"
                 >
                   {{ space.name }}
@@ -197,12 +198,12 @@ function handleSelect(id: string, event?: MouseEvent) {
             
             <ContextMenuSeparator class="bg-border my-1" />
 
-            <ContextMenuItem @select="emit('health-check', conn)">
+            <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('health-check', conn)">
               <Activity class="w-3.5 h-3.5 mr-2 text-emerald-500" />
               Health Check
             </ContextMenuItem>
             <ContextMenuSeparator class="bg-border my-1" />
-            <ContextMenuItem @select="emit('delete-connection', conn)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+            <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium text-rose-500 focus:bg-rose-500/10 focus:text-rose-500" @select="emit('delete-connection', conn)">
               <Trash class="w-3.5 h-3.5 mr-2" />
               Remove Connection
             </ContextMenuItem>
@@ -210,8 +211,8 @@ function handleSelect(id: string, event?: MouseEvent) {
         </ContextMenu>
       </Folder>
     </ContextMenuTrigger>
-    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-      <ContextMenuItem @select="emit('add-connection')">
+    <ContextMenuContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+      <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('add-connection')">
         <Plus class="w-3.5 h-3.5 mr-2" />
         Add Connection
       </ContextMenuItem>

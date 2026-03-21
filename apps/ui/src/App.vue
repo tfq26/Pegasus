@@ -12,7 +12,7 @@ import { usePrefetch } from '@/composables/usePrefetch'
 import { useConnectionStore } from '@/stores/connection'
 import { useDesktopMenu } from '@/composables/useDesktopMenu'
 import { usePlatform } from '@/composables/usePlatform'
-import { useColorMode } from '@vueuse/core'
+import { usePreferredDark } from '@vueuse/core'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { usePisces } from '@/composables/usePisces'
 import ErrorPage from '@/views/ErrorPage.vue'
@@ -134,6 +134,10 @@ onMounted(async () => {
  * This ensures the theme class on <html> is maintained regardless of which navbar is mounted.
  */
 const themeMode = usePegasusTheme()
+const preferredDark = usePreferredDark()
+const activeToastTheme = computed(() =>
+  themeMode.value === 'auto' ? (preferredDark.value ? 'dark' : 'light') : themeMode.value
+)
 
 const toggleTheme = () => {
   if (themeMode.value === 'auto') {
@@ -157,7 +161,7 @@ onUnmounted(() => {
   <!-- Minimal layout for auth pages -->
   <div v-if="isMinimalRoute" class="h-full w-full bg-black">
     <AILoadingIsland />
-    <Toaster position="top-right" richColors />
+    <Toaster position="top-right" richColors :theme="activeToastTheme" />
     <!-- For minimal routes, we still overlay the error entirely if it happens -->
     <ErrorPage 
       v-if="capturedError" 
@@ -179,7 +183,7 @@ onUnmounted(() => {
 
     <!-- Sonner Toasts -->
     <AILoadingIsland />
-    <Toaster position="top-right" richColors />
+    <Toaster position="top-right" richColors :theme="activeToastTheme" />
 
     <!-- Main layout: Adjust padding for navbar height -->
     <div class="flex flex-1 overflow-hidden" :class="isDesktop ? 'pt-12' : 'pt-16'">

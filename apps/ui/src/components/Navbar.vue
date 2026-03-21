@@ -119,7 +119,7 @@
               v-if="showDropdown && user"
               class="absolute right-0 top-12 w-48 rounded-xl border border-border bg-popover shadow-lg shadow-black/10 dark:shadow-black/30 py-2 z-50 overflow-hidden"
             >
-              <div class="px-4 py-2 border-b border-border mb-1 sm:hidden">
+              <div class="px-4 py-2 border-b border-border mb-1 sm:hidden cursor-pointer">
                 <p class="text-xs font-bold text-foreground truncate">
                   {{ user.firstName }} {{ user.lastName }}
                 </p>

@@ -1,13 +1,6 @@
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import { MessageSquare, Table, Database, X, Plus, FileSpreadsheet, Grid, Sparkles } from 'lucide-vue-next';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { MessageSquare, Table, Database, X, Plus, Grid, Sparkles } from 'lucide-vue-next';
 
 export interface Tab {
   id: string;
@@ -72,56 +65,60 @@ const getTabIcon = (tab: Tab) => {
 </script>
 
 <template>
-  <div class="flex items-center h-9 border-b border-border bg-muted/40 px-2 overflow-x-auto">
-    <!-- Tab List -->
-    <TooltipProvider :delay-duration="100">
-      <div class="flex items-center gap-1">
-        <Tooltip v-for="tab in tabs" :key="tab.id">
-          <TooltipTrigger as-child>
+  <div class="border-b border-border/60 bg-background/78 px-2 py-1.5 backdrop-blur-xl">
+    <div class="flex items-center gap-1.5 overflow-x-auto">
+        <div class="flex items-center gap-1">
+        <div v-for="tab in tabs" :key="tab.id">
             <div 
-              class="flex items-center gap-2 px-3 py-1.5 text-xs rounded-t-md cursor-pointer select-none border border-transparent transition-colors group relative max-w-[150px]"
+              class="group relative flex max-w-[170px] cursor-pointer select-none items-center gap-2 rounded-[16px] border px-2.5 py-1.5 text-xs transition-all duration-200"
               :class="{
-                'bg-background border-border border-b-background shadow-sm text-foreground': tab.id === activeTabId,
-                'hover:bg-muted/80 text-muted-foreground hover:text-foreground': tab.id !== activeTabId
+                'border-border/70 bg-card/85 text-foreground shadow-[0_8px_20px_-18px_rgba(15,23,42,0.45)]': tab.id === activeTabId,
+                'border-transparent bg-transparent text-muted-foreground hover:border-border/50 hover:bg-muted/35 hover:text-foreground': tab.id !== activeTabId
               }"
               @click="emit('update:activeTabId', tab.id)"
             >
-              <!-- Icon based on type -->
-              <component :is="getTabIcon(tab)" class="w-3.5 h-3.5 opacity-70" :class="{ 'text-green-600': tab.type === 'mockup' && tab.data?.isExcelSource, 'text-purple-500': tab.type === 'chat' }" />
-              
-              <span class="truncate font-medium">{{ tab.label }}</span>
-              
-              <!-- Minimal dirty indicator removed for simplicity -->
-              
-              <!-- Close Button (visible on hover or active) -->
+              <span
+                class="absolute inset-y-2 left-0.5 w-px rounded-full transition-opacity"
+                :class="tab.id === activeTabId ? 'bg-primary/90 opacity-100' : 'bg-transparent opacity-0 group-hover:opacity-40'"
+              ></span>
+
+              <div
+                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-muted/35"
+                :class="{
+                  'text-primary': tab.id === activeTabId,
+                  'text-emerald-600': tab.type === 'mockup' && tab.data?.isExcelSource,
+                  'text-violet-500': tab.type === 'chat'
+                }"
+              >
+                <component :is="getTabIcon(tab)" class="h-3.5 w-3.5" />
+              </div>
+
+              <div class="min-w-0 flex-1">
+                <span class="block truncate text-[13px] font-medium leading-none">{{ tab.label }}</span>
+              </div>
+
               <button 
-                class="ml-auto w-4 h-4 rounded-sm flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-muted-foreground/20"
+                class="ml-auto flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/80 opacity-0 transition hover:bg-muted hover:text-foreground"
                 :class="{ 'opacity-100': tab.id === activeTabId }"
                 @click.stop="emit('close', tab.id)"
               >
                 <X class="w-3 h-3" />
               </button>
             </div>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" class="text-[10px] px-2 py-1 bg-popover/95 backdrop-blur-sm border shadow-lg font-medium animate-in fade-in zoom-in-95 duration-100">
-            {{ getTabTooltip(tab) }}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-    </TooltipProvider>
+        </div>
+        </div>
 
-    <!-- Add New Tab Button (Immediately to the right) -->
-    <div class="ml-1 shrink-0">
+      <div class="ml-1 shrink-0">
         <button 
-          class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" 
+          class="flex h-8 w-8 items-center justify-center rounded-[16px] border border-dashed border-border/60 bg-transparent text-muted-foreground transition hover:border-border hover:bg-muted/35 hover:text-foreground" 
           title="New Tab"
           @click.stop="addTab('default')"
         >
            <Plus class="w-4 h-4" />
         </button>
-    </div>
+      </div>
 
-    <!-- Spacer to fill the rest of the bar -->
-    <div class="flex-1"></div>
+      <div class="flex-1"></div>
+    </div>
   </div>
 </template>

@@ -1,4 +1,4 @@
-import { ref, type Ref, nextTick } from 'vue'
+import { ref, type Ref, nextTick, unref } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useChatStore } from '@/stores/chat'
 import { useSpaceStore } from '@/stores/space'
@@ -48,6 +48,49 @@ export function useChatExecution(
     const suggestedChartType = ref<string | null>(null)
     const currentExecutionSteps = ref<{ message: string, timestamp: number, progress: number }[]>([])
     const alias = ref('')
+
+    const getLastClarificationMessage = () => {
+        const history = Array.isArray(chatHistory.value) ? [...chatHistory.value] : []
+        return history.reverse().find((message: any) =>
+            message?.role === 'clarification' || message?.meta?.isClarification === true
+        ) || null
+    }
+
+    const rewriteClarificationReply = (input: string) => {
+        const trimmed = String(input || '').trim()
+        const clarification = getLastClarificationMessage()
+        const meta = clarification?.meta || {}
+
+        if (!trimmed || !meta?.isClarification) return trimmed
+
+        if (meta.clarificationMode === 'confirm_source' && meta.sourceTitle) {
+            if (/^(yes|y|yeah|yep|sure|ok|okay)$/i.test(trimmed)) {
+                return `Use the data source "${meta.sourceTitle}".`
+            }
+            if (/^(no|n|nope|nah)$/i.test(trimmed)) {
+                return `Do not use the data source "${meta.sourceTitle}".`
+            }
+        }
+
+        const options = Array.isArray(meta.options) ? meta.options : []
+        const matchedOption = options.find((option: string) => option.toLowerCase() === trimmed.toLowerCase())
+        if (matchedOption && meta.clarificationMode === 'select_source') {
+            return `Use the data source "${matchedOption}".`
+        }
+
+        return trimmed
+    }
+
+    const persistAssistantMessage = async (content: string, meta?: any) => {
+        if (!selectedChatId.value) return
+
+        try {
+            const activeModel = options.aiOptions.value?.model
+            await chatStore.saveMessage(selectedChatId.value, 'ai', content, meta, activeModel)
+        } catch (e) {
+            console.warn('Failed to persist message', e)
+        }
+    }
 
     // --- Helpers ---
     const normalizeQuery = (query: string, provider: string) => {
@@ -213,7 +256,7 @@ export function useChatExecution(
 
             const activeTab = workspaceStore.activeTab as any
             let sessionId = activeTab?.data?.sessionId
-            const spaceId = spaceStore.currentSpaceId.value
+            const spaceId = unref(spaceStore.currentSpaceId)
 
             // Auto-create session if missing in a query tab
             if (activeTab?.type === 'query' && !sessionId && spaceId) {
@@ -312,17 +355,18 @@ export function useChatExecution(
             }
         }
 
-        const userPrompt = chatInput.value.trim()
+        const rawUserPrompt = chatInput.value.trim()
+        const userPrompt = rewriteClarificationReply(rawUserPrompt)
         chatInput.value = ''
         isExecuting.value = true
 
         // Push immediate UI update
         const timestamp = Date.now()
-        chatHistory.value.push({ role: 'user', content: userPrompt, timestamp })
+        chatHistory.value.push({ role: 'user', content: rawUserPrompt, timestamp })
 
         // Persist user message immediately
         if (selectedChatId.value) {
-            chatStore.saveMessage(selectedChatId.value, 'user', userPrompt).catch(e => console.warn(e))
+            chatStore.saveMessage(selectedChatId.value, 'user', rawUserPrompt).catch(e => console.warn(e))
         }
 
         const gid = `chat-${Date.now()}`
@@ -451,29 +495,55 @@ export function useChatExecution(
                 // Handle in-chat clarification questions from AI
                 if ((aiResponse as any).type === 'clarification') {
                     const response = aiResponse as any;
+                    const clarificationMeta = {
+                        isClarification: true,
+                        interpretation: response.interpretation,
+                        confidence: response.confidence,
+                        hints: response.hints || [],
+                        options: response.options || [],
+                        clarificationMode: response.clarificationMode || 'select_source',
+                        sourceTitle: response.sourceTitle || null,
+                        steps: currentExecutionSteps.value
+                    }
                     chatHistory.value.push({
                         role: 'clarification',
                         content: response.question,
                         timestamp: Date.now(),
-                        meta: {
-                            interpretation: response.interpretation,
-                            confidence: response.confidence,
-                            hints: response.hints || [],
-                            steps: currentExecutionSteps.value
-                        }
+                        meta: clarificationMeta
                     });
-                    if (selectedChatId.value) {
-                        try {
-                            const activeModel = options.aiOptions.value?.model;
-                            await chatStore.saveMessage(selectedChatId.value, 'ai', response.question, { isClarification: true, interpretation: response.interpretation, confidence: response.confidence, hints: response.hints || [] }, activeModel);
-                        } catch (e) { console.warn(e); }
-                    }
+                    await persistAssistantMessage(response.question, clarificationMeta)
                     isExecuting.value = false;
                     return;
                 }
 
+                if ((aiResponse as any).type === 'text_answer' || (aiResponse as any).type === 'failure') {
+                    const response = aiResponse as any
+                    const assistantContent = response.message || response.text || response.answer || response.userMessage || 'I could not complete that request.'
+                    const meta = {
+                        refinementSuggestions: response.refinementSuggestions || [],
+                        sources: response.sources || [],
+                        confidence: response.confidence,
+                        assumptions: response.assumptions || []
+                    }
+
+                    chatHistory.value.push({
+                        role: 'assistant',
+                        content: assistantContent,
+                        timestamp: Date.now(),
+                        meta
+                    })
+                    await persistAssistantMessage(assistantContent, meta)
+                    isExecuting.value = false
+                    return
+                }
+
                 // Handle INTENT-BASED architecture responses
-                if ((aiResponse as any).type === 'data_response' || (aiResponse as any).type === 'visualization_request') {
+                if (
+                    (aiResponse as any).type === 'data_response'
+                    || (aiResponse as any).type === 'visualization_request'
+                    || (aiResponse as any).type === 'data_answer'
+                    || (aiResponse as any).type === 'visualization_answer'
+                ) {
                     const response = aiResponse as any;
 
                     // 2. Handle COMPOUND response (array of results) for preview panel
@@ -485,26 +555,54 @@ export function useChatExecution(
                         // resultsPanelVisible.value = true; // Disabled as per user request to favor chat table
                     } else {
                         lastQuery.value = response.query;
-                        queryResult.value = response.data;
+                        queryResult.value = response.data || response.results;
                     }
 
                     // 3. Prepare the Assistant Response
                     const needsDisclaimer = response.needs_disclaimer || false;
-                    const dataRows = response.data;
+                    const dataRows = response.data || response.results;
                     const rowCount = Array.isArray(dataRows) ? dataRows.length : (dataRows ? 1 : 0);
                     const defaultMsg = response.isCompound
                         ? `Here is the data for ${response.results?.length} region(s).`
                         : `Found ${rowCount} result${rowCount !== 1 ? 's' : ''}.`;
-                    const assistantContent = response.message || defaultMsg;
+                    const vizBlueprint = response.vizBlueprint || (response.visualizationSpec ? {
+                        type: response.visualizationSpec.chartType,
+                        title: response.visualizationSpec.title,
+                        xAxis: response.visualizationSpec.xField,
+                        yAxis: response.visualizationSpec.yFields
+                    } : null)
+                    const assistantContent = response.message || response.answer || defaultMsg;
+                    const responseMeta = {
+                        hasResults: true,
+                        query: response.query || lastQuery.value,
+                        vizBlueprint,
+                        needsDisclaimer,
+                        refinementSuggestions: response.refinementSuggestions || [],
+                        sources: response.sources || [],
+                        confidence: response.confidence,
+                        assumptions: response.assumptions || []
+                    }
 
                     // 4. Handle Visualizations or Standard Data
-                    if (response.type === 'visualization_request') {
+                    if (response.type === 'visualization_request' || response.type === 'visualization_answer') {
                         // ... existing visualization logic ...
-                        const aiConfig = response.config;
+                        const aiConfig = response.config || vizBlueprint;
+                        if (!aiConfig) {
+                            chatHistory.value.push({
+                                role: 'assistant',
+                                content: assistantContent,
+                                timestamp: Date.now(),
+                                meta: responseMeta
+                            });
+                            await persistAssistantMessage(assistantContent, responseMeta)
+                            isExecuting.value = false;
+                            return;
+                        }
                         suggestedChartType.value = aiConfig.type;
 
                         const { generateChartConfig } = await import('@/lib/chartGenerator');
-                        const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+                        const chartData = response.data || response.results
+                        const dataArray = Array.isArray(chartData) ? chartData : [chartData];
 
                         let finalConfig = generateChartConfig(dataArray, lastQuery.value, {
                             xAxis: aiConfig.xAxis,
@@ -529,17 +627,19 @@ export function useChatExecution(
                             role: 'assistant',
                             content: assistantContent || `I've generated a ${aiConfig.type} chart based on your request.`,
                             timestamp: Date.now(),
-                            meta: { hasResults: true, query: lastQuery.value }
+                            meta: responseMeta
                         });
+                        await persistAssistantMessage(assistantContent || `I've generated a ${aiConfig.type} chart based on your request.`, responseMeta)
                     } else {
                         // Standard Data Response
                         // 2-Step Visualization: Check for blueprint from analysis
-                        if (response.vizBlueprint) {
-                            const aiConfig = response.vizBlueprint;
+                        if (vizBlueprint) {
+                            const aiConfig = vizBlueprint;
                             suggestedChartType.value = aiConfig.type;
 
                             const { generateChartConfig } = await import('@/lib/chartGenerator');
-                            const dataArray = Array.isArray(response.data) ? response.data : [response.data];
+                            const chartData = response.data || response.results
+                            const dataArray = Array.isArray(chartData) ? chartData : [chartData];
 
                             let finalConfig = generateChartConfig(dataArray, lastQuery.value, {
                                 xAxis: aiConfig.xAxis,
@@ -569,13 +669,9 @@ export function useChatExecution(
                             role: 'assistant',
                             content: assistantContent,
                             timestamp: Date.now(),
-                            meta: {
-                                hasResults: true,
-                                query: lastQuery.value,
-                                vizBlueprint: response.vizBlueprint,
-                                needsDisclaimer
-                            }
+                            meta: responseMeta
                         });
+                        await persistAssistantMessage(assistantContent, responseMeta)
                     }
 
                     isExecuting.value = false;

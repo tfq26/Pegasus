@@ -101,10 +101,10 @@ onMounted(() => {
     :class="[$props.class]"
   >
     <div
-      class="relative h-full overflow-auto px-1 py-2"
+      class="relative h-full overflow-auto px-1 py-1"
       :dir="direction"
     >
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1.5">
         <slot />
       </div>
     </div>

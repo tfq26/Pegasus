@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'generateInsights', payload: { query: string; results: any }): void
   (e: 'add-to-dashboard', config: any): void
+  (e: 'refine', prompt: string): void
 }>()
 
 import { FileText, Database, StickyNote, Quote } from 'lucide-vue-next'
@@ -193,6 +194,12 @@ const formatValue = (val: any) => {
   if (typeof val === 'object') return JSON.stringify(val)
   return String(val)
 }
+
+const refinementSuggestions = computed(() => {
+  return Array.isArray(props.meta?.refinementSuggestions)
+    ? props.meta.refinementSuggestions.filter((item: unknown) => typeof item === 'string' && item.trim().length > 0)
+    : []
+})
 </script>
 
 <template>
@@ -243,6 +250,18 @@ const formatValue = (val: any) => {
     <!-- Text After -->
     <div v-if="parsedContent.textAfter" class="markdown-chat opacity-70">
       <MarkdownRenderer :content="parsedContent.textAfter" />
+    </div>
+
+    <div v-if="refinementSuggestions.length" class="flex flex-wrap items-center gap-2 pt-2">
+      <span class="text-[10px] text-muted-foreground">Refine:</span>
+      <button
+        v-for="suggestion in refinementSuggestions"
+        :key="suggestion"
+        @click="emit('refine', suggestion)"
+        class="inline-flex items-center gap-2 rounded-md border border-border bg-background/60 px-3 py-1.5 text-[11px] font-medium text-foreground/80 transition-colors hover:border-violet-500/30 hover:bg-violet-500/10 hover:text-violet-400"
+      >
+        {{ suggestion }}
+      </button>
     </div>
 
     <!-- Context Chips -->

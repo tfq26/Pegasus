@@ -4,7 +4,7 @@ import { api } from '@/lib/apiClient'
 import { useSpaceStore } from './space'
 
 export interface ChatMessage {
-    role: 'user' | 'assistant' | 'ai'
+    role: 'user' | 'assistant' | 'ai' | 'clarification'
     content: string
     timestamp: number
     meta?: any
@@ -34,6 +34,18 @@ export const useChatStore = defineStore('chat', () => {
         selectedChat.value?.messages || []
     )
 
+    const normalizeChat = (chat: Chat): Chat => ({
+        ...chat,
+        messages: Array.isArray(chat.messages) ? chat.messages : []
+    })
+
+    const normalizeMessageRole = (role: string, meta?: any): ChatMessage['role'] => {
+        if (meta?.isClarification) return 'clarification'
+        if (role === 'clarification') return 'clarification'
+        if (role === 'ai') return 'assistant'
+        return role === 'assistant' ? 'assistant' : 'user'
+    }
+
     // Actions
     async function loadChats() {
         isLoading.value = true
@@ -49,7 +61,7 @@ export const useChatStore = defineStore('chat', () => {
 
             const url = `/chats?space_id=${spaceId}`
             const response = await api.get<{ chats: Chat[] }>(url)
-            chats.value = response.chats || []
+            chats.value = (response.chats || []).map(normalizeChat)
             console.log('[ChatStore] Loaded chats:', chats.value.length)
         } catch (e) {
             console.error('[ChatStore] Failed to load chats:', e)
@@ -63,7 +75,7 @@ export const useChatStore = defineStore('chat', () => {
         try {
             const currentSpaceId = unref(spaceStore.currentSpaceId)
             const spaceId = currentSpaceId?.split(':').pop()
-            const newChat = await api.post<Chat>('/chats', { title, space_id: spaceId })
+            const newChat = normalizeChat(await api.post<Chat>('/chats', { title, space_id: spaceId }))
             chats.value.unshift(newChat)
             selectedChatId.value = newChat.id
             console.log('[ChatStore] Created chat:', newChat.id)
@@ -80,7 +92,7 @@ export const useChatStore = defineStore('chat', () => {
             const data = await api.get<{ messages: any[] }>(`/chats/${chatId}`)
 
             const messages: ChatMessage[] = data.messages.map((m: any) => ({
-                role: m.role === 'ai' ? 'assistant' : m.role,
+                role: normalizeMessageRole(m.role, m.meta),
                 content: m.content,
                 timestamp: m.created_at * 1000,
                 meta: m.meta
@@ -115,8 +127,11 @@ export const useChatStore = defineStore('chat', () => {
             // Update local state
             const chat = chats.value.find(c => c.id === chatId)
             if (chat) {
+                if (!Array.isArray(chat.messages)) {
+                    chat.messages = []
+                }
                 chat.messages.push({
-                    role: role === 'ai' ? 'assistant' : role,
+                    role: meta?.isClarification ? 'clarification' : (role === 'ai' ? 'assistant' : role),
                     content,
                     timestamp: Date.now(),
                     meta

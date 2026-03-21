@@ -31,10 +31,6 @@
 
     <main class="flex-1 flex flex-col h-full overflow-hidden bg-background relative">
       <div class="flex-1 overflow-y-auto p-10 pb-24">
-        <section v-if="activeTab === 'profile'" class="fade-section">
-          <ProfileTab :preloaded-payments="profilePayments" />
-        </section>
-
         <section v-if="activeTab === 'general'" class="fade-section">
           <GeneralTab 
             :settings="settings" 
@@ -52,24 +48,6 @@
           <CloudTab :settings="settings" />
         </section>
 
-        <section v-if="activeTab === 'database'" class="fade-section h-full">
-          <DatabaseConnectionsTab
-            :connection-form="connectionForm"
-            :saved-connections="savedConnections"
-            :can-add-connection="canAddConnection"
-            :is-edit-mode="isEditMode"
-            :edit-connection="editConnection"
-            :update-connection="updateConnection"
-            :delete-connection="deleteConnection"
-            :connection-status-for="connectionStatusFor"
-            :status-dot-classes="statusDotClasses"
-            :status-label="statusLabel"
-            :summary-for="summaryFor"
-            :test-connection="testConnection"
-            :reset-connection-form="resetConnectionForm"
-          />
-        </section>
-
         <section v-if="activeTab === 'experimental'" class="fade-section">
           <ExperimentalSettings />
         </section>
@@ -82,11 +60,9 @@
       <!-- Sticky Footer Action Bar -->
       <div class="fixed bottom-8 right-8 flex items-center gap-4 z-50">
         <div class="text-xs text-muted-foreground bg-background/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border/50 shadow-sm">
-          <span v-if="activeTab === 'database'">Autosaved</span>
-          <span v-else>Local changes</span>
+          <span>Local changes</span>
         </div>
         <button
-          v-if="activeTab !== 'database'"
           class="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-bold transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:scale-105 active:scale-95"
           @click="saveSettings"
         >
@@ -105,10 +81,8 @@ import LoadingScreen from '@/components/ui/LoadingScreen.vue'
 import { usePegasusTheme } from '@/composables/usePegasusTheme'
 import { toast } from '@/composables/useNotifications'
 import GeneralTab from './GeneralTab.vue'
-import ProfileTab from './ProfileTab.vue'
 import AITab from './AITab.vue'
 import CloudTab from './CloudTab.vue'
-import DatabaseConnectionsTab from './DatabaseConnectionsTab.vue'
 import ExperimentalSettings from './ExperimentalSettings.vue'
 import AnalyticsTab from './AnalyticsTab.vue'
 import { defaultConnections } from '@/lib/db-connections'
@@ -131,10 +105,8 @@ const { subscriptionTier } = useEntitlements()
 
 const tabs = computed(() => {
   const list = [
-    { id: 'profile', label: 'Profile' },
     { id: 'general', label: 'General' },
     { id: 'ai', label: 'AI' },
-    { id: 'database', label: 'Database Connections' },
   ]
 
   // Only show Cloud Infrastructure tab for Teams/Enterprise plans
@@ -150,7 +122,7 @@ const tabs = computed(() => {
   return list
 })
 
-const activeTab = ref('profile')
+const activeTab = ref('general')
 const isInitializing = ref(true)
 
 // Redirect if active tab becomes invalid (e.g. on plan downgrade)
@@ -249,8 +221,6 @@ const connectionForm = reactive<ConnectionFormState>({
   },
   isLocked: false
 })
-
-const profilePayments = ref<any[]>([])
 
 const canAddConnection = computed(() => connectionForm.alias.trim().length > 0)
 const isEditMode = computed(() => editingConnectionId.value !== null)
@@ -534,7 +504,7 @@ const connectionUpdateHandler = () => loadConnections(true)
 onMounted(async () => {
   if (isPhone.value) {
     toast.error('Settings are only available on desktop devices.')
-    router.replace('/profile')
+    router.replace('/dashboard')
     return
   }
 
@@ -547,26 +517,7 @@ onMounted(async () => {
     // settingsStore.loadSettings handles loading and merging
     await Promise.all([
       loadConnections(),
-      settingsStore.loadSettings(),
-      // Pre-load profile data
-      (async () => {
-         try {
-           // We use the global entitlements composable to fetch tiers/usage
-           const { fetchEntitlements } = useEntitlements()
-           await fetchEntitlements(true)
-           
-           // We fetch payments for the profile tab
-           // Using getPayments is fast (DB only). We skip syncPayments() here to avoid slowing down Settings load too much.
-           // ProfileTab can background sync if needed.
-           const { getPayments } = await import('@/lib/api') 
-           const res = await getPayments()
-           if (res.success) {
-             profilePayments.value = res.payments
-           }
-         } catch (err) {
-           console.error('[Settings] Failed to preload profile data:', err)
-         }
-      })()
+      settingsStore.loadSettings()
     ])
 
     window.addEventListener('pegasus:connections-updated', connectionUpdateHandler)

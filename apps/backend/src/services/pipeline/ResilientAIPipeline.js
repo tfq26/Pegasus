@@ -12,6 +12,13 @@ import { ExecutionPlanner } from './ExecutionPlanner.js';
 import { PipelineToolExecutor } from './PipelineToolExecutor.js';
 import { EvidenceSynthesizer } from './EvidenceSynthesizer.js';
 
+const verbosePipelineLogs = process.env.PEGASUS_VERBOSE_PIPELINE === 'true';
+const logPipelineDebug = (message, meta) => {
+    if (verbosePipelineLogs) {
+        logger.debug(message, meta);
+    }
+};
+
 function buildVisualizationSpec(blueprint) {
     if (!blueprint) return null;
     return {
@@ -195,7 +202,7 @@ export class ResilientAIPipeline {
                 forceAnalysis
             });
 
-            logger.info('[ResilientAIPipeline] Intent selected', {
+            logPipelineDebug('[ResilientAIPipeline] Intent selected', {
                 requestId: this.requestId,
                 context: 'pipeline',
                 type: intent.type,
@@ -209,7 +216,7 @@ export class ResilientAIPipeline {
                 candidates: sourceCandidates
             });
 
-            logger.info('[ResilientAIPipeline] Sources selected', {
+            logPipelineDebug('[ResilientAIPipeline] Sources selected', {
                 requestId: this.requestId,
                 context: 'pipeline',
                 primary: selectedSources.primarySource?.title || null,
@@ -263,7 +270,7 @@ export class ResilientAIPipeline {
                 clarificationAlreadyAsked
             });
 
-            logger.info('[ResilientAIPipeline] Plan created', {
+            logPipelineDebug('[ResilientAIPipeline] Plan created', {
                 requestId: this.requestId,
                 context: 'pipeline',
                 requiresClarification: plan.requiresClarification,

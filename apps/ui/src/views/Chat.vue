@@ -33,8 +33,6 @@
       @sanitize-table="handleSanitizeFixed"
       @select-note="handleSelectNote"
       @select-file="handleSelectFile"
-      @edit-data-view="handleEditDataView"
-      @add-data-view="handleAddDataView"
       @mouseenter="clearHoverTimer"
       @mouseleave="startHoverTimer"
     />
@@ -127,6 +125,7 @@
         :results="Array.isArray(queryResult) ? queryResult : []"
         @resolve-ambiguity="handleResolveAmbiguity"
         @continue-chat="handleContinueChat"
+        @delete-chat="handleDeletePreviewChat"
         @save-dashboard="toast.success('Added to dashboard')"
         @execute-sanitize="executeSanitization"
         @apply-mutation="handleApplyMutation"
@@ -215,6 +214,8 @@ import { useRoute } from 'vue-router'
 import { toast } from '@/composables/useNotifications'
 import { storeToRefs } from 'pinia'
 import { toRef } from 'vue'
+import { useEntitlements } from '@/composables/useEntitlements'
+import { filterModelsForTier, getDefaultModelForTier } from '@/lib/modelAccess'
 import ChatSidebar from '@/components/Chat/ChatSidebar.vue'
 import Workspace from '@/components/Workspace/Workspace.vue'
 import ResultsPanel from '@/components/Chat/ResultsPanel.vue'
@@ -247,6 +248,7 @@ import { useChatConnectionSwitch } from '@/composables/useChatConnectionSwitch'
 
 const spaceStore = useSpaceStore()
 const route = useRoute()
+const { subscriptionTier, fetchEntitlements } = useEntitlements()
 import { useTableActions } from '@/composables/useTableActions'
 import { useProgress } from '@/lib/progress'
 import { getAuthHeaders, api } from '@/lib/apiClient'
@@ -300,6 +302,7 @@ const {
   createChat,
   selectChat,
   continueChat,
+  deleteChat,
 } = useChat()
 
 // Watch for space changes to reload data
@@ -329,6 +332,7 @@ const {
   dashboardPreviewConfig,
   sanitizeDialogVisible,
   sanitizeTable,
+  closeChatPreview,
   openDashboardPreview,
 } = useChatDialogs()
 
@@ -690,31 +694,6 @@ const handleSelectFile = (file: any) => {
     }
 }
 
-const handleEditDataView = (view: any) => {
-    // Check if tab already exists
-    const tabs = (workspaceStore.tabs as any)
-    const existing = tabs.find((t: any) => t.data?.viewId === view.id)
-    
-    if (existing) {
-        workspaceStore.setActiveTab(existing.id)
-        mode.value = 'spreadsheet'
-        return
-    }
-    
-    workspaceStore.createTab('dataview', {
-        viewId: view.id,
-        label: view.name,
-        // For now, load existing data view state
-        isExcelSource: view.data?.isExcelSource || true,
-        isSavedView: true
-    })
-}
-
-const handleAddDataView = async () => {
-    // This is handled by Explorer internal logic mostly
-    // But we might want to trigger it from Chat perspective too
-}
-
 // Note toolbar handlers
 const handleNoteFormat = (command: string, value?: string) => {
     if (workspaceRef.value?.getNoteEditorRef) {
@@ -935,6 +914,16 @@ const handleContinueChat = async (id: string) => {
         toast.success('Chat history loaded into new tab')
     } catch (e) {
         toast.error('Failed to load chat history')
+    }
+}
+
+const handleDeletePreviewChat = async (id: string) => {
+    try {
+        await deleteChat(id)
+        closeChatPreview()
+        toast.success('Chat deleted')
+    } catch (e) {
+        toast.error('Failed to delete chat')
     }
 }
 
@@ -1162,19 +1151,21 @@ onMounted(async () => {
     // 3. Load models and settings in parallel
     const [models, s] = await Promise.all([
       getAIModels(),
-      fetchSettings()
+      fetchSettings(),
+      fetchEntitlements()
     ])
+    const tierFilteredModels = filterModelsForTier(models, subscriptionTier.value)
     
     // Filter models if settings restrict them
     if (s.enabledModels?.length) {
-      availableModels.value = models.filter((m: any) => s.enabledModels.includes(m.id))
+      availableModels.value = tierFilteredModels.filter((m: any) => s.enabledModels.includes(m.id))
     } else {
-      availableModels.value = models
+      availableModels.value = tierFilteredModels
     }
     settings.value = s
     
     if (availableModels.value.length && !aiOptions.value.model) {
-        aiOptions.value.model = availableModels.value[0].id
+        aiOptions.value.model = getDefaultModelForTier(availableModels.value, subscriptionTier.value) || availableModels.value[0].id
     }
     
     // 4. Handle connection & workspace selection

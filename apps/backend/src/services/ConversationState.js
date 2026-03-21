@@ -7,6 +7,18 @@ import { chats } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 export class ConversationState {
+    static _parseMeta(meta) {
+        if (!meta) return {};
+        if (typeof meta === 'string') {
+            try {
+                return JSON.parse(meta);
+            } catch {
+                return {};
+            }
+        }
+        return meta;
+    }
+
     /**
      * Build conversation context from chat history
      * @param {string} chatId - Current chat ID
@@ -236,6 +248,57 @@ FOLLOW-UP RULES:
         }
 
         return prompt;
+    }
+
+    /**
+     * Preserve the grounded context we can safely carry into the next turn,
+     * even when follow-up detection is inconclusive.
+     */
+    static buildCarryover(context) {
+        const entities = context?.entities || {};
+        const carryover = {
+            lastTable: entities.lastTable || null,
+            lastColumns: Array.isArray(entities.lastColumns) ? entities.lastColumns : [],
+            lastFilters: Array.isArray(entities.lastFilters) ? entities.lastFilters : [],
+            lastAggregation: entities.lastAggregation || null,
+            lastVisualization: entities.lastVisualization || null,
+            lastQuery: entities.lastQuery || null
+        };
+
+        const hasGroundedContext = Boolean(
+            carryover.lastTable
+            || carryover.lastQuery
+            || carryover.lastColumns.length
+            || carryover.lastVisualization
+        );
+
+        return hasGroundedContext ? carryover : null;
+    }
+
+    /**
+     * Check whether this chat has already asked a clarification question.
+     */
+    static async hasClarificationBeenAsked(chatId) {
+        if (!chatId) return false;
+
+        try {
+            const chatRow = await db.query.chats.findFirst({
+                where: eq(chats.id, chatId),
+                columns: { messages: true }
+            });
+
+            const messages = Array.isArray(chatRow?.messages) ? chatRow.messages : [];
+            return messages.some((message) => {
+                const role = String(message?.role || '').toLowerCase();
+                const meta = this._parseMeta(message?.meta);
+
+                return role === 'clarification'
+                    || ((role === 'assistant' || role === 'ai') && meta?.isClarification === true);
+            });
+        } catch (error) {
+            console.error('[ConversationState] Error checking clarification history:', error);
+            return false;
+        }
     }
 
     /**

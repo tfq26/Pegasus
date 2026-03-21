@@ -4,7 +4,7 @@ import { toast } from '@/composables/useNotifications'
 import { 
   Database, Plus, Trash, Search, Sparkles, FolderOpen, Lock, Unlock,
   FileText, Notebook, FileUp, StickyNote, RefreshCw,
-  MoreHorizontal
+  MoreHorizontal, X
 } from 'lucide-vue-next'
 import { 
   DropdownMenu,
@@ -24,11 +24,9 @@ import SpaceSelector from './Explorer/SpaceSelector.vue'
 import ConfirmDialog from '@/components/Common/ConfirmDialog.vue'
 import { useSpaceStore } from '@/stores/space'
 import { useConnectionStore } from '@/stores/connection'
-import { useDataViewStore } from '@/stores/dataView'
 import { useDashboardStore } from '@/stores/dashboard'
 
 const connectionStore = useConnectionStore()
-const dataViewStore = useDataViewStore()
 const dashboardStore = useDashboardStore()
 
 // Add state for selected table
@@ -101,19 +99,14 @@ const emit = defineEmits<{
   'toggle-pin': []
   'select-note': [note: any]
   'select-file': [file: any]
-  'edit-data-view': [view: any]
-  'trash-data-view': [viewId: string]
-  'add-data-view': []
   'select-session': [session: any]
   'delete-session': [session: any]
 }>()
 
-// --- Data Spaces ---
 const spaceStore = useSpaceStore()
 
 onMounted(() => {
   spaceStore.loadSpaces()
-  dataViewStore.loadDataViews(unref(spaceStore.currentSpaceId) || '')
   
   // Force refresh connections to ensure we have latest space assignments
   connectionStore.loadConnections(true)
@@ -172,7 +165,26 @@ const filteredConnections = computed(() => {
 
 const currentFiles = computed(() => spaceStore.currentSpaceFiles || [])
 const currentNotes = computed(() => spaceStore.currentSpaceNotes || [])
-const currentDataViews = computed(() => dataViewStore.getAllDataViews())
+const currentSpaceName = computed(() => {
+  const currentSpace = unref(spaceStore.currentSpace as any)
+  return currentSpace?.name || 'Workspace'
+})
+const explorerSummary = computed(() => {
+  const databaseCount = filteredConnections.value.length
+  const chatCount = props.chats?.length || 0
+  const queryCount = props.queryHistory?.length || 0
+  const fileCount = currentFiles.value.length
+  const noteCount = currentNotes.value.length
+  const totalCount = databaseCount + chatCount + queryCount + fileCount + noteCount
+  return {
+    databaseCount,
+    chatCount,
+    queryCount,
+    fileCount,
+    noteCount,
+    totalCount
+  }
+})
 
 const {
   viewer,
@@ -221,7 +233,6 @@ const handleGlobalRefresh = async () => {
     await Promise.all([
       refreshSchemas(true),
       spaceStore.loadSpaces(),
-      dataViewStore.loadDataViews(unref(spaceStore.currentSpaceId) || ''),
       connectionStore.loadConnections(true)
     ])
     toast.success('Refreshed', { description: 'All sources updated' })
@@ -681,144 +692,116 @@ const onTestDataGenerated = (sql: string) => {
     toast.success('SQL generated in Query Editor')
 }
 
-// --- Data View Logic ---
-const handleAddDataView = async () => {
-    // Ensure we have a space selected
-    if (!spaceStore.currentSpaceId) {
-        toast.info('Selecting primary space...')
-        await spaceStore.loadSpaces()
-    }
-
-    if (!spaceStore.currentSpaceId) {
-        toast.error('No space selected', { description: 'Please create or select a space first.' })
-        return
-    }
-
-    try {
-        await dataViewStore.saveDataView({ // useDataViewStore manages Data Views
-            name: "New Data View",
-            data: { cells: [], rowCount: 100, colCount: 26, version: 1 },
-            spaceId: unref(spaceStore.currentSpaceId)
-        })
-        toast.success('Data View created')
-    } catch (e: any) {
-        toast.error('Failed to create data view', { description: e.message })
-    }
-}
-
-const handleDeleteDataView = async (view: any) => {
-    confirmDialogState.value = {
-        open: true,
-        title: 'Delete Data View',
-        description: `Delete data view "${view.name}"?`,
-        variant: 'destructive',
-        confirmText: 'Delete Data View',
-        loading: false,
-        onConfirm: async () => {
-             try {
-                await dataViewStore.deleteDataView(view.id) // useDataViewStore manages Data Views
-                toast.success('Data View deleted')
-            } catch (e: any) {
-                toast.error('Delete failed', { description: e.message })
-            }
-        }
-    }
-}
-
-const handleSelectDataView = (view: any) => {
-    emit('edit-data-view', view)
-}
-
-
 </script>
 
 <template>
   <aside 
-    class="flex flex-col h-full bg-background border-r border-border w-full"
+    class="flex h-full w-full flex-col border-r border-border/70 bg-background/80"
   >
-   <!-- QUICK HEADER & ACTIONS -->
-    <div class="flex items-center gap-2 p-3 border-b border-border">
-      <!-- Space Selector (Flex Grow) -->
-      <div class="flex-1 min-w-0">
-         <SpaceSelector />
-      </div>
+    <div class="border-b border-border/70 bg-background/85 px-3 pb-2 pt-2 backdrop-blur-xl">
+      <div class="rounded-[20px] border border-border/70 bg-card/75 p-2">
+        <div class="mb-2 flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1 max-w-[260px]">
+            <SpaceSelector />
+          </div>
 
-      <!-- Action Menu (3 Dots) -->
-      <div class="flex items-center gap-1 shrink-0">
-           <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <button 
-                class="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all active:scale-95 outline-none focus:ring-2 focus:ring-ring/20"
-                title="Options"
-              >
-                <MoreHorizontal class="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-48">
-              <DropdownMenuItem @select="handleGlobalRefresh">
-                <RefreshCw class="w-3.5 h-3.5 mr-2" :class="{ 'animate-spin': isRefreshing }" />
-                Refresh Data
-              </DropdownMenuItem>
-              <DropdownMenuItem @select="emit('toggle-pin')">
-                <component :is="isPinned ? Unlock : Lock" class="w-3.5 h-3.5 mr-2" />
-                {{ isPinned ? 'Unlock Sidebar' : 'Lock Sidebar' }}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem @select="isDeleteMode = !isDeleteMode" :class="isDeleteMode ? 'bg-rose-500/10 text-rose-500' : ''">
-                 <Trash class="w-3.5 h-3.5 mr-2" />
-                 {{ isDeleteMode ? 'Exit Delete Mode' : 'Delete Items' }}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-      </div>
-    </div>
-    
-    <!-- DELETE MODE BAR -->
-    <div v-if="isDeleteMode" class="px-3 py-2 bg-rose-500/10 border-b border-rose-500/20 flex items-center justify-between animate-in slide-in-from-top-2">
-        <span class="text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-            <Trash class="w-3.5 h-3.5" />
-            Delete items
-        </span>
-        <div class="flex items-center gap-2">
-             <button 
-                @click="isDeleteMode = false; selectedItems = []"
-                class="text-[10px] font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded transition-colors"
-             >
-                Cancel
-             </button>
-             <button 
-                @click="handleBulkDelete"
-                :disabled="selectedItems.length === 0"
-                class="text-[10px] font-bold bg-rose-500 hover:bg-rose-600 text-white px-2.5 py-1 rounded shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-             >
-                Delete {{ selectedItems.length ? `(${selectedItems.length})` : '' }}
-             </button>
+          <div class="flex shrink-0 flex-col items-center gap-1">
+            <button
+              class="flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 bg-background/75 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Refresh explorer"
+              @click="handleGlobalRefresh"
+            >
+              <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': isRefreshing }" />
+            </button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <button 
+                  class="flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 bg-background/75 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Explorer options"
+                >
+                  <MoreHorizontal class="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-52 rounded-2xl border border-border/70 bg-popover/95 p-1.5  backdrop-blur-xl">
+                <DropdownMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="handleGlobalRefresh">
+                  <RefreshCw class="mr-2 h-3.5 w-3.5" :class="{ 'animate-spin': isRefreshing }" />
+                  Refresh Data
+                </DropdownMenuItem>
+                <DropdownMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('toggle-pin')">
+                  <component :is="isPinned ? Unlock : Lock" class="mr-2 h-3.5 w-3.5" />
+                  {{ isPinned ? 'Unlock Sidebar' : 'Lock Sidebar' }}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator class="mx-1 my-1 bg-border/60" />
+                <DropdownMenuItem
+                  class="rounded-xl px-3 py-2 text-xs font-medium"
+                  :class="isDeleteMode ? 'bg-rose-500/10 text-rose-500 focus:bg-rose-500/10 focus:text-rose-500' : ''"
+                  @select="isDeleteMode = !isDeleteMode"
+                >
+                  <Trash class="mr-2 h-3.5 w-3.5" />
+                  {{ isDeleteMode ? 'Exit Delete Mode' : 'Delete Items' }}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-    </div>
 
-    <!-- Quick Search Bar (Hidden in delete mode to reduce clutter?) -->
-    <!-- Keeping it visible as searching might help find items to delete -->
-    <div v-if="!isDeleteMode" class="px-3 pb-2 pt-2">
-      <div class="relative">
-        <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-        <input
-          v-model="searchFilter"
-          type="text"
-          placeholder="Search connections, tables, notes..."
-          class="w-full h-8 pl-8 pr-3 text-xs rounded-lg bg-muted/50 border border-border/50 focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none placeholder:text-muted-foreground/60 transition-all"
-        />
+        <div v-if="isDeleteMode" class="mb-2 rounded-2xl border border-rose-500/20 bg-rose-500/8 px-3 py-2">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="flex items-center gap-1.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                <Trash class="h-3.5 w-3.5" />
+                Delete mode enabled
+              </p>
+              <p class="mt-0.5 text-[10px] text-rose-500/80">
+                Select resources in the tree, then remove them in one step.
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <button 
+                class="rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+                @click="isDeleteMode = false; selectedItems = []"
+              >
+                Cancel
+              </button>
+              <button 
+                class="rounded-lg bg-rose-500 px-3 py-1.5 text-[10px] font-semibold text-white transition-colors hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="selectedItems.length === 0"
+                @click="handleBulkDelete"
+              >
+                Delete {{ selectedItems.length ? `(${selectedItems.length})` : '' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="relative">
+          <Search class="absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/70" />
+          <input
+            v-model="searchFilter"
+            type="text"
+            placeholder="Search databases, chats, files, notes..."
+            class="h-8.5 w-full rounded-xl border border-border/70 bg-background/80 pl-8 pr-8 text-[11px] text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary/30 focus:bg-background focus:ring-2 focus:ring-primary/10"
+          />
+          <button
+            v-if="searchFilter"
+            class="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Clear search"
+            @click="searchFilter = ''"
+          >
+            <X class="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Content Area -->
-    <div class="flex-1 overflow-hidden relative flex flex-col">
-       <div class="flex-1 overflow-hidden p-2">
+    <div class="relative flex flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,#ffffff,transparent_35%),linear-gradient(180deg,transparent,rgba(15,23,42,0.03))] px-3 pb-3 pt-1.5 dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.05),transparent_30%),linear-gradient(180deg,transparent,rgba(15,23,42,0.18))]">
+       <div class="flex-1 overflow-hidden rounded-[24px] border border-border/70 bg-card/60 p-2 backdrop-blur-xl">
            <ExplorerTree 
               :connections="filteredConnections"
               :files="(currentFiles as any)"
               :notes="(currentNotes as any)"
               :spaces="(spaceStore.allSpaces as any)"
-              :data-views="(currentDataViews as any)"
               :chats="chats"
               :query-history="queryHistory"
               :query-sessions="querySessions"
@@ -842,20 +825,17 @@ const handleSelectDataView = (view: any) => {
               
               @select-file="handleSelectFile"
               @select-note="handleSelectNote"
-              @select-data-view="(view: any) => emit('edit-data-view', view)"
               
               @add-connection="addConnectionModalOpen = true"
               @upload-file="handleUploadFile"
               @add-file="handleUploadFile"
               @add-note="handleAddNote"
-              @add-data-view="handleAddDataView"
               
               @update:context="(c) => currentContext = c"
               @move-connection="handleMoveConnection"
               
               @delete-file="handleDeleteFile"
               @delete-note="handleDeleteNote"
-              @delete-data-view="handleDeleteDataView"
               
               @selection-change="(items) => selectedItems = items"
               @delete-files="handleBulkDelete"
@@ -869,7 +849,7 @@ const handleSelectDataView = (view: any) => {
               @delete-chat="startDeleteChat"
               
               @load-query="(q) => emit('load-query', q)"
-              @delete-query="handleDeleteQuery"
+	              @delete-query="handleDeleteQuery"
             />
        </div>
     </div>

@@ -188,6 +188,20 @@ function chooseMetricColumn(table, prompt, aggregation) {
         }
     }
 
+    if (/\b(allocation|allocated|allocation by|exposure|concentration|share of portfolio|portfolio share)\b/.test(lower)) {
+        for (const preferred of ['market_value', 'current_value', 'value', 'invested_amount']) {
+            const match = normalizedNumericColumns.find((column) => column.normalized === normalizeIdentifier(preferred));
+            if (match) return match.column;
+        }
+    }
+
+    if (/\b(top|highest|largest|biggest)\b.*\b(holding|holdings|position|positions|fund|funds)\b/.test(lower)) {
+        for (const preferred of ['market_value', 'current_value', 'value', 'net_gain_loss']) {
+            const match = normalizedNumericColumns.find((column) => column.normalized === normalizeIdentifier(preferred));
+            if (match) return match.column;
+        }
+    }
+
     if (aggregation === 'count') return '*';
     return table.numericColumns[0] || '*';
 }
@@ -219,6 +233,10 @@ function chooseDimension(table, prompt) {
         if (mapping.pattern.test(lower) && table.columns.find((column) => column.name === mapping.column)) {
             return mapping.column;
         }
+    }
+
+    if (/\b(top|highest|largest|biggest|worst|lowest)\b.*\b(holding|holdings|position|positions)\b/.test(lower) && table.columns.find((column) => column.name === 'fund_name')) {
+        return 'fund_name';
     }
 
     if (/(which fund|top fund|highest fund|lowest fund|best fund|worst fund)/.test(lower) && table.columns.find((column) => column.name === 'fund_name')) {

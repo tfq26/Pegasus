@@ -46,20 +46,19 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
 </script>
 
 <template>
-  <div class="flex items-center gap-2 w-full">
-    <!-- Run / Save Controls -->
-    <div class="flex items-center gap-1">
+  <div class="flex w-full items-center gap-3">
+    <div class="flex items-center gap-1 rounded-xl border border-border/70 bg-background/80 p-1">
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <button
               @click="emit('run')"
               :disabled="isExecuting"
-              class="flex items-center gap-1.5 px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-wait"
+              class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-50"
             >
               <Play v-if="!isExecuting" class="w-3.5 h-3.5 fill-current" />
               <span v-else class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-              <span class="hidden md:inline">{{ isExecuting ? 'Running...' : 'Run' }}</span>
+              <span>{{ isExecuting ? 'Running' : 'Run' }}</span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">Execute query (Ctrl+Enter)</TooltipContent>
@@ -71,7 +70,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
             <button
               @click="emit('save')"
-              class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
+              class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Save class="w-4 h-4" />
             </button>
@@ -85,7 +84,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
             <button
               @click="emit('stop')" 
-              class="p-1.5 rounded text-destructive hover:bg-muted hover:text-destructive/80 transition-colors"
+              class="rounded-lg p-2 text-destructive transition-colors hover:bg-muted hover:text-destructive/80"
             >
               <Square class="w-3.5 h-3.5 fill-current" />
             </button>
@@ -95,14 +94,13 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
       </TooltipProvider>
     </div>
 
-    <!-- SQL Tools -->
-    <div class="flex items-center gap-1 border-l border-border pl-1 ml-1 h-4">
+    <div class="flex items-center gap-1 rounded-xl border border-border/70 bg-background/75 p-1">
        <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <button
                @click="emit('format-sql')"
-               class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
+               class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
              >
                <AlignLeft class="w-4 h-4" />
              </button>
@@ -116,7 +114,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
              <button
                @click="emit('translate')"
-               class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
+               class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
              >
                <Languages class="w-4 h-4" />
              </button>
@@ -130,7 +128,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <TooltipTrigger as-child>
              <button
                @click="emit('explain-query')"
-               class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors"
+               class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
              >
                <Info class="w-4 h-4" />
              </button>
@@ -145,7 +143,7 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
           <Tooltip>
             <TooltipTrigger as-child>
               <DropdownMenuTrigger as-child>
-                <button class="p-1.5 rounded text-muted-foreground hover:bg-muted transition-colors">
+                <button class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                    <History class="w-4 h-4" />
                  </button>
               </DropdownMenuTrigger>
@@ -171,33 +169,36 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
 
     <div class="flex-1"></div>
 
-    <!-- Query Options -->
-    <div class="flex items-center gap-2 text-xs text-muted-foreground">
+    <div class="flex items-center gap-2 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
         <div class="flex items-center gap-1.5" title="Timeout (seconds)">
-            <span class="text-[10px] text-muted-foreground">Timeout:</span>
+            <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">Timeout</span>
             <input
                 :value="queryOptions.timeout"
                 @input="updateOption('timeout', Number(($event.target as HTMLInputElement).value))"
                 type="number"
                 min="1"
                 max="300"
-                class="w-10 px-1 py-0.5 rounded border-none bg-transparent hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-primary text-center transition-colors appearance-none"
+                class="w-12 rounded-lg border border-transparent bg-transparent px-2 py-1 text-center text-foreground transition-colors appearance-none hover:bg-muted/50 focus:border-border focus:bg-background focus:ring-1 focus:ring-primary/20"
             />
         </div>
 
+        <div class="h-5 w-px bg-border/70"></div>
+
         <div class="flex items-center gap-1.5" title="Row Limit">
-            <span class="text-[10px] text-muted-foreground">Limit:</span>
+            <span class="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/80">Limit</span>
             <input
                 :value="queryOptions.limit"
                 @input="updateOption('limit', Number(($event.target as HTMLInputElement).value))"
                 type="number"
                 min="1"
                 max="100000"
-                class="w-14 px-1 py-0.5 rounded border-none bg-transparent hover:bg-muted/50 focus:bg-background focus:ring-1 focus:ring-primary text-center transition-colors appearance-none"
+                class="w-16 rounded-lg border border-transparent bg-transparent px-2 py-1 text-center text-foreground transition-colors appearance-none hover:bg-muted/50 focus:border-border focus:bg-background focus:ring-1 focus:ring-primary/20"
             />
         </div>
 
-        <div class="flex items-center gap-1.5 ml-1">
+        <div class="h-5 w-px bg-border/70"></div>
+
+        <div class="flex items-center gap-1.5">
             <label class="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
                 <input
                 :checked="queryOptions.autoCommit"
@@ -205,19 +206,18 @@ const updateOption = (key: keyof typeof props.queryOptions, value: any) => {
                 type="checkbox"
                 class="rounded border-muted-foreground/40 bg-transparent text-primary focus:ring-primary w-3.5 h-3.5"
                 />
-                <span class="text-[10px]">Auto-commit</span>
+                <span class="text-[10px] font-medium uppercase tracking-[0.12em]">Auto-commit</span>
             </label>
         </div>
     </div>
 
-    <!-- Clear Button -->
-     <div class="border-l border-border pl-1 ml-1 h-4">
+     <div class="rounded-xl border border-border/70 bg-background/70 p-1">
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger as-child>
             <button
               @click="emit('clear')"
-              class="p-1.5 rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <Eraser class="w-4 h-4" />
             </button>

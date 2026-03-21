@@ -46,11 +46,15 @@ export class StructuredContextBuilder {
                     provider: sourceCandidate.resource.provider || sourceCandidate.provider
                 }
                 : sourceCandidate.resource;
+        const resolvedResources = resource ? [resource] : [];
+        const connectionRef = sourceCandidate.type === 'database' || resource?.type === 'database'
+            ? (resource?.id || sourceCandidate.id)
+            : null;
 
-        const contextData = await DataContextService.buildContext(userId, resource, {
+        const contextData = await DataContextService.buildContext(userId, connectionRef, {
             activeTable,
             adHocSchema,
-            resolvedResources: [],
+            resolvedResources,
             userMessage: prompt,
             modelId,
             includeSiblingUploads: false,

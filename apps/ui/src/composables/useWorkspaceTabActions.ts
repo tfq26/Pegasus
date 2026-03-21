@@ -45,14 +45,6 @@ export function useWorkspaceTabActions(
         if (existingTab) {
             workspaceStore.setActiveTab(existingTab.id)
             emit('update:mode', 'spreadsheet')
-
-            const engine = getEngineForTab(existingTab.id)
-            if (engine && engine.sourceTable) {
-                const tableKey = `${existingTab.data?.connection?.id || 'unknown'}:${existingTab.data?.tableName}`
-                if (!loadingTables.value.has(tableKey)) {
-                    refreshTableData(engine).catch(e => console.error('[Workspace] Refresh failed:', e))
-                }
-            }
             return true
         }
 

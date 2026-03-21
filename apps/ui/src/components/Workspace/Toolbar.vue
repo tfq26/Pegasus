@@ -1,10 +1,5 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { cn } from '@/lib/utils'
-import { 
-  ChevronDown, 
-  ChevronUp, 
-} from 'lucide-vue-next'
 import ToolbarChat from './Toolbars/ToolbarChat.vue'
 import ToolbarQuery from './Toolbars/ToolbarQuery.vue'
 import ToolbarDataView from './Toolbars/ToolbarDataView.vue'
@@ -47,7 +42,6 @@ const props = defineProps<{
   stagedCount?: number
   aiCommand?: string
   isAIProcessing?: boolean
-  isCompact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -93,12 +87,11 @@ const emit = defineEmits<{
   'save-data-view': []
   'update:aiCommand': [value: string]
   'submit-ai-command': []
-  'save-view': []
   'toggle-staging': []
   'delete': []
-  'update:isCompact': [value: boolean]
   'add-row': []
   'add-column': []
+  'profile-table': []
 }>()
 
 const expanded = ref(false)
@@ -117,11 +110,9 @@ const models = computed(() => {
 </script>
 
 <template>
-  <div class="border-b border-border bg-background">
-    <!-- Compact Toolbar -->
-    <div class="flex items-center justify-between px-2 py-1 gap-2">
-      <!-- Left: Mode Controls -->
-      <div class="flex items-center gap-3 w-full">
+  <div class="border-b border-border/60 bg-background/74 px-3 py-1.5 backdrop-blur-xl">
+    <div class="flex items-center justify-between gap-3 rounded-[20px] border border-border/60 bg-card/55 px-2.5 py-1.5 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.5)]">
+      <div class="flex w-full items-center gap-2.5">
         
         <!-- Chat Mode -->
         <ToolbarChat
@@ -166,48 +157,30 @@ const models = computed(() => {
           :staged-count="stagedCount || 0"
           :ai-command="aiCommand || ''"
           :is-a-i-processing="isAIProcessing || false"
-          :is-compact="isCompact"
           :versions="versions"
           :current-version="currentVersion"
           @update:ai-options="emit('update:aiOptions', $event)"
           @update:ai-command="emit('update:aiCommand', $event)"
-          @update:is-compact="emit('update:isCompact', $event)"
           @submit-ai-command="emit('submit-ai-command')"
-          @save-view="emit('save-view')"
           @toggle-staging="emit('toggle-staging')"
           @delete="emit('delete')"
           @export="emit('export', 'xlsx')"
           @add-row="emit('add-row')"
           @add-column="emit('add-column')"
+          @profile-table="emit('profile-table')"
           @version-change="emit('version-change', $event)"
         />
 
         <!-- Note/File Mode - formatting handled by embedded toolbar in RichTextEditor -->
-
       </div>
-
-      <!-- Right: Expand Button -->
-      <!-- <div class="flex items-center gap-2 shrink-0 border-l border-border pl-2 ml-2">
-        <button
-          @click="expanded = !expanded"
-          class="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
-          title="Toggle advanced options"
-        >
-          <ChevronDown v-if="!expanded" class="w-4 h-4" />
-          <ChevronUp v-else class="w-4 h-4" />
-        </button>
-      </div> -->
     </div>
-
-    <!-- Expanded Options (Placeholder for now) -->
     <div
       v-if="expanded"
-      class="border-t border-border px-4 py-3 bg-muted/50 flex flex-col gap-3"
+      class="mt-2 flex flex-col gap-3 rounded-[20px] border border-border/60 bg-muted/30 px-4 py-3"
     >
       <div class="text-xs text-muted-foreground italic">
         Additional options coming soon...
       </div>
     </div>
-
   </div>
 </template>

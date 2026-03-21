@@ -3,6 +3,8 @@ import { getAIModels } from '@/lib/api'
 import { localAI } from '@/services/LocalAIService'
 import { toast } from '@/composables/useNotifications'
 import type { Engine } from '@/components/TableView/Engine/Engine'
+import { useEntitlements } from '@/composables/useEntitlements'
+import { filterModelsForTier, getDefaultModelForTier } from '@/lib/modelAccess'
 
 export function useWorkspaceAI(
     tabs: Ref<any>,
@@ -13,18 +15,21 @@ export function useWorkspaceAI(
     getEngineForTab: (tabId: string) => Engine
 ) {
     const allModels = ref<any[]>([])
-    const aiOptions = ref({ model: 'gemini-2.5-flash', temperature: 0.7 })
+    const aiOptions = ref({ model: 'gemini-3.1-flash', temperature: 0.7 })
+    const { subscriptionTier, fetchEntitlements } = useEntitlements()
 
     // ----- Model Loading ------------------------------------------------
 
     onMounted(async () => {
         try {
+            await fetchEntitlements()
             const [cloud, localStatus] = await Promise.all([
                 getAIModels().catch(() => []),
                 localAI.getStatus().catch(() => ({ is_running: false, models: [] })),
             ])
 
             let models = Array.isArray(cloud) ? cloud : (cloud as any).models || []
+            const cloudModels = filterModelsForTier(models, subscriptionTier.value)
 
             if (localStatus.is_running) {
                 const local = (localStatus.models || []).map((m: string) => ({
@@ -32,7 +37,9 @@ export function useWorkspaceAI(
                     name: m,
                     provider: 'local',
                 }))
-                models = [...local, ...models]
+                models = [...local, ...cloudModels]
+            } else {
+                models = cloudModels
             }
 
             allModels.value = models
@@ -57,7 +64,7 @@ export function useWorkspaceAI(
         if (models.length > 0) {
             const isCurrentValid = models.some(m => m.id === aiOptions.value.model)
             if (!isCurrentValid || !aiOptions.value.model) {
-                aiOptions.value.model = models[0].id
+                aiOptions.value.model = getDefaultModelForTier(models, subscriptionTier.value) || models[0].id
             }
         }
     }, { immediate: true })

@@ -6,7 +6,7 @@ import {
   ContextMenuItem, 
   ContextMenuTrigger 
 } from '@/components/ui/context-menu';
-import { Plus, Trash } from 'lucide-vue-next';
+import { Plus, Trash, LayoutGrid } from 'lucide-vue-next';
 
 const props = defineProps<{
   filteredDataViews?: any[];
@@ -39,13 +39,21 @@ function handleSelect(id: string, event?: MouseEvent) {
           <div class="flex items-center justify-between w-full">
             <div class="flex items-center gap-2">
               <span class="text-foreground">Data Views</span>
-              <span v-if="filteredDataViews?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">{{ filteredDataViews.length }}</span>
+              <span v-if="filteredDataViews?.length" class="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{{ filteredDataViews.length }}</span>
             </div>
+            <button 
+              @click.stop.prevent="emit('add-data-view')"
+              class="mr-1 flex h-6 w-6 items-center justify-center rounded-lg border border-transparent text-muted-foreground opacity-0 transition-all hover:border-border/60 hover:bg-background hover:text-foreground group-hover:opacity-100"
+              title="New Data View"
+            >
+              <Plus class="w-4 h-4" />
+            </button>
           </div>
         </template>
         
-        <div v-if="!filteredDataViews?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
-          <p class="text-xs text-muted-foreground whitespace-nowrap">No saved views</p>
+        <div v-if="!filteredDataViews?.length" class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/45 px-4 py-6 text-center">
+          <LayoutGrid class="mb-2 h-8 w-8 text-muted-foreground/30" />
+          <p class="whitespace-nowrap text-xs font-medium text-muted-foreground">No saved views</p>
         </div>
 
         <!-- Data Views Loop -->
@@ -63,8 +71,8 @@ function handleSelect(id: string, event?: MouseEvent) {
               </div>
             </File>
           </ContextMenuTrigger>
-          <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-            <ContextMenuItem @select="emit('delete-data-view', view)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+          <ContextMenuContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+            <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium text-rose-500 focus:bg-rose-500/10 focus:text-rose-500" @select="emit('delete-data-view', view)">
               <Trash class="w-3.5 h-3.5 mr-2" />
               Delete View
             </ContextMenuItem>
@@ -72,8 +80,8 @@ function handleSelect(id: string, event?: MouseEvent) {
         </ContextMenu>
       </Folder>
     </ContextMenuTrigger>
-    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-      <ContextMenuItem @select="emit('add-data-view')">
+    <ContextMenuContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+      <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('add-data-view')">
         <Plus class="w-3.5 h-3.5 mr-2" />
         New Data View
       </ContextMenuItem>
