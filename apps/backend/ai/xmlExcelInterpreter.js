@@ -1,6 +1,50 @@
 import AdmZip from 'adm-zip';
 import { parseXML } from '../lib/xmlParser.js';
 
+const verboseXmlLogs = process.env.PEGASUS_VERBOSE_XML_IMPORT === 'true';
+const logXmlDebug = (...args) => {
+    if (verboseXmlLogs) {
+        console.log(...args);
+    }
+};
+
+function decodeXmlText(value) {
+    return String(value || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+function normalizeColumnName(column, headerValue) {
+    const header = decodeXmlText(headerValue).trim();
+    const explicitPortfolioColumns = {
+        A: 'fund_name',
+        B: 'folio_no',
+        C: 'since',
+        D: 'invested_amount',
+        E: 'balance_units',
+        F: 'average_cost',
+        G: 'withdrawal_switch_out_amount',
+        H: 'switch_outs',
+        I: 'dividend_amount',
+        J: 'dividend_units',
+        K: 'nav',
+        L: 'market_value',
+        M: 'as_on',
+        N: 'net_gain_loss',
+        O: 'absolute_return_pct',
+        P: 'xirr_pct'
+    };
+
+    if (explicitPortfolioColumns[column]) {
+        return explicitPortfolioColumns[column];
+    }
+
+    return header.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `column_${column.toLowerCase()}`;
+}
+
 /**
  * Extract raw XML from Excel file and parse it properly
  */
@@ -13,7 +57,7 @@ export async function interpretExcelFromXML(filePath) {
         const sheetXML = zip.readAsText('xl/worksheets/sheet1.xml');
         const sharedStringsXML = zip.readAsText('xl/sharedStrings.xml');
 
-        console.log('[XMLExcelInterpreter] Extracted sheet1.xml and sharedStrings.xml');
+        logXmlDebug('[XMLExcelInterpreter] Extracted sheet1.xml and sharedStrings.xml');
 
         // Parse shared strings to get actual text values
         const parsedShared = parseXML(sharedStringsXML);
@@ -31,7 +75,7 @@ export async function interpretExcelFromXML(filePath) {
             });
         }
 
-        console.log(`[XMLExcelInterpreter] Found ${sharedStrings.length} shared strings`);
+        logXmlDebug(`[XMLExcelInterpreter] Found ${sharedStrings.length} shared strings`);
 
         // Parse the sheet XML
         const parsedSheet = parseXML(sheetXML);
@@ -66,7 +110,7 @@ export async function interpretExcelFromXML(filePath) {
             });
         }
 
-        console.log(`[XMLExcelInterpreter] Extracted ${rows.length} rows`);
+        logXmlDebug(`[XMLExcelInterpreter] Extracted ${rows.length} rows`);
 
         // Find the header row - look for row with "Fund Name" specifically
         // This is typically the detailed header row in financial reports
@@ -82,7 +126,7 @@ export async function interpretExcelFromXML(filePath) {
             // Skip rows where the same value repeats (merged cells)
             const uniqueValues = new Set(values);
             if (uniqueValues.size < values.length * 0.5) {
-                console.log(`[XMLExcelInterpreter] Skipping row ${row.rowNumber} - has repeated values (merged cells)`);
+                logXmlDebug(`[XMLExcelInterpreter] Skipping row ${row.rowNumber} - has repeated values (merged cells)`);
                 continue;
             }
 
@@ -94,8 +138,8 @@ export async function interpretExcelFromXML(filePath) {
             if (hasFundName) {
                 headerRow = row;
                 headerRowIndex = i;
-                console.log(`[XMLExcelInterpreter] Found header row with Fund Name at index ${i} (row ${row.rowNumber})`);
-                console.log(`[XMLExcelInterpreter] Header values:`, values);
+                logXmlDebug(`[XMLExcelInterpreter] Found header row with Fund Name at index ${i} (row ${row.rowNumber})`);
+                logXmlDebug(`[XMLExcelInterpreter] Header values:`, values);
                 break;
             }
 
@@ -113,7 +157,7 @@ export async function interpretExcelFromXML(filePath) {
             if (hasSpecificHeaders && !bestCandidate) {
                 bestCandidate = row;
                 bestCandidateIndex = i;
-                console.log(`[XMLExcelInterpreter] Found candidate header row at index ${i} (row ${row.rowNumber})`);
+                logXmlDebug(`[XMLExcelInterpreter] Found candidate header row at index ${i} (row ${row.rowNumber})`);
             }
         }
 
@@ -121,7 +165,7 @@ export async function interpretExcelFromXML(filePath) {
         if (!headerRow && bestCandidate) {
             headerRow = bestCandidate;
             headerRowIndex = bestCandidateIndex;
-            console.log(`[XMLExcelInterpreter] Using candidate header row at index ${headerRowIndex}`);
+            logXmlDebug(`[XMLExcelInterpreter] Using candidate header row at index ${headerRowIndex}`);
         }
 
         if (!headerRow) {
@@ -143,7 +187,7 @@ export async function interpretExcelFromXML(filePath) {
             });
         }
 
-        console.log(`[XMLExcelInterpreter] All columns with data:`, [...allColumnsWithData].sort());
+        logXmlDebug(`[XMLExcelInterpreter] All columns with data:`, [...allColumnsWithData].sort());
 
         // Add header row columns
         Object.keys(headerRow.cells).forEach(colLetter => {
@@ -151,8 +195,8 @@ export async function interpretExcelFromXML(filePath) {
             if (headerValue && headerValue.trim()) {
                 columnMappings.push({
                     column: colLetter,
-                    semanticName: headerValue.trim(),
-                    originalName: headerValue.trim()
+                    semanticName: normalizeColumnName(colLetter, headerValue),
+                    originalName: decodeXmlText(headerValue.trim())
                 });
                 allColumnsWithData.delete(colLetter); // Remove from set since we handled it
             }
@@ -171,14 +215,14 @@ export async function interpretExcelFromXML(filePath) {
 
             // Column A with text is likely "Fund Name" or "Name"
             if (colLetter === 'A') {
-                console.log(`[XMLExcelInterpreter] Column A has no header but has data: "${sampleValue}". Adding as "Name".`);
+                logXmlDebug(`[XMLExcelInterpreter] Column A has no header but has data: "${sampleValue}". Adding as "fund_name".`);
                 columnMappings.unshift({
                     column: 'A',
-                    semanticName: 'Name',
+                    semanticName: 'fund_name',
                     originalName: ''
                 });
             } else {
-                console.log(`[XMLExcelInterpreter] Column ${colLetter} has data but no header: "${sampleValue}". Adding as "Column_${colLetter}".`);
+                logXmlDebug(`[XMLExcelInterpreter] Column ${colLetter} has data but no header: "${sampleValue}". Adding as "Column_${colLetter}".`);
                 columnMappings.push({
                     column: colLetter,
                     semanticName: `Column_${colLetter}`,
@@ -193,21 +237,25 @@ export async function interpretExcelFromXML(filePath) {
             return a.column.localeCompare(b.column);
         });
 
-        console.log(`[XMLExcelInterpreter] Found ${columnMappings.length} columns:`, columnMappings.map(c => `${c.column}:${c.semanticName}`));
+        logXmlDebug(`[XMLExcelInterpreter] Found ${columnMappings.length} columns:`, columnMappings.map(c => `${c.column}:${c.semanticName}`));
 
         // Extract data rows - skip header and filter out separator/category rows
         // Category rows have data only in column A (like "Equity - Large & Mid Cap")
         // Separator rows have only numbers or are mostly empty
         const dataRows = [];
 
+        let currentMemberId = null;
+        let currentFundSubCategory = null;
+
         for (let i = headerRowIndex + 1; i < rows.length; i++) {
             const row = rows[i];
             const rowData = {};
             let nonEmptyCount = 0;
             let hasColumnAData = false;
+            const firstColValue = decodeXmlText(row.cells['A'] || '').trim();
 
             columnMappings.forEach(colMap => {
-                const value = row.cells[colMap.column] || '';
+                const value = decodeXmlText(row.cells[colMap.column] || '');
                 if (value && value.toString().trim()) {
                     nonEmptyCount++;
                     if (colMap.column === 'A') hasColumnAData = true;
@@ -219,19 +267,26 @@ export async function interpretExcelFromXML(filePath) {
             // - Completely empty
             // - Have data only in first few columns (category headers like "Equity - Large & Mid Cap")
             // - Total rows (contain "Total" or "Member Total")
-            const firstColValue = row.cells['A'] || '';
             const isCategory = nonEmptyCount <= 3 && hasColumnAData && !firstColValue.match(/^\d+$/);
             const isTotal = firstColValue.toLowerCase().includes('total');
             const isNumberOnly = firstColValue.match(/^\d+$/);
 
+            if (isNumberOnly) {
+                currentMemberId = Number(firstColValue);
+            } else if (isCategory && !isTotal) {
+                currentFundSubCategory = firstColValue;
+            }
+
             if (nonEmptyCount >= 5 && !isCategory && !isTotal && !isNumberOnly) {
+                rowData.member_id = currentMemberId;
+                rowData.fund_sub_category = currentFundSubCategory;
                 dataRows.push(rowData);
-            } else {
+            } else if (verboseXmlLogs) {
                 console.log(`[XMLExcelInterpreter] Skipping row ${row.rowNumber}: cols=${nonEmptyCount}, first="${String(firstColValue).substring(0, 20)}"`);
             }
         }
 
-        console.log(`[XMLExcelInterpreter] Extracted ${dataRows.length} data rows`);
+        logXmlDebug(`[XMLExcelInterpreter] Extracted ${dataRows.length} data rows`);
 
         if (dataRows.length === 0) {
             console.warn('[XMLExcelInterpreter] No data rows found');

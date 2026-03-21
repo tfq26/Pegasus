@@ -6,6 +6,13 @@ import { ConnectionAnalyzer } from './ConnectionAnalyzer.js';
 import { OneContext } from './OneContext.js';
 import { RAGService } from './ragService.js';
 
+const verboseContextLogs = process.env.PEGASUS_VERBOSE_CONTEXT === 'true';
+const logContextDebug = (...args) => {
+    if (verboseContextLogs) {
+        console.log(...args);
+    }
+};
+
 export class DataContextService {
     static metricsAdapter = null;
 
@@ -20,8 +27,10 @@ export class DataContextService {
      */
     static async buildContext(userId, connectionId, options = {}) {
         const { activeTable, adHocSchema, userMessage } = options;
+        const includeSemanticSpark = options.includeSemanticSpark !== false;
+        const includeRagKnowledge = options.includeRagKnowledge !== false;
 
-        console.log(`[DataContext] Building context for user ${userId}, conn: ${connectionId}`);
+        logContextDebug(`[DataContext] Building context for user ${userId}, conn: ${connectionId}`);
 
         // 1. Resolve Connection
         let connRow = null;
@@ -81,7 +90,7 @@ export class DataContextService {
         const analyzeConnection = async (targetAdapter, targetProvider, isActive, metadata = {}) => {
             try {
                 await targetAdapter.connect();
-                console.log(`[DataContext] Analyzing ${isActive ? 'active' : 'extra'} connection (${targetProvider})...`);
+                logContextDebug(`[DataContext] Analyzing ${isActive ? 'active' : 'extra'} connection (${targetProvider})...`);
                 const result = await ConnectionAnalyzer.analyze(targetAdapter, targetProvider, isActive ? activeTable : null, metadata.userMessage);
 
                 // Determine structure type
@@ -155,9 +164,9 @@ export class DataContextService {
 
                 // DEBUG: Log registry entries for verification
                 const sampleTables = result.normalizedSchema.tables.slice(0, 3);
-                console.log(`[DataContext] Registry check for ${targetProvider}:`);
+                logContextDebug(`[DataContext] Registry check for ${targetProvider}:`);
                 sampleTables.forEach(t => {
-                    console.log(` - Table: ${t} -> Origin: '${normalizedSchema.sourceRegistry[t]?.origin}', ID: ${normalizedSchema.sourceRegistry[t]?.id}`);
+                    logContextDebug(` - Table: ${t} -> Origin: '${normalizedSchema.sourceRegistry[t]?.origin}', ID: ${normalizedSchema.sourceRegistry[t]?.id}`);
                 });
 
             } catch (e) {
@@ -314,7 +323,7 @@ export class DataContextService {
                 resourceToProvider['OrionMetrics'] = 'cosmosdb';
                 resourceToProvider['orionmetrics'] = 'cosmosdb';
 
-                console.log('[DataContext] Injected System: OrionMetrics (Cosmos DB)');
+                logContextDebug('[DataContext] Injected System: OrionMetrics (Cosmos DB)');
             } catch (e) {
                 console.warn('[DataContext] Failed to inject OrionMetrics:', e.message);
             }
@@ -362,7 +371,8 @@ export class DataContextService {
         }
 
         // 6. Minimal Semantic Spark (For generic headers)
-        try {
+        if (includeSemanticSpark) {
+            try {
             const sparkPromises = [];
             for (const tableName of normalizedSchema.tables) {
                 const schema = normalizedSchema.detailedSchema[tableName];
@@ -384,16 +394,17 @@ export class DataContextService {
                 }
             }
             if (sparkPromises.length > 0) await Promise.all(sparkPromises);
-        } catch (e) { /* Ignore - non-critical */ }
+            } catch (e) { /* Ignore - non-critical */ }
+        }
 
         // 7. Semantic Context Injection (RAG)
-        if (userMessage && userMessage.length > 5 && userId) {
+        if (includeRagKnowledge && userMessage && userMessage.length > 5 && userId) {
             try {
-                console.log(`[DataContext] Injecting semantic context for: "${userMessage.substring(0, 50)}..."`);
+                logContextDebug(`[DataContext] Injecting semantic context for: "${userMessage.substring(0, 50)}..."`);
                 const foundInsights = await RAGService.hybridSearch(userMessage, userId, 3);
 
                 if (foundInsights && foundInsights.length > 0) {
-                    console.log(`[DataContext] Found ${foundInsights.length} relevant semantic insights.`);
+                    logContextDebug(`[DataContext] Found ${foundInsights.length} relevant semantic insights.`);
                     foundInsights.forEach(insight => {
                         normalizedSchema.semanticContext.knowledgeBase.push({
                             id: insight.id,

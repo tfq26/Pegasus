@@ -2,6 +2,13 @@
  * SpreadsheetToolService - Defines tools for AI-powered spreadsheet operations
  * These tools can be called by the AI to perform various spreadsheet actions
  */
+const verboseToolLogs = process.env.PEGASUS_VERBOSE_AI_TOOLS === 'true';
+const logToolDebug = (...args) => {
+    if (verboseToolLogs) {
+        console.log(...args);
+    }
+};
+
 export class SpreadsheetToolService {
     constructor() {
         this.tools = new Map();
@@ -58,7 +65,7 @@ export class SpreadsheetToolService {
                     throw new Error("No database adapter available in context");
                 }
 
-                console.log(`[SpreadsheetToolService] Executing query tool: ${query}`);
+                logToolDebug(`[SpreadsheetToolService] Executing query tool: ${query}`);
                 const result = await context.adapter.query(query);
 
                 return {
@@ -86,7 +93,7 @@ export class SpreadsheetToolService {
                     throw new Error("No database adapter available in context");
                 }
                 const safeLimit = Math.min(limit, 20);
-                console.log(`[SpreadsheetToolService] Sampling ${safeLimit} rows from ${tableName}`);
+                logToolDebug(`[SpreadsheetToolService] Sampling ${safeLimit} rows from ${tableName}`);
 
                 // Get the real table name from mappings if available
                 const realName = context.schema?.mappings?.tables?.[tableName] || tableName;
@@ -130,7 +137,7 @@ export class SpreadsheetToolService {
                 // Lazy fetch if not in initial context
                 if (context?.adapter) {
                     if (!columns) {
-                        console.log(`[SpreadsheetToolService] Lazy fetching schema for ${tableName}`);
+                        logToolDebug(`[SpreadsheetToolService] Lazy fetching schema for ${tableName}`);
                         if (typeof context.adapter.getOneTableSchema === 'function') {
                             columns = await context.adapter.getOneTableSchema(tableName);
                         }
@@ -570,6 +577,54 @@ export class SpreadsheetToolService {
                 const { IntentCompiler } = await import('./IntentCompiler.js');
                 const compiler = new IntentCompiler();
 
+                const isCosmosGroupedAggregate = (candidateIntent) => {
+                    return (context.dialect || '').toLowerCase() === 'cosmosdb'
+                        && Array.isArray(candidateIntent?.groupBy)
+                        && candidateIntent.groupBy.length > 0
+                        && Array.isArray(candidateIntent?.aggregations)
+                        && candidateIntent.aggregations.length > 0;
+                };
+
+                const stripOrderAndLimit = (sql) => {
+                    return String(sql || '')
+                        .replace(/\s+ORDER\s+BY\s+[\s\S]*?(?=\s+LIMIT\s+\d+\s*$|$)/i, '')
+                        .replace(/\s+LIMIT\s+\d+\s*$/i, '')
+                        .trim();
+                };
+
+                const applyClientSideRanking = (rows, candidateIntent) => {
+                    const normalizedRows = Array.isArray(rows) ? [...rows] : [];
+                    const orderBy = Array.isArray(candidateIntent?.orderBy) ? candidateIntent.orderBy : [];
+                    const limit = Number(candidateIntent?.limit);
+
+                    if (orderBy.length > 0) {
+                        normalizedRows.sort((left, right) => {
+                            for (const rule of orderBy) {
+                                const field = rule?.field;
+                                if (!field) continue;
+
+                                const leftValue = left?.[field];
+                                const rightValue = right?.[field];
+                                if (leftValue === rightValue) continue;
+
+                                const descending = String(rule?.direction || 'asc').toLowerCase() === 'desc';
+                                if (leftValue == null) return descending ? 1 : -1;
+                                if (rightValue == null) return descending ? -1 : 1;
+
+                                if (leftValue > rightValue) return descending ? -1 : 1;
+                                if (leftValue < rightValue) return descending ? 1 : -1;
+                            }
+                            return 0;
+                        });
+                    }
+
+                    if (Number.isFinite(limit) && limit > 0) {
+                        return normalizedRows.slice(0, limit);
+                    }
+
+                    return normalizedRows;
+                };
+
                 try {
                     // Pass the full context (including schema/mappings) to compile
                     const sqlOrSqls = compiler.compile(intent, context);
@@ -593,7 +648,7 @@ export class SpreadsheetToolService {
                             );
 
                             if (healResult && healResult.healedSql) {
-                                console.log(`[SpreadsheetToolService] Retrying with healed SQL: ${healResult.healedSql}`);
+                                logToolDebug(`[SpreadsheetToolService] Retrying with healed SQL: ${healResult.healedSql}`);
                                 return await context.adapter.query(healResult.healedSql);
                             }
 
@@ -616,11 +671,17 @@ export class SpreadsheetToolService {
                         };
                     } else {
                         // Handle Single Intent
-                        const result = await executeWithHealing(sqlOrSqls, intent);
+                        const executionSql = isCosmosGroupedAggregate(intent)
+                            ? stripOrderAndLimit(sqlOrSqls)
+                            : sqlOrSqls;
+                        const rawResult = await executeWithHealing(executionSql, intent);
+                        const result = isCosmosGroupedAggregate(intent)
+                            ? applyClientSideRanking(rawResult, intent)
+                            : rawResult;
 
                         return {
                             type: "data_response",
-                            query: sqlOrSqls,
+                            query: executionSql,
                             data: result
                         };
                     }
@@ -1263,7 +1324,7 @@ export class SpreadsheetToolService {
     async callTool(name, args, context) {
         const tool = this.tools.get(name);
         if (!tool) throw new Error(`Tool ${name} not found`);
-        console.log(`[SpreadsheetToolService] Calling tool: ${name} with args:`, args);
+        logToolDebug(`[SpreadsheetToolService] Calling tool: ${name} with args:`, args);
         return await tool.handler(args, context);
     }
 }

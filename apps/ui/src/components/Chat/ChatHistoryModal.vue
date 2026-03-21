@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [value: boolean]
   'continue': [chatId: string]
+  'delete': [chatId: string]
 }>()
 
 const isOpen = computed({
@@ -82,12 +83,13 @@ const formatTime = (ts: number) => {
         </div>
       </div>
 
-      <DialogFooter class="shrink-0 gap-2 sm:gap-0">
+      <DialogFooter class="shrink-0 gap-6 sm:gap-4">
         <button
-          @click="isOpen = false"
-          class="px-4 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+          v-if="chat"
+          @click="emit('delete', chat.id)"
+          class="px-4 py-2 rounded-md text-sm font-medium text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 transition-colors"
         >
-          Close
+          Delete Chat
         </button>
         <button
           v-if="chat"

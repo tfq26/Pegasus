@@ -6,7 +6,6 @@ import type { ConnectionEntry } from '@/lib/db-connections';
 // Sub-components
 import ExplorerTreeFavorites from './ExplorerTreeFavorites.vue';
 import ExplorerTreeConnections from './ExplorerTreeConnections.vue';
-import ExplorerTreeDataViews from './ExplorerTreeDataViews.vue';
 import ExplorerTreeNotes from './ExplorerTreeNotes.vue';
 import ExplorerTreeQueries from './ExplorerTreeQueries.vue';
 
@@ -25,7 +24,6 @@ const props = defineProps<{
   chats?: any[]
   queryHistory?: any[]
   querySessions?: any[]
-  dataViews?: any[]
   selectedTable?: { connectionId: string; tableName: string } | null
   searchFilter?: string
   isDeleteMode?: boolean
@@ -42,7 +40,6 @@ const emit = defineEmits<{
   'update:context': [context: string]
   'add-connection': []
   'add-note': []
-  'add-data-view': []
   'upload-file': []
   'preview-table': [conn: ConnectionEntry, table: string]
   'rename-table': [conn: ConnectionEntry, table: string]
@@ -57,7 +54,6 @@ const emit = defineEmits<{
   'delete-files': [files: any[]]
   'delete-note': [note: any]
   'delete-notes': [notes: any[]]
-  'delete-data-view': [view: any]
   'delete-chat': [chat: any]
   'delete-chats': [chats: any[]]
   'create-chat': []
@@ -99,12 +95,6 @@ const favoriteItems = computed(() => {
       if (chat) return { type: 'chat', id, name: chat.title || 'Untitled', icon: 'lucide:message-circle' };
     }
 
-    if (id.startsWith('view:') || id.startsWith('sheet:')) {
-      const viewId = id.replace(/^(view|sheet):/, '');
-      const view = props.dataViews?.find((v: any) => v.id === viewId);
-      if (view) return { type: 'dataview', id, name: view.name || 'Untitled View', icon: 'lucide:database' };
-    }
-    
     return null;
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 });
@@ -115,14 +105,13 @@ const {
   handleKeyDown
 } = useExplorerTreeSelection({ ...props, favoriteItems: favoriteItems.value } as any, emit);
 
-const {
-  filteredConnections,
-  filteredChats,
-  filteredQueries,
-  filteredFiles,
-  filteredNotes,
-  filteredDataViews
-} = useExplorerFiltering(props);
+  const {
+    filteredConnections,
+    filteredChats,
+    filteredQueries,
+    filteredFiles,
+    filteredNotes
+  } = useExplorerFiltering(props);
 
 // --- Local Helpers ---
 const getFilteredTables = (connId: string) => {
@@ -192,14 +181,6 @@ const initialExpanded = computed(() => []);
         @delete-connection="c => emit('delete-connection', c)"
         @toggle-favorite="toggleFavorite"
         @refresh-table-details="(conn, table) => emit('refresh-table-details', conn, table)"
-      />
-
-      <ExplorerTreeDataViews 
-        :filtered-data-views="filteredDataViews"
-        :selected-ids="selectedIds"
-        @select="handleSelect"
-        @add-data-view="emit('add-data-view')"
-        @delete-data-view="v => emit('delete-data-view', v)"
       />
 
       <ExplorerTreeQueries 

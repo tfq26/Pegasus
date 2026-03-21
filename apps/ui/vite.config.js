@@ -14,7 +14,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@tauri-apps': fileURLToPath(new URL('../../node_modules/@tauri-apps', import.meta.url)),
     },
   },
   build: {
@@ -55,4 +56,3 @@ export default defineConfig({
     include: ['vue', 'vue-router', 'pinia', 'chart.js'],
   },
 })
-

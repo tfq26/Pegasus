@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription 
-} from '@/components/ui/dialog'
-import { 
-  ShieldCheck, 
-  ShieldQuestion, 
-  ListRestart, 
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer'
+import {
+  ShieldCheck,
+  ShieldQuestion,
+  ListRestart,
   Copy,
   BarChart3,
   Dna,
-  CheckCircle2
+  CheckCircle2,
+  X,
 } from 'lucide-vue-next'
 import { toast } from '@/composables/useNotifications'
 
@@ -43,17 +44,21 @@ interface ProfileResult {
 }
 
 const props = defineProps<{
+  open: boolean
   profile: ProfileResult | null
   loading: boolean
 }>()
 
-const emit = defineEmits(['update:modelValue', 'apply-fix'])
+const emit = defineEmits<{
+  'update:open': [value: boolean]
+  'apply-fix': [sql: string]
+}>()
 
 const scoreColor = computed(() => {
   const score = props.profile?.healthScore || 0
-  if (score >= 80) return 'text-green-500'
-  if (score >= 50) return 'text-yellow-500'
-  return 'text-red-500'
+  if (score >= 80) return 'text-emerald-500'
+  if (score >= 50) return 'text-amber-500'
+  return 'text-rose-500'
 })
 
 const copyToClipboard = (text: string) => {
@@ -63,134 +68,165 @@ const copyToClipboard = (text: string) => {
 </script>
 
 <template>
-  <Dialog :model-value="!!profile || loading" @update:model-value="$emit('update:modelValue', $event)">
-    <DialogContent class="max-w-3xl max-h-[85vh] overflow-y-auto bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl">
-      <DialogHeader>
-        <div class="flex items-center gap-3 mb-2">
-          <div class="p-2 rounded-xl bg-violet-500/10 text-violet-500">
-            <Dna class="w-6 h-6" />
+  <Drawer
+    :open="open"
+    direction="bottom"
+    dismissible
+    modal
+    @update:open="emit('update:open', $event)"
+  >
+    <DrawerContent class="mx-auto w-full max-w-5xl border-border/50 bg-background/96 shadow-[0_-30px_80px_rgba(15,23,42,0.24)] backdrop-blur-2xl">
+      <DrawerHeader class="border-b border-border/50 px-6 pb-5 pt-3">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-start gap-3">
+            <div class="rounded-2xl border border-violet-500/15 bg-violet-500/10 p-2.5 text-violet-500">
+              <Dna class="h-5 w-5" />
+            </div>
+            <div>
+              <DrawerTitle class="text-xl font-semibold tracking-tight text-foreground">
+                {{ props.loading ? 'Profiling Table' : `Data Profile${props.profile?.tableName ? `: ${props.profile.tableName}` : ''}` }}
+              </DrawerTitle>
+              <DrawerDescription class="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground/80">
+                AI-powered health analysis, column statistics, and cleanup recommendations
+              </DrawerDescription>
+            </div>
           </div>
-          <div>
-            <DialogTitle class="text-2xl font-bold tracking-tight text-foreground/90">
-              Smart Data Profile: {{ profile?.tableName }}
-            </DialogTitle>
-            <DialogDescription class="text-muted-foreground/70 font-mono text-xs uppercase tracking-widest mt-1">
-              AI-Powered Health Analysis & Quality Insights
-            </DialogDescription>
-          </div>
-        </div>
-      </DialogHeader>
 
-      <div v-if="loading" class="py-20 flex flex-col items-center justify-center space-y-4">
-        <div class="relative w-20 h-20">
-          <div class="absolute inset-0 border-4 border-violet-500/20 rounded-full"></div>
-          <div class="absolute inset-0 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
-          <Dna class="absolute inset-0 m-auto w-8 h-8 text-violet-500 animate-pulse" />
+          <button
+            @click="emit('update:open', false)"
+            class="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Close profile drawer"
+          >
+            <X class="h-4 w-4" />
+          </button>
         </div>
-        <p class="text-sm font-mono text-muted-foreground animate-pulse">Scanning table patterns...</p>
+      </DrawerHeader>
+
+      <div class="max-h-[78vh] overflow-y-auto px-6 pb-6">
+        <div v-if="props.loading" class="flex min-h-[320px] flex-col items-center justify-center space-y-5">
+          <div class="relative h-20 w-20">
+            <div class="absolute inset-0 rounded-full border-4 border-violet-500/15"></div>
+            <div class="absolute inset-0 animate-spin rounded-full border-4 border-violet-500 border-t-transparent"></div>
+            <Dna class="absolute inset-0 m-auto h-8 w-8 animate-pulse text-violet-500" />
+          </div>
+          <div class="space-y-1 text-center">
+            <p class="text-sm font-semibold text-foreground">Scanning table patterns...</p>
+            <p class="text-xs text-muted-foreground">We’re checking quality, distribution, and schema health.</p>
+          </div>
+        </div>
+
+        <div v-else-if="props.profile" class="space-y-6 py-5">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div class="rounded-2xl border border-border/60 bg-card/70 p-5 text-center shadow-sm">
+              <span class="mb-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Health Score</span>
+              <div :class="['text-4xl font-black tabular-nums tracking-tight', scoreColor]">
+                {{ props.profile.healthScore }}<span class="ml-0.5 text-sm opacity-50">%</span>
+              </div>
+            </div>
+            <div class="rounded-2xl border border-border/60 bg-card/70 p-5 text-center shadow-sm">
+              <span class="mb-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Total Rows</span>
+              <div class="text-3xl font-black tabular-nums tracking-tight text-foreground/85">
+                {{ props.profile.rowCount.toLocaleString() }}
+              </div>
+            </div>
+            <div class="rounded-2xl border border-border/60 bg-card/70 p-5 text-center shadow-sm">
+              <span class="mb-1 block text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Columns</span>
+              <div class="text-3xl font-black tabular-nums tracking-tight text-foreground/85">
+                {{ props.profile.columns.length }}
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-violet-500">
+              <ShieldQuestion class="h-4 w-4" />
+              Quality Insights
+            </h3>
+            <div class="grid grid-cols-1 gap-3">
+              <div
+                v-for="(insight, idx) in props.profile.insights"
+                :key="idx"
+                class="flex items-start gap-3 rounded-2xl border border-border/50 bg-card/55 p-4 transition-colors hover:border-violet-500/20 hover:bg-muted/25"
+              >
+                <div class="mt-0.5 rounded-full bg-violet-500/10 p-1.5 text-violet-500">
+                  <ShieldCheck class="h-3.5 w-3.5" />
+                </div>
+                <p class="text-sm leading-relaxed text-foreground/85">{{ insight }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="props.profile.suggestions?.length" class="space-y-4">
+            <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-500">
+              <ListRestart class="h-4 w-4" />
+              Recommendations
+            </h3>
+            <div class="space-y-3">
+              <div
+                v-for="(suggestion, idx) in props.profile.suggestions"
+                :key="idx"
+                class="relative overflow-hidden rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] p-5"
+              >
+                <div class="absolute right-4 top-4 opacity-20">
+                  <CheckCircle2 class="h-10 w-10 -rotate-12 text-emerald-500/30" />
+                </div>
+                <div class="relative space-y-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <span class="text-sm font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{{ suggestion.title }}</span>
+                    <button
+                      v-if="suggestion.sql"
+                      @click="copyToClipboard(suggestion.sql)"
+                      class="rounded-lg p-2 text-emerald-500/70 transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400"
+                    >
+                      <Copy class="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p class="text-sm leading-relaxed text-muted-foreground">{{ suggestion.description }}</p>
+                  <div
+                    v-if="suggestion.sql"
+                    class="rounded-xl border border-emerald-500/15 bg-background/80 p-3 font-mono text-[11px] text-foreground/85"
+                  >
+                    {{ suggestion.sql }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-muted-foreground">
+              <BarChart3 class="h-4 w-4" />
+              Column Breakdown
+            </h3>
+            <div class="overflow-hidden rounded-2xl border border-border/50 bg-card/55">
+              <table class="w-full text-left text-xs">
+                <thead class="border-b border-border/50 bg-muted/35 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                  <tr>
+                    <th class="px-4 py-3">Column</th>
+                    <th class="px-4 py-3">Type</th>
+                    <th class="px-4 py-3">Nulls</th>
+                    <th class="px-4 py-3">Distinct</th>
+                    <th class="px-4 py-3 text-right">Range</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border/30">
+                  <tr v-for="col in props.profile.columns" :key="col.name" class="transition-colors hover:bg-muted/20">
+                    <td class="px-4 py-3 font-semibold text-foreground/85">{{ col.name }}</td>
+                    <td class="px-4 py-3 font-mono text-[10px] uppercase text-muted-foreground/70">{{ col.type }}</td>
+                    <td class="px-4 py-3 tabular-nums" :class="col.nullCount > 0 ? 'font-semibold text-rose-500' : 'text-muted-foreground/60'">
+                      {{ col.nullCount }}
+                    </td>
+                    <td class="px-4 py-3 font-mono tabular-nums text-foreground/80">{{ col.distinctCount }}</td>
+                    <td class="px-4 py-3 text-right font-mono text-[10px] text-muted-foreground/70">
+                      {{ col.min }} → {{ col.max }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <div v-else-if="profile" class="space-y-8 py-4">
-        <!-- Dashboard Header -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="p-4 rounded-2xl bg-muted/30 border border-border/50 flex flex-col items-center justify-center text-center">
-            <span class="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-1">Health Score</span>
-            <div :class="['text-4xl font-black tabular-nums', scoreColor]">
-              {{ profile.healthScore }}<span class="text-sm ml-0.5 opacity-50">%</span>
-            </div>
-          </div>
-          <div class="p-4 rounded-2xl bg-muted/30 border border-border/50 flex flex-col items-center justify-center text-center">
-            <span class="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-1">Total Rows</span>
-            <div class="text-3xl font-black text-foreground/80 tabular-nums">
-              {{ profile.rowCount.toLocaleString() }}
-            </div>
-          </div>
-          <div class="p-4 rounded-2xl bg-muted/30 border border-border/50 flex flex-col items-center justify-center text-center">
-            <span class="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-1">Columns</span>
-            <div class="text-3xl font-black text-foreground/80 tabular-nums">
-              {{ profile.columns.length }}
-            </div>
-          </div>
-        </div>
-
-        <!-- AI Insights -->
-        <div class="space-y-4">
-          <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-violet-400">
-            <ShieldQuestion class="w-4 h-4" />
-            AI Quality Insights
-          </h3>
-          <div class="grid grid-cols-1 gap-2">
-            <div v-for="(insight, idx) in profile.insights" :key="idx" 
-                 class="group flex items-start gap-4 p-4 rounded-xl bg-muted/20 border border-border/30 hover:bg-muted/30 hover:border-violet-500/30 transition-all duration-300">
-              <div class="mt-1 p-1 rounded-full bg-violet-500/10 text-violet-400">
-                <ShieldCheck class="w-3.5 h-3.5" />
-              </div>
-              <p class="text-sm text-foreground/80 leading-relaxed">{{ insight }}</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Actionable Fixes -->
-        <div v-if="profile.suggestions?.length" class="space-y-4">
-          <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-green-400">
-            <ListRestart class="w-4 h-4" />
-            AI Recommendations
-          </h3>
-          <div class="space-y-3">
-            <div v-for="(suggestion, idx) in profile.suggestions" :key="idx"
-                 class="p-5 rounded-2xl bg-green-500/5 border border-green-500/10 space-y-3 relative overflow-hidden group">
-              <div class="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                <CheckCircle2 class="w-12 h-12 text-green-500/5 -rotate-12" />
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-sm font-bold text-green-400 tracking-tight">{{ suggestion.title }}</span>
-                <button v-if="suggestion.sql" @click="copyToClipboard(suggestion.sql)" 
-                        class="p-2 hover:bg-green-500/10 rounded-lg transition-colors text-green-400/60 hover:text-green-400">
-                  <Copy class="w-4 h-4" />
-                </button>
-              </div>
-              <p class="text-xs text-muted-foreground leading-relaxed">{{ suggestion.description }}</p>
-              <div v-if="suggestion.sql" class="mt-4 p-3 rounded-xl bg-black/40 font-mono text-[11px] text-green-400/90 border border-green-500/20">
-                {{ suggestion.sql }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Column breakdown -->
-        <div class="space-y-4">
-          <h3 class="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">
-            <BarChart3 class="w-4 h-4" />
-            Column Breakdown
-          </h3>
-          <div class="rounded-2xl border border-border/50 overflow-hidden">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-muted/50 text-[10px] uppercase font-bold tracking-widest text-muted-foreground border-b border-border/50">
-                <tr>
-                  <th class="px-4 py-3">Column</th>
-                  <th class="px-4 py-3">Type</th>
-                  <th class="px-4 py-3">Nulls</th>
-                  <th class="px-4 py-3">Distinct</th>
-                  <th class="px-4 py-3 text-right">Range</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border/30">
-                <tr v-for="col in profile.columns" :key="col.name" class="hover:bg-muted/20 transition-colors">
-                  <td class="px-4 py-3 font-bold text-foreground/80 underline decoration-violet-500/20 underline-offset-4">{{ col.name }}</td>
-                  <td class="px-4 py-3 font-mono text-[10px] text-muted-foreground/70 opacity-60 uppercase">{{ col.type }}</td>
-                  <td class="px-4 py-3 tabular-nums" :class="col.nullCount > 0 ? 'text-red-400 font-bold' : 'text-muted-foreground/50'">
-                    {{ col.nullCount }}
-                  </td>
-                  <td class="px-4 py-3 tabular-nums font-mono">{{ col.distinctCount }}</td>
-                  <td class="px-4 py-3 text-right font-mono text-[10px] text-muted-foreground/60">
-                    {{ col.min }} → {{ col.max }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>
+    </DrawerContent>
+  </Drawer>
 </template>

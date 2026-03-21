@@ -45,10 +45,10 @@ function onTriggerClick(event: MouseEvent) {
 <template>
   <div class="relative h-full overflow-hidden explorer-folder">
     <div
-      class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-all duration-200 hover:bg-accent/50 group"
+      class="group flex w-full cursor-pointer items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 text-[12px] transition-all duration-200 hover:border-border/60 hover:bg-accent/35"
       :class="[
         [
-          isSelect && isSelectable ? 'bg-accent text-accent-foreground' : '',
+          isSelect && isSelectable ? 'border-border/70 bg-card text-accent-foreground shadow-[0_10px_24px_-20px_rgba(15,23,42,0.55)]' : 'text-foreground/88',
           !isSelectable ? 'cursor-not-allowed opacity-50' : '',
           $props.class,
         ],
@@ -66,7 +66,7 @@ function onTriggerClick(event: MouseEvent) {
       <!-- Expand/Collapse Chevron -->
       <component 
         :is="isExpanded ? ChevronDown : ChevronRight" 
-        class="w-4 h-4 text-muted-foreground/70 shrink-0 transition-transform duration-200"
+        class="h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-200"
         :class="{ 'rotate-0': !isExpanded }"
       />
       
@@ -74,31 +74,31 @@ function onTriggerClick(event: MouseEvent) {
       <Icon
         v-if="isExpanded"
         :name="currentOpenIcon"
-        :size="18"
-        class="shrink-0"
+        :size="17"
+        class="shrink-0 text-muted-foreground"
       />
       <Icon
         v-else
         :name="currentCloseIcon"
-        :size="18"
-        class="shrink-0"
+        :size="17"
+        class="shrink-0 text-muted-foreground"
       />
 
-      <span class="select-none flex-1 flex items-center font-medium">
+      <span class="flex flex-1 select-none items-center font-medium">
         <slot name="label">{{ name }}</slot>
       </span>
     </div>
 
     <div
       v-if="isExpanded"
-      class="relative text-sm animate-in slide-in-from-top-1 duration-200"
+      class="relative animate-in slide-in-from-top-1 text-sm duration-200"
     >
       <TreeIndicator
         v-if="name && indicator"
         aria-hidden="true"
       />
       <div
-        class="ml-4 flex flex-col gap-0.5 py-1 pl-2 border-l border-border/50 rtl:mr-5"
+        class="ml-4 flex flex-col gap-1 py-1.5 pl-2.5 rtl:mr-5"
         :dir="direction"
       >
         <slot />

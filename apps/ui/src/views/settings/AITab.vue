@@ -12,6 +12,7 @@ import type { SettingsModel } from './types'
 import { getAIModels } from '@/lib/api'
 import { localAI, type OllamaStatus } from '@/services/LocalAIService'
 import { useEntitlements } from '@/composables/useEntitlements'
+import { filterModelsForTier, FREE_TIER_MODEL_IDS } from '@/lib/modelAccess'
 import UpgradeModal from '@/components/UpgradeModal.vue'
 import { Loader2, Server, Power, Download, CheckCircle2, AlertCircle, Lock, ChevronDown } from 'lucide-vue-next'
 
@@ -78,11 +79,12 @@ onMounted(async () => {
     // Add tier information to each model
     const TIER_REQUIREMENTS: Record<string, 'free' | 'pro' | 'pro_plus'> = {
       // OpenAI models
-      'gpt-5.1-mini': 'free',
+      'gpt-5.2-mini': 'free',
       'o4-mini': 'pro',
-      'gpt-5.1': 'pro',
+      'gpt-5.2': 'pro',
       // Gemini models
-      'gemini-2.5-flash-lite': 'free',
+      'gemini-3.1-flash': 'free',
+      'gemini-2.5-flash-lite': 'pro',
       'gemini-3-flash-preview': 'pro',
       'gemini-3-pro-preview': 'pro',
       // Anthropic models
@@ -91,8 +93,8 @@ onMounted(async () => {
       'claude-3-opus-latest': 'pro_plus',
       // Legacy/Future models
       'gpt-4o-mini': 'free',
-      'gemini-2.5-flash': 'free',
-      'gemini-2.5-pro': 'free',
+      'gemini-2.5-flash': 'pro',
+      'gemini-2.5-pro': 'pro',
       'gemini-1.5-flash': 'free',
       'gemini-1.5-pro': 'pro',
       'o1-mini': 'pro',
@@ -137,7 +139,9 @@ onMounted(async () => {
 
     // Only initialize enabledModels if it doesn't exist yet (undefined)
     if (settings.value.enabledModels === undefined) {
-      settings.value.enabledModels = []
+      settings.value.enabledModels = filterModelsForTier(cloudModels, subscriptionTier.value).map((model: any) => model.id)
+    } else if (subscriptionTier.value === 'free') {
+      settings.value.enabledModels = settings.value.enabledModels.filter((modelId: string) => FREE_TIER_MODEL_IDS.has(modelId))
     }
     
     // Auto-set local model if not set
@@ -209,13 +213,6 @@ const sliderValue = computed({
   },
 })
 
-const temperatureValue = computed({
-  get: () => [settings.value.temperature ?? 0.7],
-  set: ([value]) => {
-    settings.value.temperature = Number(value ?? 0.7)
-  },
-})
-
 // Advanced Settings State
 const showAdvanced = ref(false)
 
@@ -224,10 +221,10 @@ const toggleAdvancedSettings = () => {
     upgradeModalState.value = {
       open: true,
       title: 'Advanced AI Settings',
-      description: 'Fine-tune your AI experience with temperature control, custom instructions, and more.',
+      description: 'Fine-tune your AI experience with custom instructions, code hints, and more.',
       benefits: [
         'Custom System Instructions',
-        'Temperature & Token Limits',
+        'Token Limits',
         'Conversation Memory Control',
         'Chat Auto-deletion Rules'
       ],
@@ -685,20 +682,6 @@ onMounted(async () => {
           />
         </div>
 
-        <!-- Temperature -->
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <Label class="text-base font-medium">Temperature</Label>
-            <span class="text-sm text-muted-foreground">{{ settings.temperature }}</span>
-          </div>
-          <Slider
-            v-model="temperatureValue" 
-            :max="1" 
-            :step="0.1"
-            class="w-full"
-          />
-        </div>
-
         <!-- Max Tokens -->
          <div class="space-y-2">
           <Label class="text-base font-medium">Max Tokens</Label>
@@ -719,15 +702,6 @@ onMounted(async () => {
             placeholder="e.g., You are a senior data analyst..."
             class="flex min-h-[100px] w-full rounded-md border border-input bg-secondary/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
           />
-        </div>
-
-        <!-- Conversation Memory -->
-        <div class="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border border-border">
-          <div class="space-y-0.5">
-            <Label class="text-base">Conversation Memory</Label>
-            <p class="text-sm text-muted-foreground">Allow AI to remember previous messages</p>
-          </div>
-          <Checkbox v-model="settings.enableContext" />
         </div>
 
          <!-- Code Hints -->

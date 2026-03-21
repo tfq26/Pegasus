@@ -22,9 +22,6 @@ import {
   ChevronRight,
   ArrowUp,
   ArrowDown,
-  Plus,
-  PlusCircle,
-  Columns,
   Fingerprint,
   ChevronDown,
 } from 'lucide-vue-next';
@@ -82,6 +79,7 @@ const stagedChanges = ref<any[]>([]);
 const editingCell = ref<{ rowId: number, col: string } | null>(null);
 const editValue = ref('');
 const isAIProcessing = ref(false);
+const profilingOpen = ref(false);
 const profilingResult = ref<any>(null);
 const profilingLoading = ref(false);
 const mockData = ref<any[]>([]);
@@ -110,13 +108,14 @@ const engineDiff = computed(() => props.engine?.getDiff() || []);
 const stagedCount = computed(() => props.engine ? engineDiff.value.length : stagedChanges.value.length);
 const sortState = ref<{ col: string | null, direction: 'asc' | 'desc' }>({ col: null, direction: 'asc' });
 const containerRef = ref<HTMLElement | null>(null);
+const isCompact = computed(() => true);
 
 // Virtual Scrolling State
 const scrollTop = ref(0);
 const viewportHeight = ref(800);
 const topSpacerHeight = ref(0);
 const bottomSpacerHeight = ref(0);
-const rowHeight = computed(() => props.isCompact ? 28 : 45); // Extracted approximate heights
+const rowHeight = computed(() => isCompact.value ? 28 : 45); // Extracted approximate heights
 
 // Pagination State
 const currentPage = ref(1);
@@ -851,9 +850,11 @@ const profileTable = async () => {
   }
 
   try {
+    profilingOpen.value = true;
+    profilingResult.value = null;
     profilingLoading.value = true;
-    const connection = props.engine.connection;
-    const result = await api.post<any>('/profile', {
+    const connection = props.engine.sourceConnection;
+    const result = await api.post<any>('/api/profile', {
       tableName: props.engine.sourceTable,
       connection,
       provider: props.engine.sourceProvider
@@ -864,6 +865,12 @@ const profileTable = async () => {
     toast.error('Data profiling failed', { description: e.message });
   } finally {
     profilingLoading.value = false;
+  }
+};
+const handleProfilingOpenChange = (value: boolean) => {
+  profilingOpen.value = value;
+  if (!value && !profilingLoading.value) {
+    profilingResult.value = null;
   }
 };
 
@@ -924,17 +931,8 @@ watch(() => props.viewId, async (newId) => {
             </div>
           </div>
           <div class="space-y-1">
-            <h3 class="text-lg font-semibold tracking-tight text-foreground">Start Building Your Table</h3>
-            <p class="text-sm text-muted-foreground/80 max-w-xs mx-auto">Add columns first, then create rows to populate your data.</p>
-          </div>
-          <div class="flex items-center justify-center gap-3 pt-2">
-            <button 
-              @click="addColumn" 
-              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 active:scale-95 transition-all shadow-lg shadow-primary/20"
-            >
-              <Columns class="w-4 h-4" />
-              Add Column
-            </button>
+            <h3 class="text-lg font-semibold tracking-tight text-foreground">No Columns Available</h3>
+            <p class="text-sm text-muted-foreground/80 max-w-xs mx-auto">This data view is read from its connected source, so rows and columns must come from the source schema.</p>
           </div>
         </div>
       </div>
@@ -1014,24 +1012,7 @@ watch(() => props.viewId, async (newId) => {
                   </div>
                 </div>
               </th>
-              <!-- Add Column Button Slot -->
-              <th class="w-10 min-w-[40px] max-w-[40px] border-b border-r bg-muted/5 group/addcol cursor-pointer hover:bg-muted/20 transition-colors" @click="addColumn">
-                <div class="flex items-center justify-center">
-                  <Plus class="w-3.5 h-3.5 text-muted-foreground/50 group-hover/addcol:text-primary transition-all group-hover/addcol:scale-110" />
-                </div>
-              </th>
-            </tr>
-            <!-- Sticky Add Row at the top -->
-            <tr class="group/addrow cursor-pointer bg-background/50 backdrop-blur-sm hover:bg-primary/5 transition-all sticky top-[49px] z-20 border-b shadow-sm" @click="addRow">
-              <td class="w-12 min-w-[48px] max-w-[48px] px-2 py-2 bg-muted/10 border-r text-center sticky left-0 z-30 bg-muted/20">
-                <Plus class="w-3 h-3 text-muted-foreground/40 group-hover/addrow:text-primary group-hover/addrow:rotate-90 transition-all mx-auto" />
-              </td>
-              <td :colspan="currentHeaders.length + 1" class="px-4 py-2 text-xs font-medium text-muted-foreground/40 group-hover/addrow:text-primary/60 transition-colors">
-                <div class="flex items-center gap-2">
-                  <span class="uppercase tracking-widest text-[9px] font-bold opacity-50">Row</span>
-                  <span class="italic text-[10px]">Click to insert a new row...</span>
-                </div>
-              </td>
+              <!-- Add Column control intentionally hidden -->
             </tr>
           </thead>
           <tbody class="divide-y border-r">
@@ -1086,8 +1067,6 @@ watch(() => props.viewId, async (newId) => {
                   </span>
                 </div>
               </td>
-              <!-- Empty cell for the + column -->
-              <td class="w-10 min-w-[40px] max-w-[40px] border-b border-r"></td>
             </tr>
 
             <!-- Empty State (has columns but no rows) -->
@@ -1098,7 +1077,7 @@ watch(() => props.viewId, async (newId) => {
                     <Database class="w-6 h-6 opacity-30" />
                   </div>
                   <span class="text-sm font-medium">No rows yet</span>
-                  <p class="text-xs opacity-60">Click the row below or use the toolbar to add data</p>
+                  <p class="text-xs opacity-60">This table is sourced from your connected data.</p>
                 </div>
               </td>
             </tr>
@@ -1239,10 +1218,11 @@ watch(() => props.viewId, async (newId) => {
     </div>
 
     <!-- Profiling Modal -->
-    <ProfilingPanel 
-      v-model="profilingResult"
-      :profile="profilingResult" 
-      :loading="profilingLoading" 
+    <ProfilingPanel
+      :open="profilingOpen"
+      :profile="profilingResult"
+      :loading="profilingLoading"
+      @update:open="handleProfilingOpenChange"
     />
   </div>
 </template>

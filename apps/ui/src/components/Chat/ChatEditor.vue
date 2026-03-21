@@ -102,13 +102,13 @@
                   v-if="(msg as any).meta?.confidence != null"
                   :class="[
                     'text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0',
-                    (msg as any).meta.confidence >= 60
+                    getConfidencePercent((msg as any).meta.confidence) >= 60
                       ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
                       : 'bg-red-500/10 border-red-500/30 text-red-400'
                   ]"
                   title="AI confidence before asking this question"
                 >
-                  {{ (msg as any).meta.confidence }}% confidence
+                  {{ getConfidencePercent((msg as any).meta.confidence) }}% confidence
                 </span>
               </div>
 
@@ -116,6 +116,20 @@
               <p class="text-[13px] text-violet-300 leading-relaxed font-medium">
                 {{ msg.content }}
               </p>
+
+              <div
+                v-if="Array.isArray((msg as any).meta?.options) && (msg as any).meta.options.length > 0"
+                class="flex flex-wrap gap-2"
+              >
+                <button
+                  v-for="option in (msg as any).meta.options"
+                  :key="option"
+                  @click="submitClarificationOption(option)"
+                  class="px-3 py-1.5 rounded-lg border border-violet-500/30 bg-background/40 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/15 hover:border-violet-400/40 transition"
+                >
+                  {{ option }}
+                </button>
+              </div>
 
               <!-- Data hints — editable threshold fields per column -->
               <div 
@@ -266,6 +280,7 @@
       :is-truncated="shouldTruncate(msg.content) && !isExpanded(msg)"
       @add-to-dashboard="(config) => emit('add-to-dashboard', config)"
       @generate-insights="(payload) => emit('generate-insights', payload)"
+      @refine="submitRefinement"
     />
                 </div>
                 
@@ -507,6 +522,22 @@ const submitHintValues = (msg: any) => {
 
   localInput.value = reply
   nextTick(() => emit('submit'))
+}
+
+const submitClarificationOption = (option: string) => {
+  localInput.value = option
+  nextTick(() => emit('submit'))
+}
+
+const submitRefinement = (prompt: string) => {
+  localInput.value = prompt
+  nextTick(() => emit('submit'))
+}
+
+const getConfidencePercent = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(Number(value))) return 0
+  const numeric = Number(value)
+  return numeric <= 1 ? Math.round(numeric * 100) : Math.round(numeric)
 }
 
 // ── Numeric range slider helpers ────────────────────────────────────────────

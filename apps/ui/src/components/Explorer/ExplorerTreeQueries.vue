@@ -47,11 +47,11 @@ function handleSelect(id: string, event?: MouseEvent) {
           <div class="flex items-center justify-between w-full">
             <div class="flex items-center gap-2">
               <span class="text-foreground">Chats</span>
-              <span v-if="filteredChats?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium">{{ filteredChats.length }}</span>
+              <span v-if="filteredChats?.length" class="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{{ filteredChats.length }}</span>
             </div>
             <button 
               @click.stop.prevent="emit('create-chat')" 
-              class="mr-1 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+              class="mr-1 flex h-6 w-6 items-center justify-center rounded-lg border border-transparent text-muted-foreground opacity-0 transition-all hover:border-border/60 hover:bg-background hover:text-foreground group-hover:opacity-100"
               title="New Chat"
             >
               <Plus class="w-4 h-4" />
@@ -59,9 +59,9 @@ function handleSelect(id: string, event?: MouseEvent) {
           </div>
         </template>
         
-        <div v-if="!filteredChats?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
-          <MessageSquarePlus class="w-8 h-8 text-muted-foreground/30 mb-2" />
-          <p class="text-xs text-muted-foreground">Start a conversation</p>
+        <div v-if="!filteredChats?.length" class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/45 px-4 py-6 text-center">
+          <MessageSquarePlus class="mb-2 h-8 w-8 text-muted-foreground/30" />
+          <p class="text-xs font-medium text-muted-foreground">Start a conversation</p>
         </div>
 
         <ContextMenu v-for="chat in filteredChats" :key="chat.id">
@@ -78,8 +78,8 @@ function handleSelect(id: string, event?: MouseEvent) {
               </div>
             </File>
           </ContextMenuTrigger>
-          <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-            <ContextMenuItem @select="emit('delete-chat', chat)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+          <ContextMenuContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+            <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium text-rose-500 focus:bg-rose-500/10 focus:text-rose-500" @select="emit('delete-chat', chat)">
               <Trash class="w-3.5 h-3.5 mr-2" />
               Delete Chat
             </ContextMenuItem>
@@ -87,8 +87,8 @@ function handleSelect(id: string, event?: MouseEvent) {
         </ContextMenu>
       </Folder>
     </ContextMenuTrigger>
-    <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-      <ContextMenuItem @select="emit('create-chat')">
+    <ContextMenuContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+      <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium" @select="emit('create-chat')">
         <Plus class="w-3.5 h-3.5 mr-2" />
         New Chat
       </ContextMenuItem>
@@ -103,12 +103,12 @@ function handleSelect(id: string, event?: MouseEvent) {
     class="font-medium"
   >
     <template #label>
-      <div class="flex items-center gap-2">
-        <Database class="w-3.5 h-3.5 text-violet-500" />
-        <span class="text-foreground">Query Sessions</span>
-        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">{{ querySessions.length }}</span>
-      </div>
-    </template>
+        <div class="flex items-center gap-2">
+          <Database class="w-3.5 h-3.5 text-violet-500" />
+          <span class="text-foreground">Query Sessions</span>
+          <span class="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{{ querySessions.length }}</span>
+        </div>
+      </template>
     <ContextMenu v-for="session in querySessions" :key="session.id">
       <ContextMenuTrigger as-child>
         <File 
@@ -148,13 +148,13 @@ function handleSelect(id: string, event?: MouseEvent) {
           <div class="flex items-center justify-between w-full">
             <div class="flex items-center gap-2">
               <span class="text-foreground">Queries</span>
-              <span v-if="filteredQueries?.length" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">{{ filteredQueries.length }}</span>
+              <span v-if="filteredQueries?.length" class="rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{{ filteredQueries.length }}</span>
             </div>
           </div>
         </template>
         
-        <div v-if="!filteredQueries?.length" class="flex flex-col items-center justify-center py-4 px-4 text-center">
-          <p class="text-xs text-muted-foreground">No query history</p>
+        <div v-if="!filteredQueries?.length" class="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-background/45 px-4 py-6 text-center">
+          <p class="text-xs font-medium text-muted-foreground">No query history</p>
         </div>
 
         <ContextMenu v-for="q in filteredQueries" :key="q.id">
@@ -168,12 +168,12 @@ function handleSelect(id: string, event?: MouseEvent) {
             >
               <div class="flex items-center gap-1.5 min-w-0">
                 <span class="truncate">{{ q.query }}</span>
-                <span class="text-[9px] text-muted-foreground ml-auto bg-muted px-1 rounded">{{ new Date(q.timestamp).toLocaleTimeString() }}</span>
+                <span class="ml-auto rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{{ new Date(q.timestamp).toLocaleTimeString() }}</span>
               </div>
             </File>
           </ContextMenuTrigger>
-          <ContextMenuContent class="w-48 bg-popover border-border text-popover-foreground">
-            <ContextMenuItem @select="emit('delete-query', q.id)" class="text-rose-500 focus:text-rose-500 focus:bg-rose-500/10">
+          <ContextMenuContent class="w-48 rounded-2xl border border-border/70 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-xl">
+            <ContextMenuItem class="rounded-xl px-3 py-2 text-xs font-medium text-rose-500 focus:bg-rose-500/10 focus:text-rose-500" @select="emit('delete-query', q.id)">
               <Trash class="w-3.5 h-3.5 mr-2" />
               Delete Query
             </ContextMenuItem>

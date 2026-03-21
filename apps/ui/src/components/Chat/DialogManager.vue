@@ -12,6 +12,7 @@
         :chat="previewChat"
         :messages="previewMessages"
         @continue="$emit('continue-chat', $event)"
+        @delete="$emit('delete-chat', $event)"
       />
 
       <DashboardElementPreview
@@ -71,6 +72,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'resolve-ambiguity': [resolution: any]
   'continue-chat': [chatId: string]
+  'delete-chat': [chatId: string]
   'save-dashboard': []
   'execute-sanitize': [fix: any]
   'apply-mutation': [mutation: any]

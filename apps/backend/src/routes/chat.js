@@ -23,6 +23,7 @@ import { ConversationState } from "../services/ConversationState.js"
 import { DataProfiler } from "../services/DataProfiler.js"
 import { QueryRepair } from "../services/QueryRepair.js"
 import { SemanticIntentClassifier } from "../services/SemanticIntentClassifier.js"
+import { ResilientAIPipeline } from "../services/pipeline/ResilientAIPipeline.js"
 import { authMiddleware, requireUser } from '../middleware/auth.js'
 import { logger } from '../services/Logger.js'
 
@@ -159,7 +160,7 @@ const logExecutedQuery = async (userId, sqlQuery, connectionId, status = 'succes
             tokensUsed: 0,
             createdAt: new Date()
         });
-        logger.info(`[Query] Logged SQL for ${userId}: ${sqlQuery.substring(0, 80)}...`, { requestId: (typeof c !== 'undefined' && c.get) ? c.get('requestId') : null });
+        logger.debug(`[Query] Logged SQL for ${userId}: ${sqlQuery.substring(0, 80)}...`, { requestId: (typeof c !== 'undefined' && c.get) ? c.get('requestId') : null });
     } catch (e) {
         logger.error("Failed to log executed query", e);
     }
@@ -338,8 +339,6 @@ chat.post("/chats/:id/messages", requireUser, async (c) => {
         const currentTitle = (existingChat.title || '').trim();
         const isDefaultTitle = currentTitle === 'New Chat' || currentTitle === '';
 
-        console.log(`[Chat] Checking title generation trigger: title="${currentTitle}", messages=${updatedMessages.length}`);
-
         if (isDefaultTitle && updatedMessages.length >= 2) {
             try {
                 // Limit title generation to first few exchanges to avoid repeated generation
@@ -353,12 +352,7 @@ chat.post("/chats/:id/messages", requireUser, async (c) => {
                     if (newTitle && newTitle.trim() && newTitle.trim() !== 'New Chat') {
                         generatedTitle = newTitle.trim().substring(0, 100); // Limit to 100 chars
                         await db.update(chats).set({ title: generatedTitle }).where(eq(chats.id, rawChatId));
-                        console.log('[Chat] Successfully updated title to:', generatedTitle);
-                    } else {
-                        console.log('[Chat] AI returned invalid or default title, skipping update.');
                     }
-                } else {
-                    console.log('[Chat] Message count exceeds threshold for auto-naming, skipping.');
                 }
             } catch (e) {
                 console.error("[Chat] Failed to auto-label chat:", e);
@@ -695,293 +689,73 @@ chat.post("/ai/generate", async (c) => {
         }
 
         try {
-            const { prompt, connectionId: rawConnId, context, activeTable, temperature, maxTokens, adHocSchema, chatId } = body
+            const {
+                prompt,
+                connectionId: rawConnId,
+                activeTable,
+                adHocSchema,
+                chatId,
+                model,
+                modelId
+            } = body
 
             let basePrompt = prompt;
             let forceVisualization = false;
             let forceQuery = false;
             let forceText = false;
             let forceAnalysis = false;
-            let isExplicitAction = false;
-            let adapter = null;
-            let extraAdapters = [];
-            let contextData = null;
 
-            // NEW: Build conversation context for follow-up handling
             let conversationContext = null;
             try {
                 if (chatId) {
                     conversationContext = await ConversationState.buildContext(chatId, prompt);
-                    if (conversationContext?.isFollowUp) {
-                        console.log(`[AI Generate] Detected follow-up question. Previous table: ${conversationContext.entities?.lastTable}`);
-                    }
                 }
             } catch (convErr) {
                 console.warn('[AI Generate] Conversation state build failed:', convErr.message);
             }
 
-            // NEW: Semantic intent classification
-            let semanticIntent = null;
-            try {
-                semanticIntent = SemanticIntentClassifier.classifyQuick(prompt);
-                console.log(`[AI Generate] Intent classified: ${semanticIntent.type} (confidence: ${semanticIntent.confidence})`);
-            } catch (intentErr) {
-                console.warn('[AI Generate] Intent classification failed:', intentErr.message);
-            }
-
-            // Handle Slash Commands
-            // Handle Slash Commands
             if (/\/(visualization|chart|plot)/i.test(prompt)) {
-                const isLiveRequest = prompt.match(/\b(live|monitor|real-time|doing|updates)\b/i);
-
-                // If it's a live request, we DON'T want to force the static visualization tool exclusively.
-                // We want the AI to be able to use BOTH generate_visualization (with live=true) AND monitor_data_source.
-                forceVisualization = !isLiveRequest;
-
-                isExplicitAction = true;
                 const corePrompt = prompt.trim().replace(/^.*?\/(visualization|chart|plot)\s*/i, '');
-
-                if (isLiveRequest) {
-                    basePrompt = `[USER REQUESTS LIVE VISUALIZATION]: ${corePrompt}. You MUST use 'generate_visualization' with live=true. You should also consider using 'monitor_data_source' if the user wants continuous updates.`;
-                    console.log(`[AI Generate] Live visualization request detected. Enabling auto-tool selection.`);
-                } else {
-                    // Disable forceVisualization - let AI choose tools freely (e.g. query_data first)
-                    forceVisualization = false;
-                    basePrompt = `[USER REQUESTS VISUALIZATION]: ${corePrompt}. Your goal is to generate a beautiful, Robinhood-style line chart. Use 'generate_visualization'. If you need data, call 'query_data' first.`;
-                    console.log(`[AI Generate] Slash command detected. Hinting visualization for: ${corePrompt}`);
-                }
+                forceVisualization = true;
+                basePrompt = corePrompt;
             } else if (/\/(query|sql)/i.test(prompt)) {
                 forceQuery = true;
-                isExplicitAction = true;
                 const corePrompt = prompt.trim().replace(/^.*?\/(query|sql)\s*/i, '');
-                basePrompt = `[USER REQUESTS SQL QUERY ONLY - DO NOT EXECUTE]: ${corePrompt}`;
-                console.log(`[AI Generate] Slash command detected. Forcing query representation for: ${corePrompt}`);
+                basePrompt = corePrompt;
             } else if (/\/(text)/i.test(prompt)) {
                 forceText = true;
-                isExplicitAction = true;
                 const corePrompt = prompt.trim().replace(/^.*?\/(text)\s*/i, '');
-                basePrompt = `[USER REQUESTS TEXT RESPONSE ONLY - NO VISUALS]: ${corePrompt}`;
-                console.log(`[AI Generate] Slash command detected. Forcing text response for: ${corePrompt}`);
+                basePrompt = corePrompt;
             }
 
-            // If no explicit command, default to text response behavior
-            if (!isExplicitAction) {
-                forceText = true;
-                console.log(`[AI Generate] No slash command. Defaulting to forceText=true.`);
-            }
-
-            // Handle connexion ID
             let connectionId = rawConnId ? (rawConnId.includes(':') ? rawConnId.split(':')[1] : rawConnId) : null;
-
-            await sendProgress(10, 'Resolving context...');
-
-            // TIMEOUT SAFETY: Wrap both context resolution and generation in a timeout
-            // This prevents "malformed stream" errors on the frontend when the backend silently dies (e.g. Vercel 10s limit)
-            const TIMEOUT_MS = 25000; // 25s safety limit (assuming 30s-60s platform timeout, adjust if on free tier 10s)
-
-            // Context Resolution
-            const contextPromise = OneContext.resolveContext(basePrompt, userId, connectionId);
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Backend Timeout')), 9500)); // 9.5s timeout for Vercel Free
-
-            let resolvedResources = [];
             try {
-                resolvedResources = await Promise.race([contextPromise, timeoutPromise]);
-            } catch (e) {
-                if (e.message === 'Backend Timeout') {
-                    throw new Error('Analysis timed out (10s limit). Please simplify your request or upgrade to Pro.');
-                }
-                throw e;
-            }
-
-            // Note: We no longer build a contextBlock for the user prompt text.
-            let contextBlock = "";
-
-            // 1.5. Check for Instruction Mentions
-            resolvedResources.forEach(r => {
-                if (r.type === 'instruction') {
-                    if (r.instruction === 'FORCE_INTENT_VISUALIZATION') {
-                        forceVisualization = true;
-                        forceText = false;
-                        isExplicitAction = true;
-                    } else if (r.instruction === 'FORCE_INTENT_QUERY') {
-                        forceQuery = true;
-                        forceText = false;
-                        isExplicitAction = true;
-                    } else if (r.instruction === 'FORCE_INTENT_ANALYSIS') {
-                        forceAnalysis = true;
-                        forceText = false;
-                        isExplicitAction = true;
-                    } else if (r.instruction === 'FORCE_INTENT_SUMMARY') {
-                        forceText = true;
-                        isExplicitAction = true;
-                    }
-                }
-            });
-
-            let unloadedResources = [];
-            try {
-                let currentSpaceId = null;
-                if (connectionId) {
-                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                    const activeConn = (uuidRegex.test(connectionId) && !connectionId.startsWith('system:'))
-                        ? await db.query.connections.findFirst({
-                            where: eq(connections.id, connectionId),
-                            columns: { spaceId: true }
-                        })
-                        : null;
-                    if (activeConn) currentSpaceId = activeConn.spaceId;
-                }
-
-                const connectionFilters = [eq(connections.userId, userId)];
-                if (currentSpaceId) {
-                    connectionFilters.push(eq(connections.spaceId, currentSpaceId));
-                }
-
-                const allConnections = await db.query.connections.findMany({
-                    where: and(...connectionFilters),
-                    columns: { id: true, name: true, type: true, config: true }
-                });
-
-                const makeSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                const knownSlugs = new Set();
-                resolvedResources.forEach(r => {
-                    if (r.name) knownSlugs.add(makeSlug(r.name));
-                    if (r.title) knownSlugs.add(makeSlug(r.title));
-                    if (r.id) knownSlugs.add(makeSlug(r.id));
-                });
-
-                const otherConnections = allConnections.filter(c => {
-                    if (c.id === connectionId) return false;
-                    const nameSlug = makeSlug(c.name);
-                    const isResolved = resolvedResources.some(r => r.id === c.id || makeSlug(r.name) === nameSlug);
-                    return !isResolved;
-                });
-
-                unloadedResources = otherConnections.map(c => {
-                    const cfg = typeof c.config === 'string' ? JSON.parse(c.config) : c.config;
-                    return { name: cfg?.alias || cfg?.nickname || c.name, type: c.type };
-                });
-            } catch (e) {
-                console.warn("[Chat] Failed to list other connections:", e);
-            }
-
-            if (resolvedResources.length > 0) {
-                await sendProgress(15, `Found ${resolvedResources.length} relevant resources...`);
-                const summaryBlock = OneContext.buildContextBlock(resolvedResources);
-                if (summaryBlock) {
-                    contextBlock = contextBlock ? contextBlock + summaryBlock : summaryBlock;
-                    if (basePrompt.includes('@[')) {
-                        contextBlock += `\n[MANDATORY]: The user mentioned a directory (@[...]). YOU MUST look at the listed [FILES] or [NOTES] above. Do NOT ask "What funds are you in?" because that data is already provided in the context above. Hunt for it!`;
-                    }
-                }
-            }
-
-            const dbResource = resolvedResources.find(r => r.type === 'database');
-            if (!connectionId && dbResource) {
-                connectionId = dbResource.id;
-            }
-
-            console.log(`[AI Generate] User: ${userId}, ConnectionId: ${connectionId || 'none'}, ActiveTable: ${activeTable || 'none'}`)
-
-            let userSettings = null
-            let activeModel = null
-
-            const userRow = await db.query.users.findFirst({
-                where: eq(users.id, userId),
-                columns: { config: true }
-            });
-
-            userSettings = userRow?.config || null
-            activeModel = 'gemini-3-flash-preview' // Hardcoded to Gemini 3 Flash for efficiency as requested
-
-            // --- Data Context Service ---
-            await sendProgress(20, 'Building schema context...');
-            try {
-                const allResolved = [...resolvedResources];
-                if (context && Array.isArray(context)) {
-                    context.forEach(c => {
-                        if (!allResolved.find(r => r.id === c.id)) {
-                            allResolved.push(c);
-                        }
-                    });
-                }
-
-                contextData = await DataContextService.buildContext(userId, connectionId, {
-                    activeTable,
-                    adHocSchema,
-                    resolvedResources: allResolved,
-                    unloadedResources,
-                    userMessage: basePrompt
-                });
-
-                adapter = contextData.adapter;
-                extraAdapters = contextData.extraAdapters || [];
-            } catch (e) {
-                console.error(`[AI Generate] DataContext build failed:`, e);
-                return sendError(e.message || "Connection not found.");
-            }
-
-            const { provider, normalizedSchema } = contextData;
-
-            // NEW: Data Profiling
-            let dataProfile = null;
-            try {
-                if (adapter && activeTable && normalizedSchema.detailedSchema?.[activeTable]) {
-                    await sendProgress(25, 'Profiling data structure...');
-                    const columns = normalizedSchema.detailedSchema[activeTable];
-                    dataProfile = await DataProfiler.profile(adapter, activeTable, columns, provider);
-                }
-            } catch (profileErr) {
-                console.warn('[AI Generate] Data profiling failed:', profileErr.message);
-            }
-
-            let resolvedIntent = forceVisualization ? { type: 'visualization', force: true } :
-                forceQuery ? { type: 'query', force: true } :
-                    forceAnalysis ? { type: 'analysis', force: true } :
-                        semanticIntent || { type: 'chat' };
-
-            const { AIOrchestrator } = await import('../services/AIOrchestrator.js');
-            const { spreadsheetToolService } = await import('../services/SpreadsheetToolService.js');
-
-            const orchestrator = new AIOrchestrator({
-                spreadsheetToolService,
-                visualizationAnalyzer: VisualizationAnalyzer,
-                onProgress: sendProgress
-            });
-
-            try {
-                const aiSettings = {
-                    modelId: activeModel,
-                    temperature: Number(temperature || 0.7),
-                    maxTokens: Number(maxTokens || 2500),
-                    activeTable,
-                    intent: resolvedIntent,
-                    conversationContext,
-                    dataProfile,
-                    previousContext: context,
-                    tools: spreadsheetToolService.getReadOnlyTools(),
-                    toolChoice: forceVisualization ? 'generate_visualization' : undefined,
-                    forceText,
-                    forceVisualization
-                };
-
-                const finalResult = await orchestrator.generate(basePrompt, aiSettings, {
-                    ...contextData,
-                    contextBlock,
+                const pipeline = new ResilientAIPipeline({
+                    onProgress: sendProgress,
                     requestId: c.get('requestId')
                 });
-
+                const finalResult = await pipeline.run({
+                    userId,
+                    prompt: basePrompt,
+                    connectionId,
+                    activeTable,
+                    adHocSchema,
+                    modelId: model || modelId || 'gemini-3-flash-preview',
+                    chatId,
+                    conversationContext,
+                    forceVisualization,
+                    forceQuery,
+                    forceText,
+                    forceAnalysis
+                });
                 return sendResult(finalResult);
-
             } catch (e) {
-                logger.error("[AI Generate] Orchestration failed", e, { requestId: c.get('requestId') });
+                logger.error("[AI Generate] Pipeline failed", e, { requestId: c.get('requestId') });
                 return sendError(e.message || "Analysis failed.");
             }
-        } finally {
-            if (adapter) await adapter.disconnect().catch(() => { })
-            for (const extra of extraAdapters) {
-                await extra.disconnect().catch(() => { })
-            }
+        } catch (e) {
+            logger.error("[AI Generate] Request failed", e, { requestId: c.get('requestId') });
+            return sendError(e.message || "Analysis failed.");
         }
     })
 })
@@ -1101,4 +875,3 @@ chat.post("/ai/search", async (c) => {
 })
 
 export { chat as chatRoutes }
-

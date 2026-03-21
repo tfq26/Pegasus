@@ -3,16 +3,10 @@ import { ref, computed } from 'vue'
 import { cn } from '@/lib/utils'
 import {
   Sparkles,
-  Database,
-  Grid,
   History,
   Check,
   Trash2,
-  Download,
   MoreHorizontal,
-  Plus,
-  PlusCircle,
-  Columns,
   ChevronDown,
   Dna
 } from 'lucide-vue-next'
@@ -42,7 +36,6 @@ const props = defineProps<{
   stagedCount: number
   aiCommand: string
   isAIProcessing: boolean
-  isCompact?: boolean
   versions?: { version: number; table: string; created_at: string; reason?: string }[]
   currentVersion?: number
 }>()
@@ -51,11 +44,9 @@ const emit = defineEmits<{
   'update:aiOptions': [value: { model: string | null; temperature: number }]
   'update:aiCommand': [value: string]
   'submit-ai-command': []
-  'save-view': []
   'toggle-staging': []
   'delete': []
   'export': []
-  'update:isCompact': [value: boolean]
   'add-row': []
   'add-column': []
   'profile-table': []
@@ -68,29 +59,19 @@ const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
 </script>
 
 <template>
-  <div class="flex items-center gap-2 w-full h-9 px-1">
-    <!-- Left: Model & Source -->
-    <div class="flex items-center gap-2 shrink-0 px-2">
-      <Sparkles class="w-3.5 h-3.5 text-purple-500" />
-      <span class="text-[11px] font-black tracking-tighter uppercase text-purple-500/80">Pegasus AI</span>
-      <div class="w-px h-4 bg-border ml-1"></div>
-    </div>
-
-    <!-- Center: AI Command Bar & Title (Matches Chat handling) -->
+  <div class="flex h-10 w-full items-center gap-3 px-1">
     <div class="flex-1 flex justify-center items-center gap-6 max-w-2xl mx-auto min-w-0 px-4">
-      <!-- Title Area -->
       <div class="flex items-center gap-2 shrink-0">
-        <span 
-          class="text-xs font-medium text-muted-foreground truncate max-w-[180px]"
+        <span
+          class="max-w-[180px] truncate rounded-full border border-border/70 bg-muted/35 px-3 py-1.5 text-xs font-medium text-muted-foreground"
           :title="title"
         >
           {{ title }}
         </span>
 
-        <!-- Version Selector -->
         <DropdownMenu v-if="versions && versions.length > 0">
           <DropdownMenuTrigger as-child>
-            <button class="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/40 hover:bg-muted text-[10px] font-bold text-muted-foreground/60 transition-colors">
+            <button class="flex items-center gap-1 rounded-full border border-border/60 bg-background/80 px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted">
               <History class="w-3 h-3 text-primary/50" />
               v{{ currentVersion ?? 0 }}
               <ChevronDown class="w-2.5 h-2.5" />
@@ -115,44 +96,28 @@ const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
         </DropdownMenu>
       </div>
 
-      <!-- Command Bar -->
-      <div class="flex-1 flex items-center gap-2 bg-muted/30 border border-border/50 rounded-full px-3 py-1 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/10 transition-all group shadow-inner min-w-[300px]">
-        <Sparkles class="w-3.5 h-3.5 text-purple-500/70" />
+      <div class="flex min-w-[320px] flex-1 items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5 shadow-inner transition-all focus-within:border-primary/30 focus-within:bg-background">
+        <Sparkles class="w-3.5 h-3.5 text-primary/70" />
         <input 
           :value="aiCommand"
           @input="emit('update:aiCommand', ($event.target as HTMLInputElement).value)"
           @keydown.enter="emit('submit-ai-command')"
           :disabled="isAIProcessing"
           placeholder="AI Command: 'Group by status'..." 
-          class="bg-transparent border-none outline-none text-[11px] w-full placeholder:text-muted-foreground/40 disabled:opacity-50 font-medium"
+          class="w-full border-none bg-transparent text-[11px] font-medium outline-none placeholder:text-muted-foreground/40 disabled:opacity-50"
         />
         <div v-if="isAIProcessing" class="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
       </div>
     </div>
 
-    <!-- Right: Actions -->
-    <div class="flex items-center gap-1 shrink-0">
-      <div class="flex items-center gap-0.5 mr-2">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <button 
-                @click="emit('add-row')"
-                class="p-1.5 rounded-lg text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-500 transition-all active:scale-95"
-              >
-                <PlusCircle class="w-4 h-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" class="text-[10px] font-bold">Add Row</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-
+    <div class="flex shrink-0 items-center gap-2">
+      <div class="flex items-center gap-0.5 rounded-xl border border-border/70 bg-background/70 p-1">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger as-child>
               <button 
                 @click="emit('profile-table')"
-                class="p-1.5 rounded-lg text-muted-foreground hover:bg-violet-500/10 hover:text-violet-500 transition-all active:scale-95"
+                class="rounded-lg p-2 text-muted-foreground transition-all hover:bg-violet-500/10 hover:text-violet-500 active:scale-95"
               >
                 <Dna class="w-4 h-4" />
               </button>
@@ -160,76 +125,43 @@ const updateOption = (key: keyof typeof props.aiOptions, value: any) => {
             <TooltipContent side="bottom" class="text-[10px] font-bold">Profile Table</TooltipContent>
           </Tooltip>
         </TooltipProvider>
+      </div>
+      <div class="flex items-center gap-1 rounded-xl border border-border/70 bg-background/70 p-1">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button
+                @click="emit('toggle-staging')"
+                class="relative rounded-lg p-2 text-muted-foreground transition-all hover:bg-muted hover:text-foreground active:scale-90"
+              >
+                <History class="w-4 h-4" />
+                <span v-if="stagedCount > 0" class="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-background bg-rose-500 text-[8px] font-black text-white">
+                  {{ stagedCount }}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Change History</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger as-child>
-              <button 
-                @click="emit('add-column')"
-                class="p-1.5 rounded-lg text-muted-foreground hover:bg-blue-500/10 hover:text-blue-500 transition-all active:scale-95"
+              <button
+                @click="emit('delete')"
+                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500"
               >
-                <Columns class="w-4 h-4" />
+                <Trash2 class="w-4 h-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom" class="text-[10px] font-bold">Add Column</TooltipContent>
+            <TooltipContent side="bottom">Remove source</TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        <button class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+          <MoreHorizontal class="w-4 h-4" />
+        </button>
       </div>
-
-      <div class="w-px h-4 bg-border mr-1"></div>
-      <button 
-        @click="emit('save-view')"
-        :class="['px-3 py-1 rounded-lg text-xs font-black tracking-wider transition-all flex items-center gap-1.5 border shadow-sm active:scale-95', isSavedView ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-background hover:bg-muted text-foreground border-border']"
-      >
-        <Check v-if="isSavedView" class="w-3 h-3" />
-        <Sparkles v-else class="w-3 h-3" />
-        {{ isSavedView ? 'View Saved' : 'Save View' }}
-      </button>
-      
-      <button 
-        @click="emit('update:isCompact', !isCompact)"
-        :class="['px-3 py-1 rounded-lg text-xs font-black  tracking-wider transition-all flex items-center gap-1.5 border shadow-sm active:scale-95', isCompact ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-muted text-foreground border-border']"
-      >
-        <Grid class="w-3 h-3" />
-        {{ isCompact ? 'Compact' : 'Normal' }}
-      </button>
-
-      <div class="w-px h-4 bg-border mx-1"></div>
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <button
-              @click="emit('toggle-staging')"
-              class="relative p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-all active:scale-90"
-            >
-              <History class="w-4 h-4" />
-              <span v-if="stagedCount > 0" class="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] flex items-center justify-center rounded-full border border-background font-black">
-                {{ stagedCount }}
-              </span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Change History</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger as-child>
-            <button
-              @click="emit('delete')"
-              class="p-1.5 rounded text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors"
-            >
-              <Trash2 class="w-4 h-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Remove source</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <button class="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground">
-        <MoreHorizontal class="w-4 h-4" />
-      </button>
     </div>
   </div>
 </template>

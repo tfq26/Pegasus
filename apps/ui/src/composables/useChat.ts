@@ -116,9 +116,19 @@ export function useChat() {
         try {
             await chatStore.deleteChat(id)
 
+            const tabs = (workspaceStore as any).tabs || []
+            for (const tab of tabs.filter((entry: any) => entry?.data?.chatId === id)) {
+                workspaceStore.closeTab(tab.id)
+            }
+
             if (unref(selectedChatId) === id) {
                 selectedChatId.value = ''
                 chatHistory.value = []
+            }
+
+            const activeTab = (workspaceStore as any).activeTab
+            if (activeTab?.type === 'chat' && activeTab?.data?.chatId === id) {
+                workspaceStore.updateActiveTabData({ chatId: undefined, chatHistory: [] })
             }
         } catch (e) {
             console.error('[useChat] Failed to delete chat:', e)
@@ -143,8 +153,20 @@ export function useChat() {
         const tab = (workspaceStore as any).tabs.find((t: any) => t.id === newTabId)
         if (tab?.type === 'chat') {
             isSyncing = true
-            chatHistory.value = tab.data?.chatHistory || []
-            selectedChatId.value = tab.data?.chatId || ''
+            const targetChatId = tab.data?.chatId || ''
+            const chatStillExists = targetChatId
+                ? (unref(chats) as any)?.some((chat: Chat) => chat.id === targetChatId)
+                : false
+
+            if (targetChatId && !chatStillExists) {
+                workspaceStore.updateTabData(tab.id, { chatId: undefined, chatHistory: [] })
+                tab.label = 'New Chat'
+                chatHistory.value = []
+                selectedChatId.value = ''
+            } else {
+                chatHistory.value = tab.data?.chatHistory || []
+                selectedChatId.value = targetChatId
+            }
             nextTick(() => { isSyncing = false })
         }
     })

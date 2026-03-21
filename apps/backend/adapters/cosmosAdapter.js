@@ -387,4 +387,99 @@ export class CosmosAdapter extends DatabaseAdapter {
             return []
         }
     }
+
+    async getProfile(tableName) {
+        if (!this.client) await this.connect()
+
+        const container = this.database.container(tableName)
+        const SAMPLE_SIZE = 500
+
+        let rowCount = 0
+        try {
+            const { resources } = await container.items.query('SELECT VALUE COUNT(1) FROM c').fetchAll()
+            rowCount = Number(resources?.[0] || 0)
+        } catch (e) {
+            console.warn(`[CosmosAdapter] Count query failed for ${tableName}:`, e.message)
+        }
+
+        const { resources: sampleDocs } = await container.items
+            .query(`SELECT TOP ${SAMPLE_SIZE} * FROM c`)
+            .fetchAll()
+
+        const docs = (sampleDocs || []).map(doc => this.cleanRow(doc))
+        if (rowCount === 0) {
+            rowCount = docs.length
+        }
+
+        const columnMap = new Map()
+        for (const doc of docs) {
+            if (!doc || typeof doc !== 'object') continue
+            for (const [name, value] of Object.entries(doc)) {
+                if (!columnMap.has(name)) {
+                    columnMap.set(name, {
+                        name,
+                        type: this._inferProfileType(value),
+                        nullCount: 0,
+                        distinctValues: new Set(),
+                        min: undefined,
+                        max: undefined,
+                    })
+                }
+
+                const column = columnMap.get(name)
+                if ((column.type === 'unknown' || column.type === 'null') && value !== null && value !== undefined) {
+                    column.type = this._inferProfileType(value)
+                }
+
+                if (value === null || value === undefined) {
+                    column.nullCount += 1
+                    continue
+                }
+
+                column.distinctValues.add(this._distinctKey(value))
+
+                if (typeof value === 'number') {
+                    column.min = column.min === undefined ? value : Math.min(column.min, value)
+                    column.max = column.max === undefined ? value : Math.max(column.max, value)
+                } else if (typeof value === 'string') {
+                    column.min = column.min === undefined || value < column.min ? value : column.min
+                    column.max = column.max === undefined || value > column.max ? value : column.max
+                }
+            }
+        }
+
+        const sampledRowCount = docs.length
+        const columns = Array.from(columnMap.values()).map((column) => {
+            const nullRatio = sampledRowCount > 0 ? column.nullCount / sampledRowCount : 0
+            const distinctRatio = sampledRowCount > 0 ? column.distinctValues.size / sampledRowCount : 0
+
+            return {
+                name: column.name,
+                type: column.type,
+                nullCount: Math.round(nullRatio * rowCount),
+                distinctCount: Math.max(column.distinctValues.size, Math.round(distinctRatio * rowCount)),
+                min: column.min,
+                max: column.max,
+            }
+        })
+
+        return {
+            tableName,
+            rowCount,
+            columns,
+        }
+    }
+
+    _inferProfileType(value) {
+        if (value === null) return 'null'
+        if (Array.isArray(value)) return 'array'
+        if (value instanceof Date) return 'date'
+        return typeof value
+    }
+
+    _distinctKey(value) {
+        if (value === null || value === undefined) return 'null'
+        if (typeof value === 'object') return JSON.stringify(value)
+        return String(value)
+    }
 }

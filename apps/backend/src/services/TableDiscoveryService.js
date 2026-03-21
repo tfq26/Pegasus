@@ -1,6 +1,13 @@
 import { RAGService } from './ragService.js';
 import { logger } from './Logger.js';
 
+const verboseTableDiscoveryLogs = process.env.PEGASUS_VERBOSE_TABLE_DISCOVERY === 'true';
+const logTableDiscoveryDebug = (message) => {
+    if (verboseTableDiscoveryLogs) {
+        logger.debug(message);
+    }
+};
+
 const COMPARISON_WORDS = [
     'compare', 'comparison', 'best', 'highest', 'lowest', 'top', 'most', 'least',
     'market', 'region', 'across', 'overall'
@@ -23,7 +30,7 @@ export class TableDiscoveryService {
      * @returns {Promise<Array>} List of candidate tables with scores
      */
     static async discover(query, userId, schema) {
-        logger.info(`[TableDiscovery] Discovering tables for: "${query}"`);
+        logTableDiscoveryDebug(`[TableDiscovery] Discovering tables for: "${query}"`);
         const lowerQuery = query.toLowerCase();
         const queryTokens = new Set(tokenize(query));
         const isComparisonQuery = COMPARISON_WORDS.some((word) => lowerQuery.includes(word));
@@ -95,7 +102,7 @@ export class TableDiscoveryService {
             reasons: data.reasons
         })).sort((a, b) => b.confidence - a.confidence);
 
-        logger.info(`[TableDiscovery] Found ${results.length} candidates. Top: ${results[0]?.tableName || 'None'} (${results[0]?.confidence || 0})`);
+        logTableDiscoveryDebug(`[TableDiscovery] Found ${results.length} candidates. Top: ${results[0]?.tableName || 'None'} (${results[0]?.confidence || 0})`);
         
         return results;
     }
