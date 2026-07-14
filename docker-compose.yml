@@ -1,43 +1,60 @@
-version: '3.8'
-
 services:
-  # Pegasus Backend
-  backend:
+  # Python Intelligence (auth, billing, AI, real-time)
+  python-intelligence:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: apps/python-intelligence
+      dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "8090:8090"
     environment:
-      - NODE_ENV=production
-      - SURREAL_URL=ws://surrealdb:8000/rpc
-      - SURREAL_USER=root
-      - SURREAL_PASS=root
-      - SURREAL_NS=pegasus
-      - SURREAL_DB=pegasus
-      # Add other ENVs here or via .env file
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/pegasus
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - RESEND_API_KEY=${RESEND_API_KEY}
     depends_on:
-      - surrealdb
+      - postgres
     restart: always
 
-  # SurrealDB
-  surrealdb:
-    image: surrealdb/surrealdb:latest
-    command: start --user root --pass root --bind 0.0.0.0:8000 file:/mydata/pegasus.db
+  # Rust Core (data-plane REST API)
+  rust-core:
+    build:
+      context: apps/rust-core
+      dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8787:8787"
+    environment:
+      - PY_INTELLIGENCE_URL=http://python-intelligence:8090
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/pegasus
+      - RUST_PORT=8787
+    depends_on:
+      - postgres
+      - python-intelligence
+    restart: always
+
+  # Postgres
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pegasus
+    ports:
+      - "5432:5432"
     volumes:
-      - ./pegasus_data:/mydata
+      - pgdata:/var/lib/postgresql/data
     restart: always
 
   # Pegasus UI (Optional, if you want to host it containerized)
   # ui:
   #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.ui
+  #     context: apps/ui
+  #     dockerfile: Dockerfile
   #   ports:
   #     - "80:80"
-  #   environment:
-  #     - VITE_QUERY_API_URL=http://localhost:3000
   #   depends_on:
-  #     - backend
+  #     - rust-core
+
+volumes:
+  pgdata:

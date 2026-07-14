@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { api } from '@/lib/apiClient'
+import { api, authApi } from '@/lib/apiClient'
 
 export interface User {
     id: string
@@ -27,41 +27,6 @@ class IdentityService {
                 console.warn('[IdentityService] pegasus:unauthorized event received')
                 this.purgeState()
             })
-
-            // Support Deep Links for browser-based desktop auth
-            this.setupDeepLinkListener()
-        }
-    }
-
-    private async setupDeepLinkListener() {
-        if (!this.isTauri()) return;
-
-        try {
-            const { listen } = await import('@tauri-apps/api/event');
-            listen<string>('deep-link://new-url', (event) => {
-                console.log('[IdentityService] Deep link received:', event.payload);
-                this.handleDeepLink(event.payload);
-            });
-        } catch (e) {
-            console.error('[IdentityService] Failed to setup deep link listener:', e);
-        }
-    }
-
-    private handleDeepLink(url: string) {
-        try {
-            const urlObj = new URL(url);
-            if (urlObj.protocol === 'pegasus:' && urlObj.host === 'auth') {
-                const token = urlObj.searchParams.get('token');
-                const email = urlObj.searchParams.get('email');
-
-                if (token) {
-                    console.log('[IdentityService] Token captured from deep link for:', email);
-                    localStorage.setItem('auth_token', token);
-                    this.fetchUser();
-                }
-            }
-        } catch (e) {
-            console.error('[IdentityService] Error parsing deep link:', e);
         }
     }
 
@@ -70,11 +35,6 @@ class IdentityService {
     get isLoading() { return this._isLoading.value }
     get isOnline() { return this._isOnline.value }
     get isAuthenticated() { return !!this._user.value }
-
-    // Helpers
-    isTauri() {
-        return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-    }
 
     /**
      * Initialize the identity service. 
@@ -113,7 +73,6 @@ class IdentityService {
             localStorage.setItem('auth_token', token)
 
             // Clean up URL: remove token ONLY if it was top-level
-            // If it's nested, the whole redirect param might be needed until the next hop
             if (params.has('token')) {
                 params.delete('token')
                 const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '')
@@ -134,16 +93,9 @@ class IdentityService {
             // Proactively check for tokens in URL before fetching
             this.checkUrlToken();
 
-            if (this.isTauri() && !this._isOnline.value) {
-                console.log('[IdentityService] Tauri offline - skipping fetch')
-                this._isLoading.value = false
-                this._fetchPromise = null
-                return
-            }
-
             try {
                 console.log('[IdentityService] Fetching profile via ApiClient...')
-                const data = await api.get<{ user: User; token?: string }>('/auth/me', {
+                const data = await authApi.get<{ user: User; token?: string }>('/auth/me', {
                     skipAuthRedirect: true // Don't redirect if /me fails initial check
                 })
 
@@ -178,40 +130,46 @@ class IdentityService {
     }
 
     async login(provider?: string) {
-        const API_URL = api.getBaseUrl()
+        const returnTo = window.location.href
 
-        if (this.isTauri() && !this._isOnline.value) {
-            window.location.href = '/local-auth'
+        if (!provider) {
+            window.location.href = `/signin?redirect=${encodeURIComponent(returnTo)}`
             return
         }
 
-        if (this.isTauri() && !provider) {
-            try {
-                const { useDesktopAuth } = await import('@/composables/useDesktopAuth')
-                const { loginWithCloud } = useDesktopAuth()
-                const result = await loginWithCloud()
-                if (result.success && result.user) {
-                    this._user.value = result.user
-                }
-                return
-            } catch (e) {
-                console.error('[IdentityService] Device flow failed:', e)
+        try {
+            const result = await authApi.post<{ redirect: boolean; url?: string; token?: string; user?: User }>(
+                '/auth/sign-in/social',
+                {
+                    provider,
+                    callbackURL: returnTo,
+                    errorCallbackURL: `${window.location.origin}/signin`,
+                    disableRedirect: true
+                },
+                { skipAuthRedirect: true }
+            )
+
+            if (result.token) {
+                localStorage.setItem('auth_token', result.token)
+                await this.fetchUser()
                 return
             }
-        }
 
-        const returnTo = window.location.href
-        let loginUrl = `${API_URL}/auth/login?return_to=${encodeURIComponent(returnTo)}`
-        if (provider) {
-            loginUrl += `&provider=${provider}`
+            if (result.url) {
+                window.location.href = result.url
+                return
+            }
+
+            throw new Error('No authorization URL was returned by Better Auth')
+        } catch (e) {
+            console.error('[IdentityService] Social login failed:', e)
         }
-        window.location.href = loginUrl
     }
 
     async loginWithPassword(email: string, password: string): Promise<{ success: boolean; error?: string }> {
         this._isLoading.value = true
         try {
-            const data = await api.post<{ success: boolean; token: string; user: User }>('/auth/password/login', {
+            const data = await authApi.post<{ success: boolean; token: string; user: User }>('/auth/password/login', {
                 email,
                 password
             })
@@ -224,6 +182,50 @@ class IdentityService {
             return {
                 success: false,
                 error: (e as Error).message || 'Authentication failed'
+            }
+        } finally {
+            this._isLoading.value = false
+        }
+    }
+
+    async signUpWithPassword(input: {
+        firstName: string
+        lastName: string
+        email: string
+        password: string
+    }): Promise<{ success: boolean; error?: string }> {
+        this._isLoading.value = true
+        try {
+            const fullName = `${input.firstName} ${input.lastName}`.trim()
+            const name = fullName || input.email
+
+            const data = await api.post<{ token?: string; user?: User }>(
+                '/auth/sign-up/email',
+                {
+                    name,
+                    email: input.email,
+                    password: input.password,
+                    rememberMe: true
+                },
+                { skipAuthRedirect: true }
+            )
+
+            if (data.token) {
+                localStorage.setItem('auth_token', data.token)
+            }
+
+            await this.fetchUser()
+
+            if (!this._user.value) {
+                throw new Error('Sign up succeeded but no session was established')
+            }
+
+            return { success: true }
+        } catch (e) {
+            console.error('[IdentityService] signUpWithPassword failed:', e)
+            return {
+                success: false,
+                error: (e as Error).message || 'Sign up failed'
             }
         } finally {
             this._isLoading.value = false
@@ -243,22 +245,14 @@ class IdentityService {
     }
 
     async logout() {
-        const API_URL = api.getBaseUrl()
-
-        if (this.isTauri()) {
-            try {
-                const { invoke } = await import('@tauri-apps/api/core')
-                await invoke('local_logout')
-            } catch (e) {
-                console.warn('[IdentityService] Tauri local logout failed:', e)
-            }
+        try {
+            await api.post('/auth/sign-out', {}, { skipAuthRedirect: true })
+        } catch (e) {
+            console.warn('[IdentityService] Sign-out failed:', e)
+        } finally {
+            this.purgeState()
+            window.location.href = '/signin'
         }
-
-        this.purgeState()
-
-        // Perform server-side logout to clear cookies
-        // Redirect back to home after server-side cleanup
-        window.location.href = `${API_URL}/auth/logout?redirect=${encodeURIComponent(window.location.origin)}`
     }
 }
 

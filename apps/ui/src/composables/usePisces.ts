@@ -14,7 +14,7 @@ export function usePisces() {
     const isEnabled = import.meta.env.DEV;
 
     if (!pisces && isEnabled) {
-        const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+        const backendUrl = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:8090';
         pisces = new Pisces({
             maxLogs: 500,
             endpoint: `${backendUrl}/support/analyze`

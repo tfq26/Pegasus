@@ -10,32 +10,18 @@
     "duckdb-async"
   ],
   "workspaces": [
-    "apps/*",
+    "apps/ui",
     "packages/*"
   ],
   "devDependencies": {
     "@playwright/test": "^1.57.0",
     "@types/bun": "latest",
-    "@types/jsonwebtoken": "^9.0.10",
-    "jsonwebtoken": "^9.0.2",
     "playwright": "^1.57.0",
-    "turbo": "^2.6.1",
     "xlsx": "^0.18.5"
   },
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "bun run docs:generate && turbo run build",
-    "lint": "turbo run lint",
-    "clean": "turbo run clean",
-    "start": "bun run-apps.js --web",
-    "start:web": "bun run-apps.js --web",
-    "start:desktop": "bun run-apps.js --desktop",
-    "start:all": "bun run-apps.js --all",
-    "desktop:dev": "cd apps/desktop && bun run tauri:dev",
-    "desktop:build": "cd apps/desktop && bun run tauri:build",
-    "changelog:generate": "node scripts/generate-releases-index.js",
-    "docs:migrate": "cd apps/backend && node scripts/migrate-docs.js",
-    "docs:generate": "bun run changelog:generate && cd apps/backend && node scripts/generate-static-docs.js"
+    "dev": "make dev-all",
+    "changelog:generate": "node scripts/generate-releases-index.js"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"

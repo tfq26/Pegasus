@@ -7,7 +7,7 @@ import CloudProvisionWizard from '@/components/CloudProvisionWizard.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CloudResourceManager from '@/components/CloudResourceManager.vue'
 import { useAuth } from '@/composables/useAuth'
-import { api } from '@/lib/apiClient'
+import { authApi } from '@/lib/apiClient'
 import type { SettingsModel } from './types'
 
 // Auth
@@ -89,7 +89,7 @@ const handleConnect = (providerId: string) => {
     const top = window.screenY + (window.outerHeight - height) / 2
     
     const popup = window.open(
-        `http://localhost:3000/api/cloud-auth/${providerId}/init?user_id=${userId.value}`,
+        `${import.meta.env.VITE_AUTH_API_URL || 'http://localhost:8090'}/api/cloud-auth/${providerId}/init?user_id=${userId.value}`,
         'oauth-popup',
         `width=${width},height=${height},left=${left},top=${top}`
     )
@@ -134,7 +134,7 @@ const confirmDisconnect = async () => {
     if (!providerId) return
 
     try {
-        const response = await api.delete(`/api/cloud-auth/${providerId}/disconnect`, {
+        const response = await authApi.delete(`/api/cloud-auth/${providerId}/disconnect`, {
             headers: {
                 'x-user-id': userId.value
             }
@@ -167,7 +167,7 @@ const checkConnectionStatus = async () => {
     
     for (const provider of providers) {
         try {
-            const data = await api.get<{ connected: boolean; expired?: boolean }>(
+            const data = await authApi.get<{ connected: boolean; expired?: boolean }>(
                 `/api/cloud-auth/${provider}/status`,
                 {
                     headers: {
@@ -294,7 +294,7 @@ onMounted(() => {
             // Save config persistence
             if (selectedProvider) {
                 try {
-                    await api.post(`/api/cloud-provision/${selectedProvider}/config`, {
+                    await authApi.post(`/api/cloud-provision/${selectedProvider}/config`, {
                         user_id: userId,
                         resource_group: resources.resourceGroup || resources.resourceGroupName,
                         subscription_id: resources.subscriptionId

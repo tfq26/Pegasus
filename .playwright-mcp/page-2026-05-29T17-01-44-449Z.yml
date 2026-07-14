@@ -1,0 +1,91 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - region "Notifications alt+T":
+        - list
+      - complementary [ref=e4]:
+        - generic [ref=e5]:
+          - link "Pegasus Logo" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Pegasus Logo" [ref=e7]
+          - navigation [ref=e8]:
+            - link "Dashboards" [ref=e9] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e10]
+            - link "Spaces & Chat" [ref=e15] [cursor=pointer]:
+              - /url: /query
+              - img [ref=e16]
+        - generic [ref=e18]:
+          - button "Toggle Theme" [ref=e19]:
+            - img [ref=e20]
+          - link "Help & Support" [ref=e22] [cursor=pointer]:
+            - /url: /support
+            - img [ref=e23]
+          - link "Settings" [ref=e26] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e27]
+          - button "Sign In" [ref=e31]:
+            - img [ref=e32]
+      - main [ref=e36]:
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - img "Pegasus" [ref=e42]
+            - heading "Create your Pegasus account" [level=1] [ref=e43]
+            - paragraph [ref=e44]:
+              - text: Already have an account?
+              - button "Log in" [ref=e45]
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - button "Google Continue with Google" [ref=e48]:
+                - img "Google" [ref=e49]
+                - text: Continue with Google
+              - button "GitHub Continue with GitHub" [ref=e50]:
+                - img "GitHub" [ref=e51]
+                - text: Continue with GitHub
+            - generic [ref=e54]: or
+            - generic [ref=e56]:
+              - generic [ref=e57]:
+                - generic [ref=e58]:
+                  - generic [ref=e59]: First name
+                  - textbox "First name" [ref=e60]:
+                    - /placeholder: Alex
+                - generic [ref=e61]:
+                  - generic [ref=e62]: Last name
+                  - textbox "Last name" [ref=e63]:
+                    - /placeholder: Smith
+              - generic [ref=e64]:
+                - generic [ref=e65]: Email
+                - textbox "Email" [ref=e66]:
+                  - /placeholder: name@company.com
+              - generic [ref=e67]:
+                - generic [ref=e68]:
+                  - generic [ref=e69]: Password
+                  - generic [ref=e70]:
+                    - textbox "Password" [ref=e71]:
+                      - /placeholder: At least 8 characters
+                    - button [ref=e72]:
+                      - img [ref=e73]
+                - generic [ref=e76]:
+                  - generic [ref=e77]: Confirm password
+                  - generic [ref=e78]:
+                    - textbox "Confirm password" [ref=e79]:
+                      - /placeholder: Repeat password
+                    - button [ref=e80]:
+                      - img [ref=e81]
+              - button "Create account" [ref=e84]:
+                - generic [ref=e85]: Create account
+            - paragraph [ref=e86]:
+              - text: By creating an account, you agree to our
+              - link "Terms" [ref=e87] [cursor=pointer]:
+                - /url: /docs
+              - text: and
+              - link "Privacy Policy" [ref=e88] [cursor=pointer]:
+                - /url: /docs
+              - text: .
+    - button "Pisces" [ref=e90]:
+      - img "Pisces" [ref=e91]
+  - generic [ref=e93]:
+    - generic "Toggle devtools panel" [ref=e94] [cursor=pointer]:
+      - img [ref=e95]
+    - generic "Toggle Component Inspector" [ref=e100] [cursor=pointer]:
+      - img [ref=e101]

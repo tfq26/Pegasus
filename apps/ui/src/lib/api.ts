@@ -1,10 +1,10 @@
 import { buildConnectionPayload } from './db-connections'
 import type { ConnectionEntry, Provider } from './db-connections'
-import { api, QUERY_API_URL, getAuthHeaders } from './apiClient'
+import { api, authApi, QUERY_API_URL, AUTH_API_URL, getAuthHeaders } from './apiClient'
 import { sendDesktopNotification } from './desktop'
 
 // Re-export for backwards compatibility
-export { api, QUERY_API_URL, getAuthHeaders }
+export { api, authApi, QUERY_API_URL, AUTH_API_URL, getAuthHeaders }
 
 export type TableQueryOptions = {
   entry: ConnectionEntry
@@ -165,7 +165,7 @@ export async function generateAIQuery(prompt: string, connectionId: string, cont
     requestBody.activeTable = activeTable;
   }
 
-  const body = await api.post<any>('/ai/generate', requestBody)
+  const body = await authApi.post<any>('/ai/generate', requestBody)
 
   // Check if this is a multi-step response
   if (body.multi_step && Array.isArray(body.steps)) {
@@ -185,21 +185,21 @@ export async function translateQuery(query: string, targetDialect: string, conne
 }
 
 export async function explainQuery(query: string, connectionId: string) {
-  return api.post<any>('/ai/explain-query', { query, connectionId })
+  return authApi.post<any>('/ai/explain-query', { query, connectionId })
 }
 
 export async function optimizeQuery(query: string, connectionId: string) {
-  return api.post<any>('/ai/optimize-query', { query, connectionId })
+  return authApi.post<any>('/ai/optimize-query', { query, connectionId })
 }
 
 
 
 export async function checkHealthProfile(connectionId: string) {
-  return api.post<any>('/ai/health-profile', { connectionId })
+  return authApi.post<any>('/ai/health-profile', { connectionId })
 }
 
 export async function explainTable(connectionId: string, tableName: string) {
-  return api.post<any>('/ai/explain-table', { connectionId, tableName })
+  return authApi.post<any>('/ai/explain-table', { connectionId, tableName })
 }
 
 
@@ -208,7 +208,7 @@ export async function sanitizeTable(table: string) {
 }
 
 export async function generateTestData(connectionId: string, tableName: string, count: number, hint?: string, model?: string) {
-  return api.post<{ sql: string }>('/ai/generate-data', {
+  return authApi.post<{ sql: string }>('/ai/generate-data', {
     connectionId,
     tableName,
     count,
@@ -218,7 +218,7 @@ export async function generateTestData(connectionId: string, tableName: string, 
 }
 
 export async function wrangleData(prompt: string, model?: string) {
-  return api.post<{ code: string }>('/ai/data-wrangler', {
+  return authApi.post<{ code: string }>('/ai/data-wrangler', {
     prompt,
     model
   })
@@ -247,7 +247,7 @@ export async function executeQuery({ connectionId, query, source = 'user' }: { c
 }
 
 export async function analyzeResults(question: string, results: any[], query: string) {
-  return api.post<any>('/ai/analyze', {
+  return authApi.post<any>('/ai/analyze', {
     question,
     results,
     query
@@ -255,7 +255,7 @@ export async function analyzeResults(question: string, results: any[], query: st
 }
 
 export async function searchData(term: string, connectionId: string) {
-  return api.post<any>('/ai/search', {
+  return authApi.post<any>('/ai/search', {
     term,
     connectionId
   })
@@ -271,7 +271,7 @@ export async function getAIModels() {
     return cachedModels
   }
 
-  const body = await api.get<{ models: any[] }>('/ai/models')
+  const body = await authApi.get<{ models: any[] }>('/ai/models')
   cachedModels = body.models || []
   modelsLastFetched = now
   return cachedModels
@@ -287,7 +287,7 @@ export async function fetchSettings() {
     return cachedSettings
   }
 
-  const body = await api.get<{ settings: any }>('/settings')
+  const body = await authApi.get<{ settings: any }>('/settings')
   cachedSettings = body.settings || {}
   settingsLastFetched = now
   return cachedSettings
@@ -348,7 +348,7 @@ export async function saveDashboardLayout(layout: any[]) {
 }
 // AI
 export async function recommendVisualization(query: string, results: any[], previousConfig: any = null, suggestedChartType: string | null = null) {
-  return api.post('/ai/recommend-visualization', { query, results, previousConfig, suggestedChartType })
+  return authApi.post('/ai/recommend-visualization', { query, results, previousConfig, suggestedChartType })
 }
 
 // Queries
@@ -443,7 +443,7 @@ export async function markDashboardRead(id: string) {
 }
 
 export async function searchUsers(query: string) {
-  const body = await api.get<{ users: any[] }>(`/api/users/search?q=${encodeURIComponent(query)}`)
+  const body = await authApi.get<{ users: any[] }>(`/api/users/search?q=${encodeURIComponent(query)}`)
   return body.users || []
 }
 
@@ -470,7 +470,7 @@ export interface FeedbackData {
 }
 
 export async function submitFeedback(feedback: FeedbackData) {
-  return api.post('/feedback', feedback)
+  return authApi.post('/feedback', feedback)
 }
 
 export async function uploadFile(file: File, spaceId?: string | null, autoCreateConnection: boolean = false) {
@@ -495,23 +495,23 @@ export async function uploadFileToKusto(file: File, clusterUrl: string, database
   formData.append('cluster_url', clusterUrl)
   formData.append('database', database)
   formData.append('table', table)
-  return api.upload<any>('/api/kusto-ingest/upload', formData)
+  return authApi.upload<any>('/api/kusto-ingest/upload', formData)
 }
 
 export async function createCheckoutSession(priceId: string, tier?: string) {
-  return api.post('/create-checkout-session', { priceId, tier })
+  return authApi.post('/create-checkout-session', { priceId, tier })
 }
 
 export async function createTokenCheckoutSession(amount: number) {
-  return api.post('/create-token-checkout-session', { amount })
+  return authApi.post('/create-token-checkout-session', { amount })
 }
 
 export async function createStorageCheckoutSession(amount: number) {
-  return api.post('/create-storage-checkout-session', { amount })
+  return authApi.post('/create-storage-checkout-session', { amount })
 }
 
 export async function createPortalSession() {
-  return api.post('/create-portal-session')
+  return authApi.post('/create-portal-session')
 }
 export async function saveConnection(connection: any) {
   // Convert 'file' provider to 'duckdb' for backend compatibility and performance
@@ -539,31 +539,31 @@ export async function deleteConnection(id: string) {
 }
 
 export async function getSubscriptionStatus() {
-  return api.get('/subscription-status')
+  return authApi.get('/subscription-status')
 }
 
 export async function fetchPricingConfig() {
-  return api.get<{ pro: string, pro_plus: string, storage: string }>('/api/config/plans')
+  return authApi.get<{ pro: string, pro_plus: string, storage: string }>('/api/config/plans')
 }
 
 export async function checkPaymentStatus(sessionId: string) {
-  return api.get<{ status: string }>(`/api/payment/status/${sessionId}`)
+  return authApi.get<{ status: string }>(`/api/payment/status/${sessionId}`)
 }
 
 export async function getUsageStats() {
-  return api.get('/usage')
+  return authApi.get('/usage')
 }
 
 export async function syncSubscription() {
-  return api.post('/sync-subscription')
+  return authApi.post('/sync-subscription')
 }
 
 export async function syncPayments() {
-  return api.post('/sync-payments')
+  return authApi.post('/sync-payments')
 }
 
 export async function getPayments() {
-  return api.get<{ success: boolean, payments: any[] }>('/payments')
+  return authApi.get<{ success: boolean, payments: any[] }>('/payments')
 }
 
 
@@ -587,7 +587,7 @@ const flushLogs = async () => {
   logBuffer.length = 0 // clear buffer
 
   try {
-    await api.post('/operations/batch', { operations: batch })
+    await authApi.post('/operations/batch', { operations: batch })
   } catch (err) {
     console.warn('[API] Failed to flush logs', err)
     // Optionally re-queue failed logs? For lightweight audit, maybe drop them to avoid deadlock logic.
@@ -610,11 +610,11 @@ export async function logOperationToBackend(data: any) {
 }
 
 export async function fetchOperationHistory(limit = 50) {
-  return api.get(`/operations/history?limit=${limit}`)
+  return authApi.get(`/operations/history?limit=${limit}`)
 }
 
 export async function fetchOperationAnalytics(range = 'day') {
-  return api.get(`/operations/analytics?range=${range}`)
+  return authApi.get(`/operations/analytics?range=${range}`)
 }
 
 export async function renameTable(connection: ConnectionEntry, table: string, newName: string) {

@@ -276,7 +276,7 @@ const changeProvider = async (provider: string) => {
   
   try {
     // Call backend to save preference
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/ai/config`, {
+    const response = await fetch(`${import.meta.env.VITE_AUTH_API_URL || 'http://localhost:8090'}/ai/config`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -313,7 +313,7 @@ const changeProvider = async (provider: string) => {
 // Ensure we load the current provider on mount
 onMounted(async () => {
   try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/ai/config`, {
+      const res = await fetch(`${import.meta.env.VITE_AUTH_API_URL || 'http://localhost:8090'}/ai/config`, {
         headers: {
             'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
             'x-user-id': localStorage.getItem('user_id') || ''

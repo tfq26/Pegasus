@@ -201,7 +201,7 @@ import { toast } from '@/composables/useNotifications'
 import { fetchOperationHistory } from '@/lib/api'
 import { Download } from 'lucide-vue-next'
 
-const API_URL = import.meta.env.VITE_QUERY_API_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_AUTH_API_URL || 'http://localhost:8090'
 
 interface ExperimentalRequest {
   id: string

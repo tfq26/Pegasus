@@ -17,7 +17,7 @@
 // This is a placeholder for sign out logic
 const signOut = () => {
   // Clear session, tokens, etc.
-  localStorage.removeItem('workos_token')
+  localStorage.removeItem('auth_token')
   window.location.href = '/signin'
 }
 </script>

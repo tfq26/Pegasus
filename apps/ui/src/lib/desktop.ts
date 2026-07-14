@@ -1,16 +1,17 @@
-import { isTauri } from '@/composables/usePlatform'
-import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification'
+/**
+ * desktop — Desktop notifications via the Browser Notification API
+ */
 
-export async function sendDesktopNotification(title: string, body?: string) {
-    if (!isTauri.value) return
+export function sendDesktopNotification(title: string, body: string): void {
+  if (!('Notification' in window)) return
 
-    let granted = await isPermissionGranted()
-    if (!granted) {
-        const permission = await requestPermission()
-        granted = permission === 'granted'
-    }
-
-    if (granted) {
-        sendNotification({ title, body })
-    }
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body })
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then((permission) => {
+      if (permission === 'granted') {
+        new Notification(title, { body })
+      }
+    })
+  }
 }

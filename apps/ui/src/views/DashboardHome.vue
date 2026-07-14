@@ -8,11 +8,7 @@
     />
 
     <template v-else>
-      <!-- Top Bar (Simplified) -->
-    <header class="flex items-center justify-between px-6 py-3 bg-background z-10 transition-colors duration-300" :class="{ 'pt-6 bg-transparent': isTauri }">
-      <!-- Removed Title and Search from here -->
-      <div v-if="!isTauri" class="h-6"></div>
-    </header>
+
 
     <div class="flex-1 overflow-auto">
       <!-- Start New Section -->

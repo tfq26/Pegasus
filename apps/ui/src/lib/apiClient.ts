@@ -9,9 +9,11 @@
  * - Request/response logging
  */
 
+// ── Rust Data API (port 8787) ──────────────────────────────────────
+
 const DEFAULT_QUERY_API_URL = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:3000`
-    : 'http://localhost:3000'
+    ? `${window.location.protocol}//${window.location.hostname}:8787`
+    : 'http://localhost:8787'
 
 const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
     (typeof window !== 'undefined'
@@ -19,6 +21,19 @@ const derivedApiUrl = import.meta.env.VITE_QUERY_API_URL ||
         : undefined) || DEFAULT_QUERY_API_URL
 
 export const QUERY_API_URL = derivedApiUrl
+
+// ── Python Auth/Billing/Admin API (port 8090) ─────────────────────
+
+const DEFAULT_AUTH_API_URL = typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:8090`
+    : 'http://localhost:8090'
+
+const derivedAuthApiUrl = import.meta.env.VITE_AUTH_API_URL ||
+    (typeof window !== 'undefined'
+        ? (window as Window & { __AUTH_API_URL__?: string }).__AUTH_API_URL__
+        : undefined) || DEFAULT_AUTH_API_URL
+
+export const AUTH_API_URL = derivedAuthApiUrl
 
 interface RequestOptions {
     headers?: HeadersInit
@@ -279,8 +294,9 @@ export class ApiClient {
     }
 }
 
-// Export singleton instance
+// Export singleton instances
 export const api = new ApiClient(QUERY_API_URL)
+export const authApi = new ApiClient(AUTH_API_URL)
 
 // Export helper for getting auth headers (for backwards compatibility)
 export function getAuthHeaders(): HeadersInit {

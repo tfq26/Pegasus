@@ -1,0 +1,2 @@
+[console_scripts]
+pegasus-api = app.main:run

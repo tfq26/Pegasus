@@ -3,7 +3,7 @@ import { ref, onBeforeUnmount, onMounted } from 'vue';
 import { useEventListener } from '@vueuse/core';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './useAuth';
-import { QUERY_API_URL } from '@/lib/api';
+import { AUTH_API_URL } from '@/lib/api';
 
 const socket = ref<Socket | null>(null);
 const isConnected = ref(false);
@@ -23,10 +23,8 @@ export function useCollaboration() {
             console.log(`[Collaboration] Visibility changed: ${isPageVisible.value ? 'Visible' : 'Hidden'}`);
         });
     }
-    // Use the same URL as the API, but typically Socket.io handles the path/port automatically 
-    // if served from the same origin, or we specify the full URL.
-    // If QUERY_API_URL is "http://localhost:3000", that's our target.
-    const SERVER_URL = QUERY_API_URL;
+    // Socket.IO is served by the Python service (port 8090) alongside auth/billing.
+    const SERVER_URL = AUTH_API_URL;
 
     const connect = () => {
         if (socket.value?.connected) return;

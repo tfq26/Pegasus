@@ -1,0 +1,43 @@
+{
+  "sources": [
+    {
+      "id": "src_portfolio_xlsx",
+      "type": "file",
+      "label": "PortfolioGain-LossReport45ce8911.xlsx",
+      "trust_mode": "extracted_facts",
+      "table_data": [
+        { "symbol": "AAPL", "shares": 120, "cost_basis": 18900, "market_value": 24480, "gain_loss": 5580 },
+        { "symbol": "MSFT", "shares": 70, "cost_basis": 20300, "market_value": 29400, "gain_loss": 9100 },
+        { "symbol": "NVDA", "shares": 45, "cost_basis": 12150, "market_value": 42300, "gain_loss": 30150 },
+        { "symbol": "TSLA", "shares": 38, "cost_basis": 8960, "market_value": 7410, "gain_loss": -1550 }
+      ]
+    },
+    {
+      "id": "src_sales_table",
+      "type": "table",
+      "label": "sales_current_qtr",
+      "trust_mode": "authoritative_facts",
+      "table_data": [
+        { "region": "North", "month": "Jan", "revenue": 125000, "units": 340 },
+        { "region": "North", "month": "Feb", "revenue": 131500, "units": 356 },
+        { "region": "South", "month": "Jan", "revenue": 118200, "units": 322 },
+        { "region": "South", "month": "Feb", "revenue": 122900, "units": 334 }
+      ]
+    },
+    {
+      "id": "src_market_pdf",
+      "type": "file",
+      "label": "market-expansion-packet.pdf",
+      "trust_mode": "contextual_guidance",
+      "document_text": "Expansion target market shows 18% CAGR over 3 years. Initial launch should prioritize enterprise segment with partner-led channel. Pricing sensitivity is medium; regional compliance and onboarding timeline are key constraints."
+    },
+    {
+      "id": "src_client_notes",
+      "type": "note",
+      "label": "client_strategy_notes",
+      "trust_mode": "contextual_guidance",
+      "document_text": "Client plans product launch in Q3, focusing on retention and upsell. Team expects marketing lift in first 45 days but has support staffing constraints."
+    }
+  ]
+}
+

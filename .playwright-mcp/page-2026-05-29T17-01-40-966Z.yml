@@ -1,0 +1,76 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - region "Notifications alt+T":
+        - list
+      - complementary [ref=e4]:
+        - generic [ref=e5]:
+          - link "Pegasus Logo" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Pegasus Logo" [ref=e7]
+          - navigation [ref=e8]:
+            - link "Dashboards" [ref=e9] [cursor=pointer]:
+              - /url: /dashboard
+              - img [ref=e10]
+            - link "Spaces & Chat" [ref=e15] [cursor=pointer]:
+              - /url: /query
+              - img [ref=e16]
+        - generic [ref=e18]:
+          - button "Toggle Theme" [ref=e19]:
+            - img [ref=e20]
+          - link "Help & Support" [ref=e22] [cursor=pointer]:
+            - /url: /support
+            - img [ref=e23]
+          - link "Settings" [ref=e26] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e27]
+          - button "Sign In" [ref=e31]:
+            - img [ref=e32]
+      - main [ref=e36]:
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - img "Pegasus" [ref=e42]
+            - heading "Log in to Pegasus" [level=1] [ref=e43]
+            - paragraph [ref=e44]:
+              - text: Don't have an account?
+              - button "Sign up" [ref=e45]
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - button "Google Log in with Google" [ref=e48]:
+                - img "Google" [ref=e49]
+                - text: Log in with Google
+              - button "GitHub Log in with GitHub" [ref=e50]:
+                - img "GitHub" [ref=e51]
+                - text: Log in with GitHub
+            - generic [ref=e54]: or
+            - generic [ref=e56]:
+              - generic [ref=e57]:
+                - generic [ref=e58]: Email
+                - textbox "Email" [ref=e59]:
+                  - /placeholder: name@company.com
+              - generic [ref=e60]:
+                - generic [ref=e61]:
+                  - generic [ref=e62]: Password
+                  - button "Forgot your password?" [ref=e63]
+                - generic [ref=e64]:
+                  - textbox "Password" [ref=e65]:
+                    - /placeholder: ••••••••••••
+                  - button [ref=e66]:
+                    - img [ref=e67]
+              - button "Log in" [ref=e70]:
+                - generic [ref=e71]: Log in
+            - paragraph [ref=e72]:
+              - text: By signing in, you agree to our
+              - link "Terms" [ref=e73] [cursor=pointer]:
+                - /url: /docs
+              - text: and
+              - link "Privacy Policy" [ref=e74] [cursor=pointer]:
+                - /url: /docs
+              - text: .
+    - button "Pisces" [ref=e76]:
+      - img "Pisces" [ref=e77]
+  - generic [ref=e79]:
+    - generic "Toggle devtools panel" [ref=e80] [cursor=pointer]:
+      - img [ref=e81]
+    - generic "Toggle Component Inspector" [ref=e86] [cursor=pointer]:
+      - img [ref=e87]

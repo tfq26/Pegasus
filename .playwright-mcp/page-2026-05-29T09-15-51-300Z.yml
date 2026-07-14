@@ -1,0 +1,57 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - region "Notifications alt+T":
+        - list
+      - generic [ref=e4]:
+        - link "Home" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img [ref=e7]
+          - text: Home
+        - generic [ref=e10]:
+          - generic [ref=e11]:
+            - img "Pegasus" [ref=e13]
+            - heading "Log in to Pegasus" [level=1] [ref=e14]
+            - paragraph [ref=e15]:
+              - text: Don't have an account?
+              - button "Sign up" [ref=e16]
+          - generic [ref=e17]:
+            - generic [ref=e18]:
+              - button "Google Log in with Google" [ref=e19]:
+                - img "Google" [ref=e20]
+                - text: Log in with Google
+              - button "GitHub Log in with GitHub" [ref=e21]:
+                - img "GitHub" [ref=e22]
+                - text: Log in with GitHub
+            - generic [ref=e25]: or
+            - generic [ref=e27]:
+              - generic [ref=e28]:
+                - generic [ref=e29]: Email
+                - textbox "Email" [ref=e30]:
+                  - /placeholder: name@company.com
+              - generic [ref=e31]:
+                - generic [ref=e32]:
+                  - generic [ref=e33]: Password
+                  - button "Forgot your password?" [ref=e34]
+                - generic [ref=e35]:
+                  - textbox "Password" [ref=e36]:
+                    - /placeholder: ••••••••••••
+                  - button [ref=e37]:
+                    - img [ref=e38]
+              - button "Log in" [ref=e41]:
+                - generic [ref=e42]: Log in
+            - paragraph [ref=e43]:
+              - text: By signing in, you agree to our
+              - link "Terms" [ref=e44] [cursor=pointer]:
+                - /url: /docs
+              - text: and
+              - link "Privacy Policy" [ref=e45] [cursor=pointer]:
+                - /url: /docs
+              - text: .
+    - button "Pisces" [ref=e47]:
+      - img "Pisces" [ref=e48]
+  - generic [ref=e50]:
+    - generic "Toggle devtools panel" [ref=e51] [cursor=pointer]:
+      - img [ref=e52]
+    - generic "Toggle Component Inspector" [ref=e57] [cursor=pointer]:
+      - img [ref=e58]

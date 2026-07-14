@@ -33,6 +33,15 @@ Thumbs.db
 .cache
 .eslintcache
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
+
+# Python
+.venv/
+venv/
+
+# Rust
+target/
 
 # Database
 pegasus.db/
@@ -44,3 +53,8 @@ apps/ui/public/releases.json
 
 # Local files
 local/
+apps/ui/runtime-config.js
+apps/backend/available-models.txt
+apps/backend/debug_result.txt
+apps/backend/index-end.txt
+apps/backend/test-results/

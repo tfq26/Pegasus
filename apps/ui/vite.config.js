@@ -43,13 +43,43 @@ export default defineConfig({
   },
   // Development server configuration
   server: {
-    proxy: {
-      // Proxy API requests to backend
-      '/api': {
-        target: 'http://localhost:3000',
+    host: 'localhost',
+    proxy: [
+      // ── Python (AI, auth, billing, admin, data CRUD, cloud, experimental, operations, support) ──
+      {
+        context: [
+          '/ai',
+          '/auth', '/billing',
+          '/api/admin', '/api/cloud-auth', '/api/cloud-provision',
+          '/api/experimental', '/api/config', '/api/payment',
+          '/api/users', '/api/kusto-ingest',
+          '/operations', '/settings', '/feedback',
+          '/create-checkout-session', '/create-portal-session',
+          '/create-token-checkout-session', '/create-storage-checkout-session',
+          '/subscription-status', '/sync-subscription', '/sync-payments',
+          '/payments', '/usage', '/support',
+          '/socket.io',
+          '/upload',
+          '/chats',
+          '/dashboards',
+          '/dashboard',
+          '/queries',
+          '/query-sessions',
+          '/shared',
+        ],
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+        ws: true,
+      },
+      // ── Rust (data-plane computation API) ──
+      {
+        context: ['/api', '/query', '/schema',
+                   '/spaces', '/connections',
+                   '/files', '/v1'],
+        target: 'http://localhost:8787',
         changeOrigin: true,
       },
-    },
+    ],
   },
   // Optimize dependency pre-bundling
   optimizeDeps: {

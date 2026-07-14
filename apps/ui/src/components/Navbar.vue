@@ -341,7 +341,7 @@ const props = defineProps<{
 const route = useRoute()
 const { isPhone } = usePlatform()
 const isDevMode = import.meta.env.VITE_PEGASUS_DEV_MODE === 'true'
-const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:3000'
+const marketingUrl = import.meta.env.VITE_MARKETING_URL || 'http://localhost:8090'
 const { user, isLoading, fetchUser, logout } = useAuth()
 
 interface NavLink {
