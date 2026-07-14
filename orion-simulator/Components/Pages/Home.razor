@@ -1,0 +1,208 @@
+@page "/"
+@using Microsoft.AspNetCore.Components.Web
+@using OrionSimulator.Services
+@using OrionSimulator.Models
+@inject MetricGenerator Generator
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Orion Control Center</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card bg-light">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2 class="card-title mb-0">System Scenarios</h2>
+                        <p class="text-muted mb-0">Switch between global simulation states</p>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="me-4 text-end">
+                            <span class="badge @(Generator.IsInActiveWindow() ? "bg-success" : "bg-secondary")">@(Generator.IsInActiveWindow() ? "Active Window" : "Sleep Window")</span>
+                            <div class="small text-muted">@Generator.GetLastRunMessage()</div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-outline-warning @(isPaused ? "active" : "")" @onclick="TogglePause">
+                                @(isPaused ? "▶ Resume Simulation" : "⏸ Pause Simulation")
+                            </button>
+                            <button class="btn btn-outline-primary @(isHighLoad ? "" : "active")" @onclick="() => SetScenario(false)">Normal</button>
+                            <button class="btn btn-outline-danger @(isHighLoad ? "active" : "")" @onclick="() => SetScenario(true)">High Load</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card bg-light">
+                <div class="card-body d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title mb-0">Generation Interval</h5>
+                        <p class="text-muted mb-0 small">Select strict interval mode</p>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <span class="badge @(isManualOverride ? "bg-warning text-dark" : "bg-success") me-3">
+                            @(isManualOverride && timeRemaining.HasValue 
+                                ? $"Manual: {currentInterval / 60.0}m (Expires: {timeRemaining.Value.ToString("mm\\:ss")})"
+                                : (isManualOverride ? $"Manual: {currentInterval / 60.0}m" : "Auto Schedule"))
+                        </span>
+                        <div class="btn-group">
+                            <button class="btn btn-outline-secondary @(!isManualOverride ? "active" : "")" @onclick="SetAutoSchedule">Auto</button>
+                            <button class="btn btn-outline-secondary @(isManualOverride && intervalMode == 10 ? "active" : "")" @onclick="() => SetInterval(10)">10m</button>
+                            <button class="btn btn-outline-secondary @(isManualOverride && intervalMode == 20 ? "active" : "")" @onclick="() => SetInterval(20)">20m</button>
+                            <button class="btn btn-outline-secondary @(isManualOverride && intervalMode == 30 ? "active" : "")" @onclick="() => SetInterval(30)">30m</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        @foreach (var server in servers)
+        {
+            <div class="col-md-3 mb-4">
+                <div class="card h-100 @GetStatusClass(server.Status)">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">@server.Name</h5>
+                        <small>@server.Type</small>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Status:</strong> @server.Status</p>
+                        @if (!string.IsNullOrEmpty(server.InjectedError))
+                        {
+                            <div class="alert alert-danger p-1 mb-2 small">
+                                <strong>Error:</strong> @server.InjectedError
+                            </div>
+                        }
+                        
+                        <div class="d-grid gap-2">
+                            @if (server.Status != "online")
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => StartServer(server.Id)">Start Online</button>
+                            }
+                            
+                            @if (server.Status != "offline")
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => ShutdownServer(server.Id)">Shutdown (Offline)</button>
+                            }
+
+                            @if (server.Status != "stopped")
+                            {
+                                <button class="btn btn-sm btn-warning" @onclick="() => StopServer(server.Id)">Stop (Empty Data)</button>
+                            }
+
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => InjectError(server.Id)">Inject Error</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<MetricGenerator.ServerState> servers = new();
+    private bool isHighLoad = false;
+    private bool isPaused = false;
+    private int currentInterval = 120;
+    private int intervalMode = 10;
+    private bool isManualOverride = false;
+    private TimeSpan? timeRemaining;
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        RefreshData();
+        // Start a UI refresh timer to update the countdown
+        _timer = new System.Threading.Timer(_ => 
+        {
+            InvokeAsync(() => 
+            {
+                RefreshData();
+                StateHasChanged();
+            });
+        }, null, 1000, 1000);
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+
+    private void RefreshData()
+    {
+        servers = Generator.GetCurrentStates();
+        isHighLoad = Generator.IsHighLoad();
+        isPaused = Generator.IsPaused();
+        currentInterval = Generator.GetInterval();
+        intervalMode = Generator.GetIntervalMode();
+        isManualOverride = Generator.IsManualOverride();
+        timeRemaining = Generator.GetTimeRemaining();
+    }
+
+    private void SetInterval(int mode)
+    {
+        Generator.SetIntervalMode(mode);
+        RefreshData();
+    }
+
+    private void SetAutoSchedule()
+    {
+        Generator.ClearManualOverride();
+        RefreshData();
+    }
+
+    private void TogglePause()
+    {
+        isPaused = !isPaused;
+        Generator.SetPaused(isPaused);
+        RefreshData();
+    }
+
+    private void SetScenario(bool highLoad)
+    {
+        Generator.SetHighLoad(highLoad);
+        isHighLoad = highLoad;
+        RefreshData();
+    }
+
+    private void StartServer(string id)
+    {
+        Generator.UpdateServerStatus(id, "online");
+        RefreshData();
+    }
+
+    private void ShutdownServer(string id)
+    {
+        Generator.UpdateServerStatus(id, "offline");
+        RefreshData();
+    }
+
+    private void StopServer(string id)
+    {
+        Generator.UpdateServerStatus(id, "stopped");
+        RefreshData();
+    }
+
+    private void InjectError(string id)
+    {
+        Generator.UpdateServerStatus(id, "error", "Critical CPU spike detected");
+        RefreshData();
+    }
+
+    private string GetStatusClass(string status)
+    {
+        return status switch
+        {
+            "online" => "border-success",
+            "offline" => "border-secondary bg-light text-muted",
+            "error" => "border-danger bg-danger-subtle",
+            "stopped" => "border-warning bg-warning-subtle",
+            _ => ""
+        };
+    }
+}
